@@ -1,208 +1,175 @@
 # Multi-Asset Heston Simulator & Structured Note Engine
 
-A Python framework for calibrating, simulating, and analyzing a **multi-asset Heston stochastic volatility model** using historical market data.
+A Python framework for calibrating, simulating, and pricing a **multi-asset Heston stochastic volatility model** against real market data, with a full structured product engine applied to a **worst-of callable note** on SPX / SX5E / SMI.
 
-The project supports:
-
-- Historical calibration of Heston parameters
-- Multi-asset Monte Carlo simulation
-- Correlated stochastic volatility dynamics
-- Structured note payoff analysis
-- Correlation diagnostics and validation
-- Real-world forecasting under the physical measure
+**Live demo:** [worst-of-note-dashboard.streamlit.app](https://worst-of-note-dashboard.streamlit.app)
 
 ---
 
-## Features
+## Overview
 
-### Historical Heston Calibration
+The project covers the full quantitative workflow:
 
-Calibrates the following Heston parameters directly from historical data:
-
-- κ (mean reversion speed)
-- θ (long-run variance)
-- ξ (volatility of volatility)
-- ρ (leverage effect)
-- V₀ (current variance)
-
-Supports:
-
-- Yahoo Finance downloads
-- Raw Yahoo Finance CSV files
-- Preloaded pandas DataFrames
-
-Optional maximum likelihood refinement is available after Method-of-Moments calibration.
+1. **Calibration** — estimate Heston parameters and tail dependence from historical price data
+2. **Simulation** — simulate correlated multi-asset paths under the physical measure
+3. **Pricing** — evaluate structured note payoffs across all simulated scenarios
+4. **Backtesting** — replay the note on every historical issue date using realized prices
+5. **Dashboard** — interactive bilingual (EN/ES) Streamlit app with green/white theme
 
 ---
 
-### Multi-Asset Simulation
+## Project Structure
 
-Simulates multiple correlated assets simultaneously under stochastic volatility.
-
-Captures:
-
-- Return-return correlations
-- Variance-variance correlations
-- Asset-volatility leverage effects
-
-Uses:
-
-- Euler-Maruyama discretization
-- Full truncation scheme for variance positivity
-- Higham nearest-PSD correction when required
-
----
-
-### Diagnostics Dashboard
-
-Automatically generates:
-
-- Simulated price paths
-- Volatility paths
-- Terminal log-return distributions
-- Input correlation heatmaps
-- Realized correlation heatmaps
-- Correlation error diagnostics
-
-Example output:
-
-![Diagnostics](heston_multi_diagnostics.png)
-
----
-
-# Model Dynamics
-
-For each asset:
-
-Price process:
-
-S(t + dt) = S(t) * exp(-0.5 * V(t) * dt + sqrt(V(t)) * dW_S)
-
-Variance process:
-
-dV = κ(θ − V)dt + ξ * sqrt(V) * dW_V
-
-Leverage relationship:
-
-Corr(dW_S, dW_V) = ρ
-
----
-
-## Correlation Structure
-
-The simulator builds a full block correlation matrix:
-
-```text
-        | Corr_SS   Corr_SV |
-C   =   |                   |
-        | Corr_SVᵀ Corr_VV |
 ```
-
-Where:
-
-- Corr_SS = return-return correlations
-- Corr_VV = variance-variance correlations
-- Corr_SV = return-volatility correlations
-
-This allows simultaneous dependence between asset returns and volatility shocks.
-
----
-
-# Project Structure
-
-```text
 .
-├── heston_calibrator.py
-├── heston_simulator.py
-├── structured_note_sim.py
-├── SPX.csv
-├── SX5E.csv
-├── SMI.csv
-└── heston_multi_diagnostics.png
+├── heston_calibrator.py       # Historical calibration pipeline
+├── heston_simulator.py        # Multi-asset Heston Monte Carlo engine
+├── structured_note_sim.py     # Note payoff engine + historical backtest
+├── app.py                     # Streamlit dashboard
+├── SPX.csv                    # S&P 500 adjusted closes (Yahoo Finance)
+├── SX5E.csv                   # Euro Stoxx 50 adjusted closes
+└── SMI.csv                    # Swiss Market Index adjusted closes
 ```
 
 ---
 
-# Calibration Methodology
+## Model
 
-## Step 1 — Data Loading
+### Price Process (Physical Measure)
 
-Historical adjusted close prices are loaded from:
+For each asset $i$:
 
-- Yahoo Finance
-- CSV files
-- pandas DataFrames
+$$dS_i = S_i \left( \mu_i \, dt + \sqrt{V_i} \, dW_{S_i} \right)$$
 
----
+$$dV_i = \kappa_i(\theta_i - V_i)\,dt + \xi_i\sqrt{V_i}\,dW_{V_i}$$
 
-## Step 2 — Return Construction
+$$\text{Corr}(dW_{S_i}, dW_{V_i}) = \rho_i$$
 
-### One-Day Log Returns
+where $\mu_i$ is the annualised drift estimated from historical returns under the physical (P) measure.
 
-r₁(t) = ln(S(t) / S(t−1))
+### Correlation Structure
 
-Used for:
+Cross-asset dependence is captured through a full $2n \times 2n$ block correlation matrix:
 
-- Realized variance estimation
-- Leverage effect estimation
+$$C = \begin{pmatrix} \Sigma_{SS} & \Sigma_{SV} \\ \Sigma_{SV}^\top & \Sigma_{VV} \end{pmatrix}$$
 
-### Two-Day Overlapping Returns
+- $\Sigma_{SS}$: return-return correlations
+- $\Sigma_{VV}$: variance-variance correlations  
+- $\Sigma_{SV}$: diagonal matrix of per-asset leverage effects $\rho_i$
 
-r₂(t) = ln(S(t) / S(t−2))
-
-Used for:
-
-- Cross-asset correlation estimation
-
-Using overlapping two-day returns helps reduce artificial decorrelation caused by asynchronous market close times between U.S. and European markets.
+If the assembled matrix is not PSD, a nearest-PSD projection (Higham 2002) is applied automatically.
 
 ---
 
-## Step 3 — Realized Variance Proxy
+## Simulation Engine
 
-Rolling realized variance:
+### Discretization — Milstein Scheme
 
-RV(t) = Var(r₁) × 252
+The variance process uses the Milstein scheme rather than Euler-Maruyama, reducing discretization bias especially near $V = 0$:
 
-where r₁ denotes one-day log returns.
+$$V_{t+dt} = V_t + \kappa(\theta - V_t)\,dt + \xi\sqrt{V_t}\,dW_V + \tfrac{1}{2}\xi^2\left(dW_V^2 - dt\right)$$
 
----
+Full truncation ($V$ floored at 0) is applied after each step. The price step uses log-Euler (exact for geometric Brownian motion):
 
-## Step 4 — Method of Moments Calibration
+$$S_{t+dt} = S_t \exp\!\left(\mu\,dt - \tfrac{1}{2}V_t\,dt + \sqrt{V_t}\,dW_S\right)$$
 
-Parameters are estimated directly from historical data:
+### Variance Reduction — Antithetic Variates
 
-| Parameter | Estimation Method |
-|------------|------------|
-| θ | Sample variance |
-| V₀ | Latest rolling variance |
-| κ | AR(1) mean reversion |
-| ξ | Variance increment volatility |
-| ρ | Return-volatility correlation |
+For every batch of $n$ paths, an antithetic batch is generated using $-Z$, doubling the effective path count at no additional random number cost. Reported output contains $2n$ paths.
 
----
+### Tail Dependence — Student-t Copula
 
-## Step 5 — Optional MLE Refinement
+The Gaussian copula is replaced with a Student-t copula to capture joint tail dependence — the empirically observed tendency for equity indices to crash together more often than the Gaussian model implies. At each time step:
 
-The initial Method-of-Moments estimates can be refined using approximate maximum likelihood estimation.
+$$Z \sim \mathcal{N}(0, I_{2n}), \quad s \sim \chi^2(\nu)/\nu, \quad W = \frac{Z}{\sqrt{s}} \cdot L^\top$$
 
----
+The degrees of freedom $\nu$ are **calibrated automatically** from the historical return data using MLE of a univariate $t$-distribution fit to each asset, with the median taken across assets. Typical values are $\nu \approx 4$–$5$ for equity indices.
 
-## Step 6 — Correlation Estimation
+### Vectorized Realized Correlation
 
-The calibration produces:
-
-- Corr_SS
-- Corr_VV
-- Corr_SV
-
-which are passed directly into the simulator.
+Realized correlations are computed via a single `einsum` over all paths simultaneously rather than a per-path `np.corrcoef` loop, giving approximately 100× speedup.
 
 ---
 
-# Example Usage
+## Calibration Pipeline
 
-## Calibration
+All parameters are estimated from historical daily adjusted close prices.
+
+| Step | What | Method |
+|------|------|--------|
+| 1 | Data loading | CSV / yfinance / DataFrame |
+| 2 | Return construction | 1-day $r_1$ (RV, leverage); 2-day $r_2$ (correlation) |
+| 3 | Realized variance | Rolling 21-day window, annualized |
+| 4 | $\theta$ | Sample variance of $r_1$ |
+| 5 | $V_0$ | Most recent rolling RV |
+| 6 | $\kappa$ | AR(1) of RV series: $\kappa = -\log(\phi)/dt$ |
+| 7 | $\xi$ | Std of RV increments normalized by $\sqrt{\theta \cdot dt}$ |
+| 8 | $\rho$ | $\text{Corr}(r_t, \Delta\text{RV}_t)$ |
+| 9 | $\mu$ | Sample mean log-return, annualized |
+| 10 | $\nu$ | MLE $t$-fit per asset, median across assets |
+| 11 | $\Sigma_{SS}, \Sigma_{VV}$ | Pearson correlation of 2-day returns / RV series |
+| 12 | Feller condition | Enforced by nudging $\kappa$ if $2\kappa\theta < \xi^2$ |
+
+**Note on $\rho$:** The 2021–2026 calibration window is dominated by a sustained bull market where returns and volatility were largely uncorrelated. The calibrated $\rho$ values are near zero or slightly positive rather than the textbook $-0.65$ for SPX. This is what the data shows, not a model error. A risk-neutral calibration from the options surface would recover the expected negative $\rho$.
+
+**Note on $\nu$:** The MLE fit gives $\nu \approx 4$ for this dataset (SPX: 3.9, SX5E: 4.1, SMI: 4.7), indicating heavy tails consistent with the volatility events in the sample period.
+
+Optional MLE refinement of the variance parameters ($\kappa, \theta, \xi, \rho$) is available via `mle_refine=True`.
+
+---
+
+## Structured Note
+
+The engine prices a **12-month worst-of callable note** on SPX / SX5E / SMI, matching the structure of a real product currently offered by SILEX Partners.
+
+### Terms
+
+| Parameter | Value |
+|-----------|-------|
+| Underlyings | SPX, SX5E, SMI (worst-of) |
+| Maturity | 12 months |
+| Capital Floor | 95% (configurable) |
+| Call Strike | 95% of worst-of |
+| Issuer Call Dates | 3M, 6M, 9M |
+| Coupon if Called | 10% p.a. pro-rata (configurable) |
+| Upside at Maturity | 100% participation above floor, no cap |
+
+### Payoff
+
+**If issuer calls at date $t$:**
+$$\text{Payout} = 100\% + \text{Coupon} \times t$$
+
+**At maturity:**
+$$\text{Payout} = 95\% + \max(0,\ \text{Worst-of Final} - 95\%)$$
+
+### Issuer Call Model
+
+The call is modelled as **discretionary**, not automatic. The issuer exercises with probability:
+
+$$p_{\text{call}} = \sigma\!\left(\alpha \cdot (\text{worst-of} - \text{strike})\right), \quad \text{worst-of} \geq \text{strike}$$
+
+where $\alpha$ (call decisiveness) is configurable. At $\alpha = 50$ the model approaches an automatic trigger; at $\alpha = 5$ the issuer exercises significant discretion around the strike.
+
+---
+
+## Historical Backtest
+
+The backtest evaluates the note on every valid issue date between June 2022 and June 2025 using **actual realized index prices** — no simulation. The same probabilistic call model is applied to the historical paths.
+
+For each issue date:
+- $S_0$ is set to the actual index levels on that date
+- Worst-of performance is checked at 3M, 6M, 9M using realized prices
+- Maturity payoff uses the actual 12-month return
+
+This gives a distribution of historical outcomes across market regimes.
+
+**Limitation:** The calibration window overlaps with the backtest window, so there is in-sample leakage — the model has already seen the 2022 drawdown when estimating $\theta$. A proper out-of-sample backtest would use expanding-window calibration.
+
+---
+
+## Usage
+
+### Calibration
 
 ```python
 from heston_calibrator import HestonCalibrator
@@ -218,11 +185,14 @@ cal = HestonCalibrator(
 )
 
 result = cal.calibrate()
+# result.params    — list of HestonParams (includes mu, t_dof)
+# result.corr_SS   — return-return correlations
+# result.corr_VV   — variance-variance correlations
+# result.corr_SV   — leverage diagonal
+# result.t_dof     — calibrated degrees of freedom
 ```
 
----
-
-## Simulation
+### Simulation
 
 ```python
 from heston_simulator import HestonMultiSimulator
@@ -234,183 +204,91 @@ sim = HestonMultiSimulator(
     corr_SV=result.corr_SV,
     T=1.0,
     N=252,
-    n_paths=20000,
+    n_paths=10_000,   # antithetics double this to 20,000
     seed=42,
+    t_dof=result.t_dof,
 )
 
 results = sim.run()
-sim.plot()
+```
+
+### Note Pricing
+
+```python
+from structured_note_sim import run_structured_note
+
+output = run_structured_note(
+    coupon_rate=0.10,
+    floor_level=0.95,
+    n_paths=10_000,
+    call_steepness=20.0,
+)
+
+print(f"Expected IRR:       {output['expected_irr']:.2%}")
+print(f"P(floor triggered): {output['prob_floor']:.2%}")
+```
+
+### Historical Backtest
+
+```python
+from structured_note_sim import run_backtest
+
+bt, summary = run_backtest(
+    coupon_rate=0.10,
+    floor_level=0.95,
+    call_steepness=20.0,
+)
+
+print(f"Mean IRR:     {summary['mean_irr']:.2%}")
+print(f"Called early: {summary['prob_called']:.1%}")
+print(f"Floor hit:    {summary['prob_floor']:.1%}")
 ```
 
 ---
 
-# Structured Note Engine
+## Dashboard
 
-The repository includes a practical structured-product application.
-
-## Underlyings
-
-- S&P 500 (SPX)
-- Euro Stoxx 50 (SX5E)
-- Swiss Market Index (SMI)
-
----
-
-## Product Type
-
-Worst-of autocallable note.
-
----
-
-## Observation Dates
-
-- 3 months
-- 6 months
-- 9 months
-
----
-
-## Autocall Condition
-
-The note automatically redeems if the worst-performing underlying remains above 95% of its initial value:
-
-```text
-min(S_i / S_i,0) ≥ 95%
-```
-
----
-
-## Coupon
-
-If called early:
-
-- Principal returned
-- 10% annual coupon paid pro-rata
-
-Examples:
-
-| Observation | Coupon |
-|------------|------------|
-| 3M | 2.5% |
-| 6M | 5.0% |
-| 9M | 7.5% |
-
----
-
-## Maturity Payoff
-
-If the worst-performing asset finishes above 95%:
-
-```text
-Payoff = 95% + Participation Above 95%
-```
-
-Otherwise:
-
-```text
-Payoff = 95%
-```
-
-representing the hard capital floor.
-
----
-
-# Example Output Metrics
-
-The simulation engine reports:
-
-- Expected payout
-- Expected total return
-- Expected annualized IRR
-- Probability of autocall at 3M
-- Probability of autocall at 6M
-- Probability of autocall at 9M
-- Probability of maturity
-- Probability of capital floor scenario
-
-Example:
-
-```text
-============================================================
-REAL-WORLD PROFILE PERFORMANCE FORECAST (P-MEASURE)
-============================================================
-
-Expected Annualized Return: 7.83%
-
-Probability of Automatic Call:
-
-Q1: 28.4%
-Q2: 17.1%
-Q3: 10.6%
-
-Probability of Maturity:
-43.9%
-
-Probability of Capital Floor:
-15.2%
-
-============================================================
-```
-
----
-
-# Correlation Diagnostics
-
-The simulator verifies that realized correlations match calibration targets.
-
-Example:
-
-| Pair | Target | Realized |
-|--------|--------|--------|
-| SPX-SX5E | 0.63 | 0.59 |
-| SPX-SMI | 0.54 | 0.52 |
-| SX5E-SMI | 0.79 | 0.77 |
-
-This provides a consistency check for the correlation structure used in the Monte Carlo simulation.
-
----
-
-# Dependencies
-
-Install required packages:
+Run locally:
 
 ```bash
-pip install numpy pandas scipy matplotlib yfinance
+pip install -r requirements.txt
+streamlit run app.py
+```
+
+**Live:** [worst-of-note-dashboard.streamlit.app](https://worst-of-note-dashboard.streamlit.app)
+
+Features:
+- Forward simulation with fan charts (5th/25th/50th/75th/95th percentiles)
+- Payoff profile overlaid on simulated terminal distribution
+- Single path explorer with annotated observation dates
+- Correlation diagnostics (input vs. realized, Heston parameter table)
+- Historical backtest with price paths and rolling worst-of chart
+- Bilingual interface (English / Español)
+
+---
+
+## Dependencies
+
+```bash
+pip install numpy pandas scipy matplotlib yfinance streamlit plotly
 ```
 
 ---
 
-# Applications
+## Known Limitations & Future Work
 
-This framework can be used for:
+| Limitation | Impact | Potential fix |
+|-----------|--------|--------------|
+| P-measure calibration only | $\rho$ near zero; no implied vol surface | Carr-Madan / characteristic function calibration from options |
+| In-sample backtest | Leakage from 2022 drawdown into $\theta$ | Expanding-window calibration |
+| Python payoff loop | Slow for large $n$ | Vectorize with NumPy |
+| Euler price step (exact only for GBM) | Minor bias with stochastic vol | Full Milstein for price process |
+| Single $\nu$ across assets | Ignores per-asset tail structure | Per-asset copula or vine copula |
 
-- Structured note valuation
-- Exotic equity derivatives
-- Basket options
-- Monte Carlo forecasting
-- Portfolio stress testing
-- Market risk analysis
-- Correlation modeling
-- Quantitative finance research
-- Heston model experimentation
+**Future extensions:** risk-neutral calibration, barrier options, Asian options, variance swap pricing, GPU acceleration (CuPy), Sobol quasi-Monte Carlo.
 
 ---
 
-# Future Improvements
+## Disclaimer
 
-Potential extensions include:
-
-- Risk-neutral calibration from option surfaces
-- Local-stochastic volatility models
-- Jump-diffusion models
-- Variance swap pricing
-- Barrier options
-- Basket option pricing
-- GPU acceleration
-- Sobol and Quasi-Monte Carlo methods
-
----
-
-# Disclaimer
-
-This project was developed for educational, research, and quantitative finance applications. It is not investment advice and should not be relied upon as the sole basis for investment decisions.
+This project was developed for educational and quantitative research purposes. It is not investment advice and should not be used as the sole basis for investment decisions.
