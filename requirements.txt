@@ -1,7 +1,14 @@
-streamlit
-plotly
-numpy
-pandas
-scipy
-matplotlib
-yfinance
+# Core numerical stack
+numpy>=1.26,<3
+pandas>=2.0,<4
+scipy>=1.11
+
+# Visualisation
+matplotlib>=3.7
+plotly>=5.18
+
+# Market data
+yfinance>=0.2
+
+# Dashboard
+streamlit>=1.30

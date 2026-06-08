@@ -1,0 +1,21 @@
+{
+  "name": "BBVA XS3378405743 \u2014 18M Quarterly Phoenix",
+  "maturity": 1.5,
+  "n_obs": 6,
+  "coupon_rate": 0.0375,
+  "coupon_barrier": 0.5,
+  "autocall_barrier": 1.0,
+  "autocall_start_period": 1,
+  "knock_in_barrier": 0.5,
+  "principal_protection": 1.0,
+  "memory": true,
+  "coupon_basket": "worst_of",
+  "autocall_basket": "worst_of",
+  "final_basket": "best_of",
+  "call_steepness": 100.0,
+  "tickers": {
+    "NVDA": "NVDA",
+    "PLTR": "PLTR",
+    "TSLA": "TSLA"
+  }
+}

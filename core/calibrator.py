@@ -85,7 +85,7 @@ from scipy.optimize import minimize
 from scipy import stats
 
 # HestonParams lives in heston_simulator — import it
-from heston_simulator import HestonParams
+from core.simulator import HestonParams
 
 
 # ---------------------------------------------------------------------------

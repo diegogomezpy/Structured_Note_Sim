@@ -1,0 +1,21 @@
+{
+  "name": "HSBC XS3376563584 \u2014 24M Monthly Phoenix",
+  "maturity": 2.0,
+  "n_obs": 24,
+  "coupon_rate": 0.008333,
+  "coupon_barrier": 0.55,
+  "autocall_barrier": 1.0,
+  "autocall_start_period": 4,
+  "knock_in_barrier": 0.55,
+  "principal_protection": 1.0,
+  "memory": true,
+  "coupon_basket": "worst_of",
+  "autocall_basket": "worst_of",
+  "final_basket": "worst_of",
+  "call_steepness": 100.0,
+  "tickers": {
+    "GS": "GS",
+    "JPM": "JPM",
+    "MS": "MS"
+  }
+}

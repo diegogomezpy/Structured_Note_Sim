@@ -1,0 +1,47 @@
+# ── Python ────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# ── Virtual environments ──────────────────────────────────
+.venv/
+venv/
+env/
+.env/
+
+# ── Environment variables ─────────────────────────────────
+.env
+.env.local
+*.env
+
+# ── Jupyter ───────────────────────────────────────────────
+.ipynb_checkpoints/
+*.ipynb
+
+# ── OS ────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+
+# ── IDE ───────────────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# ── Streamlit ─────────────────────────────────────────────
+.streamlit/secrets.toml
+
+# ── Generated outputs ─────────────────────────────────────
+*.png
+*.pdf
+heston_multi_diagnostics.png
+
+# ── Data — CSVs are not tracked; data is pulled live from yfinance ──
+data/*.csv
