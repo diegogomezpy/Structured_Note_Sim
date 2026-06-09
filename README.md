@@ -324,4 +324,4 @@ streamlit >= 1.30
 
 ## Disclaimer
 
-This project was developed for quantitative research and internal use at CADIEM Casa de Bolsa. It is not investment advice and should not be used as the sole basis for investment decisions.
+This project was developed for quantitative research and internal use. It is not investment advice and should not be used as the sole basis for investment decisions.
