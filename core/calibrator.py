@@ -208,7 +208,7 @@ class HestonCalibrator:
 
     def __init__(
         self,
-        tickers:     dict                    = {},
+        tickers:     dict                    = None,
         years:       float                   = 5.0,
         rv_window:   int                     = 21,
         mle_refine:  bool                    = False,
@@ -218,7 +218,7 @@ class HestonCalibrator:
         csv_files:   Optional[dict]          = None,
         calib_years: Optional[float]         = None,
     ):
-        self.tickers     = tickers
+        self.tickers     = tickers if tickers is not None else {}
         self.years       = years
         self.rv_window   = rv_window
         self.mle_refine  = mle_refine
@@ -529,14 +529,18 @@ class HestonCalibrator:
         # Use the full sample mean — this is the physical measure drift
         mu = float(np.mean(lr1) / dt)
 
-        # theta: long-run variance
-        theta = float(np.var(lr1) / dt)
+        # theta: long-run variance estimated as the mean of the rolling RV series.
+        # Using mean(RV) rather than var(lr1)/dt keeps theta consistent with the
+        # other RV-derived parameters (kappa, xi, V0) and avoids the mismatch
+        # between the unconditional return variance and the mean-reversion target
+        # when V0 is anchored to the most recent RV window.
+        rv_clean = rv[~np.isnan(rv)]
+        theta = float(np.mean(rv_clean))
 
         # V0: current variance (last window value)
-        V0 = float(rv[-1])
+        V0 = float(rv_clean[-1])
 
         # kappa: AR(1) mean reversion of RV
-        rv_clean = rv[~np.isnan(rv)]
         if len(rv_clean) > 2:
             phi   = float(np.corrcoef(rv_clean[:-1], rv_clean[1:])[0, 1])
             phi   = _clamp(phi, eps, 1.0 - eps)
@@ -544,14 +548,21 @@ class HestonCalibrator:
         else:
             kappa = 2.0  # fallback
 
-        # xi: vol-of-vol from RV increments
+        # xi: vol-of-vol from daily RV increments.
+        # From the discrete Milstein step: dV ≈ xi * sqrt(V) * dW_V * sqrt(dt)
+        # so xi ≈ std(dRV) / (sqrt(mean_V) * sqrt(dt)).
+        # rv is already annualised (×252); d_rv increments are in annualised variance
+        # units per calendar day. We use sqrt(theta) as the proxy for sqrt(V).
         d_rv  = np.diff(rv_clean)
-        xi    = float(np.std(d_rv) / np.sqrt(max(theta, eps) * dt))
+        xi    = float(np.std(d_rv) / (np.sqrt(max(theta, eps)) * np.sqrt(dt)))
 
-        # rho: leverage — correlation between returns and RV changes
+        # rho: leverage — correlation between 1-day returns and same-day RV changes.
+        # d_rv[t] = rv_clean[t+1] - rv_clean[t], so d_rv[t] corresponds to the
+        # return lr1[t] (both reference the same day-to-day transition).
+        # We therefore align lr1[:-1] with d_rv (both length len(rv_clean)-1).
         min_len = min(len(lr1) - 1, len(d_rv))
         if min_len > 10:
-            rho = float(np.corrcoef(lr1[1:min_len+1], d_rv[:min_len])[0, 1])
+            rho = float(np.corrcoef(lr1[:min_len], d_rv[:min_len])[0, 1])
         else:
             rho = -0.5  # fallback
 

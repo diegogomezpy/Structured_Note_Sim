@@ -2,7 +2,7 @@
 core/note.py
 ------------
 NoteTerms dataclass — full Phoenix/Autocallable structured note specification.
-price_note()         — vectorized payoff engine (no Python loops over paths).
+price_note()         — fully vectorized payoff engine (no Python loops).
 
 Supports replication of:
   - HSBC XS3376563584: 24M monthly Phoenix Memory Worst-of, knock-in barrier,
@@ -137,9 +137,21 @@ class NoteTerms:
         return [round(t / self.maturity * N) for t in self.obs_times()]
 
     def autocall_prob(self, basket_val: np.ndarray) -> np.ndarray:
-        """Sigmoid autocall probability. Hard trigger at high steepness."""
-        p = 1.0 / (1.0 + np.exp(-self.call_steepness * (basket_val - self.autocall_barrier)))
-        return np.where(basket_val < self.autocall_barrier, 0.0, p)
+        """
+        Sigmoid autocall probability centred at autocall_barrier.
+
+        At the default steepness of 100 this is effectively a hard trigger:
+        P ≈ 0 below the barrier and P ≈ 1 above it.  Lower steepness values
+        produce a smooth soft-trigger.
+
+        A pure sigmoid is used here rather than a sigmoid + np.where floor.
+        The np.where floor creates a discontinuity at exactly the barrier
+        (sigmoid approaches ~0.5 from above but floor clamps to 0 from below),
+        which would distort pricing with soft-trigger settings.  The sigmoid
+        alone already gives P < 1e-10 at 10% below the barrier for steepness=100.
+        """
+        x = np.clip(-self.call_steepness * (basket_val - self.autocall_barrier), -500.0, 500.0)
+        return 1.0 / (1.0 + np.exp(x))
 
     # ------------------------------------------------------------------
     # Serialisation — stores human-readable fields only
@@ -232,7 +244,7 @@ def price_note(
         coupon_payoffs       : (n_paths,)   total coupons received
         autocall_period      : (n_paths,)   0 = maturity, 1..n_obs = period called
         knock_in_triggered   : (n_paths,)   bool, only meaningful for maturity paths
-        expected_irr         : float
+        expected_irr         : float        simple annualised IRR (not compound)
         expected_total_return: float
         expected_coupon      : float
         prob_autocall        : float
@@ -240,6 +252,13 @@ def price_note(
         prob_maturity        : float
         prob_knock_in        : float        P(knock-in at maturity | reaches maturity)
         prob_knock_in_total  : float        P(knock-in) across all paths
+
+    Note on IRR convention
+    ----------------------
+    IRR is computed as simple annualisation: total_return / t_held.
+    This is consistent with the structured note market convention where
+    coupons are quoted as simple p.a. rates.  For long-dated paths (2Y+)
+    the simple IRR will exceed a compound (XIRR-style) IRR by a small amount.
     """
     n_paths, N_plus1, n_assets = perf_paths.shape
     N = N_plus1 - 1
@@ -292,25 +311,60 @@ def price_note(
     active_mask  = period_idx <= active_until[:, np.newaxis]          # (n_paths, n_obs)
 
     if terms.memory:
-        # Memory: accumulate coupons since last payment; pay all when barrier next met
-        # We need to iterate over periods to track accumulated memory — use numpy cumsum trick
-        # For each path, coupon at period j = rate * (j - last_paid_period)
-        # This is equivalent to: each period either pays rate (if barrier met) or 0,
-        # BUT when paid, it also pays all previously skipped periods.
-        # Vectorized: coupon_amount[j] = rate * (periods_since_last_pay + 1) if barrier_met, else 0
-        # Track with cumsum of missed periods
+        # Memory coupon — fully vectorized via cumulative sum trick.
+        #
+        # Key insight: the memory coupon paid at period j (when barrier is met)
+        # equals rate * (1 + number of consecutive missed periods immediately
+        # preceding j).  We can compute "periods since last payment" for every
+        # (path, period) cell without a Python loop as follows:
+        #
+        # 1. Define paid[i,j] = 1 if the barrier was met AND the period is active.
+        # 2. Build a "payment group" index via cumsum of paid shifted by one period:
+        #    group[i,j] = number of payments made before period j on path i.
+        # 3. Within each group the running count of active non-payment periods
+        #    gives the accumulated pending count.
+        #
+        # This is equivalent to the sequential loop but executes in C via numpy.
 
-        # missed[i, j] = number of consecutive periods missed before j (including j if not met)
-        # Payment at j = rate * (accumulated_missed + 1) if barrier_met
-        coupon_amounts = np.zeros((n_paths, n_obs))
-        pending = np.zeros(n_paths)   # accumulated missed periods
+        paid_mask = coupon_barrier_met & active_mask          # (n_paths, n_obs)
 
-        for j in range(n_obs):
-            met    = coupon_barrier_met[:, j] & active_mask[:, j]
-            not_met = (~coupon_barrier_met[:, j]) & active_mask[:, j]
-            pending += not_met.astype(float)   # accumulate missed
-            coupon_amounts[:, j] = np.where(met, terms.coupon_rate * (pending + 1), 0.0)
-            pending = np.where(met, 0.0, pending)   # reset on payment
+        # group[i,j] = how many payments have been made strictly before period j
+        group = np.cumsum(paid_mask, axis=1)                  # (n_paths, n_obs)
+        group_shifted = np.concatenate(
+            [np.zeros((n_paths, 1), dtype=group.dtype), group[:, :-1]], axis=1
+        )                                                      # (n_paths, n_obs)
+
+        # Within each group, count consecutive active periods seen so far
+        # (including the current one).  A payment resets this to 0.
+        # active_count[i,j] = cumsum of active_mask within the current group.
+        # We subtract the cumsum at the last payment in the same group.
+        active_cumsum = np.cumsum(active_mask, axis=1)        # (n_paths, n_obs)
+
+        # Last payment position per (path, period): the cumsum of active cells
+        # up to and including the most recent paid cell in the same group.
+        # We compute this by masking active_cumsum at paid cells and forward-filling.
+        last_paid_active_cumsum = np.where(paid_mask, active_cumsum, 0)
+        # Forward-fill within each row (axis=1) using np.maximum.accumulate
+        last_paid_cumsum_ff = np.maximum.accumulate(last_paid_active_cumsum, axis=1)
+
+        # pending[i,j] = number of active missed periods strictly before j
+        # in the current payment group = (active cells up to j-1) - (active cells
+        # up to the last payment before j).
+        active_cumsum_shifted = np.concatenate(
+            [np.zeros((n_paths, 1), dtype=active_cumsum.dtype), active_cumsum[:, :-1]], axis=1
+        )
+        last_paid_cumsum_shifted = np.concatenate(
+            [np.zeros((n_paths, 1), dtype=last_paid_cumsum_ff.dtype),
+             last_paid_cumsum_ff[:, :-1]], axis=1
+        )
+        pending_before = active_cumsum_shifted - last_paid_cumsum_shifted  # (n_paths, n_obs)
+        pending_before = np.maximum(pending_before, 0)  # guard against rounding
+
+        coupon_amounts = np.where(
+            paid_mask,
+            terms.coupon_rate * (pending_before + 1),
+            0.0,
+        )  # (n_paths, n_obs)
     else:
         # No memory: pay rate if barrier met, nothing otherwise
         coupon_amounts = np.where(

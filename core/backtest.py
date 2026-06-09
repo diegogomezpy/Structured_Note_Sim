@@ -33,6 +33,16 @@ def run_backtest(
     maturity_days   = round(terms.maturity * 252)
     obs_day_offsets = [round(t / terms.maturity * maturity_days) for t in terms.obs_times()]
 
+    # Need at least 2 * maturity_days rows: one full maturity before the first
+    # valid issue date and one full maturity after the last.
+    if len(prices) < 2 * maturity_days + 1:
+        raise ValueError(
+            f"Price history too short for backtest: {len(prices)} trading days available "
+            f"but at least {2 * maturity_days + 1} required "
+            f"(2 × {maturity_days}-day maturity window). "
+            f"Increase history_years or shorten the note maturity."
+        )
+
     # Natural bounds: need maturity_days of history before and after each issue date
     first_valid = prices.index[maturity_days]
     last_valid  = prices.index[-maturity_days]
@@ -104,21 +114,19 @@ def run_backtest(
         # ── Final payout ─────────────────────────────────────────────────
         mat_idx  = issue_idx + maturity_days
         perf_mat = prices.iloc[mat_idx].values.astype(float) / S0
-        perf_2d  = perf_mat.reshape(1, -1)
 
         if called:
-            # Principal always returned at autocall
+            # Principal always returned at autocall; maturity price not needed.
             principal = 1.0
         else:
             worst_final = float(perf_mat.min())
             knock_in    = worst_final < terms.knock_in_barrier
-            final_val   = float(_basket(perf_2d, terms.final_basket)[0])
+            # Note: no upside participation in either worst-of or best-of Phoenix notes.
+            # BBVA best-of final basket: cases A and B both pay exactly 100% when no KI.
             if knock_in:
                 principal = worst_final          # cash-equivalent physical delivery
             else:
                 principal = terms.principal_protection   # no KI → return floor (100%)
-                # Note: no upside participation in either worst-of or best-of Phoenix notes.
-                # BBVA best-of final basket: cases A and B both pay exactly 100%.
             t_held = terms.maturity
 
         payout = principal + total_coupons_paid
@@ -126,7 +134,7 @@ def run_backtest(
         irr    = (payout - 1.0) / t_held
 
         row: dict = {
-            "Issue Date":       issue_date.date(),
+            "Issue Date":       pd.Timestamp(issue_date),
             "Call Quarter":     call_quarter,
             "Principal":        principal,
             "Total Coupons":    total_coupons_paid,

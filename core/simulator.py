@@ -392,19 +392,21 @@ class HestonMultiSimulator:
         S0  = np.array([p.S0 for p in self.params])
         LR  = np.log(S_T / S0[np.newaxis, :])
 
-        # --- Vectorized realized correlation ---
-        # daily_lr: (n_total, N, n)
+        # --- Vectorized realized correlation (base paths only) ---
+        # Antithetic paths are constructed as -Z reflections of the base paths;
+        # including them would bias the realized correlation toward the input matrix
+        # by design, making the diagnostic circular.  We use only the first n_base
+        # paths (the original draws) for an honest out-of-sample check.
+        # daily_lr: (n_base, N, n)
         daily_lr = np.stack(
-            [np.diff(np.log(S[i]), axis=1) for i in range(n)],
+            [np.diff(np.log(S[i][:n_base]), axis=1) for i in range(n)],
             axis=2,
         )
-        # Demean per path: (n_total, N, n)
+        # Demean per path: (n_base, N, n)
         dm = daily_lr - daily_lr.mean(axis=1, keepdims=True)
-        # Covariance matrix per path, then mean: (n, n)
-        # cov[i,j] = sum_t dm[:,t,i]*dm[:,t,j] / (N-1)
-        # Using einsum: 'ptj,ptk->pjk' summed over time t, averaged over paths p
+        # Covariance matrix summed over time and paths: (n, n)
         cov_sum  = np.einsum('ptj,ptk->jk', dm, dm)          # (n, n)
-        cov_mean = cov_sum / ((self.N - 1) * n_total)
+        cov_mean = cov_sum / ((self.N - 1) * n_base)
         std_vec  = np.sqrt(np.diag(cov_mean))                 # (n,)
         realized_corr = cov_mean / np.outer(std_vec, std_vec)
         np.fill_diagonal(realized_corr, 1.0)
@@ -493,14 +495,14 @@ class HestonMultiSimulator:
             np.array([p.S0 for p in self.params])
         )
 
-        # Realized corr (recompute for plot using vectorized method)
+        # Realized corr (recompute for plot — base paths only, same reason as run())
+        n_base = self.n_paths
         daily_lr = np.stack(
-            [np.diff(np.log(self.S_paths[i]), axis=1) for i in range(n)], axis=2
+            [np.diff(np.log(self.S_paths[i][:n_base]), axis=1) for i in range(n)], axis=2
         )
-        n_total = daily_lr.shape[0]
         dm = daily_lr - daily_lr.mean(axis=1, keepdims=True)
         cov_sum  = np.einsum('ptj,ptk->jk', dm, dm)
-        cov_mean = cov_sum / ((self.N - 1) * n_total)
+        cov_mean = cov_sum / ((self.N - 1) * n_base)
         std_vec  = np.sqrt(np.diag(cov_mean))
         realized_corr = cov_mean / np.outer(std_vec, std_vec)
         np.fill_diagonal(realized_corr, 1.0)

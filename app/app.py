@@ -141,9 +141,12 @@ def _load_prices(tickers_tuple, years=5.0):
     return load_prices(source="yfinance", tickers=dict(tickers_tuple), years=years)
 
 @st.cache_data
-def _run_backtest_cached(tickers_tuple, terms_json, years=5.0,
+def _run_backtest_cached(tickers_tuple, terms_json,
                          bt_start_str=None, bt_end_str=None):
-    prices   = _load_prices(tickers_tuple, years=years)
+    # Always pull max history for backtesting: the user-selected history_years
+    # controls Heston calibration only.  The backtest needs the full available
+    # price series to maximise the number of valid issue dates.
+    prices   = _load_prices(tickers_tuple, years=None)
     t        = NoteTerms.from_json(terms_json)
     bt_start = pd.Timestamp(bt_start_str) if bt_start_str else None
     bt_end   = pd.Timestamp(bt_end_str)   if bt_end_str   else None
@@ -387,7 +390,7 @@ if st.session_state["page"] == "setup":
         n_paths = st.slider("Monte Carlo paths", 1000, 50000,
                              st.session_state["n_paths"], step=1000)
     with sc2:
-        seed = st.number_input("Random seed", value=st.session_state["seed"])
+        seed = int(st.number_input("Random seed", value=int(st.session_state["seed"])))
 
     st.divider()
 
@@ -655,7 +658,7 @@ elif st.session_state["page"] == "dashboard":
             # ── Summary metrics ───────────────────────────────────────
             st.header("Summary Statistics")
             c1, c2, c3, c4, c5 = st.columns(5)
-            c1.metric("Expected IRR p.a.",     f"{R['expected_irr']:.2%}")
+            c1.metric("Expected IRR p.a. (simple)",  f"{R['expected_irr']:.2%}")
             c2.metric("Expected Total Return", f"{R['expected_total_return']:.2%}")
             c3.metric("Expected Coupon",       f"{R['expected_coupon']:.2%}")
             c4.metric("P(Autocalled)",         f"{R['prob_autocall']:.2%}")
@@ -819,13 +822,14 @@ elif st.session_state["page"] == "dashboard":
         if _max_date and _bt_end_default and _bt_end_default > _max_date:
             _bt_end_default = _max_date
 
-        bdc1, bdc2 = st.columns(2)
+        bdc1, bdc2, bdc3 = st.columns([2, 2, 1])
         with bdc1:
             bt_start_val = st.date_input(
                 "Backtest start (issue dates from)",
                 value=_bt_start_default,
                 min_value=_min_date,
                 max_value=_max_date,
+                key="bt_start_picker",
             )
         with bdc2:
             bt_end_val = st.date_input(
@@ -833,19 +837,29 @@ elif st.session_state["page"] == "dashboard":
                 value=_bt_end_default,
                 min_value=_min_date,
                 max_value=_max_date,
+                key="bt_end_picker",
             )
+        with bdc3:
+            st.markdown("<br>", unsafe_allow_html=True)
+            apply_bt = st.button("Apply", key="bt_apply_btn", use_container_width=True)
 
-        st.session_state["bt_start_default"] = bt_start_val
-        st.session_state["bt_end_default"]   = bt_end_val
+        # Only commit the new date range when the user clicks Apply.
+        # This prevents an expensive backtest rerun on every keystroke.
+        if apply_bt:
+            st.session_state["bt_start_default"] = bt_start_val
+            st.session_state["bt_end_default"]   = bt_end_val
 
-        bt_start_str = str(bt_start_val) if bt_start_val else None
-        bt_end_str   = str(bt_end_val)   if bt_end_val   else None
+        # Use the last confirmed values (not the live picker state) as the
+        # actual filter passed to the backtest.
+        _confirmed_start = st.session_state.get("bt_start_default", _min_date)
+        _confirmed_end   = st.session_state.get("bt_end_default",   _max_date)
+        bt_start_str = str(_confirmed_start) if _confirmed_start else None
+        bt_end_str   = str(_confirmed_end)   if _confirmed_end   else None
 
         with st.spinner("Running historical backtest…"):
             try:
                 bt, bt_summary = _run_backtest_cached(
                     tickers_tuple, terms.to_json(),
-                    years=_history_years,
                     bt_start_str=bt_start_str,
                     bt_end_str=bt_end_str,
                 )
@@ -879,9 +893,9 @@ elif st.session_state["page"] == "dashboard":
             st.plotly_chart(build_backtest_irr_scatter(bt, color_map, tr),   use_container_width=True)
 
             try:
-                _hist_chart_prices = _load_prices(tickers_tuple, years=_history_years)
-                bt_start_mark = pd.Timestamp(str(bt["Issue Date"].min()))
-                bt_end_mark   = pd.Timestamp(str(bt["Issue Date"].max()))
+                _hist_chart_prices = _load_prices(tickers_tuple, years=None)
+                bt_start_mark = bt["Issue Date"].min()
+                bt_end_mark   = bt["Issue Date"].max()
                 st.plotly_chart(build_historical_prices(_hist_chart_prices, bt_start_mark, bt_end_mark, tr),
                                 use_container_width=True)
             except Exception:
@@ -904,7 +918,7 @@ elif st.session_state["page"] == "dashboard":
                 "Issue date",
                 issue_dates,
                 index=_issue_idx,
-                format_func=lambda d: str(d),
+                format_func=lambda d: d.strftime("%Y-%m-%d"),
                 key="bt_issue_selector",
             )
 
@@ -924,7 +938,7 @@ elif st.session_state["page"] == "dashboard":
                         st.plotly_chart(
                             build_historical_wof_path(
                                 _all_prices,
-                                issue_date        = pd.Timestamp(str(selected_issue)),
+                                issue_date        = selected_issue,
                                 maturity_days     = maturity_days,
                                 obs_day_offsets   = obs_day_offsets,
                                 knock_in_barrier  = terms.knock_in_barrier,
@@ -946,7 +960,7 @@ elif st.session_state["page"] == "dashboard":
             import datetime as _dt
             _issue_ts  = pd.Timestamp(run_terms.issue_date)
             _today_ts  = pd.Timestamp(_dt.date.today())
-            _mat_ts    = _issue_ts + pd.DateOffset(years=run_terms.maturity)
+            _mat_ts    = _issue_ts + pd.Timedelta(days=round(run_terms.maturity * 365.25))
             _mat_days  = round(run_terms.maturity * 252)
             _obs_offsets = [round(t / run_terms.maturity * _mat_days) for t in obs_times_l]
 

@@ -480,9 +480,9 @@ def build_historical_prices(
             mode="lines", name=col,
             line=dict(color=colors.get(col, _GREY), width=1.5),
         ))
-    fig.add_vline(x=bt_start, line_dash="dot", line_color=_GREY,
+    fig.add_vline(x=bt_start.isoformat(), line_dash="dot", line_color=_GREY,
                   annotation_text=tr("backtest_start"), annotation_position="top right")
-    fig.add_vline(x=bt_end,   line_dash="dot", line_color=_GREY,
+    fig.add_vline(x=bt_end.isoformat(),   line_dash="dot", line_color=_GREY,
                   annotation_text=tr("backtest_end"),   annotation_position="top left")
     fig.update_layout(
         xaxis=dict(title=tr("date_axis")),
