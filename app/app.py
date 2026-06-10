@@ -725,11 +725,32 @@ elif st.session_state["page"] == "dashboard":
 
         # Underlyings table
         st.markdown("**Underlyings**")
-        ul_df = pd.DataFrame([
-            {"Display Name": disp, "yfinance Symbol": sym}
+        _ul_rows_html = "".join(
+            "<tr>"
+            "<td style='padding:4px 8px;vertical-align:middle;'>"
+            + (
+                f"<img src='{TICKER_LOGOS[sym]}' width='24' height='24' "
+                f"style='border-radius:4px;vertical-align:middle;' "
+                f"onerror=\"this.style.display='none'\"/>"
+                if sym in TICKER_LOGOS else ""
+            )
+            + f"</td>"
+            f"<td style='padding:4px 8px;vertical-align:middle;'>{disp}</td>"
+            f"<td style='padding:4px 8px;vertical-align:middle;font-family:monospace;'>{sym}</td>"
+            "</tr>"
             for sym, disp in selected_tickers.items()
-        ])
-        st.dataframe(ul_df, use_container_width=True, hide_index=True)
+        )
+        st.markdown(
+            "<table style='border-collapse:collapse;width:100%'>"
+            "<thead><tr>"
+            "<th style='padding:4px 8px;text-align:left;border-bottom:1px solid #ddd;width:36px;'></th>"
+            "<th style='padding:4px 8px;text-align:left;border-bottom:1px solid #ddd;'>Display Name</th>"
+            "<th style='padding:4px 8px;text-align:left;border-bottom:1px solid #ddd;'>yfinance Symbol</th>"
+            "</tr></thead>"
+            f"<tbody>{_ul_rows_html}</tbody>"
+            "</table>",
+            unsafe_allow_html=True,
+        )
 
         st.divider()
         c1, c2, c3 = st.columns(3)
@@ -992,6 +1013,25 @@ elif st.session_state["page"] == "dashboard":
                 mc2.metric("Coupons",   f"{coupons:.2%}")
                 mc3.metric("IRR p.a.",  f"{irr:.2%}")
 
+                # Per-asset final performance
+                _disp_to_sym_pe = {disp: sym for sym, disp in selected_tickers.items()}
+                _pe_cols = st.columns(len(asset_names))
+                for _pe_i, (_pe_name, _pe_col) in enumerate(zip(asset_names, _pe_cols)):
+                    _pe_sym = _disp_to_sym_pe.get(_pe_name, "")
+                    _pe_logo = TICKER_LOGOS.get(_pe_sym, "")
+                    _pe_logo_html = (
+                        f"<img src='{_pe_logo}' width='24' height='24' "
+                        f"style='border-radius:4px;vertical-align:middle;margin-right:4px;' "
+                        f"onerror=\"this.style.display='none'\"/>"
+                        if _pe_logo else ""
+                    )
+                    _pe_final = float(asset_perf_pn[-1, _pe_i])
+                    _pe_col.markdown(
+                        f"{_pe_logo_html}<b style='vertical-align:middle;'>{_pe_name}</b>",
+                        unsafe_allow_html=True,
+                    )
+                    _pe_col.metric("Final perf.", f"{_pe_final:.1%}")
+
             with mc_tab4:
                 st.subheader("Correlation Diagnostics")
                 corr_SS       = R["corr_SS"]
@@ -1008,18 +1048,45 @@ elif st.session_state["page"] == "dashboard":
                 )
                 st.markdown("---")
                 st.subheader("Calibrated Heston Parameters")
+                _disp_to_sym = {disp: sym for sym, disp in selected_tickers.items()}
                 rows = []
                 for p in R["params"]:
                     ok, _ = p.feller_condition()
+                    _sym = _disp_to_sym.get(p.name, "")
+                    _logo_url = TICKER_LOGOS.get(_sym, "")
+                    _logo_html = (
+                        f"<img src='{_logo_url}' width='24' height='24' "
+                        f"style='border-radius:4px;vertical-align:middle;margin-right:6px;' "
+                        f"onerror=\"this.style.display='none'\"/>"
+                        if _logo_url else ""
+                    )
                     rows.append({
-                        "Asset": p.name, "S₀": f"{p.S0:.1f}",
+                        "Asset": f"{_logo_html}{p.name}", "S₀": f"{p.S0:.1f}",
                         "μ p.a.": f"{p.mu*100:.1f}%",
                         "V₀ σ":   f"{np.sqrt(p.V0)*100:.1f}%",
                         "θ σ LR": f"{np.sqrt(p.theta)*100:.1f}%",
                         "κ": f"{p.kappa:.3f}", "ξ": f"{p.xi:.3f}", "ρ": f"{p.rho:.3f}",
                         "Feller": "✅" if ok else "⚠️",
                     })
-                st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
+                _heston_cols = ["Asset", "S₀", "μ p.a.", "V₀ σ", "θ σ LR", "κ", "ξ", "ρ", "Feller"]
+                _th_cells = "".join(
+                    f"<th style='padding:4px 8px;text-align:left;border-bottom:1px solid #ddd;white-space:nowrap;'>{c}</th>"
+                    for c in _heston_cols
+                )
+                _heston_rows_html = "".join(
+                    "<tr>" + "".join(
+                        f"<td style='padding:4px 8px;vertical-align:middle;white-space:nowrap;'>{row[c]}</td>"
+                        for c in _heston_cols
+                    ) + "</tr>"
+                    for row in rows
+                )
+                st.markdown(
+                    f"<div style='overflow-x:auto'><table style='border-collapse:collapse;width:100%'>"
+                    f"<thead><tr>{_th_cells}</tr></thead>"
+                    f"<tbody>{_heston_rows_html}</tbody>"
+                    f"</table></div>",
+                    unsafe_allow_html=True,
+                )
                 st.info(f"**Student-t Copula:** ν = {R.get('t_dof','N/A')} d.f.")
 
     # ══════════════════════════════════════════════════════════════════
