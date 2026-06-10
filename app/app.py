@@ -1127,6 +1127,38 @@ elif st.session_state["page"] == "dashboard":
                         f"(degrees of freedom; lower ν → heavier joint tails and more simultaneous "
                         f"extreme moves across underlyings; ν > 30 approximates a Gaussian copula)")
 
+            st.markdown("---")
+            st.subheader("📄 Download Report")
+            if st.button("Generate PDF Report", key="gen_pdf_btn"):
+                with st.spinner("Building PDF…"):
+                    from pdf_report import generate_pdf_report
+                    _pdf_bytes = generate_pdf_report(
+                        terms=run_terms,
+                        results=R,
+                        asset_names=asset_names,
+                        figures={
+                            "irr_dist": build_irr_distribution(
+                                R["annualized_returns"], R["autocall_events"],
+                                R["expected_irr"], run_terms.coupon_pa, tr,
+                            ),
+                            "wof_fan": build_wof_fan(
+                                wof_paths, t_grid, run_terms.knock_in_barrier, obs_pairs, tr,
+                                autocall_barrier=run_terms.autocall_barrier,
+                            ),
+                            "corr": build_corr_heatmap(
+                                R["corr_SS"], asset_names, "Input",
+                            ),
+                        },
+                        lang="es" if lang_choice == "Español" else "en",
+                    )
+                st.download_button(
+                    "⬇ Download PDF",
+                    data=_pdf_bytes,
+                    file_name=f"{run_terms.name.replace(' ', '_')}_report.pdf",
+                    mime="application/pdf",
+                    key="dl_pdf_btn",
+                )
+
     # ══════════════════════════════════════════════════════════════════
     # TAB 2 — HISTORICAL BACKTEST
     # ══════════════════════════════════════════════════════════════════
