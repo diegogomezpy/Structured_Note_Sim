@@ -1,5 +1,6 @@
 {
   "name": "HSBC XS3376563584 \u2014 24M Monthly Phoenix",
+  "issuer": "HSBC",
   "maturity": 2.0,
   "payment_freq": "monthly",
   "coupon_pa": 0.1,

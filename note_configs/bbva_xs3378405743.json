@@ -1,5 +1,6 @@
 {
   "name": "BBVA XS3378405743 \u2014 18M Quarterly Phoenix",
+  "issuer": "BBVA",
   "maturity": 1.5,
   "payment_freq": "quarterly",
   "coupon_pa": 0.15,
