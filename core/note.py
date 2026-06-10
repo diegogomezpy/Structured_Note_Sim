@@ -248,6 +248,10 @@ class NoteTerms:
     final_basket:           BasketType  = "worst_of"
     final_redemption_barrier: float     = 1.00   # 'rescue' level for the final basket (see price_note)
     call_steepness:         float | None = None   # None = hard trigger (default)
+    # ── Classic / Growth Autocall extensions (default = no-op → plain Phoenix) ──
+    autocall_step_down:      float       = 0.0    # per-period decrement of autocall barrier (0 = constant)
+    autocall_floor:          float | None = None  # minimum autocall barrier when stepping down
+    coupon_at_autocall_only: bool        = False  # True = no periodic coupon; accrued premium paid as a lump at autocall
     name:                   str         = "Phoenix Memory Note"
     issuer:                 str         = ""      # display-only: e.g. "BBVA", "HSBC"
     tickers:                dict | None  = None
@@ -294,6 +298,25 @@ class NoteTerms:
     def obs_steps(self, N: int) -> list[int]:
         """Map observation times to simulation step indices."""
         return [round(t / self.maturity * N) for t in self.obs_times()]
+
+    def autocall_barrier_schedule(self) -> np.ndarray:
+        """
+        Per-observation autocall barrier levels, shape (n_obs,).
+
+        Constant at `autocall_barrier` unless `autocall_step_down > 0`, in which
+        case the barrier declines by `autocall_step_down` each period from the
+        first callable period (`autocall_start_period`), floored at
+        `autocall_floor` if set. This models "step-down" / growth autocalls such
+        as Citi XS3096699163 (100% declining 3% per period from obs 3, min 88%).
+        """
+        levels = np.full(self.n_obs, self.autocall_barrier, dtype=float)
+        if self.autocall_step_down and self.autocall_step_down > 0:
+            for j in range(self.autocall_start_period, self.n_obs + 1):
+                lvl = self.autocall_barrier - self.autocall_step_down * (j - self.autocall_start_period)
+                if self.autocall_floor is not None:
+                    lvl = max(lvl, self.autocall_floor)
+                levels[j - 1] = lvl
+        return levels
 
     def autocall_prob(self, basket_val: np.ndarray) -> np.ndarray:
         """
@@ -343,6 +366,9 @@ class NoteTerms:
             "final_basket":           self.final_basket,
             "final_redemption_barrier": self.final_redemption_barrier,
             "call_steepness":         self.call_steepness,
+            "autocall_step_down":     self.autocall_step_down,
+            "autocall_floor":         self.autocall_floor,
+            "coupon_at_autocall_only": self.coupon_at_autocall_only,
             "tickers":                self.tickers,
             "issue_date":             self.issue_date,
         }
@@ -484,8 +510,16 @@ def price_note(
     autocall_eligible = np.zeros(n_obs, dtype=bool)
     autocall_eligible[autocall_cond.start_period - 1:] = True  # 1-indexed → 0-indexed
 
-    # Autocall probabilities per period (uses NoteTerms.autocall_prob for soft/hard dispatch)
-    autocall_probs = terms.autocall_prob(autocall_basket_vals)   # (n_paths, n_obs)
+    # Autocall probabilities per period, using a (possibly step-down) per-period
+    # barrier schedule. For the common constant-barrier case this reduces exactly
+    # to NoteTerms.autocall_prob(); the schedule generalises it to growth autocalls.
+    autocall_levels = terms.autocall_barrier_schedule()          # (n_obs,)
+    if terms.call_steepness is None:
+        autocall_probs = (autocall_basket_vals >= autocall_levels[np.newaxis, :]).astype(float)
+    else:
+        x = np.clip(-terms.call_steepness * (autocall_basket_vals - autocall_levels[np.newaxis, :]),
+                    -500.0, 500.0)
+        autocall_probs = 1.0 / (1.0 + np.exp(x))
     autocall_probs[:, ~autocall_eligible] = 0.0
 
     autocall_triggered = call_draws < autocall_probs             # (n_paths, n_obs)
@@ -573,6 +607,21 @@ def price_note(
         )
 
     total_coupons = coupon_amounts.sum(axis=1)   # (n_paths,)
+
+    # ------------------------------------------------------------------
+    # Classic / Growth Autocall premium
+    # ------------------------------------------------------------------
+    # For a growth autocall (e.g. Citi XS3096699163) there is NO periodic coupon.
+    # Instead an accrued premium is paid as a lump ONLY when the note autocalls:
+    # at observation j the redemption is principal + coupon_rate * j (the premium
+    # accrues from inception at coupon_rate per period). Paths that reach maturity
+    # without autocalling receive no premium.
+    if terms.coupon_at_autocall_only:
+        total_coupons = np.where(
+            any_autocalled,
+            terms.coupon_rate * autocall_period.astype(float),
+            0.0,
+        )
 
     # ------------------------------------------------------------------
     # Principal redemption — dispatched via knock_in_cond + protection_cond

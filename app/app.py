@@ -604,8 +604,8 @@ if st.session_state["page"] == "setup":
     st.divider()
 
     # ── Confirm ───────────────────────────────────────────────────────────────────
-    if len(selected_labels) < 2:
-        st.warning("Select at least 2 underlyings to continue.")
+    if len(selected_labels) < 1:
+        st.warning("Select at least 1 underlying to continue.")
     else:
         if st.button("✅ Confirm & Load Dashboard", type="primary",
                      use_container_width=True):
@@ -641,6 +641,12 @@ if st.session_state["page"] == "setup":
                 final_basket          = final_basket,
                 final_redemption_barrier = rescue_bar_pct / 100.0,
                 call_steepness        = None,   # hard trigger (deterministic)
+                # Advanced fields (growth/classic autocall) are not exposed as UI
+                # widgets — preserve them from the loaded config so they survive
+                # a round-trip through the setup form.
+                autocall_step_down      = getattr(base, "autocall_step_down", 0.0) if loaded_terms else 0.0,
+                autocall_floor          = getattr(base, "autocall_floor", None) if loaded_terms else None,
+                coupon_at_autocall_only = getattr(base, "coupon_at_autocall_only", False) if loaded_terms else False,
                 tickers               = selected_tickers,
                 issue_date            = issue_date_input.isoformat() if _issue_is_live else None,
             )

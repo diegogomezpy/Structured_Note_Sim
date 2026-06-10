@@ -1,0 +1,24 @@
+{
+  "name": "Santander XS3242406752 — 2Y Quarterly Phoenix Memory",
+  "issuer": "Santander",
+  "maturity": 2.0,
+  "payment_freq": "quarterly",
+  "coupon_pa": 0.106,
+  "coupon_barrier": 0.5,
+  "autocall_barrier": 1.0,
+  "autocall_start_period": 1,
+  "knock_in_barrier": 0.5,
+  "principal_protection": 1.0,
+  "memory": true,
+  "coupon_basket": "worst_of",
+  "autocall_basket": "worst_of",
+  "final_basket": "worst_of",
+  "final_redemption_barrier": 1.0,
+  "call_steepness": null,
+  "tickers": {
+    "C": "Citigroup",
+    "GLE.PA": "Societe Generale",
+    "MS": "Morgan Stanley"
+  },
+  "issue_date": "2025-12-30"
+}

@@ -1,0 +1,22 @@
+{
+  "name": "HSBC XS3287776739 — 18M Quarterly Phoenix Memory (AMD)",
+  "issuer": "HSBC",
+  "maturity": 1.5,
+  "payment_freq": "quarterly",
+  "coupon_pa": 0.18,
+  "coupon_barrier": 0.555,
+  "autocall_barrier": 1.0,
+  "autocall_start_period": 1,
+  "knock_in_barrier": 0.555,
+  "principal_protection": 1.0,
+  "memory": true,
+  "coupon_basket": "worst_of",
+  "autocall_basket": "worst_of",
+  "final_basket": "worst_of",
+  "final_redemption_barrier": 1.0,
+  "call_steepness": null,
+  "tickers": {
+    "AMD": "Advanced Micro Devices"
+  },
+  "issue_date": "2026-03-24"
+}

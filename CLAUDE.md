@@ -80,6 +80,23 @@ Configs live in `note_configs/`. Required fields for `NoteTerms.from_dict`:
 
 `issue_date` is optional; when set and on/before today, the app shows a "Current Performance" tab. `call_steepness: null` means hard trigger.
 
+### Optional fields
+
+- `coupon_barrier: 0.0` → **guaranteed coupon** (basket always ≥ 0): pays every active period regardless of underlying level. Used for Reverse Convertibles (e.g. Barclays XS3305367727).
+- Single-underlying notes are supported: a `tickers` dict with one entry (e.g. HSBC XS3287776739 on AMD). `worst_of`/`best_of`/`average` of one asset reduces to that asset. The setup form allows ≥ 1 underlying.
+
+### Growth / Classic Autocall (step-down barrier + step-up premium)
+
+Three optional fields (all default to a no-op, so plain Phoenix notes are unaffected):
+
+- `autocall_step_down` (float, default `0.0`): the autocall barrier declines by this amount each period from `autocall_start_period`. `NoteTerms.autocall_barrier_schedule()` returns the per-period levels; `price_note()` compares each observation against the schedule rather than a scalar.
+- `autocall_floor` (float | null): minimum barrier under step-down.
+- `coupon_at_autocall_only` (bool, default `false`): no periodic coupon — instead an accrued premium of `coupon_rate × observation_index` is paid as a lump **only** when the note autocalls (zero if held to maturity). `coupon_pa` carries the premium accrual rate.
+
+Example: Citi XS3096699163 — barrier 100% stepping down 3%/period from obs 3 (floor 88%), 12% p.a. premium paid only at call. Config: `autocall_step_down: 0.03, autocall_floor: 0.88, coupon_at_autocall_only: true, coupon_pa: 0.12, autocall_start_period: 3`.
+
+These fields are **not** exposed as setup-form widgets; they are preserved from the loaded JSON config across a setup round-trip via `getattr(base, ...)` in `app/app.py`.
+
 ## Basket types and final redemption
 
 The `final_basket` + `final_redemption_barrier` fields implement the BBVA-style "best-of rescue": if the best performer at maturity is ≥ `final_redemption_barrier`, the note redeems at par even if the knock-in was breached. With `final_basket="worst_of"` (standard), the rescue condition can never coincide with a barrier event and the logic reduces to standard worst-of.
