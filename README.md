@@ -39,11 +39,13 @@ The project covers the full quantitative workflow:
 │   ├── translations.py        # Bilingual string registry (EN/ES)
 │   └── __init__.py
 │
+├── note_configs/
+│   ├── hsbc_xs3376563584.json # Reference note config — HSBC 24M Monthly Phoenix
+│   └── bbva_xs3378405743.json # Reference note config — BBVA 18M Quarterly Phoenix
+│
 ├── .streamlit/
 │   └── config.toml            # Light theme + green palette
 │
-├── hsbc_xs3376563584.json     # Reference note config — HSBC 24M Monthly Phoenix
-├── bbva_xs3378405743.json     # Reference note config — BBVA 18M Quarterly Phoenix
 ├── requirements.txt
 └── README.md
 ```
@@ -135,18 +137,22 @@ The `NoteTerms` dataclass captures the full specification of a Phoenix Memory Au
 | Parameter | Description | Default |
 |-----------|-------------|---------|
 | `maturity` | Note tenor in years | 1.0 |
-| `n_obs` | Number of observation periods | 4 |
-| `coupon_rate` | Coupon per period (fraction) | 0.025 |
+| `payment_freq` | Observation frequency (`monthly`/`quarterly`/`semi-annual`/`annual`) | `quarterly` |
+| `coupon_pa` | Annualised coupon rate (e.g. `0.10` = 10% p.a.) | 0.10 |
 | `coupon_barrier` | Basket must be ≥ this for coupon | 0.55 |
 | `autocall_barrier` | Basket must be ≥ this for autocall | 1.00 |
-| `autocall_start_period` | First period eligible for autocall | 1 |
-| `knock_in_barrier` | European KI checked at final valuation only | 0.55 |
-| `principal_protection` | Floor on maturity redemption (no KI) | 1.00 |
+| `autocall_start_period` | First period eligible for autocall (1-indexed, ≥ 1) | 1 |
+| `knock_in_barrier` | European KI — checked only at final valuation date | 0.55 |
+| `principal_protection` | Maturity redemption when no capital loss | 1.00 |
 | `memory` | Accumulate missed coupons (Phoenix mechanic) | True |
 | `coupon_basket` | `worst_of` / `best_of` / `average` | `worst_of` |
 | `autocall_basket` | `worst_of` / `best_of` / `average` | `worst_of` |
-| `final_basket` | `worst_of` / `best_of` / `average` | `worst_of` |
+| `final_basket` | `worst_of` / `best_of` / `average` for final redemption check | `worst_of` |
+| `final_redemption_barrier` | Best-of rescue level — par returned if `final_basket ≥` this | 1.00 |
 | `tickers` | `{yf_symbol: display_name}` — stored in JSON config | `{}` |
+| `issue_date` | `"YYYY-MM-DD"` — enables Current Performance tab when set | `None` |
+
+> **Derived fields** (never stored, always computed): `n_obs = maturity × periods_per_year`, `coupon_rate = coupon_pa / periods_per_year`.
 
 ### Payoff Logic
 
@@ -157,8 +163,9 @@ The `NoteTerms` dataclass captures the full specification of a Phoenix Memory Au
 
 **At maturity (if not autocalled):**
 
-- If `worst_of_final < knock_in_barrier` → cash-equivalent physical delivery: payout = worst-of final performance
-- Else → `max(principal_protection, final_basket_final)`
+- **Rescue check:** if `final_basket ≥ final_redemption_barrier` → redeem at `principal_protection` (par) regardless of the KI
+- **Capital loss:** if `worst_of_final < knock_in_barrier` AND not rescued → cash-equivalent physical delivery: payout = worst-of final performance
+- **Par redemption:** otherwise → `principal_protection`
 
 **IRR:** simple annualisation — `total_return / t_held` — consistent with how structured note coupons are quoted.
 
@@ -168,8 +175,8 @@ Two real term sheets are included as ready-to-use JSON configs:
 
 | File | Issuer | Underlyings | Tenor | Coupon | KI |
 |------|--------|-------------|-------|--------|-----|
-| `hsbc_xs3376563584.json` | HSBC | GS / JPM / MS | 24M monthly | 10% p.a. | 55% European |
-| `bbva_xs3378405743.json` | BBVA | NVDA / PLTR / TSLA | 18M quarterly | 15% p.a. | 50% European |
+| `note_configs/hsbc_xs3376563584.json` | HSBC | GS / JPM / MS | 24M monthly | 10% p.a. | 55% European |
+| `note_configs/bbva_xs3378405743.json` | BBVA | NVDA / PLTR / TSLA | 18M quarterly | 15% p.a. | 50% European |
 
 Both use memory coupons, 100% autocall barrier, and worst-of basket for coupons/autocall. The BBVA note uses best-of for the final redemption condition.
 
@@ -237,8 +244,9 @@ S0_vec     = np.array([p.S0 for p in result.params]).reshape(1, 1, -1)
 perf_paths = sim_prices / S0_vec
 
 terms = NoteTerms(
-    n_obs=4, coupon_rate=0.025, coupon_barrier=0.55,
-    autocall_barrier=1.00, knock_in_barrier=0.55, memory=True,
+    maturity=1.0, payment_freq="quarterly", coupon_pa=0.10,
+    coupon_barrier=0.55, autocall_barrier=1.00,
+    knock_in_barrier=0.55, memory=True,
 )
 output = price_note(perf_paths, terms, seed=43)
 print(f"Expected IRR:  {output['expected_irr']:.2%}")

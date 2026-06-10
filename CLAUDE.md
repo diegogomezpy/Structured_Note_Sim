@@ -36,7 +36,9 @@ The Streamlit app (`app/app.py`) wires these together. All Plotly figure builder
 
 `NoteTerms` stores human-readable fields (`maturity`, `payment_freq`, `coupon_pa`) and derives `n_obs`, `coupon_rate`, `periods_per_year` as `@property`. The JSON configs and UI sliders use the human-readable fields only. Derived values are never stored.
 
-`from_dict` / `from_json` handle legacy configs that stored `n_obs` + `coupon_rate` directly — these are back-converted on load.
+`from_dict` / `from_json` handle legacy configs that stored `n_obs` + `coupon_rate` directly — these are back-converted on load. Unknown keys in the input dict are **not** silently dropped: `from_dict` emits `warnings.warn` listing any unrecognised keys, so JSON typos surface immediately.
+
+`autocall_start_period` is validated in `__post_init__`: values < 1 raise `ValueError`. (A value of 0 would silently resolve to Python's `[-1:]` slice and enable only the last period.)
 
 ### Autocall trigger
 
@@ -86,9 +88,13 @@ The `final_basket` + `final_redemption_barrier` fields implement the BBVA-style 
 
 The app has two pages controlled by `st.session_state["page"]`: `"setup"` and `"dashboard"`. All heavy computation (calibration, simulation, backtest) is cached via `@st.cache_data`. Cache keys for the backtest use `tickers_tuple` (a `tuple` of `(sym, name)` pairs) and `terms.to_json()`. Simulation results are stored in `st.session_state["results"]` and are `None` until the user clicks "Run Simulation".
 
-## Known issues (from code review)
+## Charts — barrier lines
 
-- `build_wof_fan` and `build_path_wof_chart` in `charts.py` label the KI barrier line as "Floor / Call Strike" — it should say "Knock-in barrier" and also draw the autocall barrier line separately.
-- `_mat_ts` in the Current Performance tab uses calendar-day maturity (`365.25`) while `_mat_days` uses trading-day maturity (`252`), causing the displayed maturity date to drift from the observation offsets for longer notes.
-- `NoteTerms.from_dict` silently drops unknown keys — JSON typos go undetected.
-- `_mle_refine` in `calibrator.py` uses a Python loop over time steps; vectorizable for significant speedup.
+`build_wof_fan` and `build_path_wof_chart` both accept an optional `autocall_barrier` kwarg and draw it as a grey dotted line. The KI barrier is drawn as a red dashed line labelled "Knock-in barrier". Pass both from the caller:
+
+```python
+build_wof_fan(wof_paths, t_grid, terms.knock_in_barrier, obs_pairs, tr,
+              autocall_barrier=terms.autocall_barrier)
+```
+
+`build_historical_wof_path` requires a `coupon_barrier` parameter (separate from `knock_in_barrier`) — it is used to colour observation markers green (coupon paid) or red (missed). Do not conflate with the KI barrier.
