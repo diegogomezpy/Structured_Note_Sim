@@ -93,7 +93,8 @@ class NoteTerms:
     coupon_basket:          BasketType  = "worst_of"
     autocall_basket:        BasketType  = "worst_of"
     final_basket:           BasketType  = "worst_of"
-    call_steepness:         float       = 100.0
+    final_redemption_barrier: float     = 1.00   # 'rescue' level for the final basket (see price_note)
+    call_steepness:         float | None = None   # None = hard trigger (default)
     name:                   str         = "Phoenix Memory Note"
     tickers:                dict        = None
     issue_date:             str         = None   # "YYYY-MM-DD" — enables Current Performance tab
@@ -138,18 +139,27 @@ class NoteTerms:
 
     def autocall_prob(self, basket_val: np.ndarray) -> np.ndarray:
         """
-        Sigmoid autocall probability centred at autocall_barrier.
+        Autocall trigger probability at the observation date.
 
-        At the default steepness of 100 this is effectively a hard trigger:
-        P ≈ 0 below the barrier and P ≈ 1 above it.  Lower steepness values
-        produce a smooth soft-trigger.
+        call_steepness = None (default) — HARD TRIGGER:
+            Returns exactly 1.0 where basket >= autocall_barrier, else 0.0.
+            This is how real autocallables work: the call is a deterministic
+            function of the observed level, not a coin flip. Because the
+            downstream check is `uniform_draw < prob` with draws in [0, 1),
+            probabilities of exactly 0/1 make the trigger fully deterministic
+            (independent of the RNG seed) in both price_note() and the
+            historical backtest.
 
-        A pure sigmoid is used here rather than a sigmoid + np.where floor.
-        The np.where floor creates a discontinuity at exactly the barrier
-        (sigmoid approaches ~0.5 from above but floor clamps to 0 from below),
-        which would distort pricing with soft-trigger settings.  The sigmoid
-        alone already gives P < 1e-10 at 10% below the barrier for steepness=100.
+        call_steepness = float — SOFT TRIGGER (sigmoid):
+            Smooth sigmoid centred at the barrier, useful for sensitivity /
+            "fuzzy barrier" analysis. Note that moderate steepness values are
+            NOT effectively hard: at steepness=100, a basket sitting 1% below
+            the barrier still autocalls with probability ≈ 27%, and 1% above
+            only ≈ 73%. Use steepness >= ~2000 if you want a near-hard sigmoid
+            (P ≈ 1e-9 at ±1%).
         """
+        if self.call_steepness is None:
+            return (basket_val >= self.autocall_barrier).astype(float)
         x = np.clip(-self.call_steepness * (basket_val - self.autocall_barrier), -500.0, 500.0)
         return 1.0 / (1.0 + np.exp(x))
 
@@ -172,6 +182,7 @@ class NoteTerms:
             "coupon_basket":          self.coupon_basket,
             "autocall_basket":        self.autocall_basket,
             "final_basket":           self.final_basket,
+            "final_redemption_barrier": self.final_redemption_barrier,
             "call_steepness":         self.call_steepness,
             "tickers":                self.tickers,
             "issue_date":             self.issue_date,
@@ -184,6 +195,14 @@ class NoteTerms:
         and old format (n_obs + coupon_rate) for backwards compatibility.
         """
         d = dict(d)  # don't mutate caller's dict
+
+        # ── Legacy hard-trigger migration ─────────────────────────────
+        # Older configs stored call_steepness=100.0 under the (incorrect)
+        # assumption that it behaved as a hard trigger. Map it to None
+        # (true hard trigger) so legacy JSONs price as originally intended.
+        # Any other explicit value is respected as a deliberate soft trigger.
+        if d.get("call_steepness") == 100.0:
+            d["call_steepness"] = None
 
         # ── Old-format migration ──────────────────────────────────────
         if "n_obs" in d or "coupon_rate" in d:
@@ -381,21 +400,39 @@ def price_note(
     # Autocalled paths: receive 100% principal back
     autocall_principal = np.ones(n_paths)
 
-    # Maturity paths: check knock-in
+    # Maturity paths: check knock-in + final redemption condition
     final_basket_val = _basket(perf_paths[:, N, :], terms.final_basket)   # (n_paths,)
     worst_final      = perf_paths[:, N, :].min(axis=1)                    # always worst-of for KI check
 
-    knock_in = worst_final < terms.knock_in_barrier   # (n_paths,)
+    # Barrier (knock-in) event: worst-of below the KI barrier at final valuation
+    barrier_event = worst_final < terms.knock_in_barrier   # (n_paths,)
 
-    # No knock-in: always return principal_protection (e.g. 100%).
-    # This is correct for both worst-of and best-of final basket notes:
-    #   - HSBC worst-of: no KI → 100% principal (no upside participation)
-    #   - BBVA best-of: no KI → 100% regardless of where best-of lands (cases A and B both = 100%)
-    # Knock-in: cash-equivalent physical delivery = worst-of final performance
+    # Final redemption condition ('rescue'): if the final basket value is at or
+    # above final_redemption_barrier, the note redeems at par EVEN IF the
+    # knock-in barrier was breached.
+    #
+    # This implements term sheets like BBVA XS3378405743 (Final Payout xi —
+    # Barrier and Knock-in):
+    #   (A) Best Value >= 100%                     -> 100%
+    #   (B) Best Value < 100% and no Knock-in      -> 100%
+    #   (C) Best Value < 100% AND Knock-in         -> physical delivery of worst
+    # i.e. capital loss requires BOTH worst < KI AND best < 100%. With
+    # final_basket="best_of" and final_redemption_barrier=1.0 the logic below
+    # reproduces (A)/(B)/(C) exactly.
+    #
+    # For plain worst-of notes (e.g. HSBC XS3376563584, final_basket="worst_of")
+    # the rescue condition (worst >= 100%) can never coincide with a barrier
+    # event (worst < 55%), so this reduces to the standard payoff unchanged.
+    rescued      = final_basket_val >= terms.final_redemption_barrier
+    capital_loss = barrier_event & ~rescued
+
+    # Capital loss: cash-equivalent physical delivery = worst-of final performance.
+    # Otherwise: principal_protection (100%) regardless of basket level (no upside
+    # participation in a Phoenix).
     maturity_principal = np.where(
-        knock_in,
+        capital_loss,
         worst_final,                       # cash equiv. of physical delivery
-        terms.principal_protection,        # no knock-in → return floor (100% for both note types)
+        terms.principal_protection,        # par redemption
     )
 
     # Combine
@@ -424,7 +461,11 @@ def price_note(
     # Summary statistics
     # ------------------------------------------------------------------
     maturity_mask = ~any_autocalled
-    ki_total      = knock_in & maturity_mask
+    # 'Knock-in' in all reported stats means CAPITAL LOSS: barrier breached AND
+    # final redemption condition not met (the 'rescue'). For worst-of final
+    # baskets the two are identical; for best-of (BBVA) they differ.
+    ki_total      = capital_loss & maturity_mask
+    be_total      = barrier_event & maturity_mask   # barrier breached (incl. rescued paths)
 
     return {
         # Per-path arrays (for Streamlit plots)
@@ -446,8 +487,10 @@ def price_note(
         "prob_autocall":            float(any_autocalled.mean()),
         "prob_autocall_by_period":  [float((autocall_period == j).mean()) for j in range(1, n_obs + 1)],
         "prob_maturity":            float(maturity_mask.mean()),
-        "prob_knock_in":            float(knock_in[maturity_mask].mean()) if maturity_mask.any() else 0.0,
+        "prob_knock_in":            float(capital_loss[maturity_mask].mean()) if maturity_mask.any() else 0.0,
         "prob_knock_in_total":      float(ki_total.mean()),
+        "prob_barrier_event":       float(be_total.mean()),   # incl. paths rescued by final condition
+        "prob_rescued":             float((be_total & ~ki_total).mean()),
 
         # Legacy aliases
         "prob_floor":               float(ki_total.mean()),

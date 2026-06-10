@@ -3,6 +3,19 @@ core/backtest.py
 ----------------
 Historical backtest: replay the note on every valid issue date using
 actual realized index prices (no simulation).
+
+Each historical issue date is treated as ONE 'path': a (n_issues, N+1,
+n_assets) performance array is built from realized prices and evaluated by
+the SAME vectorized payoff engine (core.note.price_note) used for the Monte
+Carlo. There is deliberately no second implementation of the payoff here —
+keeping a single engine means term-sheet fixes (memory coupons, hard
+trigger, best-of final-redemption rescue, ...) apply to simulation and
+backtest identically and cannot drift apart.
+
+This is exact because the autocall trigger is deterministic by default
+(call_steepness=None): the payoff of a realized path does not depend on any
+RNG. If a soft trigger is explicitly configured, the seed controls the
+Bernoulli call draws, as in price_note.
 """
 
 from __future__ import annotations
@@ -10,41 +23,40 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
-from core.note import NoteTerms, _basket
+from core.note import NoteTerms, price_note
 
 
 def run_backtest(
-    prices:           pd.DataFrame,
-    terms:            NoteTerms,
-    issue_freq_weeks: int = 2,
-    seed:             int = 42,
-    bt_start:         pd.Timestamp | None = None,
-    bt_end:           pd.Timestamp | None = None,
+    prices:     pd.DataFrame,
+    terms:      NoteTerms,
+    issue_freq: str = "MS",   # pandas offset alias; "MS" = monthly (month start)
+    seed:       int = 42,
+    bt_start:   pd.Timestamp | None = None,
+    bt_end:     pd.Timestamp | None = None,
 ) -> tuple[pd.DataFrame, dict]:
     """
     bt_start / bt_end : optional date range for issue dates.
         If provided, only issue dates within [bt_start, bt_end] are tested.
-        The prices DataFrame must still cover the full maturity window around
+        The prices DataFrame must still cover the full maturity window after
         each issue date, so pass the full price history here.
     """
+    maturity_days = round(terms.maturity * 252)
 
-    rng = np.random.default_rng(seed)
-
-    maturity_days   = round(terms.maturity * 252)
-    obs_day_offsets = [round(t / terms.maturity * maturity_days) for t in terms.obs_times()]
-
-    # Need at least 2 * maturity_days rows: one full maturity before the first
-    # valid issue date and one full maturity after the last.
-    if len(prices) < 2 * maturity_days + 1:
+    # Need maturity_days + 1 rows: at least one issue date with a full
+    # maturity window of realized prices after it. (No history is required
+    # BEFORE an issue date — replaying a note only needs data from issue
+    # to maturity, so issues are valid from the first day of aligned history.)
+    if len(prices) < maturity_days + 1:
         raise ValueError(
             f"Price history too short for backtest: {len(prices)} trading days available "
-            f"but at least {2 * maturity_days + 1} required "
-            f"(2 × {maturity_days}-day maturity window). "
-            f"Increase history_years or shorten the note maturity."
+            f"but at least {maturity_days + 1} required "
+            f"(one full {maturity_days}-day maturity window after the first issue date). "
+            f"Shorten the note maturity or check the underlyings' history."
         )
 
-    # Natural bounds: need maturity_days of history before and after each issue date
-    first_valid = prices.index[maturity_days]
+    # Natural bounds: issues valid from the start of history up to one full
+    # maturity window before the end of history.
+    first_valid = prices.index[0]
     last_valid  = prices.index[-maturity_days]
 
     # Apply optional user-specified date range on top of natural bounds
@@ -56,103 +68,60 @@ def run_backtest(
     if first_valid > last_valid:
         return pd.DataFrame(), {}
 
-    sampled     = pd.date_range(start=first_valid, end=last_valid,
-                                freq=f"{issue_freq_weeks}W")
+    # Monthly issue dates ("MS" = first of each month; each is snapped to the
+    # next trading day via searchsorted below). Monthly sampling reduces the
+    # overlap between consecutive issues vs a finer grid, so the summary
+    # stats are a little less autocorrelated.
+    sampled = pd.date_range(start=first_valid, end=last_valid, freq=issue_freq)
 
+    # ── Resolve issue dates to trading-day indices ─────────────────────────
+    price_arr   = prices.values.astype(float)
     asset_names = list(prices.columns)
-    records     = []
+    n_assets    = len(asset_names)
 
-    for issue_date in sampled:
-        issue_idx = prices.index.searchsorted(issue_date)
-        if issue_idx >= len(prices) - maturity_days:
+    issue_idxs:  list[int]          = []
+    issue_dates: list[pd.Timestamp] = []
+    for d in sampled:
+        idx = prices.index.searchsorted(d)
+        if idx >= len(prices) - maturity_days:
             continue
+        issue_idxs.append(int(idx))
+        issue_dates.append(prices.index[idx])
 
-        issue_date = prices.index[issue_idx]
-        S0         = prices.iloc[issue_idx].values.astype(float)
+    if not issue_idxs:
+        return pd.DataFrame(), {}
 
-        called               = False
-        call_quarter         = 0
-        t_held               = terms.maturity
-        pending_coupons      = 0   # memory: periods missed since last payment
-        total_coupons_paid   = 0.0 # running sum of ALL coupons paid across periods
+    n_issues = len(issue_idxs)
 
-        for q, offset in enumerate(obs_day_offsets):
-            obs_idx = issue_idx + offset
-            if obs_idx >= len(prices):
-                break
+    # ── Build the performance array: each issue date is one 'path' ────────
+    # perf[i, t, k] = price of asset k, t trading days after issue i, / S0.
+    # Window slicing via broadcast indexing: (n_issues, N+1) row indices.
+    offsets  = np.arange(maturity_days + 1)                       # (N+1,)
+    row_idx  = np.asarray(issue_idxs)[:, None] + offsets[None, :] # (n_issues, N+1)
+    windows  = price_arr[row_idx]                                 # (n_issues, N+1, n_assets)
+    S0       = windows[:, 0:1, :]                                 # (n_issues, 1, n_assets)
+    perf     = windows / S0
 
-            perf     = prices.iloc[obs_idx].values.astype(float) / S0
-            perf_2d  = perf.reshape(1, -1)
+    # ── Evaluate with the shared payoff engine ─────────────────────────────
+    res = price_note(perf, terms, seed=seed)
 
-            coupon_val   = float(_basket(perf_2d, terms.coupon_basket)[0])
-            autocall_val = float(_basket(perf_2d, terms.autocall_basket)[0])
+    perf_mat = perf[:, -1, :]                                     # (n_issues, n_assets)
 
-            # ── Coupon for this period ────────────────────────────────────
-            if coupon_val >= terms.coupon_barrier:
-                if terms.memory:
-                    # Pay this period + all previously missed periods
-                    period_coupon = terms.coupon_rate * (pending_coupons + 1)
-                    pending_coupons = 0
-                else:
-                    period_coupon = terms.coupon_rate
-            else:
-                period_coupon = 0.0
-                if terms.memory:
-                    pending_coupons += 1
+    bt = pd.DataFrame({
+        "Issue Date":       pd.to_datetime(issue_dates),
+        "Call Quarter":     res["autocall_period"],
+        "Principal":        res["principal_payoffs"],
+        "Knock-in":         res["knock_in_triggered"],
+        "Total Coupons":    res["coupon_payoffs"],
+        "Payout":           res["nominal_payoffs"],
+        "IRR":              res["annualized_returns"],
+        "Worst Asset":      [asset_names[j] for j in perf_mat.argmin(axis=1)],
+        "Worst Final Perf": perf_mat.min(axis=1),
+    })
+    for k, name in enumerate(asset_names):
+        bt[f"{name} Perf"] = perf_mat[:, k]
 
-            total_coupons_paid += period_coupon
-
-            # ── Autocall check ────────────────────────────────────────────
-            if q + 1 >= terms.autocall_start_period:
-                p_call = float(terms.autocall_prob(np.array([autocall_val]))[0])
-                if rng.random() < p_call:
-                    t_held       = terms.obs_times()[q]
-                    call_quarter = q + 1
-                    called       = True
-                    break
-
-        # ── Final payout ─────────────────────────────────────────────────
-        mat_idx  = issue_idx + maturity_days
-        perf_mat = prices.iloc[mat_idx].values.astype(float) / S0
-
-        if called:
-            # Principal always returned at autocall; maturity price not needed.
-            principal = 1.0
-        else:
-            worst_final = float(perf_mat.min())
-            knock_in    = worst_final < terms.knock_in_barrier
-            # Note: no upside participation in either worst-of or best-of Phoenix notes.
-            # BBVA best-of final basket: cases A and B both pay exactly 100% when no KI.
-            if knock_in:
-                principal = worst_final          # cash-equivalent physical delivery
-            else:
-                principal = terms.principal_protection   # no KI → return floor (100%)
-            t_held = terms.maturity
-
-        payout = principal + total_coupons_paid
-        # Simple annualised IRR — consistent with price_note()
-        irr    = (payout - 1.0) / t_held
-
-        row: dict = {
-            "Issue Date":       pd.Timestamp(issue_date),
-            "Call Quarter":     call_quarter,
-            "Principal":        principal,
-            "Total Coupons":    total_coupons_paid,
-            "Payout":           payout,
-            "IRR":              irr,
-            "Worst Asset":      asset_names[int(perf_mat.argmin())],
-            "Worst Final Perf": float(perf_mat.min()),
-        }
-        for i, name in enumerate(asset_names):
-            row[f"{name} Perf"] = float(perf_mat[i])
-
-        records.append(row)
-
-    bt = pd.DataFrame(records)
-    if bt.empty:
-        return bt, {}
-
-    knock_in_mask = (bt["Call Quarter"] == 0) & (bt["Worst Final Perf"] < terms.knock_in_barrier)
+    knock_in_mask = bt["Knock-in"]
 
     summary = {
         "n_issues":      len(bt),

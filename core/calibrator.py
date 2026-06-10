@@ -525,10 +525,6 @@ class HestonCalibrator:
         dt  = 1.0 / 252.0
         eps = 1e-8
 
-        # mu: annualised drift from mean log-return
-        # Use the full sample mean — this is the physical measure drift
-        mu = float(np.mean(lr1) / dt)
-
         # theta: long-run variance estimated as the mean of the rolling RV series.
         # Using mean(RV) rather than var(lr1)/dt keeps theta consistent with the
         # other RV-derived parameters (kappa, xi, V0) and avoids the mismatch
@@ -536,6 +532,21 @@ class HestonCalibrator:
         # when V0 is anchored to the most recent RV window.
         rv_clean = rv[~np.isnan(rv)]
         theta = float(np.mean(rv_clean))
+
+        # mu: annualised ARITHMETIC drift (the model's price-equation drift).
+        #
+        # The model is dS/S = mu*dt + sqrt(V)*dW, so log-returns satisfy
+        #     d ln S = (mu - V/2)*dt + sqrt(V)*dW
+        # and the mean realized log-return estimates (mu - theta/2), NOT mu —
+        # the volatility drag is already embedded in historical log-returns.
+        # The simulator's log-Euler step then subtracts V/2 again, so feeding it
+        # mean(lr)/dt directly double-counts the drag: simulated geometric
+        # growth would be (realized growth - theta/2). For a 60-vol name like
+        # TSLA that's an ~18%/yr downward bias — enough to flatten the median
+        # path entirely. Adding theta/2 back recovers the arithmetic drift, and
+        # the simulator's -V/2 cancels it so simulated log-growth matches the
+        # realized geometric growth over the calibration window.
+        mu = float(np.mean(lr1) / dt) + 0.5 * theta
 
         # V0: current variance (last window value)
         V0 = float(rv_clean[-1])

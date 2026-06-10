@@ -12,7 +12,8 @@
   "coupon_basket": "worst_of",
   "autocall_basket": "worst_of",
   "final_basket": "best_of",
-  "call_steepness": 100.0,
+  "final_redemption_barrier": 1.0,
+  "call_steepness": null,
   "tickers": {
     "NVDA": "NVIDIA",
     "PLTR": "Palantir",

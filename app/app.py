@@ -126,7 +126,7 @@ _DEFAULTS = {
     "setup_ul_default": None,    # set when JSON is loaded to override multiselect
     "custom_tickers":   {},      # {symbol: display_name} for user-entered tickers
     "loaded_terms_dict": None,   # persists NoteTerms from JSON upload across reruns
-    "history_years":    5.0,     # None = max history
+    "history_years":    None,    # always max history
     "calib_years":      5.0,     # years of recent data used for Heston calibration
 }
 for k, v in _DEFAULTS.items():
@@ -342,8 +342,29 @@ if st.session_state["page"] == "setup":
         autocall_basket = st.selectbox("Autocall trigger check", basket_opts,
                                         index=basket_opts.index(base.autocall_basket))
     with bc3:
-        final_basket = st.selectbox("Final redemption check", basket_opts,
-                                     index=basket_opts.index(base.final_basket))
+        # Best-of capital rescue clause (e.g. BBVA XS3378405743 Final Payout xi):
+        # at maturity, capital is returned at par if the BEST performer is at or
+        # above the rescue barrier, even when the knock-in barrier was breached.
+        # Off = standard worst-of note: knock-in alone determines the loss.
+        rescue_on = st.toggle(
+            "Best-of capital rescue at maturity",
+            value=(base.final_basket == "best_of"),
+            help="If ON: even when the knock-in barrier is breached, capital is "
+                 "returned at 100% as long as the best-performing underlying "
+                 "finishes at or above the rescue barrier (BBVA-style 'Barrier "
+                 "and Knock-in' clause). If OFF: standard worst-of redemption — "
+                 "a knock-in always results in delivery of the worst performer.",
+        )
+        if rescue_on:
+            rescue_bar_pct = st.slider(
+                "Rescue barrier (% of initial)", 50, 150,
+                int(round(getattr(base, "final_redemption_barrier", 1.0) * 100)),
+                help="Best performer must finish at or above this level for the "
+                     "rescue to apply. Term sheets typically use 100%.",
+            )
+        else:
+            rescue_bar_pct = 100
+        final_basket = "best_of" if rescue_on else "worst_of"
 
     st.divider()
 
@@ -397,17 +418,12 @@ if st.session_state["page"] == "setup":
 
     # ── Historical Data ───────────────────────────────────────────────────────────────
     st.subheader("Historical Data")
-    _hist_opts   = [1.0, 2.0, 3.0, 5.0, 10.0, None]
-    _hist_labels = ["1 Year", "2 Years", "3 Years", "5 Years", "10 Years", "Max (all available)"]
-    _hy = st.session_state.get("history_years", 5.0)
-    _hist_default_idx = _hist_opts.index(_hy) if _hy in _hist_opts else 3
-    _hist_choice = st.radio(
-        "Price history to download (used for calibration & backtest)",
-        _hist_labels,
-        index=_hist_default_idx,
-        horizontal=True,
-    )
-    history_years = _hist_opts[_hist_labels.index(_hist_choice)]
+    # Always pull the maximum available history. The backtest benefits from
+    # every available issue date, and the calibration window below controls
+    # how much of it is actually used for Heston parameter estimation.
+    history_years = None
+    st.caption("Price history: **Max (all available)** — aligned across underlyings, "
+               "so the common start is set by the shortest-history asset (e.g. latest IPO).")
 
     _calib_opts   = [1.0, 2.0, 3.0, 5.0, 10.0]
     _calib_labels = ["1 Year", "2 Years", "3 Years", "5 Years", "10 Years"]
@@ -460,7 +476,8 @@ if st.session_state["page"] == "setup":
                 coupon_basket         = coupon_basket,
                 autocall_basket       = autocall_basket,
                 final_basket          = final_basket,
-                call_steepness        = 100.0,
+                final_redemption_barrier = rescue_bar_pct / 100.0,
+                call_steepness        = None,   # hard trigger (deterministic)
                 tickers               = selected_tickers,
                 issue_date            = issue_date_input.isoformat() if _issue_is_live else None,
             )
@@ -542,6 +559,10 @@ elif st.session_state["page"] == "dashboard":
         c3.metric("Coupon barrier", f"{terms.coupon_barrier:.0%}")
         c3.metric("Autocall barrier", f"{terms.autocall_barrier:.0%}")
         c3.metric("Knock-in barrier", f"{terms.knock_in_barrier:.0%}")
+        if terms.final_basket == "best_of":
+            st.info(f"**Best-of capital rescue:** at maturity, capital is returned at par if the "
+                    f"best performer finishes ≥ {terms.final_redemption_barrier:.0%} of initial, "
+                    f"even if the knock-in barrier was breached.")
         obs_df = pd.DataFrame({
             "Period": range(1, terms.n_obs + 1),
             "Time (Y)": [f"{t:.4g}" for t in terms.obs_times()],
@@ -564,7 +585,7 @@ elif st.session_state["page"] == "dashboard":
     # ── Run simulation (triggered by sidebar button) ──────────────────────
     if run_button:
         with st.spinner("Running Heston calibration and Monte Carlo simulation…"):
-            prices = _load_prices(tickers_tuple, years=st.session_state.get("history_years", 5.0))
+            prices = _load_prices(tickers_tuple, years=st.session_state.get("history_years", None))
             cal    = HestonCalibrator(
                 prices_df   = prices,
                 calib_years = st.session_state.get("calib_years", 5.0),
@@ -650,7 +671,7 @@ elif st.session_state["page"] == "dashboard":
             st.info("Click **🚀 Run Simulation** in the sidebar to run the Monte Carlo engine.")
             with st.spinner(f"Pre-fetching market data for {', '.join(selected_tickers.values())}…"):
                 try:
-                    _load_prices(tickers_tuple, years=st.session_state.get("history_years", 5.0))
+                    _load_prices(tickers_tuple, years=st.session_state.get("history_years", None))
                     st.success("Market data ready. Click **🚀 Run Simulation** in the sidebar.")
                 except Exception as e:
                     st.error(f"Failed to fetch prices: {e}")
@@ -659,11 +680,33 @@ elif st.session_state["page"] == "dashboard":
             # ── Summary metrics ───────────────────────────────────────
             st.header("Summary Statistics")
             c1, c2, c3, c4, c5 = st.columns(5)
-            c1.metric("Expected IRR p.a. (simple)",  f"{R['expected_irr']:.2%}")
-            c2.metric("Expected Total Return", f"{R['expected_total_return']:.2%}")
-            c3.metric("Expected Coupon",       f"{R['expected_coupon']:.2%}")
+            c1.metric("Expected IRR p.a. (simple)",  f"{R['expected_irr']:.2%}",
+                      help="Average of per-path annualized returns: mean(return ÷ holding time). "
+                           "Early autocalls divide a small gain by a short holding period, so they "
+                           "contribute large positive IRRs; knock-in losses are spread over the full "
+                           "maturity. This can be positive even when Expected Total Return is "
+                           "negative (average of ratios ≠ ratio of averages), and implicitly assumes "
+                           "autocall proceeds are reinvested at similar rates.")
+            c2.metric("Expected Total Return", f"{R['expected_total_return']:.2%}",
+                      help="Average money outcome per 1.00 invested over the note's life: "
+                           "mean(payout − 1) = coupons received + principal returned − 1. "
+                           "Not annualized. The more conservative headline number.")
+            c3.metric("Expected Coupon",       f"{R['expected_coupon']:.2%}",
+                      help="Average total coupons received per path (memory included).")
             c4.metric("P(Autocalled)",         f"{R['prob_autocall']:.2%}")
-            c5.metric("P(Knock-in)",           f"{R['prob_knock_in_total']:.2%}")
+            c5.metric("P(Knock-in)",           f"{R['prob_knock_in_total']:.2%}",
+                      help="Probability of capital loss at maturity: knock-in barrier breached "
+                           "AND the final redemption condition not met. For notes with a best-of "
+                           "final basket (e.g. BBVA XS3378405743), paths where the best performer "
+                           "finishes ≥ the redemption barrier are 'rescued' to par even if the "
+                           "worst breached the KI level — those are excluded here.")
+            if R.get("prob_rescued", 0) > 0:
+                st.caption(
+                    f"Barrier breached on {R['prob_barrier_event']:.2%} of paths; "
+                    f"{R['prob_rescued']:.2%} were rescued to par by the final redemption "
+                    f"condition ({terms.final_basket.replace('_','-')} ≥ "
+                    f"{terms.final_redemption_barrier:.0%})."
+                )
 
             with st.expander("Autocall probability by period", expanded=False):
                 prob_by_period = R["prob_autocall_by_period"]
@@ -805,72 +848,126 @@ elif st.session_state["page"] == "dashboard":
         # Use the same history_years that the user selected — avoids pulling
         # period='max' when an underlying (e.g. PLTR) has a short history and
         # a max-history download returns fewer rows than the backtest needs.
-        _history_years = st.session_state.get("history_years", 5.0)
+        _history_years = st.session_state.get("history_years", None)
         try:
             _all_prices = _load_prices(tickers_tuple, years=_history_years)
-            _min_date   = _all_prices.index.min().date()
-            _max_date   = _all_prices.index.max().date()
         except Exception:
             _all_prices = None
-            _min_date   = None
-            _max_date   = None
 
         import datetime as _dt
 
-        # ── Date range pickers ────────────────────────────────────────
-        _bt_start_default = st.session_state.get("bt_start_default", _min_date)
-        _bt_end_default   = st.session_state.get("bt_end_default",   _max_date)
+        # ── Feasibility check ─────────────────────────────────────────
+        # run_backtest needs a full maturity window of data BEFORE the first
+        # issue date and AFTER the last one. Surface this up-front instead of
+        # letting run_backtest raise into a red error box. NOTE: do not use
+        # st.stop() here — it would abort the whole script and kill the
+        # Current Performance tab that renders after this one.
+        _maturity_days = round(terms.maturity * 252)
+        _required_days = _maturity_days + 1
+        _bt_feasible   = _all_prices is not None and len(_all_prices) >= _required_days
 
-        if _min_date and _bt_start_default and _bt_start_default < _min_date:
-            _bt_start_default = _min_date
-        if _max_date and _bt_end_default and _bt_end_default > _max_date:
-            _bt_end_default = _max_date
-
-        bdc1, bdc2, bdc3 = st.columns([2, 2, 1])
-        with bdc1:
-            bt_start_val = st.date_input(
-                "Backtest start (issue dates from)",
-                value=_bt_start_default,
-                min_value=_min_date,
-                max_value=_max_date,
-                key="bt_start_picker",
+        if _all_prices is None:
+            st.warning("Could not load price history for the backtest.")
+        elif not _bt_feasible:
+            _req_years = _required_days / 252.0
+            st.warning(
+                f"**Not enough history for this note.** A {terms.maturity:g}Y note needs "
+                f"≥ {_required_days} trading days (≈ {_req_years:.1f} years: one full maturity "
+                f"window of realized prices after the first issue date), but the aligned history "
+                f"across all underlyings only has {len(_all_prices)} days "
+                f"({_all_prices.index[0].date()} → {_all_prices.index[-1].date()})."
             )
-        with bdc2:
-            bt_end_val = st.date_input(
-                "Backtest end (issue dates until)",
-                value=_bt_end_default,
-                min_value=_min_date,
-                max_value=_max_date,
-                key="bt_end_picker",
+
+        if not _bt_feasible:
+            bt, bt_summary = pd.DataFrame(), {}
+        else:
+            # ── Valid issue-date bounds ───────────────────────────────────
+            # Bound the pickers by the range run_backtest will actually accept,
+            # NOT the raw price range — otherwise selections in the invalid head/
+            # tail are silently clamped and 'Apply' appears to do nothing.
+            _min_date = _all_prices.index[0].date()
+            _max_date = _all_prices.index[-_maturity_days].date()
+            st.caption(
+                f"Valid issue dates: **{_min_date} → {_max_date}** "
+                f"(issues run from the start of aligned history — e.g. the latest IPO — up to "
+                f"{terms.maturity:g}Y before the end of data, so each issue has a full realized "
+                f"price path; aligned history: {_all_prices.index[0].date()} → {_all_prices.index[-1].date()})."
             )
-        with bdc3:
-            st.markdown("<br>", unsafe_allow_html=True)
-            apply_bt = st.button("Apply", key="bt_apply_btn", use_container_width=True)
 
-        # Only commit the new date range when the user clicks Apply.
-        # This prevents an expensive backtest rerun on every keystroke.
-        if apply_bt:
-            st.session_state["bt_start_default"] = bt_start_val
-            st.session_state["bt_end_default"]   = bt_end_val
+            # ── Reset picker state when the note / data context changes ──────
+            # The date pickers are keyed widgets: Streamlit ignores value= after
+            # the first render and keeps the old state in session. Switching note
+            # (e.g. HSBC banks → BBVA with PLTR's short history) changes min/max,
+            # and a stale out-of-range value raises StreamlitAPIException. Reset
+            # all backtest date state whenever the context fingerprint changes.
+            _bt_fingerprint = (tickers_tuple, _history_years, terms.maturity, terms.payment_freq)
+            if st.session_state.get("bt_fingerprint") != _bt_fingerprint:
+                st.session_state["bt_fingerprint"] = _bt_fingerprint
+                for _k in ("bt_start_picker", "bt_end_picker",
+                           "bt_start_default", "bt_end_default"):
+                    st.session_state.pop(_k, None)
 
-        # Use the last confirmed values (not the live picker state) as the
-        # actual filter passed to the backtest.
-        _confirmed_start = st.session_state.get("bt_start_default", _min_date)
-        _confirmed_end   = st.session_state.get("bt_end_default",   _max_date)
-        bt_start_str = str(_confirmed_start) if _confirmed_start else None
-        bt_end_str   = str(_confirmed_end)   if _confirmed_end   else None
+            def _clamp_date(d):
+                if d is None:
+                    return None
+                if d < _min_date:
+                    return _min_date
+                if d > _max_date:
+                    return _max_date
+                return d
 
-        with st.spinner("Running historical backtest…"):
-            try:
-                bt, bt_summary = _run_backtest_cached(
-                    tickers_tuple, terms.to_json(),
-                    bt_start_str=bt_start_str,
-                    bt_end_str=bt_end_str,
-                    history_years=st.session_state.get("history_years", 5.0),
+            # ── Date range pickers ────────────────────────────────────────
+            _bt_start_default = _clamp_date(st.session_state.get("bt_start_default", _min_date))
+            _bt_end_default   = _clamp_date(st.session_state.get("bt_end_default",   _max_date))
+
+            bdc1, bdc2, bdc3 = st.columns([2, 2, 1])
+            with bdc1:
+                bt_start_val = st.date_input(
+                    "Backtest start (issue dates from)",
+                    value=_bt_start_default,
+                    min_value=_min_date,
+                    max_value=_max_date,
+                    key="bt_start_picker",
                 )
-            except Exception as e:
-                st.error(f"Backtest failed: {e}")
-                bt, bt_summary = pd.DataFrame(), {}
+            with bdc2:
+                bt_end_val = st.date_input(
+                    "Backtest end (issue dates until)",
+                    value=_bt_end_default,
+                    min_value=_min_date,
+                    max_value=_max_date,
+                    key="bt_end_picker",
+                )
+            with bdc3:
+                st.markdown("<br>", unsafe_allow_html=True)
+                apply_bt = st.button("Apply", key="bt_apply_btn", use_container_width=True)
+
+            # Only commit the new date range when the user clicks Apply.
+            # This prevents an expensive backtest rerun on every keystroke.
+            if apply_bt:
+                if bt_start_val > bt_end_val:
+                    st.warning("Backtest start is after end — range not applied.")
+                else:
+                    st.session_state["bt_start_default"] = bt_start_val
+                    st.session_state["bt_end_default"]   = bt_end_val
+
+            # Use the last confirmed values (clamped to the current valid range)
+            # as the actual filter passed to the backtest.
+            _confirmed_start = _clamp_date(st.session_state.get("bt_start_default", _min_date))
+            _confirmed_end   = _clamp_date(st.session_state.get("bt_end_default",   _max_date))
+            bt_start_str = str(_confirmed_start) if _confirmed_start else None
+            bt_end_str   = str(_confirmed_end)   if _confirmed_end   else None
+
+            with st.spinner("Running historical backtest…"):
+                try:
+                    bt, bt_summary = _run_backtest_cached(
+                        tickers_tuple, terms.to_json(),
+                        bt_start_str=bt_start_str,
+                        bt_end_str=bt_end_str,
+                        history_years=st.session_state.get("history_years", None),
+                    )
+                except Exception as e:
+                    st.error(f"Backtest failed: {e}")
+                    bt, bt_summary = pd.DataFrame(), {}
 
         if bt.empty:
             st.warning("No backtest results. Check underlyings have sufficient history.")
@@ -878,8 +975,7 @@ elif st.session_state["page"] == "dashboard":
             bt["Outcome"] = bt["Call Quarter"].map(
                 {0: "Maturity", **{i: f"Autocalled P{i}" for i in range(1, terms.n_obs + 1)}}
             )
-            bt.loc[(bt["Call Quarter"] == 0) & (bt["Worst Final Perf"] < terms.knock_in_barrier),
-                   "Outcome"] = "Knock-in"
+            bt.loc[(bt["Call Quarter"] == 0) & bt["Knock-in"], "Outcome"] = "Knock-in"
             color_map = {
                 "Maturity": "#3498db", "Knock-in": "#e74c3c",
                 **{f"Autocalled P{i}": f"hsl({120 - i*4},55%,38%)" for i in range(1, terms.n_obs + 1)},

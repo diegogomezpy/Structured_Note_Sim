@@ -30,11 +30,14 @@ Improvements over basic Euler-Maruyama:
    Student-t copula. Each step draws:
        Z   ~ N(0, I_{2n})
        s   ~ chi²(t_dof) / t_dof     (scalar, shared across assets)
-       W   = (Z / sqrt(s)) @ L.T     (correlated t shocks)
-   This introduces joint tail dependence: extreme moves become more
-   correlated than the Gaussian copula implies. Relevant for worst-of
-   products where the floor is triggered by joint tail events.
-   t_dof=None (default) reduces to the Gaussian copula.
+       W   = (Z / sqrt(s)) * sqrt((ν-2)/ν) @ L.T   (correlated, standardized)
+   The sqrt((ν-2)/ν) factor standardizes the t variates to unit variance
+   (a raw t(ν) has variance ν/(ν-2)), so the simulated vol stays consistent
+   with the calibrated theta/V0. The shocks introduce joint tail dependence:
+   extreme moves become more correlated than the Gaussian copula implies.
+   Relevant for worst-of products where the floor is triggered by joint
+   tail events. t_dof=None (default) reduces to the Gaussian copula.
+   Requires t_dof > 2.
 
 4. Vectorized realized correlation
    Replaces the O(n_paths) loop over np.corrcoef with a single
@@ -244,6 +247,11 @@ class HestonMultiSimulator:
         self.n_paths  = n_paths
         self.seed     = seed
         self.r        = r
+        if t_dof is not None and t_dof <= 2:
+            raise ValueError(
+                f"t_dof must be > 2 (finite variance required for "
+                f"standardized t shocks); got {t_dof}."
+            )
         self.t_dof    = t_dof
 
         # Simulation outputs
@@ -353,6 +361,14 @@ class HestonMultiSimulator:
                 # chi²(ν)/ν scalar per path — shared across all Brownians
                 chi2 = rng.chisquare(df=self.t_dof, size=n_base) / self.t_dof
                 Z = Z / np.sqrt(chi2[:, np.newaxis])
+                # Standardize: a t(ν) variate has variance ν/(ν-2), not 1.
+                # Without this rescale every Brownian increment is inflated by
+                # sqrt(ν/(ν-2)) — e.g. +29% vol at ν=5, +41% at ν=4 — so the
+                # simulation runs at a much higher vol than the calibrated
+                # theta/V0, and the Milstein term 0.5·ξ²·(dW² − dt) picks up a
+                # spurious positive drift (E[dW²] > dt). Rescaling restores
+                # unit-variance shocks while preserving the t tail dependence.
+                Z = Z * np.sqrt((self.t_dof - 2.0) / self.t_dof)
 
             # --- Antithetic: stack [Z, -Z] → (n_total, 2n) ---
             Z_full = np.concatenate([Z, -Z], axis=0)
