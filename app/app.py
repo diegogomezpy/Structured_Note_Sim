@@ -54,21 +54,28 @@ hr{border-color:#c8e6c8}
 # Available underlyings
 # ==========================================================================
 UNDERLYING_OPTIONS = {
-    # ── Equity indices ───────────────────────────────────────────────────
+    # ── Equity indices — US ──────────────────────────────────────────────
     "SPX — S&P 500":            "^GSPC",
     "NDX — Nasdaq 100":         "^NDX",
     "RUT — Russell 2000":       "^RUT",
+    # ── Equity indices — Europe ──────────────────────────────────────────
     "SX5E — Euro Stoxx 50":     "^STOXX50E",
     "DAX — DAX 40":             "^GDAXI",
     "FTSE — FTSE 100":          "^FTSE",
     "CAC — CAC 40":             "^FCHI",
     "SMI — Swiss Market":       "^SSMI",
+    "IBEX — Spain":             "^IBEX",
+    "MIB — Italy":              "FTSEMIB.MI",
+    # ── Equity indices — Asia / EM ───────────────────────────────────────
     "NKY — Nikkei 225":         "^N225",
     "HSI — Hang Seng":          "^HSI",
     "KOSPI — Korea":            "^KS11",
     "ASX — Australia":          "^AXJO",
-    "IBEX — Spain":             "^IBEX",
-    "MIB — Italy":              "FTSEMIB.MI",
+    "TWII — Taiwan":            "^TWII",
+    "NSEI — India Nifty 50":    "^NSEI",
+    "STI — Singapore":          "^STI",
+    "BVSP — Brazil Bovespa":    "^BVSP",
+    "MXX — Mexico IPC":         "^MXX",
     # ── US Banks & Financials ────────────────────────────────────────────
     "GS — Goldman Sachs":       "GS",
     "JPM — J.P. Morgan":        "JPM",
@@ -77,6 +84,9 @@ UNDERLYING_OPTIONS = {
     "C — Citigroup":            "C",
     "WFC — Wells Fargo":        "WFC",
     "BLK — BlackRock":          "BLK",
+    "SCHW — Charles Schwab":    "SCHW",
+    "V — Visa":                 "V",
+    "MA — Mastercard":          "MA",
     # ── US Tech ─────────────────────────────────────────────────────────
     "AAPL — Apple":             "AAPL",
     "MSFT — Microsoft":         "MSFT",
@@ -85,29 +95,74 @@ UNDERLYING_OPTIONS = {
     "META — Meta":              "META",
     "GOOGL — Alphabet":         "GOOGL",
     "TSLA — Tesla":             "TSLA",
+    "AVGO — Broadcom":          "AVGO",
     "PLTR — Palantir":          "PLTR",
     "AMD — AMD":                "AMD",
     "INTC — Intel":             "INTC",
     "CRM — Salesforce":         "CRM",
     "NFLX — Netflix":           "NFLX",
+    "SPOT — Spotify":           "SPOT",
+    "UBER — Uber":              "UBER",
+    # ── US Healthcare & Other ────────────────────────────────────────────
+    "LLY — Eli Lilly":          "LLY",
+    "UNH — UnitedHealth":       "UNH",
+    "BRK-B — Berkshire":        "BRK-B",
     # ── European stocks ──────────────────────────────────────────────────
     "ASML — ASML":              "ASML",
     "SAP — SAP":                "SAP",
+    "NVO — Novo Nordisk":       "NVO",
+    "AZN — AstraZeneca":        "AZN",
+    "SHEL — Shell":             "SHEL",
     "NESN — Nestlé":            "NESN.SW",
     "NOVN — Novartis":          "NOVN.SW",
     "ROG — Roche":              "ROG.SW",
+    "SIE — Siemens":            "SIE.DE",
+    "AIR — Airbus":             "AIR.PA",
+    "TTE — TotalEnergies":      "TTE.PA",
+    "BNP — BNP Paribas":        "BNP.PA",
     "MC — LVMH":                "MC.PA",
     "OR — L'Oréal":             "OR.PA",
     "SAN — Santander":          "SAN.MC",
-    # ── Commodities & ETFs ───────────────────────────────────────────────
+    # ── Commodities & Equity ETFs ────────────────────────────────────────
     "GLD — Gold ETF":           "GLD",
     "SLV — Silver ETF":         "SLV",
+    "GDX — Gold Miners ETF":    "GDX",
     "USO — Oil ETF":            "USO",
     "XLE — Energy ETF":         "XLE",
     "XLF — Financials ETF":     "XLF",
     "EEM — EM ETF":             "EEM",
+    "ARKK — ARK Innovation":    "ARKK",
+    # ── Fixed Income ETFs ────────────────────────────────────────────────
+    "TLT — 20Y Treasury ETF":   "TLT",
+    "IEF — 7-10Y Treasury ETF": "IEF",
+    "HYG — High Yield ETF":     "HYG",
+    "LQD — Investment Grade ETF": "LQD",
+    # ── Crypto ETFs ──────────────────────────────────────────────────────
+    "IBIT — iShares Bitcoin ETF": "IBIT",
+    "FBTC — Fidelity Bitcoin ETF": "FBTC",
 }
 UNDERLYING_LABELS  = list(UNDERLYING_OPTIONS.keys())
+
+# Logo URLs for non-index tickers (indices starting with ^ have no logo).
+# Uses the parqet logo CDN which accepts yfinance-style symbols.
+_LOGO_BASE = "https://assets.parqet.com/logos/symbol/{sym}?format=png"
+TICKER_LOGOS: dict[str, str] = {sym: _LOGO_BASE.format(sym=sym) for sym in [
+    # US Banks & Financials
+    "GS", "JPM", "MS", "BAC", "C", "WFC", "BLK", "SCHW", "V", "MA",
+    # US Tech
+    "AAPL", "MSFT", "NVDA", "AMZN", "META", "GOOGL", "TSLA",
+    "AVGO", "PLTR", "AMD", "INTC", "CRM", "NFLX", "SPOT", "UBER",
+    # US Healthcare & Other
+    "LLY", "UNH", "BRK-B",
+    # European (clean symbols / ADRs)
+    "ASML", "SAP", "NVO", "AZN", "SHEL",
+    # Commodity & Equity ETFs
+    "GLD", "SLV", "GDX", "USO", "XLE", "XLF", "EEM", "ARKK",
+    # Fixed Income ETFs
+    "TLT", "IEF", "HYG", "LQD",
+    # Crypto ETFs
+    "IBIT", "FBTC",
+]}
 _DISPLAY_TO_LABEL  = {k.split(" — ")[0]: k for k in UNDERLYING_OPTIONS.keys()}
 # Also map by yfinance symbol → label for JSON loading
 _TICKER_TO_LABEL   = {v: k for k, v in UNDERLYING_OPTIONS.items()}
@@ -281,6 +336,22 @@ if st.session_state["page"] == "setup":
                     st.rerun()
                 else:
                     st.warning("Enter both a symbol and a display name.")
+
+    # ── Logo row for selected tickers ─────────────────────────────────────
+    if selected_labels:
+        _lbl_to_sym = {k: v for k, v in UNDERLYING_OPTIONS.items()}
+        _lbl_to_sym.update({
+            f"{disp} — {sym} (custom)": sym
+            for sym, disp in custom_tickers.items()
+        })
+        logo_cols = st.columns(min(len(selected_labels), 5))
+        for _i, _lbl in enumerate(selected_labels[:5]):
+            _sym = _lbl_to_sym.get(_lbl)
+            _logo_url = TICKER_LOGOS.get(_sym) if _sym else None
+            with logo_cols[_i]:
+                if _logo_url:
+                    st.image(_logo_url, width=48)
+                st.caption(_lbl.split(" — ")[0])
 
     st.divider()
 
