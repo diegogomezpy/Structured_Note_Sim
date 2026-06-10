@@ -42,7 +42,11 @@ The Streamlit app (`app/app.py`) wires these together. All Plotly figure builder
 
 ### Autocall trigger
 
-By default `call_steepness=None` → hard trigger: `autocall_prob()` returns exactly 0.0 or 1.0. The `call_draws < prob` comparison is then fully deterministic regardless of RNG seed. Soft sigmoid triggers exist but require steepness ≥ ~2000 to approximate a hard trigger — at 100 the trigger is NOT effectively hard (see docstring).
+By default `call_steepness=None` → hard trigger: the per-observation comparison `autocall_basket >= autocall_barrier_schedule()[j]` returns exactly 0.0 or 1.0, so `call_draws < prob` is fully deterministic regardless of RNG seed. Soft sigmoid triggers exist but require steepness ≥ ~2000 to approximate a hard trigger — at 100 the trigger is NOT effectively hard (see docstring).
+
+`price_note()` compares each observation against `terms.autocall_barrier_schedule()` (a per-period array), not a scalar. For constant-barrier notes the schedule is flat and this is identical to the old behaviour; for growth autocalls (`autocall_step_down > 0`) it declines each period from `autocall_start_period`, floored at `autocall_floor`. The standalone `NoteTerms.autocall_prob()` method still exists (scalar barrier) for soft/hard dispatch but the engine path uses the schedule directly.
+
+**Single-asset notes:** `np.corrcoef` collapses to a 0-d scalar for one asset, so `calibrator._corr_SS`/`_corr_VV` wrap it in `np.atleast_2d` (→ `[[1.0]]`). The setup form allows ≥ 1 underlying.
 
 ### Calibration → simulation parameter handoff
 
@@ -105,6 +109,12 @@ The `final_basket` + `final_redemption_barrier` fields implement the BBVA-style 
 
 The app has two pages controlled by `st.session_state["page"]`: `"setup"` and `"dashboard"`. All heavy computation (calibration, simulation, backtest) is cached via `@st.cache_data`. Cache keys for the backtest use `tickers_tuple` (a `tuple` of `(sym, name)` pairs) and `terms.to_json()`. Simulation results are stored in `st.session_state["results"]` and are `None` until the user clicks "Run Simulation".
 
+Because Streamlit ignores a keyed widget's `value=` once its key exists in `session_state`, fields that must be populated from a loaded JSON config (e.g. `setup_issuer`, `setup_issue_date`) push the loaded value into `session_state` *before* the widget renders. Forgetting this is why a config field "doesn't load".
+
+## PDF report
+
+`app/pdf_report.py:generate_pdf_report()` builds the report with fpdf2; Plotly figures are rasterised to PNG via kaleido (`_fig_to_png`). The core Helvetica font is Latin-1 only, so `_NotePDF.cell`/`multi_cell` are overridden to run all text through `_safe()` (transliterates `—`, `→`, `≥`, curly quotes, etc.; drops anything else) — never write raw user text to the PDF without it. The sidebar **Generate PDF Report** button builds the doc *after* all tabs render; each tab caches its figures/data into `_pdf_*` session_state keys during its render pass (Streamlit runs every tab's code each rerun), and a `st.empty()` placeholder right under the button is where the download button is injected so it isn't buried at the bottom of the sidebar.
+
 ## Charts — barrier lines
 
 `build_wof_fan` and `build_path_wof_chart` both accept an optional `autocall_barrier` kwarg and draw it as a grey dotted line. The KI barrier is drawn as a red dashed line labelled "Knock-in barrier". Pass both from the caller:
@@ -113,5 +123,7 @@ The app has two pages controlled by `st.session_state["page"]`: `"setup"` and `"
 build_wof_fan(wof_paths, t_grid, terms.knock_in_barrier, obs_pairs, tr,
               autocall_barrier=terms.autocall_barrier)
 ```
+
+For step-down (growth) autocalls, also pass `autocall_schedule` — a list of `(x, level)` points where the level follows `terms.autocall_barrier_schedule()`. The shared `_add_autocall_barrier` helper then draws a stepped (`hv`) dotted line instead of the flat one; it falls back to the flat `add_hline` when the schedule is `None` or constant. The fan chart takes time-based x (`obs_times`), the path chart takes step-based x (`obs_steps`). `app.py` builds these only when `terms.autocall_step_down` is set.
 
 `build_historical_wof_path` requires a `coupon_barrier` parameter (separate from `knock_in_barrier`) — it is used to colour observation markers green (coupon paid) or red (missed). Do not conflate with the KI barrier.

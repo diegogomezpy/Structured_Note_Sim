@@ -12,3 +12,7 @@ yfinance>=0.2
 
 # Dashboard
 streamlit>=1.30
+
+# PDF report (fpdf2 builds the document; kaleido exports Plotly figures to PNG)
+fpdf2>=2.7
+kaleido>=0.2
