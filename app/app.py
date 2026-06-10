@@ -371,7 +371,7 @@ if st.session_state["page"] == "setup":
         logo_cols = st.columns(min(len(selected_labels), 5))
         for _i, _lbl in enumerate(selected_labels[:5]):
             _sym = _lbl_to_sym.get(_lbl)
-            _logo_url = TICKER_LOGOS.get(_sym) if _sym else None
+            _logo_url = (TICKER_LOGOS.get(_sym) or _LOGO_BASE.format(sym=_sym)) if _sym else None
             _short = _lbl.split(" — ")[0]
             with logo_cols[_i]:
                 if _logo_url:
