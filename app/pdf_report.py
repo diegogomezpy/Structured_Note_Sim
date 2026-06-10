@@ -94,6 +94,31 @@ def _t(key: str, lang: str) -> str:
 
 
 # ──────────────────────────────────────────────────────────────────────────────
+# Text sanitisation
+# ──────────────────────────────────────────────────────────────────────────────
+# The core Helvetica font only supports Latin-1. Transliterate the handful of
+# typographic characters we actually emit, then drop anything else that can't be
+# encoded so the PDF never raises FPDFUnicodeEncodingException.
+_TRANSLITERATE = {
+    "—": "-", "–": "-", "−": "-",
+    "·": "-", "•": "-",
+    "→": "->", "←": "<-",
+    "≥": ">=", "≤": "<=",
+    "“": '"', "”": '"', "‘": "'", "’": "'",
+    "…": "...", "×": "x", "÷": "/",
+    "€": "EUR", "£": "GBP",
+}
+
+
+def _safe(text) -> str:
+    s = str(text)
+    for bad, good in _TRANSLITERATE.items():
+        s = s.replace(bad, good)
+    # Drop any remaining non-Latin-1 characters (keeps accented Spanish letters).
+    return s.encode("latin-1", "ignore").decode("latin-1")
+
+
+# ──────────────────────────────────────────────────────────────────────────────
 # FPDF subclass with helpers
 # ──────────────────────────────────────────────────────────────────────────────
 
@@ -104,6 +129,27 @@ class _NotePDF(FPDF):
         super().__init__()
         self.lang = lang
         self.set_auto_page_break(auto=True, margin=18)
+
+    # ------------------------------------------------------------------
+    # Sanitise every string written to the document (Latin-1 only font)
+    # ------------------------------------------------------------------
+    def cell(self, *args, **kwargs):
+        if len(args) >= 3 and isinstance(args[2], str):
+            args = (args[0], args[1], _safe(args[2]), *args[3:])
+        if "text" in kwargs:
+            kwargs["text"] = _safe(kwargs["text"])
+        if "txt" in kwargs:
+            kwargs["txt"] = _safe(kwargs["txt"])
+        return super().cell(*args, **kwargs)
+
+    def multi_cell(self, *args, **kwargs):
+        if len(args) >= 3 and isinstance(args[2], str):
+            args = (args[0], args[1], _safe(args[2]), *args[3:])
+        if "text" in kwargs:
+            kwargs["text"] = _safe(kwargs["text"])
+        if "txt" in kwargs:
+            kwargs["txt"] = _safe(kwargs["txt"])
+        return super().multi_cell(*args, **kwargs)
 
     # ------------------------------------------------------------------
     # Page header / footer
