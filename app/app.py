@@ -797,8 +797,15 @@ elif st.session_state["page"] == "dashboard":
                            "mean(payout − 1) = coupons received + principal returned − 1. "
                            "Not annualized. The more conservative headline number.")
             c3.metric("Expected Coupon",       f"{R['expected_coupon']:.2%}",
-                      help="Average total coupons received per path (memory included).")
-            c4.metric("P(Autocalled)",         f"{R['prob_autocall']:.2%}")
+                      help="Average total coupon income received over the note's life, per path "
+                           "(coupons across all periods, including memory catch-up payments). "
+                           "Expressed as a fraction of par. Does not include principal redemption.")
+            c4.metric("P(Autocalled)",         f"{R['prob_autocall']:.2%}",
+                      help="Probability the issuer exercises the call at any observation date "
+                           "before (or at) maturity. An autocall terminates the note early, "
+                           "returning principal plus the period coupon. Higher autocall barriers "
+                           "reduce this probability; the autocall start period locks out early "
+                           "observations from triggering.")
             c5.metric("P(Knock-in)",           f"{R['prob_knock_in_total']:.2%}",
                       help="Probability of capital loss at maturity: knock-in barrier breached "
                            "AND the final redemption condition not met. For notes with a best-of "
@@ -910,9 +917,20 @@ elif st.session_state["page"] == "dashboard":
                     st.markdown(f"### 📈 Maturity — No knock-in (worst-of: {worst_f:.1%})")
 
                 mc1, mc2, mc3 = st.columns(3)
-                mc1.metric("Principal", f"{principal:.2%}")
-                mc2.metric("Coupons",   f"{coupons:.2%}")
-                mc3.metric("IRR p.a.",  f"{irr:.2%}")
+                mc1.metric("Principal", f"{principal:.2%}",
+                           help="Principal returned on this path as a fraction of par: 100% if "
+                                "the note autocalled or matured without a knock-in; the worst-of "
+                                "final performance if knock-in was triggered without a best-of "
+                                "rescue.")
+                mc2.metric("Coupons",   f"{coupons:.2%}",
+                           help="Total coupon income received on this single path as a fraction "
+                                "of par, summing all paid periods (including memory catch-up "
+                                "payments if applicable).")
+                mc3.metric("IRR p.a.",  f"{irr:.2%}",
+                           help="Simple annualised return for this single path: "
+                                "(principal + coupons − 1) ÷ holding time. "
+                                "Short autocall paths can show very high IRRs because the same "
+                                "coupon income is divided by a small holding period.")
 
             with mc_tab4:
                 st.subheader("Correlation Diagnostics")
@@ -926,7 +944,12 @@ elif st.session_state["page"] == "dashboard":
                                                       zmin=-0.1, zmax=0.1),                  use_container_width=True)
                 max_err = float(np.max(np.abs(diff - np.diag(np.diag(diff)))))
                 (st.success if max_err < 0.05 else st.warning)(
-                    f"Max off-diagonal error: **{max_err:.4f}**"
+                    f"Max off-diagonal error: **{max_err:.4f}** "
+                    f"({'good' if max_err < 0.02 else 'acceptable' if max_err < 0.05 else 'elevated — consider more paths'}). "
+                    f"This is the largest absolute difference between a target and realized "
+                    f"pairwise correlation. Values < 0.05 are acceptable for pricing; "
+                    f"> 0.05 suggests the Cholesky decomposition is not well converged — "
+                    f"try increasing Monte Carlo paths."
                 )
                 st.markdown("---")
                 st.subheader("Calibrated Heston Parameters")
@@ -942,7 +965,22 @@ elif st.session_state["page"] == "dashboard":
                         "Feller": "✅" if ok else "⚠️",
                     })
                 st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
-                st.info(f"**Student-t Copula:** ν = {R.get('t_dof','N/A')} d.f.")
+                st.caption(
+                    "**Column guide:** "
+                    "**μ** = arithmetic drift (annualised); "
+                    "**V₀ σ** = current implied vol (√V₀); "
+                    "**θ σ LR** = long-run vol mean (√θ, the level V reverts toward); "
+                    "**κ** = mean-reversion speed (higher → vol snaps back faster; typical equity: 1–5); "
+                    "**ξ** = vol-of-vol, volatility of the variance process (higher → fatter tails; typical: 0.1–0.8); "
+                    "**ρ** = leverage effect, correlation between spot and variance shocks "
+                    "(negative for equities — down moves spike vol; typical: −0.7 to −0.3); "
+                    "**Feller** = ✅ if 2κθ > ξ² (Feller condition), ensuring variance stays positive; "
+                    "⚠️ means variance can touch zero, which is a known Heston model artefact and "
+                    "generally has negligible pricing impact."
+                )
+                st.info(f"**Student-t Copula:** ν = {R.get('t_dof','N/A')} d.f. "
+                        f"(degrees of freedom; lower ν → heavier joint tails and more simultaneous "
+                        f"extreme moves across underlyings; ν > 30 approximates a Gaussian copula)")
 
     # ══════════════════════════════════════════════════════════════════
     # TAB 2 — HISTORICAL BACKTEST
@@ -1089,11 +1127,28 @@ elif st.session_state["page"] == "dashboard":
             }
 
             b1, b2, b3, b4, b5 = st.columns(5)
-            b1.metric("Issue Dates",  str(bt_summary.get("n_issues", 0)))
-            b2.metric("Mean IRR",     f"{bt_summary.get("mean_irr", 0):.2%}")
-            b3.metric("Median IRR",   f"{bt_summary.get("median_irr", 0):.2%}")
-            b4.metric("Knock-in %",   f"{bt_summary.get("prob_knock_in", 0):.1%}")
-            b5.metric("Autocalled %", f"{bt_summary.get("prob_called", 0):.1%}")
+            b1.metric("Issue Dates",  str(bt_summary.get("n_issues", 0)),
+                      help="Number of distinct historical issue dates tested. Each date seeds "
+                           "an independent note life using the actual realized price path of "
+                           "the underlyings. The backtest slides a window of length = maturity "
+                           "across the full price history, one issue date per trading day.")
+            b2.metric("Mean IRR",     f"{bt_summary.get('mean_irr', 0):.2%}",
+                      help="Average of per-issue simple annualised returns: "
+                           "mean((payout − 1) ÷ holding time). Simple annualisation — not "
+                           "compound. Skewed upward by early autocalls that divide coupon "
+                           "income by a short holding period.")
+            b3.metric("Median IRR",   f"{bt_summary.get('median_irr', 0):.2%}",
+                      help="Median simple annualised return across all historical issue dates. "
+                           "Less sensitive than the mean to the skew introduced by very early "
+                           "autocalls; a better central-tendency estimate for most note structures.")
+            b4.metric("Knock-in %",   f"{bt_summary.get('prob_knock_in', 0):.1%}",
+                      help="Fraction of historical issue dates where the knock-in barrier was "
+                           "breached AND the final redemption condition was not met, resulting "
+                           "in a capital loss. Notes with a best-of rescue clause show a lower "
+                           "figure here than the raw barrier-breach rate.")
+            b5.metric("Autocalled %", f"{bt_summary.get('prob_called', 0):.1%}",
+                      help="Fraction of historical issue dates where the note was called early "
+                           "at an autocall observation date before maturity.")
 
             col1, col2 = st.columns(2)
             col1.plotly_chart(build_backtest_outcome_bar(bt, color_map, tr), use_container_width=True)
@@ -1205,16 +1260,33 @@ elif st.session_state["page"] == "dashboard":
                     # ── Live summary metrics ──────────────────────────
                     _lc1, _lc2, _lc3, _lc4 = st.columns(4)
                     _lc1.metric("Worst-of Today",  f"{_wof_today:.1%}",
-                                delta=f"{_wof_today - 1.0:.1%} vs strike")
-                    _lc2.metric("Worst Asset",     _worst_asset_today)
+                                delta=f"{_wof_today - 1.0:.1%} vs strike",
+                                help="Current level of the worst-performing underlying relative "
+                                     "to its initial fixing price (strike = 100%). This is the "
+                                     "key risk indicator: coupon and autocall eligibility, and "
+                                     "knock-in exposure, are all measured against this figure.")
+                    _lc2.metric("Worst Asset",     _worst_asset_today,
+                                help="The underlying currently dragging the worst-of basket — "
+                                     "i.e. the one with the lowest performance relative to its "
+                                     "initial fixing. This asset sets the barrier observation level.")
                     _lc3.metric("vs KI Barrier",
                                 f"{_wof_today / run_terms.knock_in_barrier:.1%}",
                                 delta=f"{_wof_today - run_terms.knock_in_barrier:.1%}",
-                                delta_color="normal")
+                                delta_color="normal",
+                                help=f"Worst-of level as a percentage of the knock-in barrier "
+                                     f"({run_terms.knock_in_barrier:.0%}). "
+                                     f"Values > 100% mean the worst-of is above the KI barrier "
+                                     f"(no knock-in risk yet). The delta shows distance to the "
+                                     f"barrier in percentage-point terms.")
                     _lc4.metric("vs Autocall",
                                 f"{_wof_today / run_terms.autocall_barrier:.1%}",
                                 delta=f"{_wof_today - run_terms.autocall_barrier:.1%}",
-                                delta_color="normal")
+                                delta_color="normal",
+                                help=f"Worst-of level as a percentage of the autocall barrier "
+                                     f"({run_terms.autocall_barrier:.0%}). "
+                                     f"Values ≥ 100% at an eligible observation date would "
+                                     f"trigger an early call. The delta shows distance to the "
+                                     f"barrier in percentage-point terms.")
 
                     # ── Per-asset current performance ─────────────────
                     st.markdown("#### Current Asset Performance")
@@ -1284,7 +1356,13 @@ elif st.session_state["page"] == "dashboard":
                         )
 
                     _irr_to_date = _total_coupons_paid / max(_elapsed_years, 1/252)
-                    st.metric("Coupon IRR to date (annualised)", f"{_irr_to_date:.2%}")
+                    st.metric("Coupon IRR to date (annualised)", f"{_irr_to_date:.2%}",
+                              help="Total coupons paid so far ÷ elapsed time in years — a simple "
+                                   "(not compound) annualisation of income received. Does not "
+                                   "include any accrued-but-unpaid memory coupons or the principal "
+                                   "return at maturity. Comparable to a running yield on a bond, "
+                                   "but note it overstates the realized return for notes where "
+                                   "coupons cluster toward the end of the life.")
 
                     # ── Live performance chart ────────────────────────
                     st.plotly_chart(
