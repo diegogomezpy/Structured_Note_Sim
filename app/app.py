@@ -143,26 +143,50 @@ UNDERLYING_OPTIONS = {
 }
 UNDERLYING_LABELS  = list(UNDERLYING_OPTIONS.keys())
 
-# Logo URLs for non-index tickers (indices starting with ^ have no logo).
-# Uses the parqet logo CDN which accepts yfinance-style symbols.
+# Logo URLs for all tickers.
+# Stocks/ETFs: parqet CDN (accepts yfinance symbols directly).
+# Indices: Clearbit CDN using the index provider's domain.
 _LOGO_BASE = "https://assets.parqet.com/logos/symbol/{sym}?format=png"
-TICKER_LOGOS: dict[str, str] = {sym: _LOGO_BASE.format(sym=sym) for sym in [
-    # US Banks & Financials
-    "GS", "JPM", "MS", "BAC", "C", "WFC", "BLK", "SCHW", "V", "MA",
-    # US Tech
-    "AAPL", "MSFT", "NVDA", "AMZN", "META", "GOOGL", "TSLA",
-    "AVGO", "PLTR", "AMD", "INTC", "CRM", "NFLX", "SPOT", "UBER",
-    # US Healthcare & Other
-    "LLY", "UNH", "BRK-B",
-    # European (clean symbols / ADRs)
-    "ASML", "SAP", "NVO", "AZN", "SHEL",
-    # Commodity & Equity ETFs
-    "GLD", "SLV", "GDX", "USO", "XLE", "XLF", "EEM", "ARKK",
-    # Fixed Income ETFs
-    "TLT", "IEF", "HYG", "LQD",
-    # Crypto ETFs
-    "IBIT", "FBTC",
-]}
+_CB = "https://logo.clearbit.com/{domain}"
+TICKER_LOGOS: dict[str, str] = {
+    **{sym: _LOGO_BASE.format(sym=sym) for sym in [
+        # US Banks & Financials
+        "GS", "JPM", "MS", "BAC", "C", "WFC", "BLK", "SCHW", "V", "MA",
+        # US Tech
+        "AAPL", "MSFT", "NVDA", "AMZN", "META", "GOOGL", "TSLA",
+        "AVGO", "PLTR", "AMD", "INTC", "CRM", "NFLX", "SPOT", "UBER",
+        # US Healthcare & Other
+        "LLY", "UNH", "BRK-B",
+        # European (clean symbols / ADRs)
+        "ASML", "SAP", "NVO", "AZN", "SHEL",
+        # Commodity & Equity ETFs
+        "GLD", "SLV", "GDX", "USO", "XLE", "XLF", "EEM", "ARKK",
+        # Fixed Income ETFs
+        "TLT", "IEF", "HYG", "LQD",
+        # Crypto ETFs
+        "IBIT", "FBTC",
+    ]},
+    # Indices — use the exchange / index-provider logo via Clearbit
+    "^GSPC":     _CB.format(domain="spglobal.com"),
+    "^NDX":      _CB.format(domain="nasdaq.com"),
+    "^RUT":      _CB.format(domain="ftserussell.com"),
+    "^STOXX50E": _CB.format(domain="stoxx.com"),
+    "^GDAXI":    _CB.format(domain="deutsche-boerse.com"),
+    "^FTSE":     _CB.format(domain="ftserussell.com"),
+    "^FCHI":     _CB.format(domain="euronext.com"),
+    "^SSMI":     _CB.format(domain="six-group.com"),
+    "^IBEX":     _CB.format(domain="bolsademadrid.es"),
+    "FTSEMIB.MI":_CB.format(domain="borsaitaliana.it"),
+    "^N225":     _CB.format(domain="jpx.co.jp"),
+    "^HSI":      _CB.format(domain="hsi.com.hk"),
+    "^KS11":     _CB.format(domain="krx.co.kr"),
+    "^AXJO":     _CB.format(domain="asx.com.au"),
+    "^TWII":     _CB.format(domain="twse.com.tw"),
+    "^NSEI":     _CB.format(domain="nseindia.com"),
+    "^STI":      _CB.format(domain="sgx.com"),
+    "^BVSP":     _CB.format(domain="b3.com.br"),
+    "^MXX":      _CB.format(domain="bmv.com.mx"),
+}
 _DISPLAY_TO_LABEL  = {k.split(" — ")[0]: k for k in UNDERLYING_OPTIONS.keys()}
 # Also map by yfinance symbol → label for JSON loading
 _TICKER_TO_LABEL   = {v: k for k, v in UNDERLYING_OPTIONS.items()}
