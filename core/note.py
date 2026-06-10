@@ -97,6 +97,7 @@ class NoteTerms:
     final_redemption_barrier: float     = 1.00   # 'rescue' level for the final basket (see price_note)
     call_steepness:         float | None = None   # None = hard trigger (default)
     name:                   str         = "Phoenix Memory Note"
+    issuer:                 str         = ""      # display-only: e.g. "BBVA", "HSBC"
     tickers:                dict | None  = None
     issue_date:             str  | None = None   # "YYYY-MM-DD" — enables Current Performance tab
 
@@ -175,6 +176,7 @@ class NoteTerms:
     def to_dict(self) -> dict:
         return {
             "name":                   self.name,
+            "issuer":                 self.issuer,
             "maturity":               self.maturity,
             "payment_freq":           self.payment_freq,
             "coupon_pa":              self.coupon_pa,

@@ -51,6 +51,43 @@ hr{border-color:#c8e6c8}
 </style>""", unsafe_allow_html=True)
 
 # ==========================================================================
+# Issuer logo helper
+# ==========================================================================
+_ISSUER_DOMAINS = {
+    "bbva":             "bbva.com",
+    "hsbc":             "hsbc.com",
+    "bnp":              "bnpparibas.com",
+    "bnp paribas":      "bnpparibas.com",
+    "barclays":         "barclays.com",
+    "deutsche bank":    "db.com",
+    "societe generale": "societegenerale.com",
+    "ubs":              "ubs.com",
+    "credit suisse":    "credit-suisse.com",
+    "jpmorgan":         "jpmorgan.com",
+    "jp morgan":        "jpmorgan.com",
+    "goldman sachs":    "goldmansachs.com",
+    "morgan stanley":   "morganstanley.com",
+    "citi":             "citi.com",
+    "citigroup":        "citi.com",
+    "unicredit":        "unicredit.eu",
+    "intesa":           "intesasanpaolo.com",
+    "natixis":          "natixis.com",
+    "ing":              "ing.com",
+    "rabobank":         "rabobank.com",
+    "commerzbank":      "commerzbank.com",
+}
+
+
+def get_issuer_logo_url(issuer: str) -> str | None:
+    """Return a favicon URL for a known structured note issuer, or None if issuer is empty."""
+    if not issuer:
+        return None
+    key    = issuer.strip().lower()
+    domain = _ISSUER_DOMAINS.get(key) or f"{key.replace(' ', '')}.com"
+    return f"https://www.google.com/s2/favicons?sz=64&domain={domain}"
+
+
+# ==========================================================================
 # Available underlyings
 # ==========================================================================
 UNDERLYING_OPTIONS = {
@@ -473,6 +510,26 @@ if st.session_state["page"] == "setup":
 
     st.divider()
 
+    # ── Issuer (optional) ────────────────────────────────────────────────
+    st.subheader("Issuer (optional)")
+    st.caption("Name of the bank or institution that issued this note — used for display only.")
+    issuer_input = st.text_input(
+        "Issuer name",
+        value=getattr(base, "issuer", "") or "",
+        placeholder="e.g. BBVA, HSBC, BNP Paribas",
+        key="setup_issuer",
+    )
+    if issuer_input:
+        _logo_url = get_issuer_logo_url(issuer_input)
+        if _logo_url:
+            st.markdown(
+                f'<img src="{_logo_url}" height="32" style="margin-top:4px" '
+                f'onerror="this.style.display=\'none\'">',
+                unsafe_allow_html=True,
+            )
+
+    st.divider()
+
     # ── Issue Date (optional) ─────────────────────────────────────────────
     st.subheader("Issue Date (optional)")
     st.caption("If set to today or earlier, a **Current Performance** tab will appear on the dashboard.")
@@ -569,6 +626,7 @@ if st.session_state["page"] == "setup":
                     selected_tickers[sym] = disp
             terms = NoteTerms(
                 name                  = base.name if loaded_terms else "Custom Note",
+                issuer                = issuer_input.strip(),
                 maturity              = float(maturity),
                 payment_freq          = payment_freq,
                 coupon_pa             = coupon_pa_pct / 100.0,
@@ -614,6 +672,16 @@ elif st.session_state["page"] == "dashboard":
     # ── Sidebar ───────────────────────────────────────────────────────────
     st.sidebar.header("📋 Note")
     st.sidebar.markdown(f"**{terms.name}**")
+    if getattr(terms, "issuer", ""):
+        _sb_logo = get_issuer_logo_url(terms.issuer)
+        _sb_issuer_html = f"**{terms.issuer}**"
+        if _sb_logo:
+            _sb_issuer_html = (
+                f'<img src="{_sb_logo}" height="20" style="vertical-align:middle;margin-right:6px" '
+                f'onerror="this.style.display=\'none\'">'
+                f"<span>{terms.issuer}</span>"
+            )
+        st.sidebar.markdown(_sb_issuer_html, unsafe_allow_html=True)
     st.sidebar.markdown(
         f"{', '.join(selected_tickers.values())}  \n"
         f"{int(terms.maturity*12)}M · {terms.n_obs} obs · {terms.payment_freq} · "
@@ -645,6 +713,16 @@ elif st.session_state["page"] == "dashboard":
     )
 
     with st.expander("📖 Note Structure Summary", expanded=False):
+        # Issuer row (if set)
+        if getattr(terms, "issuer", ""):
+            _exp_logo = get_issuer_logo_url(terms.issuer)
+            _exp_issuer_html = (
+                f'<img src="{_exp_logo}" height="24" style="vertical-align:middle;margin-right:8px" '
+                f'onerror="this.style.display=\'none\'">'
+                f"<strong>Issuer:</strong> {terms.issuer}"
+            ) if _exp_logo else f"<strong>Issuer:</strong> {terms.issuer}"
+            st.markdown(_exp_issuer_html, unsafe_allow_html=True)
+
         # Underlyings table
         st.markdown("**Underlyings**")
         ul_df = pd.DataFrame([
