@@ -244,6 +244,7 @@ _DEFAULTS = {
     "loaded_terms_dict": None,   # persists NoteTerms from JSON upload across reruns
     "history_years":    None,    # always max history
     "calib_years":      5.0,     # years of recent data used for Heston calibration
+    "branding":         None,    # parsed branding JSON dict (firm_name, colors, logo_url)
 }
 for k, v in _DEFAULTS.items():
     if k not in st.session_state:
@@ -783,6 +784,31 @@ elif st.session_state["page"] == "dashboard":
         file_name="note_config.json",
         mime="application/json",
     )
+    # ── Branding JSON uploader ────────────────────────────────────────────
+    # Persist the parsed branding dict in session state so it survives reruns.
+    _branding_upload = st.sidebar.file_uploader(
+        "Corporate branding (JSON) — optional",
+        type=["json"],
+        key="branding_upload",
+        help="Upload a branding JSON to customise the PDF with your firm's colors and logo. "
+             "Schema: {firm_name, primary_color, accent_color, logo_url}",
+    )
+    if _branding_upload is not None:
+        try:
+            import json as _json
+            _branding_raw = _branding_upload.read().decode()
+            st.session_state["branding"] = _json.loads(_branding_raw)
+        except Exception as _be:
+            st.sidebar.warning(f"Branding JSON invalid: {_be}")
+    _branding_dict = st.session_state.get("branding")
+    if _branding_dict:
+        _bfirm = _branding_dict.get("firm_name", "")
+        _bcolor = _branding_dict.get("primary_color", "")
+        st.sidebar.caption(f"Branding: **{_bfirm}** {_bcolor}")
+        if st.sidebar.button("Clear branding", key="clear_branding"):
+            st.session_state["branding"] = None
+            st.rerun()
+
     _pdf_btn = st.sidebar.button(
         "📄 Generate PDF Report",
         disabled=not bool(st.session_state.get("results")),
@@ -1839,6 +1865,7 @@ elif st.session_state["page"] == "dashboard":
                 live_figure      = st.session_state.get("_pdf_live_figure"),
                 logo_urls        = _pdf_logo_urls,
                 issuer_logo_url  = _pdf_issuer_logo_url,
+                branding         = st.session_state.get("branding"),
             )
         _pdf_slot.download_button(
             "⬇ Download PDF",

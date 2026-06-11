@@ -193,6 +193,38 @@ For step-down (growth) autocalls, also pass `autocall_schedule` — a list of `(
 
 `build_live_performance_chart` only draws: it takes `obs_markers` (dicts produced from `replay_note` output by app.py) and `future_obs` (label, calendar-date pairs). It contains no payoff logic by design.
 
+## Improvement roadmap (2026-06-11 deep-dive)
+
+### Quick wins — low effort, high value
+
+- **QW1 Pre-allocate `Z_full`** (`core/simulator.py`): replace per-step `np.concatenate([Z, -Z], axis=0)` with a pre-allocated buffer filled in-place. Saves one large allocation per time step; measurable at ≥10K paths.
+- **QW2 Vectorize basket extraction** (`core/note.py`): replace the `obs_steps` list comprehension in `price_note()` with advanced indexing `perf_paths[:, np.array(obs_steps), :]` + single axis reduction. Meaningful for 5Y monthly notes (60 obs).
+- **QW3 Fix `corr_VV` bias** (`core/calibrator.py`): use `np.diff(rv, axis=0)` instead of RV levels for `corr_VV`. One line — removes the documented upward bias in variance-variance correlation.
+- **QW4 Fix/deprecate `autocall_prob()` scalar method** (`core/note.py:333`): compares against `self.autocall_barrier` (scalar) rather than the per-period schedule. Silent wrong probabilities for step-down notes. Remove or add `period_idx` parameter.
+- **QW5 IRR denominator guard** (`core/note.py`): `np.maximum(t_held_arr, 1/252)` before division. Defensive guard against any floating-point near-zero edge case.
+- **QW6 Expose `t_dof` as UI slider** (`app/app.py`): already threaded through to simulator; a slider would let users stress-test copula tail sensitivity.
+- **QW7 Replace `print()` with `logging`** (`core/simulator.py`): Feller output and summary table go to terminal only; `logging.getLogger(__name__)` allows Streamlit callers to suppress/redirect.
+- **QW8 Unify RNG seed for soft-trigger backtest** (`core/backtest.py`): `run_backtest()` defaults `seed=42`; app passes `seed+1`. Document or unify — irrelevant for hard triggers but inconsistent for soft.
+
+### Medium-effort improvements
+
+- **QE (Quadratic-Exponential) scheme** (`core/simulator.py`): replace Milstein+full-truncation for the CIR variance process with Andersen (2007) QE scheme. Removes positive V=0 bias in knocked-in scenarios, allows larger dt steps, makes Feller condition irrelevant. ~50 lines replacing the inner Milstein step. Reference: Andersen 2007 "Efficient Simulation of the Heston Stochastic Volatility Model".
+- **Quasi-Monte Carlo (Sobol sequences)** (`core/simulator.py`): replace `np.random.default_rng` draws with `scipy.stats.qmc.Sobol` + inverse-normal transform. Convergence O(log(N)^d/N) vs O(1/√N); same accuracy at ~4× fewer paths. ~20 lines replacing normal draws in `HestonMultiSimulator.run()`.
+- **Periodic / American KI barrier** (`core/note.py`): some term sheets observe KI at each coupon date, not only at final fixing. Add `knock_in_monitoring: "european" | "periodic"` flag to `NoteTerms`; add loop in `price_note()` to set a `ki_breached` flag at each observation step.
+- **Capital-protected / participation payoff** (`core/note.py`): new note type needed for Bonus Certificates and Capital Protected Participation Notes (see "New note types" section below). Requires `min_return` and `upside_cap` fields in `NoteTerms` and a new payoff branch in `price_note()`.
+
+### High-effort, high-impact
+
+- **Control variates** (`core/simulator.py`): geometric basket terminal value has closed-form distribution under lognormal dynamics; correlates 0.7–0.9 with worst-of payoff. Combined with existing antithetics: 50–80% further SE reduction.
+- **Term-structure of vol calibration** (`core/calibrator.py`): calibrate theta to 2Y realized RV vs 21D spot vol to reproduce observed vol term structure. Meaningful for 2Y+ notes where current flat-vol assumption understates term structure steepness.
+- **Pathwise / Likelihood-Ratio Greeks** (`core/note.py`): delta via bump-and-reprice on cached paths; LR method (Broadie-Glasserman 1996) for autocall barrier discontinuity. Enables delta/vega/KI-barrier sensitivities.
+- **Compound IRR option** (`core/note.py`): add `compound_irr = (1 + total_return)^(1/t_held) - 1` as optional output. ~0.5–1% lower than simple IRR at 3Y. Two lines.
+- **Risk-neutral mode** (`core/simulator.py`): `mu = r - q` + implied-vol calibration for fair-value comparable to dealer mid-markets. Requires options data feed and separate calibration module. Physical measure is deliberate default; this would be an optional switch.
+
+### New note types needed
+
+See "New note structures" section below for detailed implementation notes on Bonus Certificates and Capital Protected Participation Notes — both seen in PUENTE product shelf.
+
 ## Review status (2026-06-10)
 
 A full-repo review was performed and all findings were FIXED in the same pass
@@ -229,3 +261,77 @@ places.
   regular payers; special dividends and cuts are not anticipated.
 - **`.venv/bin/pip` has a broken shebang** (points at the old
   `Multiasset_Heston_Sim` path) — use `.venv/bin/python -m pip`.
+
+## New note structures
+
+### Bonus Certificate / European Barrier Note with Floor Return
+
+Seen in PUENTE product shelf (e.g. MELI/ORCL/META, 12M, 29% floor, 40% KI protection).
+
+Payoff at maturity:
+- If worst-of(T) ≥ knock_in_barrier (European, measured at maturity only):  `max(worst-of performance, 1 + min_return)`
+- If worst-of(T) < knock_in_barrier: `worst-of performance` (1:1 loss below barrier)
+
+No autocall, no periodic coupons. New `NoteTerms` fields needed:
+- `min_return` (float, e.g. `0.29`): guaranteed minimum return above barrier. Default `0.0` = no floor (standard Phoenix behaviour unaffected).
+- `upside_participation` (float, default `1.0`): fraction of worst-of upside above min_return. Always 100% in observed structures.
+
+`price_note()` change: in the final-step redemption block, replace `pay_par` (1.0) with `max(basket_final, 1 + terms.min_return)` when `min_return > 0` and KI not breached. Single `if` branch; no other payoff logic changes.
+
+JSON config example:
+```json
+{
+  "name": "PUENTE Mayo Bonus MELI/ORCL/META",
+  "maturity": 1.0,
+  "payment_freq": "annual",
+  "coupon_pa": 0.0,
+  "coupon_barrier": 1.1,
+  "autocall_barrier": 99.0,
+  "autocall_start_period": 99,
+  "knock_in_barrier": 0.60,
+  "memory": false,
+  "coupon_basket": "worst_of",
+  "autocall_basket": "worst_of",
+  "final_basket": "worst_of",
+  "final_redemption_barrier": 1.0,
+  "min_return": 0.29,
+  "tickers": {"MELI": "MELI", "ORCL": "ORCL", "META": "META"}
+}
+```
+(Set `coupon_barrier` and `autocall_barrier` impossibly high to disable periodic coupons and autocall effectively; `min_return: 0.29` triggers the floor logic.)
+
+### Capital Protected Participation Note (capped upside, guaranteed floor)
+
+Seen in PUENTE product shelf (e.g. NU/MELI, 18M, 100%/95% capital guarantee + 15%/30% CAP).
+
+Payoff at maturity (no KI, no autocall, no periodic coupons):
+`max(capital_guarantee, min(1 + worst-of return, 1 + upside_cap))`
+
+New `NoteTerms` fields needed:
+- `capital_guarantee` (float, e.g. `1.0` or `0.95`): floor on redemption. Default `null` = not a capital-protected note.
+- `upside_cap` (float, e.g. `0.15` or `0.30`): ceiling on participation return. Default `null` = no cap.
+- `min_return` (float): reuse from Bonus Certificate above; set `= capital_guarantee - 1` for unified logic.
+
+`price_note()` change: add a new payoff branch triggered by `terms.capital_guarantee is not None`. In this branch skip all autocall/coupon logic entirely; final payoff = `np.clip(basket_final, terms.capital_guarantee, 1 + terms.upside_cap)`.
+
+JSON config example (Option A: 100% floor + 15% CAP):
+```json
+{
+  "name": "PUENTE Junio Capital Garantizado NU/MELI - Opcion A",
+  "maturity": 1.5,
+  "payment_freq": "annual",
+  "coupon_pa": 0.0,
+  "coupon_barrier": 1.1,
+  "autocall_barrier": 99.0,
+  "autocall_start_period": 99,
+  "knock_in_barrier": 1.1,
+  "memory": false,
+  "coupon_basket": "worst_of",
+  "autocall_basket": "worst_of",
+  "final_basket": "worst_of",
+  "final_redemption_barrier": 1.0,
+  "capital_guarantee": 1.0,
+  "upside_cap": 0.15,
+  "tickers": {"NU": "NU", "MELI": "MELI"}
+}
+```

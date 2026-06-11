@@ -4,20 +4,30 @@ app/pdf_report.py
 Institutional-grade PDF report generator for the Structured Note Simulator.
 
 Visual language modelled on sell-side QIS / wealth-management publications:
-  - Cover page: brand wordmark, series title, accent subtitle, executive
-    summary bullets, right-hand info sidebar panel with underlying logos.
-  - Inner pages: small-caps eyebrow header + hairline, accent section
-    headings, centred "Figure N" captions with source lines, thin-rule
-    key-value tables, filled-header data tables, callout boxes.
-  - Footer: italic compliance line + "Page X of Y".
+  - Cover page: full-width brand band with report title in white; note name
+    large below; issuer + date in subtitle style; underlyings sidebar with
+    logos; "About this report" blurb; TOC.
+  - Inner pages: running header (firm name left, note name right) with thin
+    rule; section headers in SemiBold with rule below; metric bands; filled-
+    header data tables with zebra rows; callout boxes; figure captions.
+  - Footer: page N of M, generation datetime, 6pt disclaimer.
   - Typography: Inter variable font (Regular / SemiBold / Bold / Light /
-    Italic) with automatic Helvetica fallback.
+    Italic / Bold Italic) with automatic Helvetica fallback.
 
 Public API (unchanged)
 ----------------------
 generate_pdf_report(terms, results, asset_names, figures, lang,
                     bt_summary, bt_figures, live_data, live_figure,
-                    logo_bytes, issuer_logo_bytes) -> bytes
+                    logo_bytes, issuer_logo_bytes,
+                    branding=None) -> bytes
+
+Branding dict schema (all keys optional):
+  {
+    "firm_name":     "Acme Capital",
+    "primary_color": "#003366",
+    "accent_color":  "#00A0DC",
+    "logo_url":      "https://..."
+  }
 """
 
 from __future__ import annotations
@@ -33,17 +43,37 @@ _FONT_DIR  = Path(__file__).parent.parent / "fonts"
 _INTER_TTC = _FONT_DIR / "Inter.ttc"
 
 # ──────────────────────────────────────────────────────────────────────────────
-# Palette
+# Default palette — institutional deep-navy / mid-blue / warm-grey
 # ──────────────────────────────────────────────────────────────────────────────
-_BRAND      = (20,  82,  20)
-_ACCENT     = (26, 107,  26)
-_TEXT       = (40,  40,  40)
-_TEXT_SOFT  = (105, 105, 105)
-_HAIRLINE   = (200, 200, 200)
-_RULE_LIGHT = (225, 225, 225)
-_PANEL      = (238, 244, 238)
-_ROW_ALT    = (247, 249, 247)
-_WHITE      = (255, 255, 255)
+_DEFAULT_PRIMARY  = (26,  46, 74)   # deep navy  #1a2e4a
+_DEFAULT_ACCENT   = (37,  99, 235)  # mid-blue   #2563eb
+_TEXT             = (33,  33, 33)   # near-black
+_TEXT_SOFT        = (107, 114, 128) # warm grey  #6b7280
+_HAIRLINE         = (203, 213, 225) # cool grey  #cbd5e1
+_RULE_LIGHT       = (226, 232, 240) # slate-100  #e2e8f0
+_PANEL            = (241, 245, 249) # slate-100  #f1f5f9
+_ROW_ALT          = (248, 250, 252) # slate-50   #f8fafc — zebra rows
+_WHITE            = (255, 255, 255)
+_COVER_BAND_H     = 38              # mm — height of the top cover band
+
+
+def _hex_to_rgb(hex_str: str) -> tuple[int, int, int]:
+    """Convert '#RRGGBB' to (R, G, B) integer tuple."""
+    h = hex_str.lstrip("#")
+    return (int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16))
+
+
+def _resolve_palette(branding: dict | None) -> tuple[
+    tuple[int, int, int], tuple[int, int, int], str
+]:
+    """Return (primary_color, accent_color, firm_name) from branding dict."""
+    if not branding:
+        return _DEFAULT_PRIMARY, _DEFAULT_ACCENT, "Structured Note Analytics"
+    primary = _hex_to_rgb(branding["primary_color"]) if branding.get("primary_color") else _DEFAULT_PRIMARY
+    accent  = _hex_to_rgb(branding["accent_color"])  if branding.get("accent_color")  else _DEFAULT_ACCENT
+    firm    = branding.get("firm_name", "Structured Note Analytics") or "Structured Note Analytics"
+    return primary, accent, firm
+
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Translations
@@ -146,6 +176,16 @@ _LABELS: dict[str, dict[str, str]] = {
     "live_asset_perf":       {"en": "Current Asset Performance",         "es": "Rendimiento Actual por Activo"},
     "live_obs_history":      {"en": "Observation History",               "es": "Historial de Observaciones"},
     "performance":           {"en": "Performance",                       "es": "Rendimiento"},
+    "about_this_report": {
+        "en": "This report presents a quantitative analysis of the structured note's expected "
+              "performance under a multi-asset Heston stochastic-volatility model. It covers "
+              "Monte Carlo simulation results, model calibration, and where applicable, a "
+              "historical backtest and live tracking of the current note.",
+        "es": "Este informe presenta un análisis cuantitativo del rendimiento esperado de la nota "
+              "estructurada bajo un modelo de volatilidad estocástica Heston multi-activo. Incluye "
+              "resultados de simulación Monte Carlo, calibración del modelo y, cuando corresponde, "
+              "un backtest histórico y seguimiento en tiempo real de la nota.",
+    },
     "footer_line": {
         "en": "For information only. Output of an automated quantitative simulation — not investment advice, an offer, or a solicitation.",
         "es": "Solo a título informativo. Resultado de una simulación cuantitativa automatizada — no es asesoramiento ni oferta de inversión.",
@@ -228,11 +268,11 @@ def _safe(text: object, *, latin1: bool = False) -> str:
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Font registration
-# ──────────────────────────────────────────────────────────────────────────────
 # TTC indices used from Inter.ttc:
 #   0  = Inter Regular       14 = Inter Bold
 #   3  = Inter Italic        15 = Inter Bold Italic
 #   6  = Inter Light         12 = Inter SemiBold
+# ──────────────────────────────────────────────────────────────────────────────
 _TTC_IDX = {
     ("Inter",      ""):   0,
     ("Inter",      "I"):  3,
@@ -263,15 +303,24 @@ def _register_inter(pdf: FPDF) -> bool:
 class _NotePDF(FPDF):
     """A4 portrait document with QIS-publication styling and Inter typography."""
 
-    def __init__(self, lang: str = "en", issuer: str = "", doc_ref: str = ""):
+    def __init__(self, lang: str = "en", issuer: str = "", doc_ref: str = "",
+                 primary_color: tuple = _DEFAULT_PRIMARY,
+                 accent_color: tuple = _DEFAULT_ACCENT,
+                 firm_name: str = "Structured Note Analytics",
+                 firm_logo_bytes: bytes | None = None):
         super().__init__(orientation="P", unit="mm", format="A4")
-        self.lang      = lang
-        self.issuer    = issuer
-        self.doc_ref   = doc_ref
-        self._is_cover = False
-        self._fig_no   = 0
+        self.lang          = lang
+        self.issuer        = issuer
+        self.doc_ref       = doc_ref
+        self.primary_color = primary_color
+        self.accent_color  = accent_color
+        self.firm_name     = firm_name
+        self.firm_logo_bytes = firm_logo_bytes
+        self._is_cover     = False
+        self._fig_no       = 0
+        self._gen_dt       = datetime.datetime.now().strftime("%d %b %Y  %H:%M")
         self.set_margins(16, 16, 16)
-        self.set_auto_page_break(auto=True, margin=26)
+        self.set_auto_page_break(auto=True, margin=28)
         self.alias_nb_pages()
         self._use_inter = _register_inter(self)
 
@@ -279,7 +328,7 @@ class _NotePDF(FPDF):
     # Font helpers
     # ------------------------------------------------------------------
     def _sf(self, size: float, weight: str = "regular") -> None:
-        """Set font by semantic weight. weight ∈ regular|bold|semibold|light|italic|bold_italic"""
+        """Set font by semantic weight."""
         if self._use_inter:
             _map = {
                 "regular":    ("Inter",      ""),
@@ -293,12 +342,12 @@ class _NotePDF(FPDF):
             self.set_font(family, style, size)
         else:
             _hmap = {
-                "regular": ("Helvetica", ""),
-                "bold":    ("Helvetica", "B"),
-                "bold_italic": ("Helvetica", "BI"),
-                "italic":  ("Helvetica", "I"),
-                "semibold":("Helvetica", "B"),
-                "light":   ("Helvetica", ""),
+                "regular":    ("Helvetica", ""),
+                "bold":       ("Helvetica", "B"),
+                "bold_italic":("Helvetica", "BI"),
+                "italic":     ("Helvetica", "I"),
+                "semibold":   ("Helvetica", "B"),
+                "light":      ("Helvetica", ""),
             }
             family, style = _hmap.get(weight, ("Helvetica", ""))
             self.set_font(family, style, size)
@@ -326,104 +375,138 @@ class _NotePDF(FPDF):
         return super().multi_cell(*args, **kwargs)
 
     # ------------------------------------------------------------------
-    # Page chrome
+    # Page chrome — running header / footer
     # ------------------------------------------------------------------
     def header(self):
         if self._is_cover:
             return
-        self.set_xy(self.l_margin, 10)
+
+        # ── Firm logo (top-left) ─────────────────────────────────────
+        logo_w = 0.0
+        if self.firm_logo_bytes:
+            try:
+                self.image(io.BytesIO(self.firm_logo_bytes),
+                           x=self.l_margin, y=8, w=8, h=8)
+                logo_w = 10.0
+            except Exception:
+                logo_w = 0.0
+
+        # ── Firm name (left) + Note name (right) ─────────────────────
+        self.set_xy(self.l_margin + logo_w, 9.5)
+        self._sf(7.5, "semibold")
+        self.set_text_color(*self.primary_color)
+        firm_label = self._safe(self.firm_name.upper())
+        self.cell(100, 4.5, firm_label)
+
         self._sf(7, "light")
         self.set_text_color(*_TEXT_SOFT)
-        try:
-            self.set_char_spacing(0.9)
-        except Exception:
-            pass
-        self.cell(120, 5, _t("report_eyebrow", self.lang))
-        try:
-            self.set_char_spacing(0)
-        except Exception:
-            pass
-        if self.issuer:
-            self._sf(11, "bold")
-            self.set_text_color(*_BRAND)
-            self.set_xy(self.w - self.r_margin - 80, 8.5)
-            self.cell(80, 7, self.issuer.upper(), align="R")
+        self.set_xy(self.w - self.r_margin - 85, 9.5)
+        note_label = self._safe(self.doc_ref.split("|")[-1].strip() if "|" in self.doc_ref else self.doc_ref)
+        self.cell(85, 4.5, note_label, align="R")
+
+        # ── Thin rule below header ────────────────────────────────────
         self.set_draw_color(*_HAIRLINE)
         self.set_line_width(0.3)
-        self.line(self.l_margin, 17, self.w - self.r_margin, 17)
+        self.line(self.l_margin, 16.5, self.w - self.r_margin, 16.5)
         self.set_text_color(*_TEXT)
-        self.set_y(22)
+        self.set_y(21)
 
     def footer(self):
+        # ── Thin rule above footer ────────────────────────────────────
         self.set_draw_color(*_HAIRLINE)
         self.set_line_width(0.2)
-        self.line(self.l_margin, self.h - 20, self.w - self.r_margin, self.h - 20)
-        self.set_y(-18)
-        self._sf(6.5, "italic")
+        self.line(self.l_margin, self.h - 22, self.w - self.r_margin, self.h - 22)
+
+        # ── Disclaimer line ───────────────────────────────────────────
+        self.set_y(-20)
+        self._sf(6, "light")
         self.set_text_color(*_TEXT_SOFT)
-        self.multi_cell(0, 3, _t("footer_line", self.lang), align="L")
+        self.multi_cell(0, 2.9, _t("footer_line", self.lang), align="L")
+
+        # ── Page number + generation datetime ────────────────────────
         self.set_y(-11)
-        self._sf(7, "light")
-        left = self.doc_ref or _t("series_title", self.lang)
-        self.cell(0, 5, left, align="L")
+        self._sf(6.5, "light")
+        self.set_text_color(*_TEXT_SOFT)
+        self.cell(0, 4.5, self._safe(self._gen_dt), align="L")
         self.set_y(-11)
-        self.cell(0, 5, f"Page {self.page_no()} of {{nb}}", align="R")
+        self.cell(0, 4.5, f"Page {self.page_no()} of {{nb}}", align="R")
         self.set_text_color(*_TEXT)
 
     # ------------------------------------------------------------------
     # Building blocks
     # ------------------------------------------------------------------
     def section_title(self, text: str):
+        """SemiBold 11pt section header with micro-space above and thin rule below."""
         if self.get_y() > self.h - 60:
             self.add_page()
-        self.ln(2)
-        self._sf(13, "semibold")
-        self.set_text_color(*_ACCENT)
-        self.cell(0, 8, text, new_x="LMARGIN", new_y="NEXT")
+        self.ln(4)                          # breathing room above
+        self._sf(11, "semibold")
+        self.set_text_color(*self.primary_color)
+        self.cell(0, 7, text, new_x="LMARGIN", new_y="NEXT")
+        # Thin rule directly below
+        self.set_draw_color(*self.primary_color)
+        self.set_line_width(0.3)
+        self.line(self.l_margin, self.get_y(), self.w - self.r_margin, self.get_y())
         self.set_text_color(*_TEXT)
-        self.ln(1.5)
+        self.ln(3)
 
     def subsection(self, text: str):
-        if self.get_y() > self.h - 60:
+        """SemiBold 9pt sub-header with rule below."""
+        if self.get_y() > self.h - 55:
             self.add_page()
-        self._sf(8.5, "semibold")
+        self.ln(2)
+        self._sf(9, "semibold")
         self.set_text_color(*_TEXT)
         self.cell(0, 6, text.upper(), new_x="LMARGIN", new_y="NEXT")
-        self.ln(0.5)
+        self.set_draw_color(*_RULE_LIGHT)
+        self.set_line_width(0.2)
+        self.line(self.l_margin, self.get_y(), self.w - self.r_margin, self.get_y())
+        self.set_text_color(*_TEXT)
+        self.ln(2)
 
-    def body(self, text: str, h: float = 4.6):
-        self._sf(9, "regular")
+    def body(self, text: str, h: float = 4.5):
+        """8.5pt regular body text."""
+        self._sf(8.5, "regular")
         self.set_text_color(*_TEXT)
         self.multi_cell(0, h, text)
-        self.ln(1)
+        self.ln(1.5)
 
     def bullet(self, text: str):
-        self._sf(9, "regular")
+        """8.5pt bullet point with proper indent."""
+        self._sf(8.5, "regular")
         self.set_text_color(*_TEXT)
         x0 = self.get_x()
-        self.cell(5, 4.8, "•" if self._use_inter else chr(149))
-        self.multi_cell(self.w - self.r_margin - x0 - 5, 4.8, text)
-        self.ln(1.2)
+        self.cell(5, 5, "•" if self._use_inter else chr(149))
+        self.multi_cell(self.w - self.r_margin - x0 - 5, 5, text)
+        self.ln(1.5)
 
     def kv_table(self, rows: list[tuple[str, str]], col_w: tuple[float, float] = (78, 100)):
+        """Label/value table with thin rules and consistent alignment."""
         self.set_text_color(*_TEXT)
-        for k, v in rows:
+        for row_idx, (k, v) in enumerate(rows):
             y0 = self.get_y()
             if y0 > self.h - 32:
                 self.add_page()
                 y0 = self.get_y()
+            # Light zebra on alternating rows — subtle background
+            if row_idx % 2 == 0:
+                self.set_fill_color(*_ROW_ALT)
+                self.rect(self.l_margin, y0, col_w[0] + col_w[1], 6.4, style="F")
             self._sf(8.5, "semibold")
+            self.set_text_color(*_TEXT)
             self.cell(col_w[0], 6.4, k)
             self._sf(8.5, "regular")
             self.cell(col_w[1], 6.4, v, new_x="LMARGIN", new_y="NEXT")
             self.set_draw_color(*_RULE_LIGHT)
-            self.set_line_width(0.2)
-            self.line(self.l_margin, self.get_y(), self.l_margin + col_w[0] + col_w[1], self.get_y())
+            self.set_line_width(0.15)
+            self.line(self.l_margin, self.get_y(),
+                      self.l_margin + col_w[0] + col_w[1], self.get_y())
         self.ln(3)
 
     def data_table(self, headers: list[str], rows: list[list[str]],
                    col_widths: list[float] | None = None,
                    aligns: list[str] | None = None):
+        """Filled-header table with zebra rows and proper number alignment."""
         n = len(headers)
         usable = self.w - self.l_margin - self.r_margin
         if col_widths is None:
@@ -432,14 +515,19 @@ class _NotePDF(FPDF):
             aligns = ["L"] + ["R"] * (n - 1)
 
         def _header_row():
-            self.set_fill_color(*_BRAND)
+            self.set_fill_color(*self.primary_color)
             self.set_text_color(*_WHITE)
             self._sf(7.5, "semibold")
             for h, w, a in zip(headers, col_widths, aligns):
-                self.cell(w, 6.5, f" {h} ", border=0, fill=True, align=a)
+                self.cell(w, 7, f" {h} ", border=0, fill=True, align=a)
             self.ln()
+            # Thin separator between header and data
+            self.set_draw_color(*self.accent_color)
+            self.set_line_width(0.25)
+            self.line(self.l_margin, self.get_y(),
+                      self.l_margin + sum(col_widths), self.get_y())
             self.set_text_color(*_TEXT)
-            self._sf(7.5, "regular")
+            self._sf(8, "regular")
 
         if self.get_y() > self.h - 55:
             self.add_page()
@@ -449,44 +537,55 @@ class _NotePDF(FPDF):
             if self.get_y() > self.h - 30:
                 self.add_page()
                 _header_row()
-            self.set_fill_color(*(_ROW_ALT if i % 2 == 0 else _WHITE))
+            fill_color = _ROW_ALT if i % 2 == 0 else _WHITE
+            self.set_fill_color(*fill_color)
             for cell_val, w, a in zip(row, col_widths, aligns):
-                self.cell(w, 5.8, f" {cell_val} ", border=0, fill=True, align=a)
+                self.cell(w, 6, f" {cell_val} ", border=0, fill=True, align=a)
             self.ln()
+
+        # Bottom rule
         self.set_draw_color(*_HAIRLINE)
         self.set_line_width(0.2)
-        self.line(self.l_margin, self.get_y(), self.l_margin + sum(col_widths), self.get_y())
+        self.line(self.l_margin, self.get_y(),
+                  self.l_margin + sum(col_widths), self.get_y())
         self.ln(4)
 
     def metric_band(self, metrics: list[tuple[str, str]]):
+        """Horizontal band of key metrics with accent top rule."""
         n = len(metrics)
         usable = self.w - self.l_margin - self.r_margin
         w = usable / n
         y0 = self.get_y()
-        self.set_draw_color(*_BRAND)
-        self.set_line_width(0.5)
+
+        # Accent top rule
+        self.set_draw_color(*self.accent_color)
+        self.set_line_width(0.6)
         self.line(self.l_margin, y0, self.w - self.r_margin, y0)
-        self.ln(2)
+        self.ln(2.5)
+
         x = self.l_margin
         for label, value in metrics:
-            lbl = self._safe(label.upper())
-            size = 6.7
+            lbl  = self._safe(label.upper())
+            size = 6.5
             self._sf(size, "semibold")
             while self.get_string_width(lbl) > (w - 3) and size > 4.5:
                 size -= 0.2
                 self._sf(size, "semibold")
-            self.set_xy(x, y0 + 2.5)
+            self.set_xy(x, y0 + 3)
             self.set_text_color(*_TEXT_SOFT)
-            self.cell(w - 2, 3.4, lbl)
-            self.set_xy(x, y0 + 8)
-            self._sf(14, "bold")
-            self.set_text_color(*_TEXT)
+            self.cell(w - 2, 3.5, lbl)
+
+            self.set_xy(x, y0 + 8.5)
+            self._sf(13, "bold")
+            self.set_text_color(*self.primary_color)
             self.cell(w - 2, 7, value)
             x += w
-        self.set_y(y0 + 17)
+
+        self.set_y(y0 + 18)
         self.set_draw_color(*_RULE_LIGHT)
         self.set_line_width(0.2)
         self.line(self.l_margin, self.get_y(), self.w - self.r_margin, self.get_y())
+        self.set_text_color(*_TEXT)
         self.ln(4)
 
     def figure(self, img_bytes: bytes | None, caption: str, source: str,
@@ -494,30 +593,32 @@ class _NotePDF(FPDF):
         if img_bytes is None:
             return
         self._fig_no += 1
-        needed = h + 16
-        if self.get_y() + needed > self.h - 26:
+        needed = h + 18
+        if self.get_y() + needed > self.h - 28:
             self.add_page()
+        # Caption above figure — SemiBold 8.5pt in accent color
         self._sf(8.5, "semibold")
-        self.set_text_color(*_ACCENT)
-        self.multi_cell(0, 4.4, f"Figure {self._fig_no}: {caption}", align="C")
-        self.ln(0.5)
+        self.set_text_color(*self.accent_color)
+        self.multi_cell(0, 4.5, f"Figure {self._fig_no}: {caption}", align="C")
+        self.ln(1)
         x = (self.w - w) / 2
         self.image(io.BytesIO(img_bytes), x=x, w=w, h=h)
-        self.ln(1)
-        self._sf(6.8, "light")
+        self.ln(1.5)
+        # Source line — Light 7pt
+        self._sf(7, "light")
         self.set_text_color(*_TEXT_SOFT)
-        self.cell(0, 3.6, source, align="C", new_x="LMARGIN", new_y="NEXT")
+        self.cell(0, 3.5, source, align="C", new_x="LMARGIN", new_y="NEXT")
         self.set_text_color(*_TEXT)
-        self.ln(3)
+        self.ln(3.5)
 
     def callout(self, title: str, text: str, w: float | None = None):
         if w is None:
             w = self.w - self.l_margin - self.r_margin
         x0, y0 = self.l_margin, self.get_y()
         self._sf(8, "regular")
-        lines = self.multi_cell(w - 8, 4.2, self._safe(text), dry_run=True, output="LINES")
-        box_h = 9 + len(lines) * 4.2 + 4
-        if y0 + box_h > self.h - 26:
+        lines = self.multi_cell(w - 8, 4.3, self._safe(text), dry_run=True, output="LINES")
+        box_h = 10 + len(lines) * 4.3 + 4
+        if y0 + box_h > self.h - 28:
             self.add_page()
             y0 = self.get_y()
         self.set_fill_color(*_PANEL)
@@ -525,13 +626,17 @@ class _NotePDF(FPDF):
             self.rect(x0, y0, w, box_h, style="F", round_corners=True, corner_radius=2)
         except TypeError:
             self.rect(x0, y0, w, box_h, style="F")
-        self.set_xy(x0 + 4, y0 + 3)
+        # Left accent bar
+        self.set_fill_color(*self.accent_color)
+        self.rect(x0, y0, 2, box_h, style="F")
+        self.set_xy(x0 + 6, y0 + 3.5)
         self._sf(8.5, "semibold")
-        self.set_text_color(*_TEXT)
-        self.cell(w - 8, 5, title)
-        self.set_xy(x0 + 4, y0 + 9)
+        self.set_text_color(*self.primary_color)
+        self.cell(w - 10, 5, title)
+        self.set_xy(x0 + 6, y0 + 10)
         self._sf(8, "regular")
-        self.multi_cell(w - 8, 4.2, text)
+        self.set_text_color(*_TEXT)
+        self.multi_cell(w - 10, 4.3, text)
         self.set_y(y0 + box_h + 4)
 
 
@@ -662,28 +767,65 @@ def _cover_page(
     pdf._is_cover = True
     pdf.add_page()
 
-    # Top hairline + micro-disclaimer
-    pdf.set_draw_color(*_HAIRLINE)
-    pdf.set_line_width(0.3)
-    pdf.line(pdf.l_margin, 12, pdf.w - pdf.r_margin, 12)
-    pdf.set_y(13.5)
-    pdf._sf(6.3, "light")
-    pdf.set_text_color(*_TEXT_SOFT)
-    pdf.multi_cell(0, 2.9, _t("cover_topline", lang), align="C")
-    pdf.line(pdf.l_margin, pdf.get_y() + 1.5, pdf.w - pdf.r_margin, pdf.get_y() + 1.5)
+    # ── Full-width colored top band ───────────────────────────────────────
+    band_h = _COVER_BAND_H
+    pdf.set_fill_color(*pdf.primary_color)
+    pdf.rect(0, 0, pdf.w, band_h, style="F")
 
-    # Sidebar panel (right)
-    sb_x, sb_w = 138, pdf.w - pdf.r_margin - 138
-    sb_y, sb_h = 34, 150
-    pdf.set_fill_color(*_PANEL)
-    pdf.rect(sb_x, sb_y, sb_w, sb_h, style="F")
-
-    def _sb_label(y, txt, color=_ACCENT):
-        pdf.set_xy(sb_x + 5, y)
-        pdf._sf(7.5, "semibold")
-        pdf.set_text_color(*color)
+    # Firm logo (top-left in band)
+    logo_x = pdf.l_margin
+    if pdf.firm_logo_bytes:
         try:
-            pdf.set_char_spacing(0.6)
+            pdf.image(io.BytesIO(pdf.firm_logo_bytes),
+                      x=logo_x, y=(band_h - 9) / 2, w=9, h=9)
+            logo_x += 12
+        except Exception:
+            pass
+
+    # Report title (white, in band)
+    pdf.set_xy(logo_x, 7)
+    pdf._sf(8.5, "semibold")
+    pdf.set_text_color(*_WHITE)
+    try:
+        pdf.set_char_spacing(1.2)
+    except Exception:
+        pass
+    pdf.cell(140, 5, _t("report_eyebrow", lang).upper())
+    try:
+        pdf.set_char_spacing(0)
+    except Exception:
+        pass
+
+    # Generation date (right-aligned in band)
+    pdf.set_xy(pdf.w - pdf.r_margin - 55, 7)
+    pdf._sf(7.5, "light")
+    pdf.set_text_color(220, 230, 245)
+    pdf.cell(55, 5, datetime.date.today().strftime("%-d %B %Y"), align="R")
+
+    # Firm name (second line in band)
+    pdf.set_xy(logo_x, 14)
+    pdf._sf(13, "bold")
+    pdf.set_text_color(*_WHITE)
+    pdf.cell(140, 7, _safe(pdf.firm_name))
+
+    # ── Sidebar panel (right column) ──────────────────────────────────────
+    sb_x, sb_w = 138, pdf.w - pdf.r_margin - 138
+    sb_y_top   = band_h + 4
+    sb_h       = 170
+
+    pdf.set_fill_color(*_PANEL)
+    pdf.rect(sb_x, sb_y_top, sb_w, sb_h, style="F")
+
+    # Accent top stripe on sidebar
+    pdf.set_fill_color(*pdf.accent_color)
+    pdf.rect(sb_x, sb_y_top, sb_w, 1.5, style="F")
+
+    def _sb_label(y, txt):
+        pdf.set_xy(sb_x + 5, y)
+        pdf._sf(7, "semibold")
+        pdf.set_text_color(*pdf.primary_color)
+        try:
+            pdf.set_char_spacing(0.8)
         except Exception:
             pass
         pdf.cell(sb_w - 10, 4, txt.upper())
@@ -700,20 +842,20 @@ def _cover_page(
         pdf.multi_cell(sb_w - 10, 4.2, _safe(txt))
         return pdf.get_y()
 
-    y = _sb_text(sb_y + 4, datetime.date.today().strftime("%-d %B %Y"), "regular", 8.5, _TEXT)
-    y = _sb_label(y + 4, _t("underlyings", lang))
+    y = sb_y_top + 5
+    y = _sb_label(y, _t("underlyings", lang))
 
-    # Underlying logos + names
     _LOGO_H = 8.0
     _LOGO_W = 8.0
-    _ROW_H  = 10.5
+    _ROW_H  = 11.0
     for nm in asset_names:
         logo_url  = (logo_urls or {}).get(nm, "")
         logo_data = _fetch_image_bytes(logo_url) if logo_url else None
         row_y = y + 1.0
         if logo_data:
             try:
-                pdf.image(io.BytesIO(logo_data), x=sb_x + 4, y=row_y, w=_LOGO_W, h=_LOGO_H)
+                pdf.image(io.BytesIO(logo_data), x=sb_x + 4, y=row_y,
+                          w=_LOGO_W, h=_LOGO_H)
                 text_x = sb_x + 4 + _LOGO_W + 2
                 pdf.set_xy(text_x, row_y + (_LOGO_H - 4.5) / 2)
                 pdf._sf(8.5, "semibold")
@@ -727,8 +869,8 @@ def _cover_page(
 
     y = _sb_label(y + 3, _t("key_terms", lang))
     mini = [
-        (_t("maturity", lang), f"{terms.maturity:g}Y {terms.payment_freq}"),
-        (_t("coupon_pa", lang), f"{terms.coupon_pa*100:.2f}%"),
+        (_t("maturity", lang),        f"{terms.maturity:g}Y {terms.payment_freq}"),
+        (_t("coupon_pa", lang),        f"{terms.coupon_pa*100:.2f}%"),
         (_t("autocall_barrier", lang), f"{terms.autocall_barrier:.0%}"),
         (_t("ki_barrier", lang).split(" (")[0], f"{terms.knock_in_barrier:.1%}"),
     ]
@@ -745,54 +887,109 @@ def _cover_page(
         pdf.cell(sb_w - 10, 4, _safe(v))
         y += 9.5
 
-    # Main column (left of sidebar)
+    # ── Main column ───────────────────────────────────────────────────────
     main_w = sb_x - pdf.l_margin - 8
+    y_main = band_h + 6
 
-    # Issuer: logo + name
-    pdf.set_xy(pdf.l_margin, 32)
+    # Issuer logo + name block
+    pdf.set_xy(pdf.l_margin, y_main)
     if issuer_logo_bytes:
         try:
-            pdf.image(io.BytesIO(issuer_logo_bytes), x=pdf.l_margin, y=32, w=10, h=10)
-            pdf.set_xy(pdf.l_margin + 12, 35)
-            pdf._sf(20, "bold")
-            pdf.set_text_color(*_BRAND)
-            pdf.cell(main_w - 12, 10, pdf.issuer.upper(), new_x="LMARGIN", new_y="NEXT")
+            pdf.image(io.BytesIO(issuer_logo_bytes),
+                      x=pdf.l_margin, y=y_main, w=11, h=11)
+            pdf.set_xy(pdf.l_margin + 14, y_main + 1.5)
+            pdf._sf(10, "semibold")
+            pdf.set_text_color(*_TEXT_SOFT)
+            pdf.cell(main_w - 14, 6, _safe(pdf.issuer.upper()))
         except Exception:
             if pdf.issuer:
-                pdf._sf(20, "bold")
-                pdf.set_text_color(*_BRAND)
-                pdf.cell(main_w, 10, pdf.issuer.upper(), new_x="LMARGIN", new_y="NEXT")
+                pdf._sf(10, "semibold")
+                pdf.set_text_color(*_TEXT_SOFT)
+                pdf.cell(main_w, 6, _safe(pdf.issuer.upper()),
+                         new_x="LMARGIN", new_y="NEXT")
     elif pdf.issuer:
-        pdf._sf(20, "bold")
-        pdf.set_text_color(*_BRAND)
-        pdf.cell(main_w, 10, pdf.issuer.upper(), new_x="LMARGIN", new_y="NEXT")
+        pdf._sf(10, "semibold")
+        pdf.set_text_color(*_TEXT_SOFT)
+        pdf.cell(main_w, 6, _safe(pdf.issuer.upper()),
+                 new_x="LMARGIN", new_y="NEXT")
 
-    pdf.ln(4)
-    pdf._sf(15, "semibold")
-    pdf.set_text_color(*_TEXT)
-    pdf.cell(main_w, 8, _t("series_title", lang), new_x="LMARGIN", new_y="NEXT")
-    pdf.ln(1)
-    pdf._sf(12.5, "semibold")
-    pdf.set_text_color(*_ACCENT)
-    pdf.multi_cell(main_w, 6.2, _safe(terms.name))
-    pdf.ln(6)
+    # Note name — large, primary color
+    y_name = y_main + 14
+    pdf.set_xy(pdf.l_margin, y_name)
+    pdf._sf(18, "bold")
+    pdf.set_text_color(*pdf.primary_color)
+    pdf.multi_cell(main_w, 9, _safe(terms.name))
+
+    # Report type subtitle
+    pdf.set_x(pdf.l_margin)
+    pdf._sf(9.5, "light")
+    pdf.set_text_color(*_TEXT_SOFT)
+    pdf.cell(main_w, 6, _safe(_t("series_title", lang)),
+             new_x="LMARGIN", new_y="NEXT")
+
+    # Thin divider
+    pdf.set_draw_color(*_HAIRLINE)
+    pdf.set_line_width(0.2)
+    pdf.line(pdf.l_margin, pdf.get_y() + 1,
+             pdf.l_margin + main_w, pdf.get_y() + 1)
+    pdf.ln(5)
 
     # Executive summary bullets
+    pdf._sf(8.5, "semibold")
+    pdf.set_text_color(*pdf.primary_color)
+    try:
+        pdf.set_char_spacing(0.4)
+    except Exception:
+        pass
+    pdf.cell(main_w, 5, _t("exec_summary", lang).upper(), new_x="LMARGIN", new_y="NEXT")
+    try:
+        pdf.set_char_spacing(0)
+    except Exception:
+        pass
+    pdf.set_draw_color(*pdf.accent_color)
+    pdf.set_line_width(0.25)
+    pdf.line(pdf.l_margin, pdf.get_y(), pdf.l_margin + main_w, pdf.get_y())
+    pdf.ln(2.5)
+
     for txt in _exec_bullets(terms, results, bt_summary, live_data, lang):
         pdf.set_x(pdf.l_margin)
-        pdf._sf(9, "regular")
+        pdf._sf(8.5, "regular")
         pdf.set_text_color(*_TEXT)
-        pdf.cell(5, 5.2, "•" if pdf._use_inter else chr(149))
-        pdf.multi_cell(main_w - 5, 5.2, _safe(txt), align="J")
-        pdf.ln(2.5)
+        pdf.cell(5, 5.5, "•" if pdf._use_inter else chr(149))
+        pdf.multi_cell(main_w - 5, 5.5, _safe(txt), align="J")
+        pdf.ln(2)
 
-    # Contents block
-    pdf.ln(4)
+    # About this report blurb
+    pdf.ln(3)
     pdf.set_x(pdf.l_margin)
     pdf._sf(8, "semibold")
-    pdf.set_text_color(*_ACCENT)
+    pdf.set_text_color(*pdf.primary_color)
     try:
-        pdf.set_char_spacing(0.5)
+        pdf.set_char_spacing(0.4)
+    except Exception:
+        pass
+    pdf.cell(main_w, 5, ("ABOUT THIS REPORT" if lang == "en" else "ACERCA DE ESTE INFORME"),
+             new_x="LMARGIN", new_y="NEXT")
+    try:
+        pdf.set_char_spacing(0)
+    except Exception:
+        pass
+    pdf.set_draw_color(*_RULE_LIGHT)
+    pdf.set_line_width(0.2)
+    pdf.line(pdf.l_margin, pdf.get_y(), pdf.l_margin + main_w, pdf.get_y())
+    pdf.ln(2)
+    pdf.set_x(pdf.l_margin)
+    pdf._sf(7.5, "light")
+    pdf.set_text_color(*_TEXT_SOFT)
+    pdf.multi_cell(main_w, 4, _safe(_t("about_this_report", lang)))
+
+    # Contents block
+    pdf.ln(3)
+    pdf.set_x(pdf.l_margin)
+    pdf._sf(8, "semibold")
+    pdf.set_text_color(*pdf.primary_color)
+    try:
+        pdf.set_char_spacing(0.4)
     except Exception:
         pass
     pdf.cell(main_w, 5, _t("in_this_report", lang).upper(), new_x="LMARGIN", new_y="NEXT")
@@ -814,9 +1011,19 @@ def _cover_page(
         pdf.set_x(pdf.l_margin)
         pdf._sf(8.5, "regular")
         pdf.set_text_color(*_TEXT)
-        pdf.cell(main_w, 5.4, item, new_x="LMARGIN", new_y="NEXT")
+        pdf.cell(main_w, 5.5, item, new_x="LMARGIN", new_y="NEXT")
         pdf.set_draw_color(*_RULE_LIGHT)
         pdf.line(pdf.l_margin, pdf.get_y(), pdf.l_margin + main_w, pdf.get_y())
+
+    # Micro-disclaimer at very bottom of cover
+    pdf.set_xy(pdf.l_margin, pdf.h - 22)
+    pdf.set_draw_color(*_HAIRLINE)
+    pdf.set_line_width(0.2)
+    pdf.line(pdf.l_margin, pdf.h - 22, pdf.l_margin + main_w + sb_w + 8, pdf.h - 22)
+    pdf.set_xy(pdf.l_margin, pdf.h - 20)
+    pdf._sf(6, "light")
+    pdf.set_text_color(*_TEXT_SOFT)
+    pdf.multi_cell(0, 2.8, _safe(_t("cover_topline", lang)), align="C")
 
     pdf._is_cover = False
 
@@ -837,19 +1044,36 @@ def generate_pdf_report(
     live_figure=None,
     logo_urls: dict[str, str] | None = None,
     issuer_logo_url: str | None = None,
+    branding: dict | None = None,
 ) -> bytes:
     """
     Build the full institutional-style PDF report.
 
     logo_urls       — {display_name: url} for underlying ticker logos.
     issuer_logo_url — favicon / logo URL for the issuer (shown on cover).
-    Both are optional; missing logos are silently skipped.
+    branding        — optional dict with firm_name, primary_color, accent_color,
+                      logo_url. See module docstring for full schema.
+    All optional parameters default to None; existing callers are unaffected.
     """
+    # ── Resolve branding ──────────────────────────────────────────────
+    primary_color, accent_color, firm_name = _resolve_palette(branding)
+    brand_logo_bytes = None
+    if branding and branding.get("logo_url"):
+        brand_logo_bytes = _fetch_image_bytes(branding["logo_url"])
+
     issuer_logo_bytes = _fetch_image_bytes(issuer_logo_url) if issuer_logo_url else None
 
     issuer  = getattr(terms, "issuer", "") or ""
     doc_ref = f"{_t('series_title', lang)} | {terms.name}"
-    pdf = _NotePDF(lang=lang, issuer=issuer, doc_ref=doc_ref)
+    pdf = _NotePDF(
+        lang            = lang,
+        issuer          = issuer,
+        doc_ref         = doc_ref,
+        primary_color   = primary_color,
+        accent_color    = accent_color,
+        firm_name       = firm_name,
+        firm_logo_bytes = brand_logo_bytes,
+    )
 
     # ── 1. Cover ───────────────────────────────────────────────────────────
     _cover_page(pdf, terms, results, asset_names, bt_summary, live_data, lang,
@@ -866,7 +1090,7 @@ def generate_pdf_report(
     ac_rows = []
     for i, t_obs in enumerate(obs_times):
         eligible = _t("yes", lang) if (i + 1) >= terms.autocall_start_period else _t("no", lang)
-        ac_rows.append([f"P{i+1}", f"{t_obs:.3g}", f"{sched[i]:.1%}", eligible])
+        ac_rows.append([f"P{i+1}", f"{t_obs:.3g}", f"{sched[i]:.0%}", eligible])
     usable = pdf.w - pdf.l_margin - pdf.r_margin
     pdf.data_table(
         [_t("period", lang), _t("time_y", lang), _t("ac_level", lang), _t("eligible", lang)],
@@ -913,18 +1137,15 @@ def generate_pdf_report(
         pdf.add_page()
         pdf.section_title(_t("calibration", lang))
 
-        # Logo strip above the table — one small logo per asset
         logo_strip_y = pdf.get_y()
         n_assets = len(params)
         strip_w  = usable / max(n_assets, 1)
         any_logo = False
-        logo_ys  = []
         for i, p in enumerate(params):
-            nm       = str(p.name)
-            url      = (logo_urls or {}).get(nm, "")
-            ldata    = _fetch_image_bytes(url) if url else None
-            cx       = pdf.l_margin + i * strip_w + (strip_w - 10) / 2
-            logo_ys.append(logo_strip_y)
+            nm    = str(p.name)
+            url   = (logo_urls or {}).get(nm, "")
+            ldata = _fetch_image_bytes(url) if url else None
+            cx    = pdf.l_margin + i * strip_w + (strip_w - 10) / 2
             if ldata:
                 try:
                     pdf.image(io.BytesIO(ldata), x=cx, y=logo_strip_y, w=10, h=10)
@@ -943,7 +1164,7 @@ def generate_pdf_report(
             except Exception:
                 ok = False
             hp_rows.append([
-                str(p.name), f"{p.S0:,.1f}", f"{p.mu * 100:.1f}%",
+                str(p.name), f"{p.S0:,.2f}", f"{p.mu * 100:.1f}%",
                 f"{np.sqrt(p.V0) * 100:.1f}%", f"{np.sqrt(p.theta) * 100:.1f}%",
                 f"{p.kappa:.2f}", f"{p.xi:.2f}", f"{p.rho:.2f}",
                 "OK" if ok else "!",
@@ -990,8 +1211,9 @@ def generate_pdf_report(
             pdf.subsection(_t("live_asset_perf", lang))
             pdf.data_table(
                 [_t("asset", lang), _t("performance", lang)],
-                [[name, f"{perf:.1%}"] for name, perf in perf_today.items()],
+                [[name, f"{perf:.2%}"] for name, perf in perf_today.items()],
                 col_widths=[usable * 0.5, usable * 0.5],
+                aligns=["L", "R"],
             )
 
         obs_rows = live_data.get("obs_rows", [])
@@ -1016,7 +1238,7 @@ def generate_pdf_report(
     pdf.set_text_color(*_TEXT_SOFT)
     for para in _t("disclaimer_body", lang).split("\n\n"):
         pdf.multi_cell(0, 3.8, _safe(para))
-        pdf.ln(2)
+        pdf.ln(2.5)
     pdf.set_text_color(*_TEXT)
 
     return bytes(pdf.output())
