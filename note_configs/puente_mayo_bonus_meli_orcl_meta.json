@@ -1,0 +1,30 @@
+{
+  "name": "PUENTE Mayo — Bonus Certificate MELI/ORCL/META",
+  "issuer": "PUENTE",
+  "maturity": 1.0,
+  "payment_freq": "annual",
+  "coupon_pa": 0.0,
+  "coupon_barrier": 0.0,
+  "autocall_barrier": 2.0,
+  "autocall_start_period": 1,
+  "knock_in_barrier": 0.60,
+  "principal_protection": 1.0,
+  "memory": false,
+  "coupon_basket": "worst_of",
+  "autocall_basket": "worst_of",
+  "final_basket": "worst_of",
+  "final_redemption_barrier": 1.0,
+  "call_steepness": null,
+  "autocall_step_down": 0.0,
+  "autocall_floor": null,
+  "coupon_at_autocall_only": false,
+  "min_return": 0.29,
+  "capital_guarantee": null,
+  "upside_cap": null,
+  "tickers": {
+    "MELI": "MercadoLibre",
+    "ORCL": "Oracle",
+    "META": "Meta"
+  },
+  "issue_date": null
+}

@@ -729,6 +729,11 @@ if st.session_state["page"] == "setup":
                 autocall_step_down      = step_down_pct / 100.0,
                 autocall_floor          = (floor_pct / 100.0) if (step_down_pct > 0 and floor_pct > 0) else None,
                 coupon_at_autocall_only = bool(premium_at_call),
+                # Bonus Certificate / Capital Protected fields — not exposed in the
+                # setup form UI; preserved from the loaded JSON config across round-trips.
+                min_return              = getattr(base, "min_return", 0.0),
+                capital_guarantee       = getattr(base, "capital_guarantee", None),
+                upside_cap              = getattr(base, "upside_cap", None),
                 tickers               = selected_tickers,
                 # Keep the issue date even when it is in the future, so a
                 # config round-trip through the setup form doesn't drop it;

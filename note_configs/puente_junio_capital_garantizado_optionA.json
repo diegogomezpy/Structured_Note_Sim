@@ -1,0 +1,29 @@
+{
+  "name": "PUENTE Junio — Capital Garantizado NU/MELI (Option A: 100% floor, 15% CAP)",
+  "issuer": "PUENTE",
+  "maturity": 1.5,
+  "payment_freq": "annual",
+  "coupon_pa": 0.0,
+  "coupon_barrier": 0.0,
+  "autocall_barrier": 2.0,
+  "autocall_start_period": 1,
+  "knock_in_barrier": 0.0,
+  "principal_protection": 1.0,
+  "memory": false,
+  "coupon_basket": "worst_of",
+  "autocall_basket": "worst_of",
+  "final_basket": "worst_of",
+  "final_redemption_barrier": 1.0,
+  "call_steepness": null,
+  "autocall_step_down": 0.0,
+  "autocall_floor": null,
+  "coupon_at_autocall_only": false,
+  "min_return": 0.0,
+  "capital_guarantee": 1.00,
+  "upside_cap": 0.15,
+  "tickers": {
+    "NU": "NU Holdings",
+    "MELI": "MercadoLibre"
+  },
+  "issue_date": null
+}

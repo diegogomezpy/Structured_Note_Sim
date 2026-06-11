@@ -252,6 +252,11 @@ class NoteTerms:
     autocall_step_down:      float       = 0.0    # per-period decrement of autocall barrier (0 = constant)
     autocall_floor:          float | None = None  # minimum autocall barrier when stepping down
     coupon_at_autocall_only: bool        = False  # True = no periodic coupon; accrued premium paid as a lump at autocall
+    # ── Bonus Certificate extension (default = no-op → plain Phoenix) ────────
+    min_return:              float       = 0.0    # minimum return floor at maturity when KI not breached (e.g. 0.29 = 29%)
+    # ── Capital Protected Note extension (default = None → plain Phoenix) ─────
+    capital_guarantee:       float | None = None  # guaranteed minimum redemption (e.g. 1.00 or 0.95); activates CP branch
+    upside_cap:              float | None = None  # maximum redemption above par (e.g. 0.15 = 15% above par → 1.15 max)
     name:                   str         = "Phoenix Memory Note"
     issuer:                 str         = ""      # display-only: e.g. "BBVA", "HSBC"
     tickers:                dict | None  = None
@@ -381,6 +386,9 @@ class NoteTerms:
             "autocall_step_down":     self.autocall_step_down,
             "autocall_floor":         self.autocall_floor,
             "coupon_at_autocall_only": self.coupon_at_autocall_only,
+            "min_return":             self.min_return,
+            "capital_guarantee":      self.capital_guarantee,
+            "upside_cap":             self.upside_cap,
             "tickers":                self.tickers,
             "issue_date":             self.issue_date,
         }
@@ -512,6 +520,47 @@ def price_note(
         )
     t_maturity = float(obs_times[-1])   # = terms.maturity unless overridden
     rng = np.random.default_rng(seed)
+
+    # ------------------------------------------------------------------
+    # Capital Protected Note branch (capital_guarantee is not None)
+    # ------------------------------------------------------------------
+    # Payoff: clip(worst-of at maturity, capital_guarantee, 1 + upside_cap)
+    # No autocall, no periodic coupons, no KI barrier — the entire Phoenix
+    # waterfall is skipped. This is a standalone payoff type.
+    if terms.capital_guarantee is not None:
+        final_step      = obs_steps[-1]
+        # worst-of basket at maturity (same convention as knock_in_cond)
+        worst_final_cp  = perf_paths[:, final_step, :].min(axis=1)       # (n_paths,)
+        cap_level       = (1.0 + terms.upside_cap) if terms.upside_cap is not None else np.inf
+        cp_payoff       = np.clip(worst_final_cp, terms.capital_guarantee, cap_level)  # (n_paths,)
+        total_return_cp = cp_payoff - 1.0
+        irr_cp          = total_return_cp / t_maturity
+        zeros           = np.zeros(n_paths)
+        return {
+            # Per-path arrays
+            "nominal_payoffs":      cp_payoff,
+            "coupon_payoffs":       zeros,
+            "principal_payoffs":    cp_payoff,
+            "autocall_period":      zeros.astype(int),
+            "knock_in_triggered":   np.zeros(n_paths, dtype=bool),
+            "annualized_returns":   irr_cp,
+            # Legacy alias
+            "autocall_events":      zeros.astype(int),
+            # Scalars
+            "expected_irr":             float(irr_cp.mean()),
+            "expected_total_return":    float(total_return_cp.mean()),
+            "expected_nominal_payout":  float(cp_payoff.mean()),
+            "expected_coupon":          0.0,
+            "prob_autocall":            0.0,
+            "prob_autocall_by_period":  [0.0] * n_obs,
+            "prob_maturity":            1.0,
+            "prob_knock_in":            0.0,
+            "prob_knock_in_total":      0.0,
+            "prob_barrier_event":       0.0,
+            "prob_rescued":             0.0,
+            # Legacy alias
+            "prob_floor":               0.0,
+        }
 
     # ------------------------------------------------------------------
     # Build ConditionRegistry from NoteTerms (backward-compatible factory)
@@ -696,10 +745,20 @@ def price_note(
     # Capital loss: cash-equivalent physical delivery = worst-of final performance.
     # Otherwise: principal_protection (100%) regardless of basket level (no upside
     # participation in a Phoenix).
+    #
+    # Bonus Certificate extension (min_return > 0):
+    # When KI not breached, redemption = max(worst-of performance, 1 + min_return).
+    # This gives full upside participation with a guaranteed floor return.
+    # When KI is breached (capital_loss), standard 1:1 downside applies regardless.
+    if terms.min_return > 0.0:
+        protected_redemption = np.maximum(worst_final, 1.0 + terms.min_return)
+    else:
+        protected_redemption = np.full(n_paths, terms.principal_protection)
+
     maturity_principal = np.where(
         capital_loss,
         worst_final,                       # cash equiv. of physical delivery
-        terms.principal_protection,        # par redemption
+        protected_redemption,              # floor-enhanced or par redemption
     )
 
     # Combine
