@@ -31,15 +31,13 @@ from translations import Translator
 
 # ---------------------------------------------------------------------------
 # Institutional palette — navy / blue, matching the PDF report and web theme.
-# The historical names (_GREEN_*) are kept so every existing call site keeps
-# working; only the colour values change.
+# These exact hex values are the source palette the PDF report's branded
+# recolouring (app/pdf_report.py) keys on, so do not change the values without
+# updating the _SRC_* constants there.
 # ---------------------------------------------------------------------------
 _NAVY         = "#1a2e4a"   # primary / worst-of line / dark series
 _BLUE         = "#2563eb"   # accent / median / primary series
 _BLUE_LIGHT   = "#60a5fa"   # light blue secondary series
-_GREEN_DARK   = _NAVY       # alias: darkest series
-_GREEN_MID    = _BLUE       # alias: primary series / median
-_GREEN_LIGHT  = _BLUE_LIGHT # alias: secondary series
 _RED          = "#dc2626"   # barrier / loss / negative
 _GREY         = "#6b7280"   # warm grey — secondary lines/text
 _WHITE        = "white"
@@ -123,10 +121,6 @@ def _add_autocall_barrier(fig: go.Figure, autocall_barrier, autocall_schedule,
             annotation_text=tr("chart_autocall_barrier_lvl", lvl=f"{autocall_barrier:.0%}"),
             annotation_position="top right",
         )
-
-
-def _plain_layout(fig: go.Figure) -> go.Figure:
-    return _apply_theme(fig)
 
 
 def _add_coupon_barrier(fig: go.Figure, coupon_barrier: float,
@@ -219,7 +213,7 @@ def build_irr_distribution(
             y=counts_c / n_total,
             width=bin_size * 0.95,
             name=tr("chart_legend_autocalled", pct=f"{len(irr_called)/n_total:.0%}"),
-            marker_color=_GREEN_LIGHT,
+            marker_color=_BLUE_LIGHT,
             opacity=0.85,
         ))
 
@@ -230,7 +224,7 @@ def build_irr_distribution(
             y=counts_m / n_total,
             width=bin_size * 0.95,
             name=tr("chart_legend_maturity", pct=f"{len(irr_maturity)/n_total:.0%}"),
-            marker_color=_GREEN_DARK,
+            marker_color=_NAVY,
             opacity=0.75,
         ))
 
@@ -247,7 +241,7 @@ def build_irr_distribution(
     # grows inward (never off the right edge), and stagger them vertically —
     # Mean at the top, Coupon a row lower via yshift — so they never overlap.
     fig.add_vline(
-        x=expected_irr, line_dash="dash", line_color=_GREEN_MID, line_width=1.5,
+        x=expected_irr, line_dash="dash", line_color=_BLUE, line_width=1.5,
         annotation_text=tr("chart_mean", v=f"{expected_irr:.2%}"),
         annotation_position="top left",
         annotation_font_size=11,
@@ -276,7 +270,7 @@ def build_irr_distribution(
         hovermode="x unified",
         bargap=0,
     )
-    return _plain_layout(fig)
+    return _apply_theme(fig)
 
 
 # ---------------------------------------------------------------------------
@@ -312,7 +306,7 @@ def build_fan_chart(
     fig.add_trace(go.Scatter(
         x=t_grid, y=bands[2],
         mode="lines", name=tr("median"),
-        line=dict(color=_GREEN_MID, width=2),
+        line=dict(color=_BLUE, width=2),
     ))
     fig.add_hline(y=S0, line_dash="dash", line_color=_GREY,
                   annotation_text="S₀", annotation_position="right")
@@ -328,7 +322,7 @@ def build_fan_chart(
         hovermode="x unified",
         legend=dict(x=0.01, y=0.99),
     )
-    return _plain_layout(fig)
+    return _apply_theme(fig)
 
 
 # ---------------------------------------------------------------------------
@@ -363,7 +357,7 @@ def build_wof_fan(
     fig.add_trace(go.Scatter(
         x=t_grid, y=bands[2],
         mode="lines", name=tr("median"),
-        line=dict(color=_GREEN_MID, width=2),
+        line=dict(color=_BLUE, width=2),
     ))
     fig.add_hline(
         y=knock_in_barrier, line_dash="dash", line_color=_RED,
@@ -381,7 +375,7 @@ def build_wof_fan(
         hovermode="x unified",
         legend=dict(x=0.01, y=0.01),
     )
-    return _plain_layout(fig)
+    return _apply_theme(fig)
 
 
 # ---------------------------------------------------------------------------
@@ -402,12 +396,12 @@ def build_path_price_chart(
             "value": tr("price_label"),
             "index": tr("time_step"),
         },
-        color_discrete_sequence=[_GREEN_MID, _GREEN_LIGHT, _GREEN_DARK],
+        color_discrete_sequence=[_BLUE, _BLUE_LIGHT, _NAVY],
     )
     for step, label in zip(obs_steps, obs_labels):
         fig.add_vline(x=step, line_dash="dot", line_color="#aaa",
                       annotation_text=label, annotation_position="top")
-    return _plain_layout(fig)
+    return _apply_theme(fig)
 
 
 def build_path_wof_chart(
@@ -423,7 +417,7 @@ def build_path_wof_chart(
     autocall_barrier: float | None      = None,
     autocall_schedule: list[tuple[float, float]] | None = None,
 ) -> go.Figure:
-    asset_colors = [_GREEN_MID, _GREEN_LIGHT, _GREEN_DARK, "#f39c12", "#9b59b6"]
+    asset_colors = [_BLUE, _BLUE_LIGHT, _NAVY, "#f39c12", "#9b59b6"]
     fig = go.Figure()
 
     # Per-asset lines behind worst-of (if provided)
@@ -438,7 +432,7 @@ def build_path_wof_chart(
     fig.add_trace(go.Scatter(
         y=worst_path, mode="lines",
         name=tr("chart_worst_of"),
-        line=dict(color=_GREEN_DARK, width=2.5),
+        line=dict(color=_NAVY, width=2.5),
     ))
     fig.add_hline(
         y=knock_in_barrier, line_dash="dash", line_color=_RED,
@@ -448,7 +442,7 @@ def build_path_wof_chart(
     _add_autocall_barrier(fig, autocall_barrier, autocall_schedule, tr, x0=0)
     for i, (step, label) in enumerate(zip(obs_steps, obs_labels)):
         called_here  = (autocall_q == i + 1)
-        marker_color = _GREEN_MID if called_here else _GREY
+        marker_color = _BLUE if called_here else _GREY
         marker_sym   = "star"     if called_here else "circle"
         suffix       = tr("called_label") if called_here else tr("continued_label")
         fig.add_trace(go.Scatter(
@@ -466,7 +460,7 @@ def build_path_wof_chart(
         xaxis=dict(title=tr("time_step")),
         hovermode="x unified",
     )
-    return _plain_layout(fig)
+    return _apply_theme(fig)
 
 
 # ---------------------------------------------------------------------------
@@ -512,7 +506,7 @@ def build_backtest_outcome_bar(
         labels={"Outcome": tr("chart_outcome_axis")},
     )
     fig.update_layout(showlegend=False)
-    return _plain_layout(fig)
+    return _apply_theme(fig)
 
 
 # ---------------------------------------------------------------------------
@@ -543,7 +537,7 @@ def build_worst_asset_pie(
         values=tr("count"),
         title=title,
         hole=0.4,
-        color_discrete_sequence=[_GREEN_MID, _GREEN_LIGHT, _GREEN_DARK],
+        color_discrete_sequence=[_BLUE, _BLUE_LIGHT, _NAVY],
     )
     return _apply_theme(fig)
 
@@ -577,7 +571,7 @@ def build_backtest_irr_scatter(
         annotation_position="right",
     )
     fig.update_layout(yaxis=dict(tickformat=".1%"))
-    return _plain_layout(fig)
+    return _apply_theme(fig)
 
 
 # ---------------------------------------------------------------------------
@@ -590,7 +584,7 @@ def build_historical_prices(
     bt_end:       pd.Timestamp,
     tr:           Translator,
 ) -> go.Figure:
-    palette = [_GREEN_MID, _GREEN_LIGHT, _GREEN_DARK, "#f39c12", "#9b59b6"]
+    palette = [_BLUE, _BLUE_LIGHT, _NAVY, "#f39c12", "#9b59b6"]
     fig = go.Figure()
     for i, col in enumerate(hist_prices.columns):
         normed = hist_prices[col] / hist_prices[col].iloc[0] * 100
@@ -610,7 +604,7 @@ def build_historical_prices(
         hovermode="x unified",
         legend=dict(x=0.01, y=0.99),
     )
-    return _plain_layout(fig)
+    return _apply_theme(fig)
 
 
 # ---------------------------------------------------------------------------
@@ -651,7 +645,7 @@ def build_historical_wof_path(
     perf = slice_.values / S0[np.newaxis, :]    # (days, n_assets)
     wof  = perf.min(axis=1)
 
-    asset_colors = [_GREEN_MID, _GREEN_LIGHT, _GREEN_DARK, "#f39c12", "#9b59b6"]
+    asset_colors = [_BLUE, _BLUE_LIGHT, _NAVY, "#f39c12", "#9b59b6"]
     asset_names  = list(hist_prices.columns)
 
     fig = go.Figure()
@@ -669,7 +663,7 @@ def build_historical_wof_path(
     fig.add_trace(go.Scatter(
         x=dates, y=wof,
         mode="lines", name=tr("chart_worst_of"),
-        line=dict(color=_GREEN_DARK, width=2.5),
+        line=dict(color=_NAVY, width=2.5),
     ))
 
     # Barriers — KI, coupon (when distinct), and autocall (flat or stepped)
@@ -689,9 +683,9 @@ def build_historical_wof_path(
         is_call = (call_quarter == q + 1)
         if coupon_at_autocall_only:
             # No periodic coupon — colour by the call, not a coupon barrier
-            color = _GREEN_MID if is_call else _GREY
+            color = _BLUE if is_call else _GREY
         else:
-            color = _GREEN_MID if wof_val >= coupon_barrier else _RED
+            color = _BLUE if wof_val >= coupon_barrier else _RED
         symbol  = "star" if is_call else "circle"
         size    = 14 if is_call else 9
         label   = tr("chart_period_called", p=q + 1) if is_call else f"P{q+1}"
@@ -718,7 +712,7 @@ def build_historical_wof_path(
         hovermode="x unified",
         legend=dict(x=1.01, y=1, xanchor="left"),
     )
-    return _plain_layout(fig)
+    return _apply_theme(fig)
 
 # ---------------------------------------------------------------------------
 # Current Note Performance (live — from issue date to today)
@@ -754,7 +748,7 @@ def build_live_performance_chart(
     perf   = slice_.values / S0[np.newaxis, :]
     wof    = perf.min(axis=1)
 
-    asset_colors = [_GREEN_MID, _GREEN_LIGHT, _GREEN_DARK, "#f39c12", "#9b59b6"]
+    asset_colors = [_BLUE, _BLUE_LIGHT, _NAVY, "#f39c12", "#9b59b6"]
     asset_names  = list(hist_prices.columns)
 
     fig = go.Figure()
@@ -772,7 +766,7 @@ def build_live_performance_chart(
     fig.add_trace(go.Scatter(
         x=dates, y=wof,
         mode="lines", name=tr("chart_worst_of"),
-        line=dict(color=_GREEN_DARK, width=2.5),
+        line=dict(color=_NAVY, width=2.5),
     ))
 
     # Barriers — KI, coupon (when distinct), and autocall (flat or stepped)
@@ -793,10 +787,10 @@ def build_live_performance_chart(
         if m["autocalled"]:
             tip = tr("chart_marker_autocalled", label=m["label"]) + (
                 tr("chart_marker_premium", v=f"{m['amount']:.4%}") if m["amount"] > 0 else "")
-            color, symbol, size = _GREEN_MID, "star", 12
+            color, symbol, size = _BLUE, "star", 12
         elif m["paid"]:
             tip = tr("chart_marker_coupon", label=m["label"], v=f"{m['amount']:.4%}")
-            color, symbol, size = _GREEN_MID, "circle", 9
+            color, symbol, size = _BLUE, "circle", 9
         else:
             tip = tr("chart_marker_coupon_missed", label=m["label"])
             color, symbol, size = _RED, "circle", 9
@@ -825,4 +819,4 @@ def build_live_performance_chart(
         hovermode="x unified",
         legend=dict(x=1.01, y=1, xanchor="left"),
     )
-    return _plain_layout(fig)
+    return _apply_theme(fig)
