@@ -217,14 +217,26 @@ class HestonMultiSimulator:
     corr_SV  : np.ndarray (n x n)   – Cross correlations.
                                        corr_SV[i,i] = rho_i (own leverage).
                                        corr_SV[i,j] = cross term (i≠j).
-    T        : float  – Time horizon in years.
-    N        : int    – Number of time steps.
+    T        : float  – Time horizon in years. Ignored if dt_grid is given.
+    N        : int    – Number of time steps. Ignored if dt_grid is given.
     n_paths  : int    – Monte Carlo paths (antithetics double this internally).
     seed     : int    – RNG seed.
-    r        : float  – Risk-free rate. Default 0.
     t_dof    : int or None – Degrees of freedom for Student-t copula.
                              None (default) = Gaussian copula.
                              Typical values: 4–8 for realistic tail dependence.
+    dt_grid  : np.ndarray or None – Per-step time increments in year fractions
+                             (length = number of steps). Used to simulate a real
+                             trading-day calendar: each step is one trading day
+                             and dt is the calendar gap to the next one (a
+                             Fri→Mon step carries 3/365 of variance). When given,
+                             N = len(dt_grid) and T = dt_grid.sum(); the T and N
+                             arguments are ignored. None = uniform T/N grid.
+    div_schedule : np.ndarray or None – Pre-programmed proportional dividend
+                             drops, shape (n_assets, N). div_schedule[i, t] is
+                             applied at the END of step t: S[:, t+1] *= (1 - d).
+                             Used to convert total-return dynamics (drift
+                             calibrated on adjusted closes) into price paths
+                             with deterministic ex-date jumps. None = no jumps.
     """
 
     def __init__(
@@ -237,22 +249,39 @@ class HestonMultiSimulator:
         N:        int          = 252,
         n_paths:  int          = 10_000,
         seed:     Optional[int]= None,
-        r:        float        = 0.0,
         t_dof:    Optional[int]= None,
+        dt_grid:  Optional[np.ndarray] = None,
+        div_schedule: Optional[np.ndarray] = None,
     ):
         self.params   = params
         self.n_assets = len(params)
+        if dt_grid is not None:
+            dt_grid = np.asarray(dt_grid, dtype=float)
+            if dt_grid.ndim != 1 or len(dt_grid) == 0 or np.any(dt_grid <= 0):
+                raise ValueError("dt_grid must be a 1-D array of positive year fractions.")
+            N = len(dt_grid)
+            T = float(dt_grid.sum())
+        self.dt_grid  = dt_grid
         self.T        = T
         self.N        = N
         self.n_paths  = n_paths
         self.seed     = seed
-        self.r        = r
         if t_dof is not None and t_dof <= 2:
             raise ValueError(
                 f"t_dof must be > 2 (finite variance required for "
                 f"standardized t shocks); got {t_dof}."
             )
         self.t_dof    = t_dof
+        if div_schedule is not None:
+            div_schedule = np.asarray(div_schedule, dtype=float)
+            if div_schedule.shape != (self.n_assets, N):
+                raise ValueError(
+                    f"div_schedule must be (n_assets, N) = ({self.n_assets},{N}), "
+                    f"got {div_schedule.shape}"
+                )
+            if np.any(div_schedule < 0) or np.any(div_schedule >= 1):
+                raise ValueError("div_schedule entries must be proportional drops in [0, 1).")
+        self.div_schedule = div_schedule
 
         # Simulation outputs
         # S_paths[i], V_paths[i] : np.ndarray (n_paths, N+1) for asset i
@@ -320,8 +349,13 @@ class HestonMultiSimulator:
             feller     : list of (bool, float) per asset
         """
         n        = self.n_assets
-        dt       = self.T / self.N
-        sdt      = np.sqrt(dt)
+        # Per-step time increments: real trading-day calendar if dt_grid was
+        # given, otherwise a uniform grid (legacy behaviour).
+        if self.dt_grid is not None:
+            dt_arr = self.dt_grid
+        else:
+            dt_arr = np.full(self.N, self.T / self.N)
+        sdt_arr  = np.sqrt(dt_arr)
         n_base   = self.n_paths          # paths per antithetic batch
         n_total  = 2 * n_base            # antithetic doubles output
         rng      = np.random.default_rng(self.seed)
@@ -352,6 +386,8 @@ class HestonMultiSimulator:
 
         # Main simulation loop
         for t in range(self.N):
+            dt  = dt_arr[t]
+            sdt = sdt_arr[t]
 
             # --- Draw base normals (n_base, 2n) ---
             Z = rng.standard_normal((n_base, 2 * n))
@@ -399,6 +435,14 @@ class HestonMultiSimulator:
                 S[i][:, t + 1] = S[i][:, t] * np.exp(
                     p.mu * dt - 0.5 * V_pos * dt + sqV * dW_S
                 )
+
+                # --- Pre-programmed dividend jump (proportional drop) ---
+                # Converts total-return dynamics into price paths: the drift
+                # mu is calibrated on adjusted closes (total return), and the
+                # deterministic ex-date deduction reproduces the predictable
+                # price decline the note's barriers actually observe.
+                if self.div_schedule is not None and self.div_schedule[i, t] > 0.0:
+                    S[i][:, t + 1] *= (1.0 - self.div_schedule[i, t])
 
         self.S_paths = S
         self.V_paths = V
@@ -647,7 +691,6 @@ if __name__ == "__main__":
         N        = 252,
         n_paths  = 20_000,
         seed     = 42,
-        r        = 0.0,
     )
 
     results = sim.run()

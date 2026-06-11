@@ -13,7 +13,7 @@ from core import run_backtest
 
 from core.simulator  import HestonParams, HestonMultiSimulator
 from core.calibrator import HestonCalibrator, CalibrationResult
-from core.note       import NoteTerms, price_note
+from core.note       import NoteTerms, price_note, replay_note
 from core.backtest   import run_backtest
 
 __all__ = [
@@ -23,5 +23,6 @@ __all__ = [
     "CalibrationResult",
     "NoteTerms",
     "price_note",
+    "replay_note",
     "run_backtest",
 ]

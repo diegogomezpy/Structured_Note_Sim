@@ -48,6 +48,9 @@ _LABELS: dict[str, dict[str, str]] = {
     "ki_barrier":            {"en": "Knock-in Barrier",                 "es": "Barrera Knock-in"},
     "memory":                {"en": "Memory",                           "es": "Memoria"},
     "coupon_basket":         {"en": "Coupon Basket",                    "es": "Cesta de Cupón"},
+    "ac_step_down":          {"en": "Autocall Step-Down / Period",      "es": "Reducción de Barrera Autocall / Período"},
+    "ac_floor":              {"en": "Autocall Barrier Floor",           "es": "Suelo de Barrera Autocall"},
+    "premium_at_call":       {"en": "Premium Paid Only at Autocall",    "es": "Prima Pagada Solo al Autocall"},
     "autocall_basket":       {"en": "Autocall Basket",                  "es": "Cesta de Autocall"},
     "final_basket":          {"en": "Final Basket",                     "es": "Cesta Final"},
     # Simulation labels
@@ -298,6 +301,14 @@ def generate_pdf_report(
         (_t("autocall_basket",  lang), terms.autocall_basket.replace("_", "-")),
         (_t("final_basket",     lang), terms.final_basket.replace("_", "-")),
     ]
+    # Growth / classic autocall extensions (only shown when active)
+    if getattr(terms, "autocall_step_down", 0.0):
+        term_rows.append((_t("ac_step_down", lang), f"{terms.autocall_step_down:.1%}"))
+        if getattr(terms, "autocall_floor", None) is not None:
+            term_rows.append((_t("ac_floor", lang), f"{terms.autocall_floor:.0%}"))
+    if getattr(terms, "coupon_at_autocall_only", False):
+        term_rows.append((_t("premium_at_call", lang),
+                          f"{_t('yes', lang)} ({terms.coupon_pa * 100:.2f}% p.a.)"))
     pdf.kv_table(term_rows)
 
     # ── 3. Simulation Summary table ────────────────────────────────────────

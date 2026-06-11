@@ -28,9 +28,72 @@ load_prices()       HestonCalibrator          HestonMultiSimulator     price_not
 
 The Streamlit app (`app/app.py`) wires these together. All Plotly figure builders live in `app/charts.py` as pure functions with no Streamlit calls—they take numpy/pandas arguments and return `go.Figure`.
 
+### Raw vs adjusted closes — never mix them up
+
+Two price series, two purposes, deliberately split:
+
+- **Raw official closes** (`load_prices(field="close")`, the default): what term
+  sheets observe for barrier / coupon / autocall / KI fixings. Used by the
+  backtest, the Current Performance tab, and as the simulation's `S0`.
+- **Adjusted closes** (`field="adj_close"`): total-return series. Used ONLY to
+  calibrate drift/vol/correlations (ex-date jumps must not pollute the
+  estimates). Never compare adjusted prices to barriers.
+
+The MC simulates the **total-return process** (drift from adjusted closes) and
+converts to price paths via pre-programmed proportional dividend jumps at
+forecast ex-dates (see below). **Double-counting trap:** do NOT calibrate `mu`
+on raw closes AND subtract discrete dividends — raw-close returns already
+embed the drops; total-return calibration + explicit jumps is the consistent
+pair. The calibrator's own yfinance branch keeps `auto_adjust=True` on purpose.
+
+### Calendar-first observation scheduling
+
+Observation dates are derived, never stored: obs k = anchor date +
+`k × (12 / periods_per_year)` months (`NoteTerms.obs_calendar_dates(anchor)`),
+snapped to the **next trading day** in the relevant price index via
+`searchsorted`. Anchor = each sampled historical issue date (backtest), the
+note's `issue_date` (live tab), or the last close (MC). No `obs_dates` field
+exists in the JSON configs by design (config bloat); add one only if an
+irregular schedule (long stub period) ever requires it. The old
+`round(maturity*252)` row-offset scheduling is gone — do not reintroduce a
+252-trading-days-per-year constant in scheduling (it survives only as the `dt`
+convention inside calibration).
+
 ### Single payoff engine for MC and backtest
 
-`core/note.py:price_note()` is the sole payoff evaluator. Both the Monte Carlo path and the historical backtest construct a `perf_paths: (n_paths, N+1, n_assets)` array (performance relative to S0) and pass it directly to `price_note()`. There is deliberately no second payoff implementation in `backtest.py`. Any payoff change must be made once, in `price_note()`, and it will apply to both.
+`core/note.py:price_note()` is the sole payoff evaluator. There is
+deliberately no second payoff implementation in `backtest.py`. Any payoff
+change must be made once, in `price_note()`, and it will apply to both.
+
+- The **backtest** builds a compact `(n_issues, n_obs+1, n_assets)` perf array
+  (initial fixing + one column per snapped observation date); with `N = n_obs`,
+  `terms.obs_steps(n_obs)` resolves to `[1..n_obs]` and the engine evaluates it
+  unchanged.
+- The **MC** passes the full daily paths plus explicit `obs_steps=` /
+  `obs_times=` kwargs (grid indices and year-fractions of the snapped
+  observation dates). When `obs_times` is given, the maturity holding time for
+  IRR is `obs_times[-1]`, and final valuation uses `obs_steps[-1]`.
+- **Partially-elapsed (live) notes** use `core/note.py:replay_note(perf_obs,
+  terms)` — the single source of truth for "what happened so far" (memory
+  coupons, step-down schedule, `coupon_at_autocall_only`). The Current
+  Performance tab and `build_live_performance_chart` only consume its output;
+  never reimplement coupon/autocall logic in the app or chart layer.
+
+### Monte Carlo trading-day grid and dividend jumps
+
+`app/app.py`'s run block builds a real future trading-day calendar
+(`pd.bdate_range` from the last close to maturity) and passes
+`dt_grid` (per-step calendar gaps in year fractions — a Fri→Mon step diffuses
+3/365 of variance) to `HestonMultiSimulator`. When `dt_grid` is given, `T`/`N`
+are derived from it. `div_schedule` is an `(n_assets, N)` array of
+proportional drops applied at the END of step t (`S[:,t+1] *= 1-d`), built by
+`data/loader.py:build_dividend_schedule()` from trailing-12-month cash
+dividends repeated on anniversary ex-dates (via `load_dividends()`;
+proportional vs current spot). Price indices (SPX/SX5E/…) have empty dividend
+series → no jumps: constituent dividends are already in a price index's drift.
+Verified: a 4% modelled yield lowers mean log-growth by exactly ~0.04 vs an
+identical no-dividend asset. The uniform `T`/`N` grid still works for
+notebooks/tests (legacy path).
 
 ### NoteTerms design
 
@@ -126,4 +189,43 @@ build_wof_fan(wof_paths, t_grid, terms.knock_in_barrier, obs_pairs, tr,
 
 For step-down (growth) autocalls, also pass `autocall_schedule` — a list of `(x, level)` points where the level follows `terms.autocall_barrier_schedule()`. The shared `_add_autocall_barrier` helper then draws a stepped (`hv`) dotted line instead of the flat one; it falls back to the flat `add_hline` when the schedule is `None` or constant. The fan chart takes time-based x (`obs_times`), the path chart takes step-based x (`obs_steps`). `app.py` builds these only when `terms.autocall_step_down` is set.
 
-`build_historical_wof_path` requires a `coupon_barrier` parameter (separate from `knock_in_barrier`) — it is used to colour observation markers green (coupon paid) or red (missed). Do not conflate with the KI barrier.
+`build_historical_wof_path` takes the SNAPPED observation dates (`obs_dates`, the same ones the engine evaluated — get them from `core.backtest.snapped_obs_dates()`), stops drawing markers at the autocall date (the note no longer exists afterwards), and accepts `autocall_schedule` + `coupon_at_autocall_only`. Its `coupon_barrier` parameter colours observation markers green (coupon paid) or red (missed); the shared `_add_coupon_barrier` helper draws the coupon barrier as its own orange dashed line when it differs from the KI barrier — never relabel the KI line as a coupon barrier.
+
+`build_live_performance_chart` only draws: it takes `obs_markers` (dicts produced from `replay_note` output by app.py) and `future_obs` (label, calendar-date pairs). It contains no payoff logic by design.
+
+## Review status (2026-06-10)
+
+A full-repo review was performed and all findings were FIXED in the same pass
+(adjusted-vs-raw close split, calendar-first scheduling, trading-day MC grid
+with dividend jumps, live-tab rewrite onto `replay_note`, float-precision
+barrier inputs, cache TTLs, chart label/marker fixes, IRR histogram tail
+clipping, PDF growth-autocall rows, dead code removal, missing
+`fpdf2`/`kaleido` installed). Everything was verified numerically: the
+vectorized engine matches naive per-path replays exactly (MC memory-coupon
+logic on 4,000 random paths; calendar backtest on 119 synthetic issues;
+`replay_note` vs `price_note` on 500 paths; the Citi step-down live replay on
+real data), and dividend jumps reproduce the modelled yield to 4 decimal
+places.
+
+### Known remaining limitations (deliberate, not bugs)
+
+- **Calibration proxies bias kappa/xi low**: kappa from AR(1) of an
+  *overlapping* 21-day rolling RV series (overlap pushes phi → 1, kappa ↓) and
+  xi from increments of the same smoothed series; `corr_VV` from levels of
+  overlapping rolling RV is likewise inflated. Left unchanged on purpose — a
+  numerics change of this size needs its own validation pass. Candidates:
+  non-overlapping windows or bipower variation.
+- **No discounting / risk-neutral mode**: results are physical-measure
+  expected values; `expected_irr` is not a price. The simulator's unused `r`
+  parameter was removed.
+- **Backtest issue dates overlap** (monthly sampling of multi-year windows):
+  summary stats are autocorrelated; documented in `run_backtest`.
+- **Future trading calendar is `pd.bdate_range`** (weekdays only): future
+  exchange holidays (~9/yr) are not modelled; the error is one grid day, vs
+  weeks under the old 252-row convention. An exchange-calendar package would
+  be exact but adds a dependency.
+- **Dividend forecasts assume the trailing-12M pattern repeats** on
+  anniversary ex-dates, proportional to the current spot. Good enough for
+  regular payers; special dividends and cuts are not anticipated.
+- **`.venv/bin/pip` has a broken shebang** (points at the old
+  `Multiasset_Heston_Sim` path) — use `.venv/bin/python -m pip`.

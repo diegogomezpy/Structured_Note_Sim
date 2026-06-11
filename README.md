@@ -112,7 +112,7 @@ $\nu$ is calibrated automatically from historical returns via per-asset MLE, wit
 
 ## Calibration Pipeline
 
-All parameters are estimated from historical daily adjusted close prices.
+All parameters are estimated from historical daily **adjusted** close prices (total-return dynamics). Barrier observation, the backtest, and live tracking use **raw** official closes — the levels term sheets actually fix against — and the simulator applies pre-programmed proportional dividend jumps at forecast ex-dates to convert total-return paths into price paths.
 
 | Step | Parameter | Method |
 |------|-----------|--------|

@@ -299,6 +299,18 @@ class NoteTerms:
         """Map observation times to simulation step indices."""
         return [round(t / self.maturity * N) for t in self.obs_times()]
 
+    def obs_calendar_dates(self, anchor) -> list:
+        """
+        Calendar observation dates: anchor + k × (12 / periods_per_year) months,
+        k = 1..n_obs. This is what term sheets specify (the caller is
+        responsible for snapping each date to the next trading day in a price
+        index). The last date is the final valuation / maturity date.
+        """
+        import pandas as pd
+        a = pd.Timestamp(anchor)
+        step_months = 12 // self.periods_per_year
+        return [a + pd.DateOffset(months=step_months * (k + 1)) for k in range(self.n_obs)]
+
     def autocall_barrier_schedule(self) -> np.ndarray:
         """
         Per-observation autocall barrier levels, shape (n_obs,).
@@ -430,6 +442,8 @@ def price_note(
     perf_paths: np.ndarray,
     terms:      NoteTerms,
     seed:       int | None = 42,
+    obs_steps:  list[int]   | None = None,
+    obs_times:  list[float] | None = None,
 ) -> dict:
     """
     Evaluate Phoenix Memory Autocallable payoffs across all simulated paths.
@@ -448,6 +462,18 @@ def price_note(
 
     seed : int or None
         RNG seed for autocall probability draws.
+
+    obs_steps : list[int] or None
+        Explicit grid indices of the observation dates (length n_obs, last
+        entry should be N). Used when the simulation grid is a real
+        trading-day calendar and observation dates were snapped to it. None
+        (default) = uniform mapping via terms.obs_steps(N).
+
+    obs_times : list[float] or None
+        Explicit observation times in year fractions from the anchor date
+        (length n_obs), used for holding-period / IRR computation. When given,
+        the maturity holding time is obs_times[-1] instead of terms.maturity.
+        None (default) = terms.obs_times().
 
     Returns
     -------
@@ -474,9 +500,17 @@ def price_note(
     """
     n_paths, N_plus1, n_assets = perf_paths.shape
     N = N_plus1 - 1
-    obs_steps = terms.obs_steps(N)
-    obs_times = terms.obs_times()
     n_obs = terms.n_obs
+    if obs_steps is None:
+        obs_steps = terms.obs_steps(N)
+    if obs_times is None:
+        obs_times = terms.obs_times()
+    if len(obs_steps) != n_obs or len(obs_times) != n_obs:
+        raise ValueError(
+            f"obs_steps/obs_times must have length n_obs={n_obs}; "
+            f"got {len(obs_steps)}/{len(obs_times)}"
+        )
+    t_maturity = float(obs_times[-1])   # = terms.maturity unless overridden
     rng = np.random.default_rng(seed)
 
     # ------------------------------------------------------------------
@@ -630,10 +664,12 @@ def price_note(
     autocall_principal = np.ones(n_paths)
 
     # Maturity paths: check knock-in + final redemption condition
+    # (final valuation = last observation step; equals N unless obs_steps override)
+    final_step = obs_steps[-1]
     # final_basket uses the protection_cond basket (e.g. best_of for BBVA)
-    final_basket_val = _basket(perf_paths[:, N, :], protection_cond.basket)   # (n_paths,)
+    final_basket_val = _basket(perf_paths[:, final_step, :], protection_cond.basket)  # (n_paths,)
     # knock-in always checks worst-of (per knock_in_cond.basket = "worst_of")
-    worst_final      = _basket(perf_paths[:, N, :], knock_in_cond.basket)     # (n_paths,)
+    worst_final      = _basket(perf_paths[:, final_step, :], knock_in_cond.basket)    # (n_paths,)
 
     # Barrier (knock-in) event: knock-in basket below the KI level at final valuation
     barrier_event = worst_final < knock_in_cond.level   # (n_paths,)
@@ -677,7 +713,7 @@ def price_note(
     t_held_arr = np.where(
         any_autocalled,
         np.array(obs_times)[np.clip(first_call_idx, 0, n_obs - 1)],
-        terms.maturity,
+        t_maturity,
     )
 
     # IRR: simple annualisation — total_return / t_held.
@@ -725,4 +761,93 @@ def price_note(
 
         # Legacy alias
         "prob_floor":               float(ki_total.mean()),
+    }
+
+
+# ---------------------------------------------------------------------------
+# Observation replay for partially-elapsed (live) notes
+# ---------------------------------------------------------------------------
+
+def replay_note(perf_obs: np.ndarray, terms: NoteTerms) -> dict:
+    """
+    Replay the first k observation dates of a single note life.
+
+    This is the single source of truth for "what happened so far" on a live
+    note (Current Performance tab). It applies the same semantics as
+    price_note(): basket types per event, memory coupons, the (possibly
+    step-down) autocall barrier schedule, autocall_start_period, and
+    coupon_at_autocall_only. price_note() evaluates complete paths; this
+    handles the partially-elapsed case — do NOT reimplement this logic in the
+    app layer.
+
+    Parameters
+    ----------
+    perf_obs : np.ndarray, shape (k, n_assets)
+        Per-asset performance (price / initial fixing) at the first k
+        observation dates that have already occurred, in order.
+
+    terms : NoteTerms
+
+    Returns
+    -------
+    dict with keys:
+        rows            : list of per-period dicts with keys
+                          period (1-indexed), coupon_met (bool),
+                          coupon_amount (float), pending_after (int),
+                          autocalled (bool), autocall_level (float)
+        total_coupons   : float  total paid so far (incl. autocall premium for
+                          coupon_at_autocall_only notes)
+        pending_coupons : int    memory coupons accrued and unpaid
+        autocall_period : int    0 = still alive, j = called at period j
+    """
+    perf_obs = np.atleast_2d(np.asarray(perf_obs, dtype=float))
+    k = perf_obs.shape[0]
+    if k > terms.n_obs:
+        raise ValueError(f"perf_obs has {k} rows but the note has only {terms.n_obs} observations.")
+
+    schedule = terms.autocall_barrier_schedule()
+    rows: list[dict] = []
+    pending = 0
+    total   = 0.0
+    called  = 0
+
+    for j in range(k):
+        slice_j   = perf_obs[j:j + 1, :]
+        coupon_b  = float(_basket(slice_j, terms.coupon_basket)[0])
+        ac_b      = float(_basket(slice_j, terms.autocall_basket)[0])
+        eligible  = (j + 1) >= terms.autocall_start_period
+        autocalled = bool(eligible and ac_b >= schedule[j])
+
+        if terms.coupon_at_autocall_only:
+            # No periodic coupon — accrued premium paid as a lump only at call.
+            coupon_met = False
+            amount = terms.coupon_rate * (j + 1) if autocalled else 0.0
+        else:
+            coupon_met = coupon_b >= terms.coupon_barrier
+            if coupon_met:
+                amount  = terms.coupon_rate * (pending + 1) if terms.memory else terms.coupon_rate
+                pending = 0
+            else:
+                amount = 0.0
+                if terms.memory:
+                    pending += 1
+
+        total += amount
+        rows.append({
+            "period":         j + 1,
+            "coupon_met":     coupon_met,
+            "coupon_amount":  amount,
+            "pending_after":  pending,
+            "autocalled":     autocalled,
+            "autocall_level": float(schedule[j]),
+        })
+        if autocalled:
+            called = j + 1
+            break
+
+    return {
+        "rows":            rows,
+        "total_coupons":   total,
+        "pending_coupons": pending,
+        "autocall_period": called,
     }

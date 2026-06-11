@@ -18,11 +18,11 @@ import numpy as np
 import pandas as pd
 import streamlit as st
 
-from core            import NoteTerms, price_note
+from core            import NoteTerms, price_note, replay_note
 from core.calibrator import HestonCalibrator
 from core.simulator  import HestonMultiSimulator
-from core.backtest   import run_backtest
-from data.loader     import load_prices
+from core.backtest   import run_backtest, snapped_obs_dates
+from data.loader     import load_prices, load_dividends, build_dividend_schedule
 
 from translations import Translator
 from charts import (
@@ -252,11 +252,20 @@ for k, v in _DEFAULTS.items():
 # ==========================================================================
 # Cached helpers
 # ==========================================================================
-@st.cache_data
-def _load_prices(tickers_tuple, years=5.0):
-    return load_prices(source="yfinance", tickers=dict(tickers_tuple), years=years)
+# ttl: refresh hourly so the Current Performance tab doesn't serve stale
+# prices in a long-running session.
+@st.cache_data(ttl=3600)
+def _load_prices(tickers_tuple, years=5.0, field="close"):
+    # field="close"     → raw official closes (barrier observation: backtest/live)
+    # field="adj_close" → dividend-adjusted (calibration of drift/vol/corr ONLY)
+    return load_prices(source="yfinance", tickers=dict(tickers_tuple),
+                       years=years, field=field)
 
-@st.cache_data
+@st.cache_data(ttl=24 * 3600)
+def _load_dividends_cached(tickers_tuple):
+    return load_dividends(dict(tickers_tuple))
+
+@st.cache_data(ttl=3600)
 def _run_backtest_cached(tickers_tuple, terms_json,
                          bt_start_str=None, bt_end_str=None,
                          history_years=None):
@@ -429,6 +438,10 @@ if st.session_state["page"] == "setup":
     col1, col2, col3 = st.columns(3)
 
     maturity_opts = [0.5, 1.0, 1.5, 2.0, 3.0, 5.0]
+    # Keep a loaded config's maturity selectable instead of silently snapping
+    # it to the nearest preset (e.g. a 9M note must not become 1Y).
+    if base.maturity not in maturity_opts:
+        maturity_opts = sorted(set(maturity_opts + [base.maturity]))
     freq_opts     = ["monthly", "quarterly", "semi-annual", "annual"]
     from core.note import _FREQ_TO_PERIODS
 
@@ -461,15 +474,23 @@ if st.session_state["page"] == "setup":
         )
         _coupon_per_period = coupon_pa_pct / 100.0 / _FREQ_TO_PERIODS[payment_freq]
         st.caption(f"→ **{_coupon_per_period*100:.4f}% per period**")
-        coupon_bar_pct = st.slider("Coupon barrier (%)", 0, 100,
-                                    int(base.coupon_barrier * 100))
+        # number_input (not int slider): term sheets use sub-percent barriers
+        # (e.g. 55.5%, 53.7%) which an int slider silently truncates.
+        coupon_bar_pct = st.number_input(
+            "Coupon barrier (%)", 0.0, 100.0,
+            value=round(base.coupon_barrier * 100, 4), step=0.5, format="%.2f",
+        )
         memory = st.toggle("Memory coupon", value=base.memory)
 
     with col3:
-        autocall_bar_pct = st.slider("Autocall barrier (%)", 50, 120,
-                                      int(base.autocall_barrier * 100))
-        ki_bar_pct = st.slider("Knock-in barrier (%)", 0, 100,
-                                int(base.knock_in_barrier * 100))
+        autocall_bar_pct = st.number_input(
+            "Autocall barrier (%)", 50.0, 150.0,
+            value=round(base.autocall_barrier * 100, 4), step=0.5, format="%.2f",
+        )
+        ki_bar_pct = st.number_input(
+            "Knock-in barrier (%)", 0.0, 100.0,
+            value=round(base.knock_in_barrier * 100, 4), step=0.5, format="%.2f",
+        )
 
     st.divider()
 
@@ -498,14 +519,15 @@ if st.session_state["page"] == "setup":
                  "a knock-in always results in delivery of the worst performer.",
         )
         if rescue_on:
-            rescue_bar_pct = st.slider(
-                "Rescue barrier (% of initial)", 50, 150,
-                int(round(getattr(base, "final_redemption_barrier", 1.0) * 100)),
+            rescue_bar_pct = st.number_input(
+                "Rescue barrier (% of initial)", 50.0, 150.0,
+                value=round(getattr(base, "final_redemption_barrier", 1.0) * 100, 4),
+                step=0.5, format="%.2f",
                 help="Best performer must finish at or above this level for the "
                      "rescue to apply. Term sheets typically use 100%.",
             )
         else:
-            rescue_bar_pct = 100
+            rescue_bar_pct = 100.0
         final_basket = "best_of" if rescue_on else "worst_of"
 
     st.divider()
@@ -654,7 +676,10 @@ if st.session_state["page"] == "setup":
                 autocall_floor          = getattr(base, "autocall_floor", None) if loaded_terms else None,
                 coupon_at_autocall_only = getattr(base, "coupon_at_autocall_only", False) if loaded_terms else False,
                 tickers               = selected_tickers,
-                issue_date            = issue_date_input.isoformat() if _issue_is_live else None,
+                # Keep the issue date even when it is in the future, so a
+                # config round-trip through the setup form doesn't drop it;
+                # the dashboard only shows the live tab once it is <= today.
+                issue_date            = issue_date_input.isoformat() if issue_date_input else None,
             )
             st.session_state["run_terms"]        = terms
             st.session_state["selected_tickers"] = selected_tickers
@@ -827,24 +852,66 @@ elif st.session_state["page"] == "dashboard":
     # ── Run simulation (triggered by sidebar button) ──────────────────────
     if run_button:
         with st.spinner("Running Heston calibration and Monte Carlo simulation…"):
-            prices = _load_prices(tickers_tuple, years=st.session_state.get("history_years", None))
+            _hist_years = st.session_state.get("history_years", None)
+            # Calibrate drift/vol/correlations on ADJUSTED closes (total-return
+            # dynamics — ex-date jumps must not pollute the estimates) ...
+            prices_adj = _load_prices(tickers_tuple, years=_hist_years, field="adj_close")
+            # ... but barriers, S0, and dividend jumps live in RAW price space.
+            prices_raw = _load_prices(tickers_tuple, years=_hist_years, field="close")
             cal    = HestonCalibrator(
-                prices_df   = prices,
+                prices_df   = prices_adj,
                 calib_years = st.session_state.get("calib_years", 5.0),
             )
             cal_result = cal.calibrate()
 
-            N_steps = max(252, round(252 * terms.maturity))
+            # Spot override: the simulation starts at the actual market price
+            # (raw close), not the dividend-adjusted level.
+            _raw_last = prices_raw.iloc[-1]
+            for p in cal_result.params:
+                if p.name in _raw_last.index:
+                    p.S0 = float(_raw_last[p.name])
+
+            # ── Trading-day simulation grid ────────────────────────────────
+            # One step per future trading day from the last close to maturity;
+            # dt = calendar gap in years (a Fri→Mon step diffuses 3 days of
+            # variance). Observation dates and dividend ex-dates land on real
+            # grid rows shared with the backtest/live-tab date logic.
+            _anchor    = prices_raw.index[-1]
+            _mat_date  = pd.offsets.BDay().rollforward(
+                _anchor + pd.DateOffset(months=round(terms.maturity * 12)))
+            _grid      = pd.bdate_range(_anchor, _mat_date)
+            _dt_grid   = np.diff(_grid.values).astype("timedelta64[D]").astype(float) / 365.0
+            N_steps    = len(_grid) - 1
+            _obs_steps = [min(int(_grid.searchsorted(d)), N_steps)
+                          for d in terms.obs_calendar_dates(_anchor)]
+            _obs_times = [(_grid[s] - _grid[0]).days / 365.0 for s in _obs_steps]
+
+            # ── Pre-programmed dividend jumps ──────────────────────────────
+            # Trailing-12M cash dividends repeated on anniversary ex-dates,
+            # as proportional drops vs the current spot. Indices/non-payers
+            # contribute zeros.
+            try:
+                _divs = _load_dividends_cached(tickers_tuple)
+            except Exception as _div_e:
+                st.warning(f"Could not load dividend history ({_div_e}) — "
+                           "simulating without dividend jumps.")
+                _divs = {}
+            _div_sched = build_dividend_schedule(
+                [_divs.get(p.name, pd.Series(dtype=float)) for p in cal_result.params],
+                [p.S0 for p in cal_result.params],
+                _grid,
+            )
+
             sim = HestonMultiSimulator(
-                params  = cal_result.params,
-                corr_SS = cal_result.corr_SS,
-                corr_VV = cal_result.corr_VV,
-                corr_SV = cal_result.corr_SV,
-                T       = terms.maturity,
-                N       = N_steps,
-                n_paths = n_paths,
-                seed    = seed,
-                t_dof   = cal_result.t_dof,
+                params       = cal_result.params,
+                corr_SS      = cal_result.corr_SS,
+                corr_VV      = cal_result.corr_VV,
+                corr_SV      = cal_result.corr_SV,
+                n_paths      = n_paths,
+                seed         = seed,
+                t_dof        = cal_result.t_dof,
+                dt_grid      = _dt_grid,
+                div_schedule = _div_sched,
             )
             sim_results = sim.run()
 
@@ -854,7 +921,8 @@ elif st.session_state["page"] == "dashboard":
             perf_paths = sim_prices / S0_vec
             wof_paths  = perf_paths.min(axis=2)
 
-            note_results = price_note(perf_paths, terms, seed=seed + 1)
+            note_results = price_note(perf_paths, terms, seed=seed + 1,
+                                      obs_steps=_obs_steps, obs_times=_obs_times)
             s0_values    = [p.S0 for p in cal_result.params]
 
             st.session_state["results"] = {
@@ -868,6 +936,12 @@ elif st.session_state["page"] == "dashboard":
                 "sim_results":    sim_results,
                 "t_dof":          cal_result.t_dof,
                 "terms_snapshot": terms.to_dict(),
+                # Real-calendar grid metadata (drives charts + obs tables)
+                "t_grid_years":   np.concatenate([[0.0], np.cumsum(_dt_grid)]),
+                "obs_steps":      _obs_steps,
+                "obs_times":      _obs_times,
+                "grid_dates":     _grid,
+                "div_schedule":   _div_sched,
             }
             st.session_state["last_asset_names"] = list(selected_tickers.values())
             st.session_state["path_num"] = 0
@@ -881,7 +955,9 @@ elif st.session_state["page"] == "dashboard":
     _live_issue_date = terms.issue_date
     if not _live_issue_date and _has_sim:
         _live_issue_date = NoteTerms.from_dict(R["terms_snapshot"]).issue_date
-    _has_live = bool(_live_issue_date)
+    # Live tracking only makes sense once the note has actually started
+    # trading; a future issue date is stored but doesn't get the tab yet.
+    _has_live = bool(_live_issue_date) and pd.Timestamp(_live_issue_date) <= pd.Timestamp.today()
 
     # Build run_terms (needed inside MC tab — falls back to terms when no sim yet)
     if _has_sim:
@@ -892,9 +968,13 @@ elif st.session_state["page"] == "dashboard":
         wof_paths   = R["worst_of_paths"]
         sim_prices  = R["sim_prices"]
         N           = wof_paths.shape[1] - 1
-        t_grid      = np.linspace(0, run_terms.maturity, N + 1)
-        obs_steps_i = run_terms.obs_steps(N)
-        obs_times_l = run_terms.obs_times()
+        # Real-calendar grid (stored by the run block); fall back to the old
+        # uniform grid for results cached before this feature.
+        t_grid      = R.get("t_grid_years")
+        if t_grid is None:
+            t_grid = np.linspace(0, run_terms.maturity, N + 1)
+        obs_steps_i = R.get("obs_steps") or run_terms.obs_steps(N)
+        obs_times_l = R.get("obs_times") or run_terms.obs_times()
         obs_pairs   = [(f"P{i+1}", t) for i, t in enumerate(obs_times_l)]
         # Step-down autocall barrier: pass the per-observation schedule to charts
         # so the line follows the decline (None for constant-barrier notes).
@@ -1206,25 +1286,25 @@ elif st.session_state["page"] == "dashboard":
         import datetime as _dt
 
         # ── Feasibility check ─────────────────────────────────────────
-        # run_backtest needs a full maturity window of data BEFORE the first
-        # issue date and AFTER the last one. Surface this up-front instead of
+        # run_backtest needs one full CALENDAR maturity window of realized
+        # prices after the first issue date. Surface this up-front instead of
         # letting run_backtest raise into a red error box. NOTE: do not use
         # st.stop() here — it would abort the whole script and kill the
         # Current Performance tab that renders after this one.
-        _maturity_days = round(terms.maturity * 252)
-        _required_days = _maturity_days + 1
-        _bt_feasible   = _all_prices is not None and len(_all_prices) >= _required_days
+        _mat_months   = round(terms.maturity * 12)
+        _bt_feasible  = (
+            _all_prices is not None
+            and _all_prices.index[0] + pd.DateOffset(months=_mat_months) <= _all_prices.index[-1]
+        )
 
         if _all_prices is None:
             st.warning("Could not load price history for the backtest.")
         elif not _bt_feasible:
-            _req_years = _required_days / 252.0
             st.warning(
                 f"**Not enough history for this note.** A {terms.maturity:g}Y note needs "
-                f"≥ {_required_days} trading days (≈ {_req_years:.1f} years: one full maturity "
-                f"window of realized prices after the first issue date), but the aligned history "
-                f"across all underlyings only has {len(_all_prices)} days "
-                f"({_all_prices.index[0].date()} → {_all_prices.index[-1].date()})."
+                f"one full {terms.maturity:g}-year calendar window of realized prices after "
+                f"the first issue date, but the aligned history across all underlyings only "
+                f"spans {_all_prices.index[0].date()} → {_all_prices.index[-1].date()}."
             )
 
         if not _bt_feasible:
@@ -1235,7 +1315,7 @@ elif st.session_state["page"] == "dashboard":
             # NOT the raw price range — otherwise selections in the invalid head/
             # tail are silently clamped and 'Apply' appears to do nothing.
             _min_date = _all_prices.index[0].date()
-            _max_date = _all_prices.index[-_maturity_days].date()
+            _max_date = (_all_prices.index[-1] - pd.DateOffset(months=_mat_months)).date()
             st.caption(
                 tr("bt_valid_dates_caption",
                    start=_min_date, end=_max_date, mat=terms.maturity,
@@ -1402,20 +1482,26 @@ elif st.session_state["page"] == "dashboard":
                 )
                 try:
                     if _all_prices is not None:
-                        maturity_days   = round(terms.maturity * 252)
-                        obs_day_offsets = [round(t / terms.maturity * maturity_days)
-                                           for t in terms.obs_times()]
+                        # Same calendar-first snapping run_backtest uses, so the
+                        # chart markers sit exactly on the evaluated dates.
+                        _pe_anchor, _pe_obs_dates = snapped_obs_dates(
+                            _all_prices, terms, selected_issue)
+                        _pe_sched = (
+                            list(zip(_pe_obs_dates, terms.autocall_barrier_schedule()))
+                            if terms.autocall_step_down else None
+                        )
                         st.plotly_chart(
                             build_historical_wof_path(
                                 _all_prices,
-                                issue_date        = selected_issue,
-                                maturity_days     = maturity_days,
-                                obs_day_offsets   = obs_day_offsets,
+                                issue_date        = _pe_anchor,
+                                obs_dates         = _pe_obs_dates,
                                 knock_in_barrier  = terms.knock_in_barrier,
                                 autocall_barrier  = terms.autocall_barrier,
                                 coupon_barrier    = terms.coupon_barrier,
                                 call_quarter      = int(row["Call Quarter"]),
                                 tr                = tr,
+                                autocall_schedule = _pe_sched,
+                                coupon_at_autocall_only = terms.coupon_at_autocall_only,
                             ),
                             use_container_width=True,
                         )
@@ -1431,9 +1517,8 @@ elif st.session_state["page"] == "dashboard":
             import datetime as _dt
             _issue_ts  = pd.Timestamp(run_terms.issue_date)
             _today_ts  = pd.Timestamp(_dt.date.today())
-            _mat_days  = round(run_terms.maturity * 252)
-            _mat_ts    = _issue_ts + pd.offsets.BDay(_mat_days)
-            _obs_offsets = [round(t / run_terms.maturity * _mat_days) for t in obs_times_l]
+            # Calendar maturity: issue + tenor in months (term-sheet convention)
+            _mat_ts    = _issue_ts + pd.DateOffset(months=round(run_terms.maturity * 12))
 
             # How far through the note's life are we?
             _elapsed_days = (_today_ts - _issue_ts).days
@@ -1448,20 +1533,34 @@ elif st.session_state["page"] == "dashboard":
             )
             st.progress(min(_pct_elapsed, 1.0))
 
-            # Fetch live prices from issue date to today
+            # Fetch live prices (raw closes — what the term sheet observes)
             try:
-                _live_prices = _load_prices(tickers_tuple, years=None)
-                _live_prices = _live_prices[_live_prices.index >= _issue_ts]
+                _full_prices = _load_prices(tickers_tuple, years=None)
+                # Snap the issue date to the trading calendar; observation
+                # dates follow the same calendar-first rule as the backtest.
+                _issue_idx_full = int(_full_prices.index.searchsorted(_issue_ts))
+                if _issue_idx_full >= len(_full_prices):
+                    _issue_idx_full = len(_full_prices) - 1
+                _anchor_live = _full_prices.index[_issue_idx_full]
+                if (_anchor_live - _issue_ts).days > 7:
+                    st.warning(
+                        f"Aligned price history only starts {_anchor_live.date()} — after the "
+                        f"stated issue date {_issue_ts.date()}. The initial fixing uses the "
+                        f"first available close, so levels may not match the term sheet."
+                    )
+                _live_prices = _full_prices.iloc[_issue_idx_full:]
 
                 if len(_live_prices) < 2:
                     st.warning("Not enough live price data since issue date.")
                 else:
-                    _issue_idx   = _live_prices.index.searchsorted(_issue_ts)
-                    _S0          = _live_prices.iloc[_issue_idx].values.astype(float)
+                    _S0          = _full_prices.iloc[_issue_idx_full].values.astype(float)
                     _today_slice = _live_prices[_live_prices.index <= _today_ts]
                     _perf_today  = _today_slice.iloc[-1].values / _S0
                     _wof_today   = float(_perf_today.min())
                     _worst_asset_today = asset_names[int(_perf_today.argmin())]
+                    # Calendar observation dates (unsnapped) + snap where data exists
+                    _obs_cal     = run_terms.obs_calendar_dates(_anchor_live)
+                    _ac_sched_lv = run_terms.autocall_barrier_schedule()
 
                     # ── Live summary metrics ──────────────────────────
                     _lc1, _lc2, _lc3, _lc4 = st.columns(4)
@@ -1514,71 +1613,102 @@ elif st.session_state["page"] == "dashboard":
                         else:
                             _acol.metric(_aname, f"{_ap:.1%}", tr("live_metric_vs_strike", v=_ap - 1.0))
 
-                    # ── Coupon status replay ──────────────────────────
+                    # ── Coupon status replay (shared engine logic) ────────
+                    # All payoff semantics (memory, step-down autocall
+                    # schedule, coupon_at_autocall_only) come from
+                    # core.note.replay_note — never reimplement them here.
                     st.markdown(tr("live_obs_history_header"))
-                    _pending_coupons = 0
-                    _total_coupons_paid = 0.0
                     _k_period     = tr("live_col_period")
                     _k_date       = tr("live_col_date")
                     _k_status     = tr("live_col_status")
                     _k_wof        = tr("live_col_wof")
                     _k_coupon     = tr("live_col_coupon")
                     _k_cumulative = tr("live_col_cumulative")
+
+                    # Snap each calendar obs date to the trading calendar;
+                    # collect the ones that have already happened.
+                    _obs_snapped: list = []          # (date or None, is_past)
+                    for _d in _obs_cal:
+                        _j = int(_full_prices.index.searchsorted(_d))
+                        if _j < len(_full_prices) and _full_prices.index[_j] <= _today_ts:
+                            _obs_snapped.append(_full_prices.index[_j])
+                        else:
+                            _obs_snapped.append(None)   # upcoming (show calendar date)
+
+                    _past_dates = [d for d in _obs_snapped if d is not None]
+                    if _past_dates:
+                        _perf_obs = np.vstack(
+                            [_full_prices.loc[d].values / _S0 for d in _past_dates])
+                    else:
+                        _perf_obs = np.empty((0, len(_S0)))
+                    _replay = replay_note(_perf_obs, run_terms)
+
                     _obs_rows = []
-                    for _q, (_offset, _label) in enumerate(zip(_obs_offsets, obs_labels)):
-                        _obs_abs_idx = _issue_idx + _offset
-                        if _obs_abs_idx >= len(_live_prices):
+                    _obs_markers = []        # for the live chart
+                    _running_total = 0.0
+                    for _q, _label in enumerate(obs_labels):
+                        _snap = _obs_snapped[_q] if _q < len(_obs_snapped) else None
+                        if _q >= len(_replay["rows"]) or _snap is None:
+                            # Upcoming — or after an autocall terminated the note
+                            if _replay["autocall_period"] and _q + 1 > _replay["autocall_period"]:
+                                break                       # note no longer exists
+                            _est = _obs_cal[_q].date() if _q < len(_obs_cal) else "—"
                             _obs_rows.append({
-                                _k_period: _label, _k_date: "—", _k_status: "⏳ Upcoming",
-                                _k_wof: "—", _k_coupon: "—", _k_cumulative: "—",
-                            })
-                            continue
-                        _obs_date = _live_prices.index[_obs_abs_idx]
-                        if _obs_date > _today_ts:
-                            _obs_rows.append({
-                                _k_period: _label,
-                                _k_date: str(_obs_date.date()),
+                                _k_period: _label, _k_date: str(_est),
                                 _k_status: "⏳ Upcoming",
                                 _k_wof: "—", _k_coupon: "—", _k_cumulative: "—",
                             })
                             continue
-                        _obs_perf = _live_prices.iloc[_obs_abs_idx].values / _S0
-                        _obs_wof  = float(_obs_perf.min())
-                        _coupon_met = _obs_wof >= run_terms.coupon_barrier
-                        _autocall_eligible = (_q + 1) >= run_terms.autocall_start_period
-                        _autocall_fired = _autocall_eligible and _obs_wof >= run_terms.autocall_barrier
 
-                        if _coupon_met:
-                            _period_coupon = run_terms.coupon_rate * (_pending_coupons + 1) if run_terms.memory else run_terms.coupon_rate
-                            _pending_coupons = 0
-                            _total_coupons_paid += _period_coupon
-                            _status = "🚀 AUTOCALLED" if _autocall_fired else "✅ Coupon paid"
+                        _r        = _replay["rows"][_q]
+                        _obs_wof  = float(_perf_obs[_q].min())
+                        _running_total += _r["coupon_amount"]
+                        if _r["autocalled"]:
+                            _status = "🚀 AUTOCALLED"
+                        elif run_terms.coupon_at_autocall_only:
+                            _status = "— No periodic coupon (premium at call)"
+                        elif _r["coupon_met"]:
+                            _status = "✅ Coupon paid"
                         else:
-                            _period_coupon = 0.0
-                            if run_terms.memory:
-                                _pending_coupons += 1
                             _status = "❌ Coupon missed"
-
                         _obs_rows.append({
                             _k_period:     _label,
-                            _k_date:       str(_obs_date.date()),
+                            _k_date:       str(_snap.date()),
                             _k_status:     _status,
                             _k_wof:        f"{_obs_wof:.1%}",
-                            _k_coupon:     f"{_period_coupon:.4%}" if _period_coupon > 0 else "—",
-                            _k_cumulative: f"{_total_coupons_paid:.4%}",
+                            _k_coupon:     f"{_r['coupon_amount']:.4%}" if _r["coupon_amount"] > 0 else "—",
+                            _k_cumulative: f"{_running_total:.4%}",
                         })
-                        if _autocall_fired:
+                        _obs_markers.append({
+                            "date":       _snap,
+                            "label":      _label,
+                            "wof":        _obs_wof,
+                            "autocalled": _r["autocalled"],
+                            "paid":       _r["coupon_met"] or _r["coupon_amount"] > 0,
+                            "amount":     _r["coupon_amount"],
+                        })
+                        if _r["autocalled"]:
                             break
 
                     _obs_df = pd.DataFrame(_obs_rows)
                     st.dataframe(_obs_df, use_container_width=True, hide_index=True)
 
+                    _pending_coupons    = _replay["pending_coupons"]
+                    _total_coupons_paid = _replay["total_coupons"]
                     if _pending_coupons > 0:
                         st.info(
                             tr("live_pending_coupons_info",
                                n=_pending_coupons,
                                val=_pending_coupons * run_terms.coupon_rate,
                                barrier=run_terms.coupon_barrier)
+                        )
+                    if run_terms.coupon_at_autocall_only and not _replay["autocall_period"]:
+                        st.info(
+                            f"Growth autocall: no periodic coupons — an accrued premium of "
+                            f"{run_terms.coupon_rate:.2%} per period "
+                            f"({run_terms.coupon_pa:.0%} p.a.) is paid only if the note "
+                            f"autocalls. Premium if called at the next eligible observation: "
+                            f"{run_terms.coupon_rate * (len(_replay['rows']) + 1):.2%}."
                         )
 
                     _irr_to_date = _total_coupons_paid / max(_elapsed_years, 1/252)
@@ -1591,20 +1721,31 @@ elif st.session_state["page"] == "dashboard":
                                    "coupons cluster toward the end of the life.")
 
                     # ── Live performance chart ────────────────────────
+                    # Future observation reference lines (calendar dates),
+                    # only while the note is still alive.
+                    if _replay["autocall_period"]:
+                        _future_obs = []
+                    else:
+                        _future_obs = [
+                            (obs_labels[_q], _obs_cal[_q])
+                            for _q in range(len(_replay["rows"]), run_terms.n_obs)
+                        ]
+                    _live_sched = (
+                        [(d, _ac_sched_lv[_q]) for _q, d in enumerate(_obs_cal)]
+                        if run_terms.autocall_step_down else None
+                    )
                     _live_fig = build_live_performance_chart(
                         hist_prices        = _live_prices,
-                        issue_date         = _issue_ts,
+                        issue_date         = _anchor_live,
                         today              = _today_ts,
                         maturity_date      = _mat_ts,
-                        obs_day_offsets    = _obs_offsets,
-                        obs_labels         = obs_labels,
+                        obs_markers        = _obs_markers,
+                        future_obs         = _future_obs,
                         knock_in_barrier   = run_terms.knock_in_barrier,
                         autocall_barrier   = run_terms.autocall_barrier,
                         coupon_barrier     = run_terms.coupon_barrier,
-                        coupon_rate        = run_terms.coupon_rate,
-                        memory             = run_terms.memory,
-                        autocall_start_period = run_terms.autocall_start_period,
                         tr                 = tr,
+                        autocall_schedule  = _live_sched,
                     )
                     st.plotly_chart(_live_fig, use_container_width=True)
                     # Cache for PDF

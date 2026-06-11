@@ -373,6 +373,10 @@ class HestonCalibrator:
             download_kwargs = dict(
                 start       = start.strftime("%Y-%m-%d"),
                 end         = end.strftime("%Y-%m-%d"),
+                # Deliberately adjusted: calibration estimates TOTAL-RETURN
+                # dynamics (drift/vol/corr) — ex-date dividend jumps must not
+                # pollute the estimates. Barrier observation uses raw closes
+                # (data/loader.py field="close"), never this series.
                 auto_adjust = True,
                 progress    = False,
             )

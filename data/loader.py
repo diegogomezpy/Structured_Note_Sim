@@ -44,9 +44,10 @@ def load_prices(
     ssl_verify: bool                    = True,
     csv_files:  dict[str, str] | None   = None,
     df:         pd.DataFrame | None     = None,
+    field:      str                     = "close",
 ) -> pd.DataFrame:
     """
-    Load and align daily adjusted closing prices.
+    Load and align daily closing prices.
 
     Parameters
     ----------
@@ -54,6 +55,14 @@ def load_prices(
         "yfinance"  — pull live data from Yahoo Finance (default).
         "csv"       — load from CSV files (bundled or custom).
         "df"        — use a pre-loaded DataFrame directly.
+
+    field : str
+        "close"     — raw (unadjusted) official closing prices. This is what
+                      structured note term sheets observe for barrier /
+                      coupon / autocall / knock-in fixings. Default.
+        "adj_close" — dividend-adjusted (total return) closing prices. Use for
+                      drift / vol / correlation calibration only; never for
+                      barrier observation. (Both series are split-adjusted.)
 
     tickers : dict[str, str] or None
         yfinance ticker → display name mapping.
@@ -94,10 +103,12 @@ def load_prices(
     ImportError       if source="yfinance" and yfinance is not installed.
     FileNotFoundError if source="csv" and a file does not exist.
     """
+    if field not in ("close", "adj_close"):
+        raise ValueError(f"field must be 'close' or 'adj_close'; got '{field}'")
     if source == "yfinance":
-        return _from_yfinance(tickers or DEFAULT_TICKERS, years, end_date, ssl_verify)
+        return _from_yfinance(tickers or DEFAULT_TICKERS, years, end_date, ssl_verify, field)
     elif source == "csv":
-        return _from_csv(csv_files or DEFAULT_CSV_FILES)
+        return _from_csv(csv_files or DEFAULT_CSV_FILES, field)
     elif source == "df":
         if df is None:
             raise ValueError("source='df' requires a DataFrame passed via df=")
@@ -115,6 +126,7 @@ def _from_yfinance(
     years:      float,
     end_date:   str | None,
     ssl_verify: bool,
+    field:      str = "close",
 ) -> pd.DataFrame:
     try:
         import yfinance as yf
@@ -145,37 +157,41 @@ def _from_yfinance(
 
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
+        # auto_adjust=False keeps BOTH the official close ('Close') and the
+        # dividend-adjusted close ('Adj Close'); `field` selects which one.
         if start is not None:
             # Bounded window: explicit start → end
             kwargs = dict(
                 start=start.strftime("%Y-%m-%d"),
                 end=end.strftime("%Y-%m-%d"),
-                auto_adjust=True,
+                auto_adjust=False,
                 progress=False,
             )
         else:
             # Max history: use period="max" — omitting start only returns 30 days
             kwargs = dict(
                 period="max",
-                auto_adjust=True,
+                auto_adjust=False,
                 progress=False,
             )
         if session:
             kwargs["session"] = session
         raw = yf.download(ticker_symbols, **kwargs)
 
+    col = "Close" if field == "close" else "Adj Close"
     # yfinance returns a MultiIndex for multiple tickers, flat for one
     if isinstance(raw.columns, pd.MultiIndex):
-        prices = raw["Close"][ticker_symbols]
+        prices = raw[col][ticker_symbols]
     else:
-        prices = raw[["Close"]].rename(columns={"Close": ticker_symbols[0]})
+        prices = raw[[col]].rename(columns={col: ticker_symbols[0]})
 
     prices = prices.rename(columns=tickers)
     return _align(prices, "yfinance")
 
 
-def _from_csv(csv_files: dict[str, str]) -> pd.DataFrame:
+def _from_csv(csv_files: dict[str, str], field: str = "close") -> pd.DataFrame:
     series: dict[str, pd.Series] = {}
+    col = "Close" if field == "close" else "Adj Close"
 
     for path, name in csv_files.items():
         p = pathlib.Path(path)
@@ -189,13 +205,13 @@ def _from_csv(csv_files: dict[str, str]) -> pd.DataFrame:
         df = df[pd.to_datetime(df.index, errors="coerce").notna()]
         df.index = pd.to_datetime(df.index)
 
-        if "Adj Close" not in df.columns:
+        if col not in df.columns:
             raise ValueError(
-                f"'{path}' has no 'Adj Close' column. "
+                f"'{path}' has no '{col}' column. "
                 f"Columns found: {list(df.columns)}. "
                 f"Use a raw Yahoo Finance CSV export."
             )
-        series[name] = pd.to_numeric(df["Adj Close"], errors="coerce")
+        series[name] = pd.to_numeric(df[col], errors="coerce")
         print(f"[loader] Loaded {name} from '{p.name}' "
               f"({len(series[name])} rows, "
               f"{df.index[0].date()} → {df.index[-1].date()})")
@@ -240,3 +256,94 @@ def _align(prices: pd.DataFrame, source_label: str) -> pd.DataFrame:
             f"Increase years= or check that your files cover an overlapping date range."
         )
     return prices
+
+
+# ---------------------------------------------------------------------------
+# Dividends — history loading and forward projection for the MC simulator
+# ---------------------------------------------------------------------------
+
+def load_dividends(
+    tickers:    dict[str, str],
+    ssl_verify: bool = True,
+) -> dict[str, pd.Series]:
+    """
+    Load cash dividend history (ex-date → cash amount) for each ticker.
+
+    Returns {display_name: pd.Series} with a tz-naive DatetimeIndex. Price
+    indices (^GSPC etc.) and non-distributing assets return an empty Series —
+    they get no dividend jumps in the simulation (a price index already
+    reflects constituent dividends in its drift).
+    """
+    try:
+        import yfinance as yf
+    except ImportError:
+        raise ImportError("yfinance is not installed. Run: pip install yfinance")
+
+    out: dict[str, pd.Series] = {}
+    for sym, name in tickers.items():
+        try:
+            divs = yf.Ticker(sym).dividends
+            if divs is None or len(divs) == 0:
+                out[name] = pd.Series(dtype=float)
+                continue
+            divs = divs.copy()
+            if getattr(divs.index, "tz", None) is not None:
+                divs.index = divs.index.tz_localize(None)
+            out[name] = divs.astype(float)
+        except Exception as e:
+            print(f"[loader] WARNING: could not load dividends for {sym}: {e} — assuming none.")
+            out[name] = pd.Series(dtype=float)
+    return out
+
+
+def build_dividend_schedule(
+    div_history: list[pd.Series],
+    spot_prices: list[float],
+    grid_dates:  pd.DatetimeIndex,
+) -> np.ndarray:
+    """
+    Project forward dividends onto a simulated trading-day grid.
+
+    Forecast rule: the trailing-12-month dividends (relative to grid_dates[0])
+    repeat on their anniversary ex-dates for as long as the grid runs. Each
+    cash amount is converted to a proportional drop d = cash / spot (spot =
+    current price), so the simulator can apply S ← S × (1 − d) at the step
+    whose end date is the first grid date on/after the forecast ex-date.
+
+    Parameters
+    ----------
+    div_history : one pd.Series per asset (ex-date → cash), tz-naive index.
+                  Empty series → no jumps for that asset.
+    spot_prices : current raw closing price per asset (same order).
+    grid_dates  : the simulation date grid, length N+1 (anchor + N steps).
+
+    Returns
+    -------
+    np.ndarray shape (n_assets, N): proportional drop applied at the END of
+    step t (i.e. affecting the price at grid_dates[t+1]). Mostly zeros.
+    """
+    import numpy as np
+
+    n_assets = len(div_history)
+    N        = len(grid_dates) - 1
+    sched    = np.zeros((n_assets, N))
+    anchor   = grid_dates[0]
+    horizon  = grid_dates[-1]
+    n_years  = int(np.ceil((horizon - anchor).days / 365.25)) + 1
+
+    for i, (divs, spot) in enumerate(zip(div_history, spot_prices)):
+        if divs is None or len(divs) == 0 or not spot or spot <= 0:
+            continue
+        trailing = divs[(divs.index > anchor - pd.DateOffset(years=1)) & (divs.index <= anchor)]
+        for ex_date, cash in trailing.items():
+            prop = float(cash) / float(spot)
+            if not (0.0 < prop < 0.5):     # sanity guard against bad data
+                continue
+            for y in range(1, n_years + 1):
+                fcast = ex_date + pd.DateOffset(years=y)
+                if fcast <= anchor or fcast > horizon:
+                    continue
+                idx = int(grid_dates.searchsorted(fcast))   # first grid date >= fcast
+                if 1 <= idx <= N:
+                    sched[i, idx - 1] += prop
+    return sched

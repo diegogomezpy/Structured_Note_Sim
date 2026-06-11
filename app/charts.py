@@ -12,10 +12,11 @@ All functions:
 Usage
 -----
 from app.charts import (
-    build_call_prob_curve, build_irr_distribution,
-    build_fan_chart, build_wof_fan, build_corr_heatmaps,
+    build_irr_distribution,
+    build_fan_chart, build_wof_fan, build_corr_heatmap,
     build_backtest_irr_scatter, build_backtest_outcome_bar,
     build_worst_asset_pie, build_historical_prices, build_historical_wof_path,
+    build_live_performance_chart,
 )
 """
 
@@ -61,56 +62,24 @@ def _add_autocall_barrier(fig: go.Figure, autocall_barrier, autocall_schedule) -
         )
 
 
-_OUTCOME_COLORS = {
-    # keys are English labels — caller maps translated labels to these
-    "Called at 3M":  _GREEN_LIGHT,
-    "Called at 6M":  _GREEN_MID,
-    "Called at 9M":  _GREEN_DARK,
-    "Maturity":      "#3498db",
-    "Floor Applied": "#e74c3c",
-}
-
-
 def _plain_layout(fig: go.Figure) -> go.Figure:
     fig.update_layout(plot_bgcolor=_WHITE, paper_bgcolor=_WHITE)
     return fig
 
 
-# ---------------------------------------------------------------------------
-# Sidebar — issuer call probability curve
-# ---------------------------------------------------------------------------
-
-def build_call_prob_curve(
-    floor_level:    float,
-    call_steepness: float,
-    tr:             Translator,
-) -> go.Figure:
-    perf = np.linspace(0.80, 1.20, 300)
-    prob = 1.0 / (1.0 + np.exp(-call_steepness * (perf - floor_level)))
-    prob[perf < floor_level] = 0.0
-
-    fig = px.line(
-        pd.DataFrame({
-            tr("worst_of_perf_axis"): perf,
-            tr("p_issuer_calls"):     prob,
-        }),
-        x=tr("worst_of_perf_axis"),
-        y=tr("p_issuer_calls"),
-    )
-    fig.add_vline(
-        x=floor_level,
-        line_dash="dash",
-        line_color=_GREEN_MID,
-        annotation_text=f"Call Strike ({floor_level:.0%})",
-        annotation_position="top right",
-    )
-    fig.update_layout(
-        yaxis=dict(tickformat=".0%", range=[0, 1.05]),
-        xaxis=dict(tickformat=".0%"),
-        height=280,
-        margin=dict(t=10, b=20),
-    )
-    return _plain_layout(fig)
+def _add_coupon_barrier(fig: go.Figure, coupon_barrier: float,
+                        knock_in_barrier: float) -> None:
+    """
+    Draw the coupon barrier as its own orange dashed line when it is distinct
+    from the KI barrier and not a guaranteed coupon (level 0). Never relabel
+    the KI line as a coupon barrier — they are different term-sheet levels.
+    """
+    if coupon_barrier and abs(coupon_barrier - knock_in_barrier) > 1e-9:
+        fig.add_hline(
+            y=coupon_barrier, line_dash="dash", line_color="#e67e22",
+            annotation_text=f"Coupon barrier ({coupon_barrier:.1%})",
+            annotation_position="bottom left",
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -134,13 +103,18 @@ def build_irr_distribution(
     irr_maturity = irr_all[autocall_events == 0]
     n_total      = len(irr_all)
 
-    # Shared bin edges computed from the full distribution
-    # Clip extreme outliers (beyond 1st/99th pct) so bins aren't wasted on tails
+    # Shared bin edges computed from the full distribution.
+    # Bins span the 1st–99th percentile so they aren't wasted on extreme
+    # outliers; values beyond that are CLIPPED into the edge bins (not
+    # dropped) so the bars genuinely sum to 100% of paths.
     lo = float(np.percentile(irr_all, 1))
     hi = float(np.percentile(irr_all, 99))
+    if hi <= lo:                      # degenerate distribution guard
+        lo, hi = lo - 0.01, hi + 0.01
     n_bins = 60
     bin_size = (hi - lo) / n_bins
-    bins = dict(start=lo, end=hi, size=bin_size)
+    irr_called   = np.clip(irr_called,   lo, hi)
+    irr_maturity = np.clip(irr_maturity, lo, hi)
 
     fig = go.Figure()
 
@@ -502,14 +476,14 @@ def build_historical_prices(
     bt_end:       pd.Timestamp,
     tr:           Translator,
 ) -> go.Figure:
-    colors = {"SPX": _GREEN_MID, "SX5E": _GREEN_LIGHT, "SMI": _GREEN_DARK}
+    palette = [_GREEN_MID, _GREEN_LIGHT, _GREEN_DARK, "#f39c12", "#9b59b6"]
     fig = go.Figure()
-    for col in hist_prices.columns:
+    for i, col in enumerate(hist_prices.columns):
         normed = hist_prices[col] / hist_prices[col].iloc[0] * 100
         fig.add_trace(go.Scatter(
             x=hist_prices.index, y=normed,
             mode="lines", name=col,
-            line=dict(color=colors.get(col, _GREY), width=1.5),
+            line=dict(color=palette[i % len(palette)], width=1.5),
         ))
     fig.add_vline(x=bt_start.isoformat(), line_dash="dot", line_color=_GREY,
                   annotation_text=tr("backtest_start"), annotation_position="top right")
@@ -531,21 +505,29 @@ def build_historical_prices(
 def build_historical_wof_path(
     hist_prices:      pd.DataFrame,
     issue_date:       pd.Timestamp,
-    maturity_days:    int,
-    obs_day_offsets:  list[int],
+    obs_dates:        list[pd.Timestamp],
     knock_in_barrier: float,
     autocall_barrier: float,
     coupon_barrier:   float,
     call_quarter:     int,
     tr:               Translator,
+    autocall_schedule: list[tuple] | None = None,
+    coupon_at_autocall_only: bool = False,
 ) -> go.Figure:
     """
     Show per-asset performance + worst-of line for one historical issue date.
-    Vertical dotted lines at each observation date.
-    Markers show whether each observation was autocalled, coupon paid, or missed.
+
+    obs_dates are the SNAPPED trading-day observation dates (the same ones the
+    payoff engine evaluated). Markers stop at the autocall date — the note no
+    longer exists afterwards. The coupon barrier colours the markers and is
+    drawn as its own line when it differs from the KI barrier (never conflate
+    the two). For step-down notes pass autocall_schedule = [(date, level),...].
     """
     issue_idx = hist_prices.index.searchsorted(issue_date)
-    end_idx   = min(issue_idx + maturity_days + 1, len(hist_prices))
+    if obs_dates:
+        end_idx = min(int(hist_prices.index.searchsorted(obs_dates[-1])) + 1, len(hist_prices))
+    else:
+        end_idx = len(hist_prices)
     slice_    = hist_prices.iloc[issue_idx:end_idx]
     dates     = slice_.index
     S0        = hist_prices.iloc[issue_idx].values.astype(float)
@@ -575,26 +557,28 @@ def build_historical_wof_path(
         line=dict(color=_GREEN_DARK, width=2.5),
     ))
 
-    # Barriers
+    # Barriers — KI, coupon (when distinct), and autocall (flat or stepped)
     fig.add_hline(y=knock_in_barrier, line_dash="dash", line_color=_RED,
-                  annotation_text=f"Knock-in / Coupon barrier ({knock_in_barrier:.0%})",
+                  annotation_text=f"Knock-in barrier ({knock_in_barrier:.1%})",
                   annotation_position="bottom right")
-    fig.add_hline(y=autocall_barrier, line_dash="dot", line_color=_GREY,
-                  annotation_text=f"Autocall barrier ({autocall_barrier:.0%})",
-                  annotation_position="top right")
+    _add_coupon_barrier(fig, coupon_barrier, knock_in_barrier)
+    _add_autocall_barrier(fig, autocall_barrier, autocall_schedule)
 
-    # Observation markers
-    for q, offset in enumerate(obs_day_offsets):
-        obs_idx_local = offset
-        if obs_idx_local >= len(dates):
+    # Observation markers — only while the note is alive
+    for q, obs_date in enumerate(obs_dates):
+        loc = hist_prices.index.searchsorted(obs_date) - issue_idx
+        if loc < 0 or loc >= len(dates):
             break
-        obs_date = dates[obs_idx_local]
-        wof_val  = float(wof[obs_idx_local])
-        is_call  = (call_quarter == q + 1)
-        color    = _GREEN_MID if wof_val >= coupon_barrier else _RED
-        symbol   = "star" if is_call else "circle"
-        size     = 14 if is_call else 9
-        label    = f"P{q+1} {'← CALLED' if is_call else ''}"
+        wof_val = float(wof[loc])
+        is_call = (call_quarter == q + 1)
+        if coupon_at_autocall_only:
+            # No periodic coupon — colour by the call, not a coupon barrier
+            color = _GREEN_MID if is_call else _GREY
+        else:
+            color = _GREEN_MID if wof_val >= coupon_barrier else _RED
+        symbol  = "star" if is_call else "circle"
+        size    = 14 if is_call else 9
+        label   = f"P{q+1} {'← CALLED' if is_call else ''}"
 
         fig.add_trace(go.Scatter(
             x=[obs_date], y=[wof_val],
@@ -606,6 +590,8 @@ def build_historical_wof_path(
         fig.add_vline(x=obs_date.isoformat(), line_dash="dot",
                       line_color="#cccccc",
                       annotation_text=f"P{q+1}", annotation_position="top")
+        if is_call:
+            break   # the note terminated here — later observations never happen
 
     outcome = "Autocalled" if call_quarter > 0 else "Maturity"
     fig.update_layout(
@@ -627,21 +613,22 @@ def build_live_performance_chart(
     issue_date:         pd.Timestamp,
     today:              pd.Timestamp,
     maturity_date:      pd.Timestamp,
-    obs_day_offsets:    list[int],       # business-day offsets from issue
-    obs_labels:         list[str],       # ["P1", "P2", ...]
+    obs_markers:        list[dict],     # precomputed by core.note.replay_note via app
+    future_obs:         list[tuple],    # [(label, calendar_date), ...] still to come
     knock_in_barrier:   float,
     autocall_barrier:   float,
     coupon_barrier:     float,
-    coupon_rate:        float,
-    memory:             bool,
-    autocall_start_period: int,
     tr:                 "Translator",
+    autocall_schedule:  list[tuple] | None = None,
 ) -> go.Figure:
     """
     Live performance chart from issue date to today.
-    Past obs dates show coupon paid (green) / missed (red) markers.
-    Future obs dates shown as faint dashed lines.
-    Today marked with a vertical line.
+
+    This function only DRAWS — all payoff logic (memory coupons, step-down
+    autocall schedule, coupon_at_autocall_only) is computed once in
+    core.note.replay_note and passed in via obs_markers:
+        {"date", "label", "wof", "autocalled", "paid", "amount"}
+    Future observation dates arrive as faint reference lines via future_obs.
     """
     issue_idx = hist_prices.index.searchsorted(issue_date)
     S0 = hist_prices.iloc[issue_idx].values.astype(float)
@@ -672,13 +659,12 @@ def build_live_performance_chart(
         line=dict(color=_GREEN_DARK, width=2.5),
     ))
 
-    # Barriers
+    # Barriers — KI, coupon (when distinct), and autocall (flat or stepped)
     fig.add_hline(y=knock_in_barrier, line_dash="dash", line_color=_RED,
-                  annotation_text=f"KI / Coupon barrier ({knock_in_barrier:.0%})",
+                  annotation_text=f"Knock-in barrier ({knock_in_barrier:.1%})",
                   annotation_position="bottom right")
-    fig.add_hline(y=autocall_barrier, line_dash="dot", line_color=_GREY,
-                  annotation_text=f"Autocall barrier ({autocall_barrier:.0%})",
-                  annotation_position="top right")
+    _add_coupon_barrier(fig, coupon_barrier, knock_in_barrier)
+    _add_autocall_barrier(fig, autocall_barrier, autocall_schedule)
 
     # Today line
     if today in dates or today >= dates[0]:
@@ -686,65 +672,35 @@ def build_live_performance_chart(
                       line_width=2,
                       annotation_text="Today", annotation_position="top left")
 
-    # Observation markers — past ones get coupon/miss markers, future ones get faint lines
-    pending = 0
-    for q, (offset, label) in enumerate(zip(obs_day_offsets, obs_labels)):
-        # Find the actual date for this observation
-        obs_abs_idx = issue_idx + offset
-        if obs_abs_idx >= len(hist_prices):
-            # Future obs — just draw a faint reference line
-            # Estimate date by projecting from last known price date
-            try:
-                obs_date_est = hist_prices.index[issue_idx] + pd.DateOffset(days=int(offset * 365/252))
-                if obs_date_est <= maturity_date:
-                    fig.add_vline(x=obs_date_est.isoformat(), line_dash="dot",
-                                  line_color="#dddddd",
-                                  annotation_text=label, annotation_position="top")
-            except Exception:
-                pass
-            continue
-
-        obs_date = hist_prices.index[obs_abs_idx]
-        if obs_date > today:
-            # Future obs within available data — faint line
-            fig.add_vline(x=obs_date.isoformat(), line_dash="dot",
-                          line_color="#dddddd",
-                          annotation_text=label, annotation_position="top")
-            continue
-
-        # Past obs — determine coupon status
-        local_idx = obs_abs_idx - issue_idx
-        if local_idx >= len(wof):
-            continue
-        wof_val = float(wof[local_idx])
-
-        coupon_paid = wof_val >= coupon_barrier
-        autocall_eligible = (q + 1) >= autocall_start_period
-        autocall_fired = autocall_eligible and wof_val >= autocall_barrier
-
-        if coupon_paid:
-            coupon_amount = coupon_rate * (pending + 1) if memory else coupon_rate
-            pending = 0
-            marker_color = _GREEN_MID
-            symbol = "star" if autocall_fired else "circle"
-            tip = f"{label}: {'AUTOCALLED · ' if autocall_fired else ''}Coupon {coupon_amount:.4%}"
+    # Past observation markers (status precomputed by replay_note)
+    for m in obs_markers:
+        if m["autocalled"]:
+            tip = f"{m['label']}: AUTOCALLED" + (
+                f" · Premium {m['amount']:.4%}" if m["amount"] > 0 else "")
+            color, symbol, size = _GREEN_MID, "star", 12
+        elif m["paid"]:
+            tip = f"{m['label']}: Coupon {m['amount']:.4%}"
+            color, symbol, size = _GREEN_MID, "circle", 9
         else:
-            pending += 1
-            marker_color = _RED
-            symbol = "circle"
-            tip = f"{label}: Coupon missed (pending={pending})"
-
+            tip = f"{m['label']}: Coupon missed"
+            color, symbol, size = _RED, "circle", 9
         fig.add_trace(go.Scatter(
-            x=[obs_date], y=[wof_val],
+            x=[m["date"]], y=[m["wof"]],
             mode="markers",
-            marker=dict(size=12 if autocall_fired else 9,
-                        color=marker_color, symbol=symbol,
+            marker=dict(size=size, color=color, symbol=symbol,
                         line=dict(width=1.5, color="white")),
             name=tip, showlegend=True,
-            hovertemplate=f"{tip}<br>Worst-of: {wof_val:.1%}<extra></extra>",
+            hovertemplate=f"{tip}<br>Worst-of: {m['wof']:.1%}<extra></extra>",
         ))
-        fig.add_vline(x=obs_date.isoformat(), line_dash="dot", line_color="#cccccc",
-                      annotation_text=label, annotation_position="top")
+        fig.add_vline(x=m["date"].isoformat(), line_dash="dot", line_color="#cccccc",
+                      annotation_text=m["label"], annotation_position="top")
+
+    # Future observation reference lines (calendar dates)
+    for label, obs_date in future_obs:
+        if pd.Timestamp(obs_date) <= maturity_date:
+            fig.add_vline(x=pd.Timestamp(obs_date).isoformat(), line_dash="dot",
+                          line_color="#dddddd",
+                          annotation_text=label, annotation_position="top")
 
     fig.update_layout(
         title=f"Live Performance — Issue: {issue_date.date()} · Maturity: {maturity_date.date()}",
