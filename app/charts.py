@@ -84,10 +84,15 @@ def _apply_theme(fig: go.Figure) -> go.Figure:
         title_font=dict(family=_BASE_FONT, size=12, color=_GREY),
         tickfont=dict(family=_BASE_FONT, size=11, color=_GREY),
     )
+    # The title font set above creates a title object; if a chart never set
+    # title text, plotly.js renders the literal JS value "undefined" as the
+    # title. Blank it so title-less charts show nothing instead of "undefined".
+    if fig.layout.title.text is None:
+        fig.update_layout(title_text="")
     return fig
 
 def _add_autocall_barrier(fig: go.Figure, autocall_barrier, autocall_schedule,
-                          x0=None) -> None:
+                          tr: Translator, x0=None) -> None:
     """
     Draw the autocall barrier on a performance chart.
 
@@ -109,12 +114,13 @@ def _add_autocall_barrier(fig: go.Figure, autocall_barrier, autocall_schedule,
         fig.add_trace(go.Scatter(
             x=xs, y=ys, mode="lines",
             line=dict(color=_GREY, dash="dot", width=1.5, shape="hv"),
-            name="Autocall barrier", hovertemplate="Autocall barrier: %{y:.0%}<extra></extra>",
+            name=tr("chart_autocall_barrier"),
+            hovertemplate=f"{tr('chart_autocall_barrier')}: %{{y:.0%}}<extra></extra>",
         ))
     elif autocall_barrier is not None:
         fig.add_hline(
             y=autocall_barrier, line_dash="dot", line_color=_GREY,
-            annotation_text=f"Autocall barrier ({autocall_barrier:.0%})",
+            annotation_text=tr("chart_autocall_barrier_lvl", lvl=f"{autocall_barrier:.0%}"),
             annotation_position="top right",
         )
 
@@ -124,7 +130,7 @@ def _plain_layout(fig: go.Figure) -> go.Figure:
 
 
 def _add_coupon_barrier(fig: go.Figure, coupon_barrier: float,
-                        knock_in_barrier: float) -> None:
+                        knock_in_barrier: float, tr: Translator) -> None:
     """
     Draw the coupon barrier as its own orange dashed line when it is distinct
     from the KI barrier and not a guaranteed coupon (level 0). Never relabel
@@ -133,7 +139,7 @@ def _add_coupon_barrier(fig: go.Figure, coupon_barrier: float,
     if coupon_barrier and abs(coupon_barrier - knock_in_barrier) > 1e-9:
         fig.add_hline(
             y=coupon_barrier, line_dash="dash", line_color="#e67e22",
-            annotation_text=f"Coupon barrier ({coupon_barrier:.1%})",
+            annotation_text=tr("chart_coupon_barrier_lvl", lvl=f"{coupon_barrier:.1%}"),
             annotation_position="bottom left",
         )
 
@@ -212,7 +218,7 @@ def build_irr_distribution(
             x=edges[:-1] + bin_size / 2,
             y=counts_c / n_total,
             width=bin_size * 0.95,
-            name=f"Autocalled ({len(irr_called)/n_total:.0%})",
+            name=tr("chart_legend_autocalled", pct=f"{len(irr_called)/n_total:.0%}"),
             marker_color=_GREEN_LIGHT,
             opacity=0.85,
         ))
@@ -223,7 +229,7 @@ def build_irr_distribution(
             x=edges[:-1] + bin_size / 2,
             y=counts_m / n_total,
             width=bin_size * 0.95,
-            name=f"Maturity ({len(irr_maturity)/n_total:.0%})",
+            name=tr("chart_legend_maturity", pct=f"{len(irr_maturity)/n_total:.0%}"),
             marker_color=_GREEN_DARK,
             opacity=0.75,
         ))
@@ -232,7 +238,7 @@ def build_irr_distribution(
     # Extra right-hand headroom so the Mean/Coupon labels (which can sit near the
     # right edge for a high-autocall note) have room and never get clipped.
     x_range = [lo_e, hi_e + span * 0.10]
-    _clip_note = (f"  ·  loss tail to {lo_data:.0%} clipped into left bin"
+    _clip_note = (tr("chart_irr_clip_note", lvl=f"{lo_data:.0%}")
                   if lo_data < lo_e - 1e-9 else "")
 
     # ── Reference lines — stagger labels so they never collide ─────────
@@ -242,14 +248,14 @@ def build_irr_distribution(
     # Mean at the top, Coupon a row lower via yshift — so they never overlap.
     fig.add_vline(
         x=expected_irr, line_dash="dash", line_color=_GREEN_MID, line_width=1.5,
-        annotation_text=f"Mean {expected_irr:.2%}",
+        annotation_text=tr("chart_mean", v=f"{expected_irr:.2%}"),
         annotation_position="top left",
         annotation_font_size=11,
         annotation_yshift=2,
     )
     fig.add_vline(
         x=coupon_rate_pa, line_dash="dot", line_color=_GREY, line_width=1.5,
-        annotation_text=f"Coupon {coupon_rate_pa:.2%} p.a.",
+        annotation_text=tr("chart_coupon_pa", v=f"{coupon_rate_pa:.2%}"),
         annotation_position="top left",
         annotation_font_size=11,
         annotation_yshift=-18,
@@ -262,9 +268,9 @@ def build_irr_distribution(
     )
 
     fig.update_layout(
-        title="Annualised IRR Distribution — All Simulated Paths" + _clip_note,
-        xaxis=dict(title="Annualised IRR (simple)", tickformat=".1%", range=x_range),
-        yaxis=dict(title="Share of all paths", tickformat=".1%"),
+        title=tr("chart_irr_title") + _clip_note,
+        xaxis=dict(title=tr("chart_irr_xaxis"), tickformat=".1%", range=x_range),
+        yaxis=dict(title=tr("chart_irr_yaxis"), tickformat=".1%"),
         barmode="overlay",
         legend=dict(x=0.01, y=0.99),
         hovermode="x unified",
@@ -361,10 +367,10 @@ def build_wof_fan(
     ))
     fig.add_hline(
         y=knock_in_barrier, line_dash="dash", line_color=_RED,
-        annotation_text=f"Knock-in barrier ({knock_in_barrier:.0%})",
+        annotation_text=tr("chart_ki_barrier", lvl=f"{knock_in_barrier:.0%}"),
         annotation_position="bottom right",
     )
-    _add_autocall_barrier(fig, autocall_barrier, autocall_schedule, x0=0.0)
+    _add_autocall_barrier(fig, autocall_barrier, autocall_schedule, tr, x0=0.0)
     for label, t_val in obs_labels:
         fig.add_vline(x=t_val, line_dash="dot", line_color="#aaa",
                       annotation_text=label, annotation_position="top")
@@ -431,15 +437,15 @@ def build_path_wof_chart(
 
     fig.add_trace(go.Scatter(
         y=worst_path, mode="lines",
-        name="Worst-of",
+        name=tr("chart_worst_of"),
         line=dict(color=_GREEN_DARK, width=2.5),
     ))
     fig.add_hline(
         y=knock_in_barrier, line_dash="dash", line_color=_RED,
-        annotation_text=f"Knock-in barrier ({knock_in_barrier:.0%})",
+        annotation_text=tr("chart_ki_barrier", lvl=f"{knock_in_barrier:.0%}"),
         annotation_position="bottom right",
     )
-    _add_autocall_barrier(fig, autocall_barrier, autocall_schedule, x0=0)
+    _add_autocall_barrier(fig, autocall_barrier, autocall_schedule, tr, x0=0)
     for i, (step, label) in enumerate(zip(obs_steps, obs_labels)):
         called_here  = (autocall_q == i + 1)
         marker_color = _GREEN_MID if called_here else _GREY
@@ -524,7 +530,7 @@ def build_worst_asset_pie(
     else:
         # All paths autocalled — show worst asset at call date instead
         wc    = bt["Worst Asset"].value_counts().reset_index()
-        title = "Worst Asset at Call Date"
+        title = tr("chart_worst_asset_at_call")
 
     if wc.empty:
         return go.Figure()
@@ -589,6 +595,7 @@ def build_historical_prices(
     fig.add_vline(x=bt_end.isoformat(),   line_dash="dot", line_color=_GREY,
                   annotation_text=tr("backtest_end"),   annotation_position="top left")
     fig.update_layout(
+        title=tr("chart_hist_prices_title"),
         xaxis=dict(title=tr("date_axis")),
         yaxis=dict(title=tr("normalised_level")),
         hovermode="x unified",
@@ -652,16 +659,16 @@ def build_historical_wof_path(
     # Worst-of line (solid, prominent)
     fig.add_trace(go.Scatter(
         x=dates, y=wof,
-        mode="lines", name="Worst-of",
+        mode="lines", name=tr("chart_worst_of"),
         line=dict(color=_GREEN_DARK, width=2.5),
     ))
 
     # Barriers — KI, coupon (when distinct), and autocall (flat or stepped)
     fig.add_hline(y=knock_in_barrier, line_dash="dash", line_color=_RED,
-                  annotation_text=f"Knock-in barrier ({knock_in_barrier:.1%})",
+                  annotation_text=tr("chart_ki_barrier", lvl=f"{knock_in_barrier:.1%}"),
                   annotation_position="bottom right")
-    _add_coupon_barrier(fig, coupon_barrier, knock_in_barrier)
-    _add_autocall_barrier(fig, autocall_barrier, autocall_schedule,
+    _add_coupon_barrier(fig, coupon_barrier, knock_in_barrier, tr)
+    _add_autocall_barrier(fig, autocall_barrier, autocall_schedule, tr,
                           x0=hist_prices.index[issue_idx])
 
     # Observation markers — only while the note is alive
@@ -678,7 +685,7 @@ def build_historical_wof_path(
             color = _GREEN_MID if wof_val >= coupon_barrier else _RED
         symbol  = "star" if is_call else "circle"
         size    = 14 if is_call else 9
-        label   = f"P{q+1} {'← CALLED' if is_call else ''}"
+        label   = tr("chart_period_called", p=q + 1) if is_call else f"P{q+1}"
 
         fig.add_trace(go.Scatter(
             x=[obs_date], y=[wof_val],
@@ -693,12 +700,12 @@ def build_historical_wof_path(
         if is_call:
             break   # the note terminated here — later observations never happen
 
-    outcome = "Autocalled" if call_quarter > 0 else "Maturity"
+    outcome = (tr("chart_outcome_autocalled_p", q=call_quarter)
+               if call_quarter > 0 else tr("outcome_maturity"))
     fig.update_layout(
-        title=f"Historical Worst-of Path — Issue: {issue_date.date()} · Outcome: {outcome} P{call_quarter}" if call_quarter > 0
-              else f"Historical Worst-of Path — Issue: {issue_date.date()} · Outcome: Maturity",
-        xaxis=dict(title="Date"),
-        yaxis=dict(title="Performance vs Issue Date", tickformat=".0%"),
+        title=tr("chart_hist_wof_title", issue=issue_date.date(), outcome=outcome),
+        xaxis=dict(title=tr("date_axis")),
+        yaxis=dict(title=tr("chart_perf_vs_issue"), tickformat=".0%"),
         hovermode="x unified",
         legend=dict(x=1.01, y=1, xanchor="left"),
     )
@@ -755,34 +762,34 @@ def build_live_performance_chart(
     # Worst-of line
     fig.add_trace(go.Scatter(
         x=dates, y=wof,
-        mode="lines", name="Worst-of",
+        mode="lines", name=tr("chart_worst_of"),
         line=dict(color=_GREEN_DARK, width=2.5),
     ))
 
     # Barriers — KI, coupon (when distinct), and autocall (flat or stepped)
     fig.add_hline(y=knock_in_barrier, line_dash="dash", line_color=_RED,
-                  annotation_text=f"Knock-in barrier ({knock_in_barrier:.1%})",
+                  annotation_text=tr("chart_ki_barrier", lvl=f"{knock_in_barrier:.1%}"),
                   annotation_position="bottom right")
-    _add_coupon_barrier(fig, coupon_barrier, knock_in_barrier)
-    _add_autocall_barrier(fig, autocall_barrier, autocall_schedule, x0=issue_date)
+    _add_coupon_barrier(fig, coupon_barrier, knock_in_barrier, tr)
+    _add_autocall_barrier(fig, autocall_barrier, autocall_schedule, tr, x0=issue_date)
 
     # Today line
     if today in dates or today >= dates[0]:
         fig.add_vline(x=today.isoformat(), line_dash="solid", line_color="#2c3e50",
                       line_width=2,
-                      annotation_text="Today", annotation_position="top left")
+                      annotation_text=tr("chart_today"), annotation_position="top left")
 
     # Past observation markers (status precomputed by replay_note)
     for m in obs_markers:
         if m["autocalled"]:
-            tip = f"{m['label']}: AUTOCALLED" + (
-                f" · Premium {m['amount']:.4%}" if m["amount"] > 0 else "")
+            tip = tr("chart_marker_autocalled", label=m["label"]) + (
+                tr("chart_marker_premium", v=f"{m['amount']:.4%}") if m["amount"] > 0 else "")
             color, symbol, size = _GREEN_MID, "star", 12
         elif m["paid"]:
-            tip = f"{m['label']}: Coupon {m['amount']:.4%}"
+            tip = tr("chart_marker_coupon", label=m["label"], v=f"{m['amount']:.4%}")
             color, symbol, size = _GREEN_MID, "circle", 9
         else:
-            tip = f"{m['label']}: Coupon missed"
+            tip = tr("chart_marker_coupon_missed", label=m["label"])
             color, symbol, size = _RED, "circle", 9
         fig.add_trace(go.Scatter(
             x=[m["date"]], y=[m["wof"]],
@@ -790,7 +797,7 @@ def build_live_performance_chart(
             marker=dict(size=size, color=color, symbol=symbol,
                         line=dict(width=1.5, color="white")),
             name=tip, showlegend=True,
-            hovertemplate=f"{tip}<br>Worst-of: {m['wof']:.1%}<extra></extra>",
+            hovertemplate=f"{tip}<br>{tr('chart_worst_of')}: {m['wof']:.1%}<extra></extra>",
         ))
         fig.add_vline(x=m["date"].isoformat(), line_dash="dot", line_color="#cccccc",
                       annotation_text=m["label"], annotation_position="top")
@@ -803,9 +810,9 @@ def build_live_performance_chart(
                           annotation_text=label, annotation_position="top")
 
     fig.update_layout(
-        title=f"Live Performance — Issue: {issue_date.date()} · Maturity: {maturity_date.date()}",
-        xaxis=dict(title="Date"),
-        yaxis=dict(title="Performance vs Issue Date", tickformat=".0%"),
+        title=tr("chart_live_title", issue=issue_date.date(), mat=maturity_date.date()),
+        xaxis=dict(title=tr("date_axis")),
+        yaxis=dict(title=tr("chart_perf_vs_issue"), tickformat=".0%"),
         hovermode="x unified",
         legend=dict(x=1.01, y=1, xanchor="left"),
     )

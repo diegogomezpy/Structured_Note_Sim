@@ -908,6 +908,54 @@ _STRINGS: dict[str, tuple[str, str]] = {
     "live_could_not_load":      ("Could not load live price data: {e}",
                                  "No se pudieron cargar los datos de precios en vivo: {e}"),
     "live_obs_dash":            ("—",                                  "—"),
+
+    # ── Chart-internal strings (app/charts.py) ─────────────────────────────
+    # Levels ({lvl}) and amounts ({v}, {pct}) are passed pre-formatted by the
+    # caller so a single key serves both .0% and .1% precisions.
+    "chart_worst_of":            ("Worst-of",                          "Worst-of"),
+    "chart_ki_barrier":          ("Knock-in barrier ({lvl})",          "Barrera knock-in ({lvl})"),
+    "chart_autocall_barrier":    ("Autocall barrier",                  "Barrera autocall"),
+    "chart_autocall_barrier_lvl":("Autocall barrier ({lvl})",          "Barrera autocall ({lvl})"),
+    "chart_coupon_barrier_lvl":  ("Coupon barrier ({lvl})",            "Barrera de cupón ({lvl})"),
+    "chart_perf_vs_issue":       ("Performance vs Issue Date",         "Rendimiento vs Fecha de Emisión"),
+    "chart_today":               ("Today",                             "Hoy"),
+
+    # IRR distribution (MC tab 1)
+    "chart_irr_title":           ("Annualised IRR Distribution — All Simulated Paths",
+                                  "Distribución de TIR Anualizada — Todas las Trayectorias Simuladas"),
+    "chart_irr_xaxis":           ("Annualised IRR (simple)",           "TIR Anualizada (simple)"),
+    "chart_irr_yaxis":           ("Share of all paths",                "Proporción de trayectorias"),
+    "chart_irr_clip_note":       ("  ·  loss tail to {lvl} clipped into left bin",
+                                  "  ·  cola de pérdidas hasta {lvl} recortada en la barra izquierda"),
+    "chart_legend_autocalled":   ("Autocalled ({pct})",                "Rescatada ({pct})"),
+    "chart_legend_maturity":     ("Maturity ({pct})",                  "Vencimiento ({pct})"),
+    "chart_mean":                ("Mean {v}",                          "Media {v}"),
+    "chart_coupon_pa":           ("Coupon {v} p.a.",                   "Cupón {v} anual"),
+
+    # Backtest scatter/bar — px uses DataFrame column names as axis/legend
+    # titles, so map them to translated display labels via labels=.
+    "chart_issue_date_axis":     ("Issue Date",                        "Fecha de Emisión"),
+    "chart_irr_axis":            ("IRR",                               "TIR"),
+    "chart_outcome_axis":        ("Outcome",                           "Resultado"),
+    "chart_payout_axis":         ("Payout",                            "Pago"),
+    "chart_worst_asset_axis":    ("Worst Asset",                       "Activo Más Débil"),
+    "chart_worst_final_perf_axis":("Worst Final Perf",                 "Rend. Final Worst-of"),
+
+    # Backtest worst-asset pie, historical price + worst-of path charts
+    "chart_worst_asset_at_call": ("Worst Asset at Call Date",          "Activo más débil en la fecha de rescate"),
+    "chart_hist_prices_title":   ("Historical Price Paths",            "Trayectorias Históricas de Precio"),
+    "chart_hist_wof_title":      ("Historical Worst-of Path — Issue: {issue} · Outcome: {outcome}",
+                                  "Trayectoria Histórica Worst-of — Emisión: {issue} · Resultado: {outcome}"),
+    "chart_outcome_autocalled_p":("Autocalled P{q}",                   "Rescatada P{q}"),
+    "chart_period_called":       ("P{p} ← CALLED",                     "P{p} ← RESCATADA"),
+
+    # Live performance chart
+    "chart_live_title":          ("Live Performance — Issue: {issue} · Maturity: {mat}",
+                                  "Rendimiento Actual — Emisión: {issue} · Vencimiento: {mat}"),
+    "chart_marker_autocalled":   ("{label}: AUTOCALLED",               "{label}: RESCATADA"),
+    "chart_marker_premium":      (" · Premium {v}",                    " · Prima {v}"),
+    "chart_marker_coupon":       ("{label}: Coupon {v}",               "{label}: Cupón {v}"),
+    "chart_marker_coupon_missed":("{label}: Coupon missed",            "{label}: Cupón no pagado"),
 }
 
 
