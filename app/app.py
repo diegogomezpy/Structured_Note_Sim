@@ -38,17 +38,17 @@ from charts import (
 # ==========================================================================
 st.set_page_config(
     page_title = "Structured Note Simulator",
-    page_icon  = "📈",
+    page_icon  = ":chart_with_upwards_trend:",
     layout     = "wide",
 )
-st.markdown("""<style>
-[data-testid="stMetricValue"]{font-weight:700}
-[data-testid="stSidebar"] .stButton>button{width:100%}
-.stTabs [data-baseweb="tab-list"]{border-bottom:2px solid #1a6b1a}
-.stTabs [aria-selected="true"]{border-bottom:2px solid #1a6b1a!important;font-weight:600}
-[data-testid="stExpander"]{border:1px solid #c8e6c8!important;border-radius:6px}
-hr{border-color:#c8e6c8}
-</style>""", unsafe_allow_html=True)
+
+# ── Institutional CSS theme (IBM Plex Sans + navy/blue, matches PDF report) ──
+_CSS_PATH = _APP / "style.css"
+try:
+    _css = _CSS_PATH.read_text()
+    st.markdown(f"<style>{_css}</style>", unsafe_allow_html=True)
+except Exception:
+    pass
 
 # ==========================================================================
 # Issuer logo helper
@@ -282,7 +282,7 @@ def _run_backtest_cached(tickers_tuple, terms_json,
 # ==========================================================================
 # Language toggle (always in sidebar)
 # ==========================================================================
-lang_choice = st.sidebar.radio("🌐 Language / Idioma", ["English", "Español"],
+lang_choice = st.sidebar.radio("Language / Idioma", ["English", "Español"],
                                 horizontal=True)
 tr = Translator("es" if lang_choice == "Español" else "en")
 
@@ -293,7 +293,7 @@ tr = Translator("es" if lang_choice == "Español" else "en")
 # ==========================================================================
 if st.session_state["page"] == "setup":
 
-    st.title("📈 Structured Note Simulator")
+    st.title("Structured Note Simulator")
     st.markdown("Configure the note below, then click **Confirm & Run** to load the dashboard.")
     st.divider()
 
@@ -382,7 +382,7 @@ if st.session_state["page"] == "setup":
     )
 
     # ── Custom ticker input ───────────────────────────────────────────────
-    with st.expander("➕ Add a custom ticker (not in the list above)"):
+    with st.expander("Add a custom ticker (not in the list above)"):
         st.caption("Enter any valid yfinance symbol, e.g. UBER, 2222.SR, BTC-USD")
         cc1, cc2, cc3 = st.columns([2, 2, 1])
         with cc1:
@@ -544,7 +544,7 @@ if st.session_state["page"] == "setup":
     # pass-through-only anymore.
     _adv_active = bool(getattr(base, "autocall_step_down", 0.0)
                        or getattr(base, "coupon_at_autocall_only", False))
-    with st.expander("⚙️ Advanced — Growth / Classic Autocall (step-down barrier, premium at call)",
+    with st.expander("Advanced — Growth / Classic Autocall (step-down barrier, premium at call)",
                      expanded=_adv_active):
         ac1, ac2, ac3 = st.columns(3)
         with ac1:
@@ -691,7 +691,7 @@ if st.session_state["page"] == "setup":
     if len(selected_labels) < 1:
         st.warning("Select at least 1 underlying to continue.")
     else:
-        if st.button("✅ Confirm & Load Dashboard", type="primary",
+        if st.button("Confirm & Load Dashboard", type="primary",
                      use_container_width=True):
             custom_tickers = st.session_state.get("custom_tickers", {})
             # Build reverse map including custom tickers
@@ -766,7 +766,7 @@ elif st.session_state["page"] == "dashboard":
     tickers_tuple    = tuple(selected_tickers.items())
 
     # ── Sidebar ───────────────────────────────────────────────────────────
-    st.sidebar.header("📋 Note")
+    st.sidebar.header("Note")
     st.sidebar.markdown(f"**{terms.name}**")
     if getattr(terms, "issuer", ""):
         _sb_logo = get_issuer_logo_url(terms.issuer)
@@ -784,7 +784,7 @@ elif st.session_state["page"] == "dashboard":
         f"{terms.coupon_pa*100:.2g}% p.a."
     )
     st.sidebar.download_button(
-        "⬇ Download config (JSON)",
+        "Download config (JSON)",
         data=terms.to_json(),
         file_name="note_config.json",
         mime="application/json",
@@ -815,7 +815,7 @@ elif st.session_state["page"] == "dashboard":
             st.rerun()
 
     _pdf_btn = st.sidebar.button(
-        "📄 Generate PDF Report",
+        "Generate PDF Report",
         disabled=not bool(st.session_state.get("results")),
         help="Builds the report, then a download button appears below. "
              "Run a simulation first to enable it.",
@@ -824,15 +824,15 @@ elif st.session_state["page"] == "dashboard":
     # under the trigger button — not buried at the bottom of the sidebar.
     _pdf_slot = st.sidebar.empty()
     st.sidebar.divider()
-    if st.sidebar.button("⚙️ Reconfigure Note"):
+    if st.sidebar.button("Reconfigure Note"):
         st.session_state["page"]             = "setup"
         st.session_state["results"]          = None
         st.session_state["loaded_terms_dict"] = None
         st.rerun()
-    run_button = st.sidebar.button("🚀 Run Simulation", type="primary")
+    run_button = st.sidebar.button("Run Simulation", type="primary")
 
     # ── Title ─────────────────────────────────────────────────────────────
-    st.title("📈 Multi-Asset Structured Note Simulator")
+    st.title("Multi-Asset Structured Note Simulator")
     _issuer_str = getattr(terms, "issuer", "") or ""
     _issuer_logo = get_issuer_logo_url(_issuer_str) if _issuer_str else None
     if _issuer_str:
@@ -917,7 +917,7 @@ elif st.session_state["page"] == "dashboard":
         obs_df = pd.DataFrame({
             tr("col_period"): range(1, terms.n_obs + 1),
             tr("col_time_y"): [f"{t:.4g}" for t in terms.obs_times()],
-            tr("col_autocall_eligible"): ["✅" if i + 1 >= terms.autocall_start_period else "❌ coupon only"
+            tr("col_autocall_eligible"): ["Yes" if i + 1 >= terms.autocall_start_period else "Coupon only"
                                    for i in range(terms.n_obs)],
         })
         st.dataframe(obs_df, use_container_width=True, hide_index=True)
@@ -1070,9 +1070,9 @@ elif st.session_state["page"] == "dashboard":
         _ac_sched_t = _ac_sched_st = None
 
     if _has_live:
-        tab_mc, tab_bt, tab_live = st.tabs(["📊 Monte Carlo", "📅 Historical Backtest", "📍 Current Performance"])
+        tab_mc, tab_bt, tab_live = st.tabs(["Monte Carlo", "Historical Backtest", "Current Performance"])
     else:
-        tab_mc, tab_bt = st.tabs(["📊 Monte Carlo", "📅 Historical Backtest"])
+        tab_mc, tab_bt = st.tabs(["Monte Carlo", "Historical Backtest"])
         tab_live = None
 
     # ══════════════════════════════════════════════════════════════════
@@ -1080,11 +1080,11 @@ elif st.session_state["page"] == "dashboard":
     # ══════════════════════════════════════════════════════════════════
     with tab_mc:
         if not _has_sim:
-            st.info("Click **🚀 Run Simulation** in the sidebar to run the Monte Carlo engine.")
+            st.info("Click **Run Simulation** in the sidebar to run the Monte Carlo engine.")
             with st.spinner(f"Pre-fetching market data for {', '.join(selected_tickers.values())}…"):
                 try:
                     _load_prices(tickers_tuple, years=st.session_state.get("history_years", None))
-                    st.success("Market data ready. Click **🚀 Run Simulation** in the sidebar.")
+                    st.success("Market data ready. Click **Run Simulation** in the sidebar.")
                 except Exception as e:
                     st.error(f"Failed to fetch prices: {e}")
         else:
@@ -1147,7 +1147,7 @@ elif st.session_state["page"] == "dashboard":
                     tr("col_period"):    range(1, run_terms.n_obs + 1),
                     tr("col_time_y"):    [f"{t:.3g}" for t in obs_times_l],
                     tr("col_p_autocall"): [f"{p:.2%}" for p in prob_by_period],
-                    tr("col_eligible"): ["✅" if i + 1 >= run_terms.autocall_start_period else "❌"
+                    tr("col_eligible"): ["Yes" if i + 1 >= run_terms.autocall_start_period else "No"
                                      for i in range(run_terms.n_obs)],
                 })
                 st.dataframe(ac_df, use_container_width=True, hide_index=True)
@@ -1193,11 +1193,11 @@ elif st.session_state["page"] == "dashboard":
                 st.subheader(tr("single_path_subheader"))
                 max_path = sim_prices.shape[0] - 1
                 pc1, pc2, pc3 = st.columns(3)
-                if pc1.button("🎲 Random"):
+                if pc1.button("Random"):
                     st.session_state["path_num"] = random.randint(0, max_path)
-                if pc2.button("⬅ Prev"):
+                if pc2.button("Prev"):
                     st.session_state["path_num"] = max(0, st.session_state["path_num"] - 1)
-                if pc3.button("Next ➡"):
+                if pc3.button("Next"):
                     st.session_state["path_num"] = min(max_path, st.session_state["path_num"] + 1)
 
                 pn = st.session_state["path_num"]
@@ -1313,7 +1313,7 @@ elif st.session_state["page"] == "dashboard":
                         "V₀ σ":   f"{np.sqrt(p.V0)*100:.1f}%",
                         "θ σ LR": f"{np.sqrt(p.theta)*100:.1f}%",
                         "κ": f"{p.kappa:.3f}", "ξ": f"{p.xi:.3f}", "ρ": f"{p.rho:.3f}",
-                        "Feller": "✅" if ok else "⚠️",
+                        "Feller": "Pass" if ok else "Warn",
                     })
                 _heston_cols = ["Asset", "S₀", "μ p.a.", "V₀ σ", "θ σ LR", "κ", "ξ", "ρ", "Feller"]
                 _th_cells = "".join(
@@ -1343,8 +1343,8 @@ elif st.session_state["page"] == "dashboard":
                     "**ξ** = vol-of-vol, volatility of the variance process (higher → fatter tails; typical: 0.1–0.8); "
                     "**ρ** = leverage effect, correlation between spot and variance shocks "
                     "(negative for equities — down moves spike vol; typical: −0.7 to −0.3); "
-                    "**Feller** = ✅ if 2κθ > ξ² (Feller condition), ensuring variance stays positive; "
-                    "⚠️ means variance can touch zero, which is a known Heston model artefact and "
+                    "**Feller** = 'Pass' if 2κθ > ξ² (Feller condition), ensuring variance stays positive; "
+                    "'Warn' means variance can touch zero, which is a known Heston model artefact and "
                     "generally has negligible pricing impact."
                 )
                 st.info(tr("t_copula_dof", v=R.get('t_dof', 'N/A')))
@@ -1489,9 +1489,13 @@ elif st.session_state["page"] == "dashboard":
                 {0: "Maturity", **{i: f"Autocalled P{i}" for i in range(1, terms.n_obs + 1)}}
             )
             bt.loc[(bt["Call Quarter"] == 0) & bt["Knock-in"], "Outcome"] = "Knock-in"
+            # Navy/blue institutional palette (matches charts.py + PDF):
+            # Maturity = warm grey, Knock-in = red, Autocalls = navy→light-blue ramp.
             color_map = {
-                "Maturity": "#3498db", "Knock-in": "#e74c3c",
-                **{f"Autocalled P{i}": f"hsl({120 - i*4},55%,38%)" for i in range(1, terms.n_obs + 1)},
+                "Maturity": "#6b7280", "Knock-in": "#dc2626",
+                **{f"Autocalled P{i}":
+                   f"hsl(217,{max(35, 70 - i*3)}%,{min(70, 28 + i*5)}%)"
+                   for i in range(1, terms.n_obs + 1)},
             }
 
             b1, b2, b3, b4, b5 = st.columns(5)
@@ -1739,7 +1743,7 @@ elif st.session_state["page"] == "dashboard":
                             _est = _obs_cal[_q].date() if _q < len(_obs_cal) else "—"
                             _obs_rows.append({
                                 _k_period: _label, _k_date: str(_est),
-                                _k_status: "⏳ Upcoming",
+                                _k_status: "Upcoming",
                                 _k_wof: "—", _k_coupon: "—", _k_cumulative: "—",
                             })
                             continue
@@ -1748,13 +1752,13 @@ elif st.session_state["page"] == "dashboard":
                         _obs_wof  = float(_perf_obs[_q].min())
                         _running_total += _r["coupon_amount"]
                         if _r["autocalled"]:
-                            _status = "🚀 AUTOCALLED"
+                            _status = "Autocalled"
                         elif run_terms.coupon_at_autocall_only:
                             _status = "— No periodic coupon (premium at call)"
                         elif _r["coupon_met"]:
-                            _status = "✅ Coupon paid"
+                            _status = "Coupon paid"
                         else:
-                            _status = "❌ Coupon missed"
+                            _status = "Coupon missed"
                         _obs_rows.append({
                             _k_period:     _label,
                             _k_date:       str(_snap.date()),

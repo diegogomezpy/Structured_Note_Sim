@@ -7,9 +7,9 @@ Usage
 -----
 from app.translations import Translator
 
-tr = Translator(lang="en")   # or "es"
-tr("run_simulation")         # → "🚀 Run Simulation"
-tr("run_simulation", "es")   # → "🚀 Ejecutar Simulación"  (override)
+tr = Translator(lang="en")   # or"es"
+tr("run_simulation")         # → "Run Simulation"
+tr("run_simulation", "es") # → "Ejecutar Simulación" (override)
 """
 
 from __future__ import annotations
@@ -35,20 +35,20 @@ _STRINGS: dict[str, tuple[str, str]] = {
         "Alto (~50): casi automático cuando está in-the-money.",
     ),
     "seed_label":               ("Random Seed",                     "Semilla Aleatoria"),
-    "run_simulation":           ("🚀 Run Simulation",               "🚀 Ejecutar Simulación"),
+    "run_simulation":           ("Run Simulation",               "Ejecutar Simulación"),
 
     # ── Page title / intro ─────────────────────────────────────────────────
-    "page_title":               ("📈 Multi-Asset Structured Note Simulator",
-                                 "📈 Simulador de Notas Estructuradas Multi-Activo"),
+    "page_title":               ("Multi-Asset Structured Note Simulator",
+                                 "Simulador de Notas Estructuradas Multi-Activo"),
     "page_intro":               (
-        "Historical Heston calibration + Monte Carlo simulation of a "
+        "Historical Heston calibration + Monte Carlo simulation of a"
         "**worst-of callable note** on SPX / SX5E / SMI.",
-        "Calibración histórica de Heston + simulación de Monte Carlo de una "
+        "Calibración histórica de Heston + simulación de Monte Carlo de una"
         "**callable note worst-of** sobre SPX / SX5E / SMI.",
     ),
 
     # ── Expander ───────────────────────────────────────────────────────────
-    "how_note_works":           ("📖 How This Note Works",           "📖 Cómo Funciona Esta Nota"),
+    "how_note_works":           ("How This Note Works",           "Cómo Funciona Esta Nota"),
     "call_prob_curve":          ("#### Issuer Call Probability Curve",
                                  "#### Curva de Probabilidad de Ejercicio del Emisor"),
     "call_prob_caption":        (
@@ -78,10 +78,10 @@ _STRINGS: dict[str, tuple[str, str]] = {
     "sim_complete":             ("Simulation complete.",             "Simulación completada."),
 
     # ── Tab labels ─────────────────────────────────────────────────────────
-    "tab_payoff":               ("📊 Payoff & Distribution",         "📊 Payoff y Distribución"),
-    "tab_fan":                  ("📈 Price Path Fan Chart",          "📈 Abanico de Trayectorias de Precio"),
-    "tab_explorer":             ("🔍 Path Explorer",                 "🔍 Explorador de Trayectorias"),
-    "tab_corr":                 ("🔗 Correlation Diagnostics",       "🔗 Diagnóstico de Correlaciones"),
+    "tab_payoff":               ("Payoff & Distribution",         "Payoff y Distribución"),
+    "tab_fan":                  ("Price Path Fan Chart",          "Abanico de Trayectorias de Precio"),
+    "tab_explorer":             ("Path Explorer",                 "Explorador de Trayectorias"),
+    "tab_corr":                 ("Correlation Diagnostics",       "Diagnóstico de Correlaciones"),
 
     # ── Tab 1 — Payoff ─────────────────────────────────────────────────────
     "payoff_subheader":         ("Maturity Payoff Profile vs Simulated Outcomes",
@@ -103,7 +103,7 @@ _STRINGS: dict[str, tuple[str, str]] = {
     # ── Tab 2 — Fan ────────────────────────────────────────────────────────
     "fan_subheader":            ("Simulated Price Path Fan Chart",   "Abanico de Trayectorias de Precio Simuladas"),
     "fan_caption":              (
-        "Percentile bands across all simulated paths. The **median** (50th) shows the "
+        "Percentile bands across all simulated paths. The **median** (50th) shows the"
         "central tendency; shaded bands show the spread.",
         "Bandas de percentiles sobre todas las trayectorias simuladas. La **mediana** (percentil 50) "
         "muestra la tendencia central; las bandas sombreadas muestran la dispersión.",
@@ -126,14 +126,14 @@ _STRINGS: dict[str, tuple[str, str]] = {
     # ── Tab 3 — Path Explorer ──────────────────────────────────────────────
     "explorer_subheader":       ("Single Path Explorer",             "Explorador de Trayectoria Individual"),
     "explorer_caption":         (
-        "Step through individual Monte Carlo paths. Vertical dotted lines mark "
+        "Step through individual Monte Carlo paths. Vertical dotted lines mark"
         "each quarterly observation date. Green star = issuer called here.",
-        "Navega por trayectorias individuales de Monte Carlo. Las líneas punteadas marcan "
+        "Navega por trayectorias individuales de Monte Carlo. Las líneas punteadas marcan"
         "cada fecha de observación trimestral. Estrella verde = emisor ejerció el rescate aquí.",
     ),
-    "random_path":              ("🎲 Random Path",                   "🎲 Trayectoria Aleatoria"),
-    "prev_path":                ("⬅ Previous",                      "⬅ Anterior"),
-    "next_path":                ("Next ➡",                          "Siguiente ➡"),
+    "random_path":              ("Random Path",                   "Trayectoria Aleatoria"),
+    "prev_path":                ("Previous",                      "Anterior"),
+    "next_path":                ("Next",                          "Siguiente"),
     "path_of":                  ("Path #{n} of {total}",            "Trayectoria #{n} de {total}"),
     "asset_price_paths":        ("Asset Price Paths — Path #{n}",   "Trayectorias de Precios — Trayectoria #{n}"),
     "price_label":              ("Price",                            "Precio"),
@@ -143,20 +143,20 @@ _STRINGS: dict[str, tuple[str, str]] = {
     "annualised_return":        ("Annualised Return",               "Rendimiento Anualizado"),
     "called_label":             ("← Called",                        "← Rescatada"),
     "continued_label":          ("(continued)",                     "(continúa)"),
-    "outcome_called":           ("✅ Issuer called at {q}",         "✅ Emisor rescató la nota en {q}"),
-    "outcome_upside":           ("📈 Reached maturity — upside participation",
-                                 "📈 Llegó al vencimiento — participación al alza"),
-    "outcome_floor":            ("🛡️ Reached maturity — capital floor applied",
-                                 "🛡️ Llegó al vencimiento — piso de capital activado"),
+    "outcome_called":           ("Issuer called at {q}",         "Emisor rescató la nota en {q}"),
+    "outcome_upside":           ("Reached maturity — upside participation",
+                                 "Llegó al vencimiento — participación al alza"),
+    "outcome_floor":            ("Reached maturity — capital floor applied",
+                                 "Llegó al vencimiento — piso de capital activado"),
 
     # ── Tab 4 — Correlation ────────────────────────────────────────────────
     "corr_subheader":           ("Correlation Diagnostics",          "Diagnóstico de Correlaciones"),
     "corr_caption":             (
         "**Input** correlations are estimated from historical data. "
-        "**Realized** correlations are from the simulated paths — they should be "
+        "**Realized** correlations are from the simulated paths — they should be"
         "close to the inputs, validating the Cholesky structure.",
         "Las correlaciones de **entrada** se estiman de datos históricos. "
-        "Las correlaciones **realizadas** se calculan de las trayectorias simuladas — deben estar "
+        "Las correlaciones **realizadas** se calculan de las trayectorias simuladas — deben estar"
         "cerca de los valores de entrada, validando la estructura de Cholesky.",
     ),
     "input_calibrated":         ("Input (Calibrated)",               "Entrada (Calibrada)"),
@@ -177,26 +177,26 @@ _STRINGS: dict[str, tuple[str, str]] = {
     "t_copula_info":            (
         "**Student-t Copula:** ν = {v} degrees of freedom, "
         "fitted from the historical return distribution of each asset. "
-        "Captures joint tail dependence — the tendency for all three indices "
+        "Captures joint tail dependence — the tendency for all three indices"
         "to fall simultaneously in stress scenarios.",
         "**Cópula Student-t:** ν = {v} grados de libertad, "
         "ajustados a partir de la distribución histórica de retornos de cada activo. "
-        "Captura la dependencia de colas conjunta — la tendencia de los tres índices "
+        "Captura la dependencia de colas conjunta — la tendencia de los tres índices"
         "a caer simultáneamente en escenarios de estrés.",
     ),
     "rho_note":                 (
         "**Note on ρ (leverage effect):** Textbook equity models assume ρ ≈ −0.65 for SPX. "
-        "The calibration here shows ρ near zero because the 2021–2026 window was a bull "
+        "The calibration here shows ρ near zero because the 2021–2026 window was a bull"
         "market with low vol-return correlation. This is what the data shows — not a bug. "
         "A risk-neutral calibration from the options surface would recover the expected negative ρ.",
         "**Nota sobre ρ (efecto apalancamiento):** Los modelos canónicos asumen ρ ≈ −0.65 para SPX. "
-        "La calibración aquí muestra ρ cercano a cero porque la ventana 2021–2026 fue alcista "
+        "La calibración aquí muestra ρ cercano a cero porque la ventana 2021–2026 fue alcista"
         "con baja correlación vol-retorno. Esto es lo que muestran los datos — no es un error. "
         "Una calibración risk-neutral desde opciones recuperaría el ρ negativo esperado.",
     ),
 
     # ── Note structure expander ────────────────────────────────────────────
-    "note_structure_expander":   ("📖 Note Structure Summary",         "📖 Resumen de la Estructura de la Nota"),
+    "note_structure_expander": ("Note Structure Summary",         "Resumen de la Estructura de la Nota"),
     "underlyings_header":        ("**Underlyings**",                   "**Subyacentes**"),
     "col_display_name":          ("Display Name",                      "Nombre"),
     "col_yf_symbol":             ("yfinance Symbol",                   "Símbolo yfinance"),
@@ -215,9 +215,9 @@ _STRINGS: dict[str, tuple[str, str]] = {
     "col_time_y":                ("Time (Y)",                          "Tiempo (A)"),
     "col_autocall_eligible":     ("Autocall eligible",                 "Elegible autocall"),
     "best_of_rescue_info":       (
-        "**Best-of capital rescue:** at maturity, capital is returned at par if the "
+        "**Best-of capital rescue:** at maturity, capital is returned at par if the"
         "best performer finishes ≥ {barrier:.0%} of initial, even if the knock-in barrier was breached.",
-        "**Rescate best-of de capital:** al vencimiento, el capital se devuelve a la par si el "
+        "**Rescate best-of de capital:** al vencimiento, el capital se devuelve a la par si el"
         "mejor subyacente termina ≥ {barrier:.0%} del inicial, incluso si la barrera knock-in fue tocada.",
     ),
 
@@ -229,9 +229,9 @@ _STRINGS: dict[str, tuple[str, str]] = {
     "prob_autocalled":           ("P(Autocalled)",                     "P(Autocall)"),
     "prob_knock_in_metric":      ("P(Knock-in)",                       "P(Knock-in)"),
     "barrier_rescued_caption":   (
-        "Barrier breached on {barrier:.2%} of paths; {rescued:.2%} were rescued to par by the "
+        "Barrier breached on {barrier:.2%} of paths; {rescued:.2%} were rescued to par by the"
         "final redemption condition ({basket} ≥ {level:.0%}).",
-        "Barrera tocada en el {barrier:.2%} de trayectorias; {rescued:.2%} fueron rescatadas a la par por "
+        "Barrera tocada en el {barrier:.2%} de trayectorias; {rescued:.2%} fueron rescatadas a la par por"
         "la condición de redención final ({basket} ≥ {level:.0%}).",
     ),
     "autocall_by_period_expander": ("Autocall probability by period", "Probabilidad de autocall por período"),
@@ -239,10 +239,10 @@ _STRINGS: dict[str, tuple[str, str]] = {
     "col_p_autocall":            ("P(autocall)",                       "P(autocall)"),
 
     # ── MC sub-tabs ────────────────────────────────────────────────────────
-    "mc_subtab_payoff":          ("📊 Payoff & Distribution",          "📊 Payoff y Distribución"),
-    "mc_subtab_paths":           ("📈 Price Paths",                    "📈 Trayectorias de Precio"),
-    "mc_subtab_explorer":        ("🔍 Path Explorer",                  "🔍 Explorador de Trayectorias"),
-    "mc_subtab_corr":            ("🔗 Correlation Diagnostics",        "🔗 Diagnóstico de Correlaciones"),
+    "mc_subtab_payoff":          ("Payoff & Distribution",          "Payoff y Distribución"),
+    "mc_subtab_paths":           ("Price Paths",                    "Trayectorias de Precio"),
+    "mc_subtab_explorer":        ("Path Explorer",                  "Explorador de Trayectorias"),
+    "mc_subtab_corr":            ("Correlation Diagnostics",        "Diagnóstico de Correlaciones"),
 
     # ── MC tab1 — IRR distribution ─────────────────────────────────────────
     "irr_dist_subheader":        ("IRR Distribution — All Simulated Paths",
@@ -260,12 +260,12 @@ _STRINGS: dict[str, tuple[str, str]] = {
     # ── MC tab3 — path explorer ────────────────────────────────────────────
     "single_path_subheader":     ("Single Path Explorer",              "Explorador de Trayectoria Individual"),
     "path_caption":              ("Path #{n} of {total}",              "Trayectoria #{n} de {total}"),
-    "autocalled_at_md":          ("### ✅ Autocalled at period {q} ({t:.3g}Y)",
-                                  "### ✅ Autocall en período {q} ({t:.3g}A)"),
-    "maturity_knock_in_md":      ("### ⚠️ Maturity — Knock-in (worst-of: {wof:.1%})",
-                                  "### ⚠️ Vencimiento — Knock-in (worst-of: {wof:.1%})"),
-    "maturity_no_knock_in_md":   ("### 📈 Maturity — No knock-in (worst-of: {wof:.1%})",
-                                  "### 📈 Vencimiento — Sin knock-in (worst-of: {wof:.1%})"),
+    "autocalled_at_md":          ("### Autocalled at period {q} ({t:.3g}Y)",
+                                  "### Autocall en período {q} ({t:.3g}A)"),
+    "maturity_knock_in_md":      ("### Maturity — Knock-in (worst-of: {wof:.1%})",
+                                  "### Vencimiento — Knock-in (worst-of: {wof:.1%})"),
+    "maturity_no_knock_in_md": ("### Maturity — No knock-in (worst-of: {wof:.1%})",
+                                  "### Vencimiento — Sin knock-in (worst-of: {wof:.1%})"),
     "metric_principal":          ("Principal",                         "Principal"),
     "metric_coupons":            ("Coupons",                           "Cupones"),
     "metric_irr_pa":             ("IRR p.a.",                          "TIR p.a."),
@@ -276,18 +276,18 @@ _STRINGS: dict[str, tuple[str, str]] = {
     "t_copula_dof":              ("**Student-t Copula:** ν = {v} d.f.", "**Cópula Student-t:** ν = {v} g.l."),
 
     # ── Backtest tab — headers and intros ──────────────────────────────────
-    "bt_tab_header":             ("📅 Historical Backtest",            "📅 Backtest Histórico"),
+    "bt_tab_header":             ("Historical Backtest",            "Backtest Histórico"),
     "bt_tab_intro":              (
         "Evaluates this note on every valid issue date using actual realized prices.",
         "Evalúa esta nota en cada fecha de emisión válida usando precios reales realizados.",
     ),
     "bt_valid_dates_caption":    (
         "Valid issue dates: **{start} → {end}** "
-        "(issues run from the start of aligned history — e.g. the latest IPO — up to "
-        "{mat:g}Y before the end of data, so each issue has a full realized "
+        "(issues run from the start of aligned history — e.g. the latest IPO — up to"
+        "{mat:g}Y before the end of data, so each issue has a full realized"
         "price path; aligned history: {hist_start} → {hist_end}).",
         "Fechas de emisión válidas: **{start} → {end}** "
-        "(emisiones desde el inicio del historial alineado — ej. la última OPV — hasta "
+        "(emisiones desde el inicio del historial alineado — ej. la última OPV — hasta"
         "{mat:g}A antes del fin de los datos, para que cada emisión tenga un path completo; "
         "historial alineado: {hist_start} → {hist_end}).",
     ),
@@ -301,11 +301,11 @@ _STRINGS: dict[str, tuple[str, str]] = {
     "bt_metric_median_irr":      ("Median IRR",                        "TIR Mediana"),
     "bt_metric_knock_in_pct":    ("Knock-in %",                        "% Knock-in"),
     "bt_metric_autocalled_pct":  ("Autocalled %",                      "% Autocall"),
-    "bt_path_explorer_header":   ("📅 Historical Path Explorer",       "📅 Explorador de Trayectorias Históricas"),
+    "bt_path_explorer_header": ("Historical Path Explorer",       "Explorador de Trayectorias Históricas"),
     "bt_path_explorer_caption":  (
-        "Select any issue date from the backtest to see the actual "
+        "Select any issue date from the backtest to see the actual"
         "per-asset performance and worst-of path over the note's life.",
-        "Selecciona cualquier fecha de emisión del backtest para ver el rendimiento real "
+        "Selecciona cualquier fecha de emisión del backtest para ver el rendimiento real"
         "por activo y la trayectoria worst-of durante la vida de la nota.",
     ),
     "bt_issue_date_select":      ("Issue date",                        "Fecha de emisión"),
@@ -345,13 +345,13 @@ _STRINGS: dict[str, tuple[str, str]] = {
     "live_coupon_irr_metric":    ("Coupon IRR to date (annualised)",   "TIR de cupones hasta hoy (anualizada)"),
 
     # ── Backtest ───────────────────────────────────────────────────────────
-    "backtest_header":          ("📅 Historical Backtest",           "📅 Backtest Histórico"),
+    "backtest_header":          ("Historical Backtest",           "Backtest Histórico"),
     "backtest_intro":           (
-        "Evaluates how this note would have performed if issued on every available "
+        "Evaluates how this note would have performed if issued on every available"
         "date between **June 2022** and **June 2025**, using actual realized index prices. "
         "No simulation — just the real historical path. "
         "Results update automatically when you change the coupon, floor, or decisiveness sliders.",
-        "Evalúa cómo habría funcionado esta nota si se hubiera emitido en cada fecha disponible "
+        "Evalúa cómo habría funcionado esta nota si se hubiera emitido en cada fecha disponible"
         "entre **junio 2022** y **junio 2025**, usando los precios reales de los índices. "
         "Sin simulación — solo la trayectoria histórica real. "
         "Los resultados se actualizan automáticamente al cambiar los sliders.",
@@ -410,8 +410,8 @@ _STRINGS: dict[str, tuple[str, str]] = {
     "sim_spinner":              ("Running Heston calibration and Monte Carlo simulation...",
                                  "Ejecutando calibración Heston y simulación de Monte Carlo..."),
     "configure_sidebar":        (
-        "Configure parameters in the sidebar and click **🚀 Run Simulation** to begin.",
-        "Configure los parámetros en la barra lateral y haga clic en **🚀 Ejecutar Simulación** para comenzar.",
+        "Configure parameters in the sidebar and click **Run Simulation** to begin.",
+        "Configure los parámetros en la barra lateral y haga clic en **Ejecutar Simulación** para comenzar.",
     ),
     "called_at_obs":            ("Worst-of was **{perf:.1%}** at observation. Note redeemed after **{t:.2g} years**.",
                                  "El worst-of era **{perf:.1%}** en la observación. Nota rescatada tras **{t:.2g} años**."),
@@ -433,7 +433,7 @@ class Translator:
     Callable translator.
 
     tr = Translator("en")
-    tr("run_simulation")            # → "🚀 Run Simulation"
+    tr("run_simulation")            # → "Run Simulation"
     tr("path_of", n=5, total=100)  # → "Path #5 of 100"  (supports .format kwargs)
     """
 
@@ -445,7 +445,7 @@ class Translator:
         pair = _STRINGS.get(key)
         if pair is None:
             return key  # graceful fallback
-        text = pair[1] if effective == "es" else pair[0]
+        text = pair[1] if effective == "es"else pair[0]
         return text.format(**kwargs) if kwargs else text
 
     def set_lang(self, lang: str) -> None:

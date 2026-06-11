@@ -29,13 +29,62 @@ import plotly.graph_objects as go
 
 from translations import Translator
 
-# Consistent colour palette
-_GREEN_DARK   = "#145214"
-_GREEN_MID    = "#1a6b1a"
-_GREEN_LIGHT  = "#2ecc71"
-_RED          = "#c0392b"
-_GREY         = "#888888"
+# ---------------------------------------------------------------------------
+# Institutional palette — navy / blue, matching the PDF report and web theme.
+# The historical names (_GREEN_*) are kept so every existing call site keeps
+# working; only the colour values change.
+# ---------------------------------------------------------------------------
+_NAVY         = "#1a2e4a"   # primary / worst-of line / dark series
+_BLUE         = "#2563eb"   # accent / median / primary series
+_BLUE_LIGHT   = "#60a5fa"   # light blue secondary series
+_GREEN_DARK   = _NAVY       # alias: darkest series
+_GREEN_MID    = _BLUE       # alias: primary series / median
+_GREEN_LIGHT  = _BLUE_LIGHT # alias: secondary series
+_RED          = "#dc2626"   # barrier / loss / negative
+_GREY         = "#6b7280"   # warm grey — secondary lines/text
 _WHITE        = "white"
+
+# Extra categorical colours for multi-asset charts (>3 underlyings)
+_SERIES_COLORS = [_BLUE, _NAVY, _BLUE_LIGHT, "#0891b2", "#7c3aed", "#0d9488"]
+
+_BASE_FONT = "IBM Plex Sans, Arial, sans-serif"
+
+# Light fill tints for fan-chart bands (blue, low alpha)
+_FILL_OUTER = "rgba(37,99,235,0.08)"
+_FILL_INNER = "rgba(37,99,235,0.20)"
+
+
+def _apply_theme(fig: go.Figure) -> go.Figure:
+    """
+    Shared clean theme for every figure: white background, IBM Plex Sans font,
+    navy text, light-grey gridlines, no Plotly logo. Preserves all existing
+    traces, barrier lines, markers and titles.
+    """
+    fig.update_layout(
+        plot_bgcolor=_WHITE,
+        paper_bgcolor=_WHITE,
+        font=dict(family=_BASE_FONT, size=12, color=_NAVY),
+        title=dict(font=dict(family=_BASE_FONT, size=15, color=_NAVY)),
+        legend=dict(
+            font=dict(family=_BASE_FONT, size=11, color=_NAVY),
+            bgcolor="rgba(255,255,255,0.6)",
+            bordercolor="#e5e7eb", borderwidth=0,
+        ),
+        margin=dict(l=60, r=30, t=50, b=50),
+        modebar_remove=["logo", "sendDataToCloud", "lasso2d", "select2d"],
+        colorway=_SERIES_COLORS,
+    )
+    fig.update_xaxes(
+        linecolor="#e5e7eb", gridcolor="#f1f5f9", zerolinecolor="#e5e7eb",
+        title_font=dict(family=_BASE_FONT, size=12, color=_GREY),
+        tickfont=dict(family=_BASE_FONT, size=11, color=_GREY),
+    )
+    fig.update_yaxes(
+        linecolor="#e5e7eb", gridcolor="#f1f5f9", zerolinecolor="#e5e7eb",
+        title_font=dict(family=_BASE_FONT, size=12, color=_GREY),
+        tickfont=dict(family=_BASE_FONT, size=11, color=_GREY),
+    )
+    return fig
 
 def _add_autocall_barrier(fig: go.Figure, autocall_barrier, autocall_schedule,
                           x0=None) -> None:
@@ -71,8 +120,7 @@ def _add_autocall_barrier(fig: go.Figure, autocall_barrier, autocall_schedule,
 
 
 def _plain_layout(fig: go.Figure) -> go.Figure:
-    fig.update_layout(plot_bgcolor=_WHITE, paper_bgcolor=_WHITE)
-    return fig
+    return _apply_theme(fig)
 
 
 def _add_coupon_barrier(fig: go.Figure, coupon_barrier: float,
@@ -244,14 +292,14 @@ def build_fan_chart(
     fig.add_trace(go.Scatter(
         x=np.concatenate([t_grid, t_grid[::-1]]),
         y=np.concatenate([bands[4], bands[0][::-1]]),
-        fill="toself", fillcolor="rgba(26,107,26,0.08)",
+        fill="toself", fillcolor=_FILL_OUTER,
         line=dict(color="rgba(0,0,0,0)"),
         name=tr("pct_5_95"),
     ))
     fig.add_trace(go.Scatter(
         x=np.concatenate([t_grid, t_grid[::-1]]),
         y=np.concatenate([bands[3], bands[1][::-1]]),
-        fill="toself", fillcolor="rgba(26,107,26,0.20)",
+        fill="toself", fillcolor=_FILL_INNER,
         line=dict(color="rgba(0,0,0,0)"),
         name=tr("pct_25_75"),
     ))
@@ -297,13 +345,13 @@ def build_wof_fan(
     fig.add_trace(go.Scatter(
         x=np.concatenate([t_grid, t_grid[::-1]]),
         y=np.concatenate([bands[4], bands[0][::-1]]),
-        fill="toself", fillcolor="rgba(26,107,26,0.08)",
+        fill="toself", fillcolor=_FILL_OUTER,
         line=dict(color="rgba(0,0,0,0)"), name=tr("pct_5_95"),
     ))
     fig.add_trace(go.Scatter(
         x=np.concatenate([t_grid, t_grid[::-1]]),
         y=np.concatenate([bands[3], bands[1][::-1]]),
-        fill="toself", fillcolor="rgba(26,107,26,0.20)",
+        fill="toself", fillcolor=_FILL_INNER,
         line=dict(color="rgba(0,0,0,0)"), name=tr("pct_25_75"),
     ))
     fig.add_trace(go.Scatter(
@@ -429,12 +477,12 @@ def build_corr_heatmap(
     df = pd.DataFrame(matrix, index=asset_names, columns=asset_names)
     fig = px.imshow(
         df, text_auto=".3f",
-        color_continuous_scale=[[0, _RED], [0.5, _WHITE], [1, _GREEN_MID]],
+        color_continuous_scale=[[0, _RED], [0.5, _WHITE], [1, _NAVY]],
         zmin=zmin, zmax=zmax,
         title=title, aspect="auto",
     )
-    fig.update_layout(coloraxis_showscale=False, paper_bgcolor=_WHITE)
-    return fig
+    fig.update_layout(coloraxis_showscale=False)
+    return _apply_theme(fig)
 
 
 # ---------------------------------------------------------------------------
@@ -490,8 +538,7 @@ def build_worst_asset_pie(
         hole=0.4,
         color_discrete_sequence=[_GREEN_MID, _GREEN_LIGHT, _GREEN_DARK],
     )
-    fig.update_layout(paper_bgcolor=_WHITE)
-    return fig
+    return _apply_theme(fig)
 
 
 # ---------------------------------------------------------------------------

@@ -1,0 +1,227 @@
+/* ==========================================================================
+   Institutional theme — IBM Plex Sans + navy/blue palette (matches PDF report)
+   Palette:
+     navy   #1a2e4a   primary / headers
+     blue   #2563eb   accent
+     grey   #6b7280   secondary text
+     slate  #f1f5f9 / #f7f9fc   subtle backgrounds
+     border #e5e7eb
+   ========================================================================== */
+
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:ital,wght@0,300;0,400;0,500;0,600;0,700;1,400&family=IBM+Plex+Mono:wght@400;500&display=swap');
+
+:root {
+    --navy:   #1a2e4a;
+    --blue:   #2563eb;
+    --blue-d: #1d4ed8;
+    --grey:   #6b7280;
+    --slate:  #f1f5f9;
+    --slate2: #f7f9fc;
+    --border: #e5e7eb;
+}
+
+/* ---- Global font ---- */
+html, body, [class*="css"], .stApp,
+[data-testid="stAppViewContainer"], [data-testid="stSidebar"],
+button, input, textarea, select, .stMarkdown, p, div, span, label {
+    font-family: 'IBM Plex Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+}
+/* Streamlit applies "Source Sans" to headings with high specificity — override
+   it explicitly on every heading element and its markdown container. */
+h1, h2, h3, h4, h5, h6,
+.stMarkdown h1, .stMarkdown h2, .stMarkdown h3,
+.stMarkdown h4, .stMarkdown h5, .stMarkdown h6,
+[data-testid="stHeading"], [data-testid="stHeading"] *,
+[data-testid="stHeadingWithActionElements"],
+[data-testid="stHeadingWithActionElements"] *,
+[data-testid="stMetricValue"], [data-testid="stMetricLabel"],
+.stTabs [data-baseweb="tab"], [data-testid="stExpander"] summary {
+    font-family: 'IBM Plex Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif !important;
+}
+code, pre, [data-testid="stCodeBlock"], .monospace {
+    font-family: 'IBM Plex Mono', 'SF Mono', Menlo, monospace !important;
+}
+
+/* ---- Remove Streamlit chrome ---- */
+#MainMenu        { visibility: hidden; }
+footer           { visibility: hidden; }
+header[data-testid="stHeader"] { background: transparent; height: 0; }
+[data-testid="stToolbar"] { right: 1rem; }
+[data-testid="stDecoration"] { display: none; }
+
+/* ---- Tighten top padding so content sits higher ---- */
+.block-container {
+    padding-top: 2.2rem !important;
+    padding-bottom: 3rem !important;
+    max-width: 1400px;
+}
+
+/* ---- Body text ---- */
+.stApp { color: var(--navy); }
+p, li, .stMarkdown { color: #28354a; line-height: 1.55; }
+.stCaption, [data-testid="stCaptionContainer"], small { color: var(--grey) !important; }
+
+/* ---- Headers ---- */
+h1, h2, h3, h4, h5 { color: var(--navy); font-weight: 600; letter-spacing: -0.01em; }
+h1 { font-size: 1.85rem; font-weight: 700; }
+h2 { font-size: 1.35rem; }
+h3 { font-size: 1.12rem; }
+
+/* App title: accent underline rule */
+.stApp h1:first-of-type {
+    border-bottom: 3px solid var(--blue);
+    padding-bottom: 0.35rem;
+    display: inline-block;
+}
+
+/* Subheaders get a subtle left accent bar */
+[data-testid="stHeadingWithActionElements"] h2,
+[data-testid="stHeadingWithActionElements"] h3 {
+    padding-left: 0.6rem;
+    border-left: 3px solid var(--blue);
+    line-height: 1.2;
+}
+
+/* ---- Buttons ---- */
+.stButton > button, .stDownloadButton > button {
+    font-family: 'IBM Plex Sans', sans-serif;
+    font-weight: 500;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+    background: #ffffff;
+    color: var(--navy);
+    transition: all 0.15s ease;
+    box-shadow: 0 1px 2px rgba(16,24,40,0.04);
+}
+.stButton > button:hover, .stDownloadButton > button:hover {
+    border-color: var(--blue);
+    color: var(--blue);
+    background: var(--slate2);
+}
+/* Primary buttons: navy fill */
+.stButton > button[kind="primary"],
+.stButton > button[data-testid="baseButton-primary"] {
+    background: var(--navy);
+    color: #ffffff;
+    border: 1px solid var(--navy);
+}
+.stButton > button[kind="primary"]:hover,
+.stButton > button[data-testid="baseButton-primary"]:hover {
+    background: var(--blue);
+    border-color: var(--blue);
+    color: #ffffff;
+}
+.stDownloadButton > button {
+    background: var(--blue);
+    color: #ffffff;
+    border-color: var(--blue);
+}
+.stDownloadButton > button:hover {
+    background: var(--blue-d);
+    color: #ffffff;
+    border-color: var(--blue-d);
+}
+
+/* ---- Metric cards ---- */
+[data-testid="stMetric"] {
+    background: #ffffff;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 0.85rem 1rem;
+    box-shadow: 0 1px 2px rgba(16,24,40,0.05);
+}
+[data-testid="stMetricLabel"] {
+    color: var(--grey);
+    font-size: 0.78rem;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+[data-testid="stMetricValue"] {
+    color: var(--navy);
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+}
+[data-testid="stMetricDelta"] { font-variant-numeric: tabular-nums; }
+
+/* ---- Sidebar ---- */
+[data-testid="stSidebar"] {
+    background: var(--slate2);
+    border-right: 1px solid var(--border);
+}
+[data-testid="stSidebar"] h1,
+[data-testid="stSidebar"] h2,
+[data-testid="stSidebar"] h3 { color: var(--navy); }
+[data-testid="stSidebar"] .stButton > button { width: 100%; }
+[data-testid="stSidebar"] hr { border-color: var(--border); }
+
+/* ---- Tabs: underline-style active indicator ---- */
+.stTabs [data-baseweb="tab-list"] {
+    gap: 0.25rem;
+    border-bottom: 1px solid var(--border);
+}
+.stTabs [data-baseweb="tab"] {
+    font-weight: 500;
+    color: var(--grey);
+    background: transparent;
+    border-radius: 0;
+    padding: 0.5rem 1rem;
+}
+.stTabs [data-baseweb="tab"]:hover { color: var(--navy); }
+.stTabs [aria-selected="true"] {
+    color: var(--blue) !important;
+    font-weight: 600;
+    border-bottom: 2px solid var(--blue) !important;
+}
+.stTabs [data-baseweb="tab-highlight"] { background-color: var(--blue); }
+
+/* ---- Dataframes / tables ---- */
+[data-testid="stDataFrame"] {
+    border: 1px solid var(--border);
+    border-radius: 8px;
+}
+[data-testid="stTable"] table, .stMarkdown table {
+    border-collapse: collapse;
+    font-variant-numeric: tabular-nums;
+    font-size: 0.9rem;
+}
+.stMarkdown table thead th {
+    background: var(--navy);
+    color: #ffffff !important;
+    font-weight: 600;
+    text-align: left;
+    padding: 6px 10px;
+    border-bottom: none;
+}
+.stMarkdown table tbody td {
+    padding: 5px 10px;
+    border-bottom: 1px solid var(--border);
+}
+.stMarkdown table tbody tr:nth-child(even) { background: var(--slate2); }
+
+/* ---- Expanders ---- */
+[data-testid="stExpander"] {
+    border: 1px solid var(--border) !important;
+    border-radius: 8px;
+    background: #ffffff;
+}
+[data-testid="stExpander"] summary { font-weight: 500; color: var(--navy); }
+
+/* ---- Alerts: soften default colors toward the palette ---- */
+[data-testid="stNotification"], .stAlert { border-radius: 8px; }
+
+/* ---- Inputs ---- */
+[data-baseweb="input"], [data-baseweb="select"], .stTextInput input,
+.stNumberInput input {
+    border-radius: 6px;
+}
+
+/* ---- Progress bar ---- */
+.stProgress > div > div > div > div { background-color: var(--blue); }
+
+/* ---- Dividers ---- */
+hr { border-color: var(--border); }
+
+/* ---- Links ---- */
+a, a:visited { color: var(--blue); text-decoration: none; }
+a:hover { text-decoration: underline; }
