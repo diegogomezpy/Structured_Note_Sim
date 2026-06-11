@@ -1691,8 +1691,17 @@ elif st.session_state["page"] == "dashboard":
                                 help=tr("live_help_wof_today"))
                     _lc2.metric(tr("live_metric_worst_asset"), _worst_asset_today,
                                 help=tr("live_help_worst_asset"))
+                    # Autocall buffer uses the barrier for the next upcoming
+                    # observation period, not the flat initial barrier — for
+                    # step-down notes these differ after the first callable period.
+                    _next_obs_idx = next(
+                        (i for i, d in enumerate(_obs_cal)
+                         if pd.Timestamp(d) > _today_ts),
+                        len(_ac_sched_lv) - 1,
+                    )
+                    _next_ac_barrier = float(_ac_sched_lv[_next_obs_idx])
                     _ki_buf  = _wof_today - run_terms.knock_in_barrier
-                    _ac_buf  = _wof_today - run_terms.autocall_barrier
+                    _ac_buf  = _wof_today - _next_ac_barrier
                     _lc3.metric(tr("live_metric_ki_buffer"),
                                 f"{_ki_buf:+.1%}",
                                 delta=tr("live_delta_barrier_ref",
@@ -1702,9 +1711,9 @@ elif st.session_state["page"] == "dashboard":
                     _lc4.metric(tr("live_metric_ac_buffer"),
                                 f"{_ac_buf:+.1%}",
                                 delta=tr("live_delta_autocall_ref",
-                                         barrier=run_terms.autocall_barrier),
+                                         barrier=_next_ac_barrier),
                                 delta_color="off",
-                                help=tr("live_help_ac_buffer", barrier=run_terms.autocall_barrier))
+                                help=tr("live_help_ac_buffer", barrier=_next_ac_barrier))
 
                     # ── Per-asset current performance ─────────────────
                     st.markdown(tr("live_asset_perf_header"))
