@@ -584,7 +584,11 @@ class _NotePDF(FPDF):
                 logo_w = 0.0
 
         # ── Firm name (left) + Note name (right) ─────────────────────
-        self.set_xy(self.l_margin + logo_w, 9.5)
+        # Vertically centre the text row on the logo's centreline: the logo sits
+        # at y=8 with height 6 (centre y=11); a 4.5mm-tall text cell is centred
+        # there at y = 11 - 4.5/2 = 8.75. (Was 9.5, which sat 0.75mm low.)
+        _row_y = 8.75
+        self.set_xy(self.l_margin + logo_w, _row_y)
         self._sf(7.5, "semibold")
         self.set_text_color(*self.primary_color)
         firm_label = self._safe(self.firm_name.upper())
@@ -592,7 +596,7 @@ class _NotePDF(FPDF):
 
         self._sf(7, "light")
         self.set_text_color(*_TEXT_SOFT)
-        self.set_xy(self.w - self.r_margin - 85, 9.5)
+        self.set_xy(self.w - self.r_margin - 85, _row_y)
         note_label = self._safe(self.doc_ref.split("|")[-1].strip() if "|" in self.doc_ref else self.doc_ref)
         self.cell(85, 4.5, note_label, align="R")
 
