@@ -2,7 +2,12 @@
   "firm_name": "Acme Capital",
   "primary_color": "#003366",
   "accent_color": "#00A0DC",
-  "logo_file": "branding/acme_logo.png",
+  "chart_secondary_color": "#C69426",
+  "logo_file": "",
   "logo_base64": "",
-  "logo_url": "https://www.google.com/s2/favicons?sz=64&domain=example.com"
+  "logo_url": "https://www.google.com/s2/favicons?sz=256&domain=example.com",
+  "report_title": "Structured Note Analytics",
+  "website": "www.acmecapital.com",
+  "contact": "research@acmecapital.com",
+  "footer_note": ""
 }

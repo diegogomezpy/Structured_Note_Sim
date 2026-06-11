@@ -18,26 +18,44 @@ Public API (unchanged)
 ----------------------
 generate_pdf_report(terms, results, asset_names, figures, lang,
                     bt_summary, bt_figures, live_data, live_figure,
-                    logo_bytes, issuer_logo_bytes,
-                    branding=None) -> bytes
+                    logo_urls, issuer_logo_url, branding=None,
+                    logo_tickers=None) -> bytes
 
-Branding dict schema (all keys optional):
+Branding dict schema — the single source of truth (all keys optional; unknown
+keys warn; malformed hex falls back to the default with a warning):
+
   {
-    "firm_name":     "Acme Capital",
-    "primary_color": "#003366",
-    "accent_color":  "#00A0DC",
-    "logo_url":      "https://..."
+    "firm_name":             "Acme Capital",      # cover + running header
+    "primary_color":         "#003366",           # headers, bands, table fills
+    "accent_color":          "#00A0DC",           # rules, hero data series, median
+    "chart_secondary_color": "#C69426",           # 2nd chart category (default: gold)
+    "logo_file":             "branding/acme.png", # local path, repo-root relative (preferred)
+    "logo_base64":           "",                  # OR a base64 / data: URI
+    "logo_url":              "https://...",        # OR a remote URL (last resort)
+    "report_title":          "Structured Note Analytics",  # cover eyebrow + subtitle
+    "website":               "www.acme.com",      # cover identity line
+    "contact":               "research@acme.com", # cover identity line
+    "footer_note":           "..."                # overrides the default footer disclaimer line
   }
+
+Branding affects the PDF only; the Streamlit UI theme is set separately in
+app/style.css + .streamlit/config.toml. Logo resolution order is local file →
+base64 → URL (see _load_logo). Chart colours are remapped from the fixed
+navy/blue source palette of app/charts.py onto (accent, secondary) with the
+green-ramp hue derived from the accent — see _rebrand_figure.
 """
 
 from __future__ import annotations
 
 import io
 import re
-import datetime
-import urllib.request
-import numpy as np
 import base64
+import colorsys
+import datetime
+import functools
+import urllib.request
+import warnings
+import numpy as np
 from pathlib import Path
 from fpdf import FPDF
 
@@ -65,24 +83,76 @@ _PANEL            = (241, 245, 249) # slate-100  #f1f5f9
 _ROW_ALT          = (248, 250, 252) # slate-50   #f8fafc — zebra rows
 _WHITE            = (255, 255, 255)
 _COVER_BAND_H     = 38              # mm — height of the top cover band
+_DEFAULT_SECONDARY = (198, 148, 38) # warm institutional gold #C69426 — 2nd chart category
+
+# The full branding schema. Anything outside this set warns (mirrors
+# NoteTerms.from_dict) so a typo like "primary_colour" surfaces immediately
+# instead of being silently ignored.
+_KNOWN_BRANDING_KEYS = {
+    "firm_name", "primary_color", "accent_color", "chart_secondary_color",
+    "logo_file", "logo_base64", "logo_url",
+    "report_title", "website", "contact", "footer_note",
+}
+_HEX_KEYS = ("primary_color", "accent_color", "chart_secondary_color")
 
 
 def _hex_to_rgb(hex_str: str) -> tuple[int, int, int]:
-    """Convert '#RRGGBB' to (R, G, B) integer tuple."""
-    h = hex_str.lstrip("#")
+    """Convert '#RGB' or '#RRGGBB' to an (R, G, B) integer tuple. Raises ValueError
+    on anything that is not a clean 3- or 6-digit hex string."""
+    h = hex_str.strip().lstrip("#")
+    if len(h) == 3:
+        h = "".join(ch * 2 for ch in h)
+    if len(h) != 6:
+        raise ValueError(f"not a 6-digit hex colour: {hex_str!r}")
     return (int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16))
 
 
-def _resolve_palette(branding: dict | None) -> tuple[
-    tuple[int, int, int], tuple[int, int, int], str
-]:
-    """Return (primary_color, accent_color, firm_name) from branding dict."""
+def _validate_branding(branding: dict | None) -> None:
+    """Warn (don't raise) on unrecognised branding keys — mirrors the early-typo
+    surfacing of NoteTerms.from_dict. A no-op when branding is empty."""
     if not branding:
-        return _DEFAULT_PRIMARY, _DEFAULT_ACCENT, "Structured Note Analytics"
-    primary = _hex_to_rgb(branding["primary_color"]) if branding.get("primary_color") else _DEFAULT_PRIMARY
-    accent  = _hex_to_rgb(branding["accent_color"])  if branding.get("accent_color")  else _DEFAULT_ACCENT
-    firm    = branding.get("firm_name", "Structured Note Analytics") or "Structured Note Analytics"
-    return primary, accent, firm
+        return
+    unknown = [k for k in branding if k not in _KNOWN_BRANDING_KEYS]
+    if unknown:
+        warnings.warn(
+            f"branding: ignoring unrecognised keys {unknown}. "
+            f"Known keys: {sorted(_KNOWN_BRANDING_KEYS)}.",
+            stacklevel=2,
+        )
+
+
+def _branding_color(branding: dict | None, key: str,
+                    default: tuple[int, int, int]) -> tuple[int, int, int]:
+    """Resolve one hex colour from the branding dict, falling back to `default`
+    (with a warning) when absent or malformed — never raises deep inside the PDF."""
+    if not branding:
+        return default
+    raw = branding.get(key)
+    if not raw:
+        return default
+    try:
+        return _hex_to_rgb(raw)
+    except (ValueError, TypeError):
+        warnings.warn(
+            f"branding['{key}'] = {raw!r} is not a valid hex colour "
+            f"(e.g. '#003366'); using the default.",
+            stacklevel=2,
+        )
+        return default
+
+
+def _resolve_palette(branding: dict | None) -> tuple[
+    tuple[int, int, int], tuple[int, int, int], tuple[int, int, int], str
+]:
+    """Return (primary, accent, secondary, firm_name) from the branding dict.
+    Malformed hex values fall back to defaults with a warning; never raises."""
+    if not branding:
+        return _DEFAULT_PRIMARY, _DEFAULT_ACCENT, _DEFAULT_SECONDARY, "Structured Note Analytics"
+    primary   = _branding_color(branding, "primary_color",         _DEFAULT_PRIMARY)
+    accent    = _branding_color(branding, "accent_color",          _DEFAULT_ACCENT)
+    secondary = _branding_color(branding, "chart_secondary_color", _DEFAULT_SECONDARY)
+    firm      = branding.get("firm_name", "Structured Note Analytics") or "Structured Note Analytics"
+    return primary, accent, secondary, firm
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -383,7 +453,10 @@ class _NotePDF(FPDF):
                  primary_color: tuple = _DEFAULT_PRIMARY,
                  accent_color: tuple = _DEFAULT_ACCENT,
                  firm_name: str = "Structured Note Analytics",
-                 firm_logo_bytes: bytes | None = None):
+                 firm_logo_bytes: bytes | None = None,
+                 report_title: str | None = None,
+                 website: str = "", contact: str = "",
+                 footer_note: str | None = None):
         super().__init__(orientation="P", unit="mm", format="A4")
         self.lang          = lang
         self.issuer        = issuer
@@ -392,6 +465,13 @@ class _NotePDF(FPDF):
         self.accent_color  = accent_color
         self.firm_name     = firm_name
         self.firm_logo_bytes = firm_logo_bytes
+        # Optional branding content (B5). report_title overrides the default
+        # "Structured Note Analytics" eyebrow/subtitle; footer_note overrides the
+        # default footer disclaimer line; website/contact print on the cover.
+        self.report_title  = report_title
+        self.website       = website or ""
+        self.contact       = contact or ""
+        self.footer_note   = footer_note
         # Aspect ratio (so a wide wordmark isn't squashed into a square box) and a
         # white knockout for legible placement on the coloured cover band.
         self.firm_logo_aspect = _logo_aspect(firm_logo_bytes, default=1.0)
@@ -536,11 +616,11 @@ class _NotePDF(FPDF):
         self.set_line_width(0.2)
         self.line(self.l_margin, self.h - 22, self.w - self.r_margin, self.h - 22)
 
-        # ── Disclaimer line ───────────────────────────────────────────
+        # ── Disclaimer line (branding may override with footer_note) ───
         self.set_y(-20)
         self._sf(6, "light")
         self.set_text_color(*_TEXT_SOFT)
-        self.multi_cell(0, 2.9, _t("footer_line", self.lang), align="L")
+        self.multi_cell(0, 2.9, self.footer_note or _t("footer_line", self.lang), align="L")
 
         # ── Page number + generation datetime ────────────────────────
         self.set_y(-11)
@@ -1069,6 +1149,7 @@ def _find_ticker_logo_file(ticker: str) -> Path | None:
     return None
 
 
+@functools.lru_cache(maxsize=256)
 def _load_ticker_logo(display_name: str, url: str | None,
                       symbol: str | None = None) -> bytes | None:
     """Resolve a single underlying/ticker logo, local-folder-first.
@@ -1076,6 +1157,14 @@ def _load_ticker_logo(display_name: str, url: str | None,
     Looks for branding/ticker_logos/{STEM}.{png,jpg,...} where STEM is tried as
     the ticker symbol first, then the display name. Falls back to the supplied
     URL. Never raises; returns None if nothing yields usable bytes.
+
+    Memoised (P5): the same ticker is resolved for the cover, the calibration
+    table and the performance table — without the cache each call re-did the
+    local-file probe and, when no file exists, a fresh ≤8s network fetch per
+    call. Keyed on (display_name, url, symbol), all hashable; None results are
+    cached too so a missing logo isn't re-fetched three times. The set of ticker
+    logos is independent of branding, so sharing the cache across reports in a
+    long-running session is safe and beneficial.
     """
     for stem in (symbol, display_name):
         if not stem:
@@ -1110,33 +1199,39 @@ _SRC_NAVY  = (26, 46, 74)     # #1a2e4a  maturity bars / dark "second category"
 _SRC_BLUE  = (37, 99, 235)    # #2563eb  median / mean line / primary series / band fills
 _SRC_LIGHT = (96, 165, 250)   # #60a5fa  autocalled bars / light secondary series
 _SRC_EXTRA = {(8, 145, 178), (124, 58, 237), (13, 148, 136)}  # >3-asset series colours
-_BRAND_GOLD = (198, 148, 38)  # #C69426  warm institutional gold — complementary accent
-_GREEN_RAMP_HUE = 150         # target hue for hsl blue-ramp rotation (CADIEM green family)
 
 
 def _blend(rgb: tuple, target: tuple, f: float) -> tuple:
     return tuple(round(rgb[i] * (1 - f) + target[i] * f) for i in range(3))
 
 
-def _build_color_remap(primary: tuple, accent: tuple) -> dict:
-    """Series/marker map: charts.py source palette -> brand green + gold accent.
+def _rgb_to_hue(rgb: tuple) -> float:
+    """HSL hue in degrees [0, 360) for an (R,G,B) 0-255 tuple. Used to rotate the
+    backtest's blue autocall ramp onto the brand accent's hue."""
+    r, g, b = (c / 255.0 for c in rgb[:3])
+    h, _l, _s = colorsys.rgb_to_hls(r, g, b)
+    return h * 360.0
+
+
+def _build_color_remap(primary: tuple, accent: tuple, secondary: tuple) -> dict:
+    """Series/marker map: charts.py source palette -> brand accent + secondary.
 
     SEMANTIC COLOURS ALWAYS WIN over branding: red (#dc2626) = loss / knock-in /
-    danger and the green "good outcome" series are intentionally handled so that
-    bad things stay red and good things stay (brand) green regardless of the firm
-    palette. Red/orange/grey are NOT in this map, so they pass through untouched;
-    the gold accent is only ever assigned to the *neutral* second category
-    (held-to-maturity), never to a loss or a gain. Do not add red/green semantic
-    hexes as remap keys."""
+    danger and the brand-accent "good outcome" series are intentionally handled so
+    that bad things stay red and good things stay (brand) accent regardless of the
+    firm palette. Red/orange/grey are NOT in this map, so they pass through
+    untouched; the secondary colour (gold by default) is only ever assigned to the
+    *neutral* second category (held-to-maturity), never to a loss or a gain. Do
+    not add red/green semantic hexes as remap keys."""
     white = (255, 255, 255)
     extras = list(_SRC_EXTRA)
     return {
         _SRC_BLUE:  accent,                       # hero series / median / mean
-        _SRC_NAVY:  _BRAND_GOLD,                  # second category (maturity) -> gold
+        _SRC_NAVY:  secondary,                    # second category (maturity) -> secondary
         _SRC_LIGHT: _blend(accent, white, 0.45),  # light series / autocalled bars
-        extras[0]:  _blend(_BRAND_GOLD, white, 0.40),
+        extras[0]:  _blend(secondary, white, 0.40),
         extras[1]:  primary,
-        extras[2]:  _BRAND_GOLD,
+        extras[2]:  secondary,
     }
 
 
@@ -1169,17 +1264,18 @@ def _parse_rgb(c: str):
     return None
 
 
-def _remap_color(c, remap: dict):
+def _remap_color(c, remap: dict, ramp_hue: float):
     """Map one colour through a branding remap, preserving any alpha. Blue-family
-    hsl() colours (the backtest autocall ramp) are hue-rotated to a green ramp;
-    colours whose RGB isn't a known source value are returned unchanged."""
+    hsl() colours (the backtest autocall ramp) are hue-rotated to `ramp_hue` (the
+    brand accent's hue); colours whose RGB isn't a known source value are returned
+    unchanged."""
     if isinstance(c, str):
         h = re.match(r"hsl\(\s*(\d+(?:\.\d+)?)\s*,\s*([\d.]+)%\s*,\s*([\d.]+)%\s*\)",
                      c.strip().lower())
         if h:
             hue = float(h.group(1))
-            if 195 <= hue <= 255:   # blue family -> brand-green ramp
-                return f"hsl({_GREEN_RAMP_HUE},{h.group(2)}%,{h.group(3)}%)"
+            if 195 <= hue <= 255:   # blue family -> brand-accent ramp
+                return f"hsl({ramp_hue:.0f},{h.group(2)}%,{h.group(3)}%)"
             return c
     p = _parse_rgb(c)
     if p is None:
@@ -1193,15 +1289,16 @@ def _remap_color(c, remap: dict):
     return f"rgba({tgt[0]},{tgt[1]},{tgt[2]},{alpha})"
 
 
-def _rebrand_figure(fig, primary: tuple, accent: tuple):
+def _rebrand_figure(fig, primary: tuple, accent: tuple, secondary: tuple):
     """Remap the figure's navy/blue source palette onto the branding colours."""
     # Identity short-circuit: default palette == source palette, nothing to do.
     if primary == _SRC_NAVY and accent == _SRC_BLUE:
         return
-    remap = _build_color_remap(primary, accent)
+    remap = _build_color_remap(primary, accent, secondary)
     scale = _build_scale_remap(primary, accent)
-    rc = lambda c: _remap_color(c, remap)   # series / marker colours (green + gold)
-    sc = lambda c: _remap_color(c, scale)   # intensity scales (stay brand green)
+    ramp_hue = _rgb_to_hue(accent)          # blue autocall ramp -> brand accent hue
+    rc = lambda c: _remap_color(c, remap, ramp_hue)   # series / marker colours
+    sc = lambda c: _remap_color(c, scale, ramp_hue)   # intensity scales (stay brand)
     try:
         if getattr(fig.layout, "colorway", None):
             fig.layout.colorway = tuple(rc(c) for c in fig.layout.colorway)
@@ -1252,7 +1349,8 @@ def _rebrand_figure(fig, primary: tuple, accent: tuple):
         pass
 
 
-def _theme_figure(fig, primary_color: tuple, accent_color: tuple):
+def _theme_figure(fig, primary_color: tuple, accent_color: tuple,
+                  secondary_color: tuple = _DEFAULT_SECONDARY):
     """Apply the print theme to a Plotly figure before rasterising: white
     backgrounds, report typography, light gridlines, no Plotly logo — and remap
     the source navy/blue palette onto the branding colours (no-op for the default
@@ -1260,7 +1358,7 @@ def _theme_figure(fig, primary_color: tuple, accent_color: tuple):
     the fan-chart band alpha hierarchy are preserved by `_rebrand_figure`.
     """
     try:
-        _rebrand_figure(fig, primary_color, accent_color)
+        _rebrand_figure(fig, primary_color, accent_color, secondary_color)
     except Exception:
         pass
     try:
@@ -1281,7 +1379,8 @@ def _theme_figure(fig, primary_color: tuple, accent_color: tuple):
 
 def _fig_to_png(fig, width: int = 900, height: int = 500,
                 primary_color: tuple = _DEFAULT_PRIMARY,
-                accent_color: tuple = _DEFAULT_ACCENT) -> bytes | None:
+                accent_color: tuple = _DEFAULT_ACCENT,
+                secondary_color: tuple = _DEFAULT_SECONDARY) -> bytes | None:
     """Rasterise a Plotly figure to PNG bytes at 3× scale (~300 dpi equivalent).
 
     Applies `_theme_figure` before rendering so all charts use the report's
@@ -1292,7 +1391,7 @@ def _fig_to_png(fig, width: int = 900, height: int = 500,
         import plotly.graph_objects as go
         fig = go.Figure(fig)
         fig.update_layout(title=None, margin=dict(t=24, b=40))
-        _theme_figure(fig, primary_color, accent_color)
+        _theme_figure(fig, primary_color, accent_color, secondary_color)
         return pio.to_image(fig, format="png", width=width, height=height,
                             scale=3, engine="kaleido")
     except Exception:
@@ -1422,6 +1521,8 @@ def _cover_page(
             has_logo = False
 
     _today_long = _fmt_long_date(datetime.date.today(), lang)
+    # B5: a branding report_title overrides the default eyebrow / subtitle.
+    _eyebrow = (pdf.report_title or _t("report_eyebrow", lang)).upper()
     if has_logo:
         # Logo carries identity on the left; eyebrow + date form a clean
         # right-aligned block, vertically centred against the logo.
@@ -1433,7 +1534,7 @@ def _cover_page(
             pdf.set_char_spacing(1.4)
         except Exception:
             pass
-        pdf.cell(rw, 5, _t("report_eyebrow", lang).upper(), align="R")
+        pdf.cell(rw, 5, _eyebrow, align="R")
         try:
             pdf.set_char_spacing(0)
         except Exception:
@@ -1451,7 +1552,7 @@ def _cover_page(
             pdf.set_char_spacing(1.2)
         except Exception:
             pass
-        pdf.cell(120, 5, _t("report_eyebrow", lang).upper())
+        pdf.cell(120, 5, _eyebrow)
         try:
             pdf.set_char_spacing(0)
         except Exception:
@@ -1578,12 +1679,21 @@ def _cover_page(
     pdf.set_text_color(*pdf.primary_color)
     pdf.multi_cell(main_w, 9, _safe(terms.name))
 
-    # Report type subtitle
+    # Report type subtitle (branding report_title overrides the default)
     pdf.set_x(pdf.l_margin)
     pdf._sf(9.5, "light")
     pdf.set_text_color(*_TEXT_SOFT)
-    pdf.cell(main_w, 6, _safe(_t("series_title", lang)),
+    pdf.cell(main_w, 6, _safe(pdf.report_title or _t("series_title", lang)),
              new_x="LMARGIN", new_y="NEXT")
+
+    # Optional firm contact line (B5): website · contact, small and muted.
+    _contact_bits = [b for b in (pdf.website, pdf.contact) if b]
+    if _contact_bits:
+        pdf.set_x(pdf.l_margin)
+        pdf._sf(7.5, "light")
+        pdf.set_text_color(*_TEXT_SOFT)
+        pdf.cell(main_w, 4.5, _safe("  ·  ".join(_contact_bits)),
+                 new_x="LMARGIN", new_y="NEXT")
 
     # Thin divider
     pdf.set_draw_color(*_HAIRLINE)
@@ -1712,20 +1822,30 @@ def generate_pdf_report(
 
     logo_urls       — {display_name: url} for underlying ticker logos.
     issuer_logo_url — favicon / logo URL for the issuer (shown on cover).
-    branding        — optional dict with firm_name, primary_color, accent_color,
-                      logo_url. See module docstring for full schema.
+    branding        — optional dict; see the module docstring for the full schema
+                      (firm_name, primary/accent/chart_secondary colours, a
+                      logo_file/logo_base64/logo_url, and report_title / website /
+                      contact / footer_note content keys). Unknown keys warn and
+                      malformed hex falls back to defaults.
     All optional parameters default to None; existing callers are unaffected.
     """
-    # ── Resolve branding ──────────────────────────────────────────────
-    primary_color, accent_color, firm_name = _resolve_palette(branding)
+    # ── Resolve + validate branding ───────────────────────────────────
+    _validate_branding(branding)
+    primary_color, accent_color, secondary_color, firm_name = _resolve_palette(branding)
     # Local-file-first: logo_file -> logo_base64 -> logo_url
     brand_logo_bytes = _load_logo(branding)
+    # Optional content keys (B5)
+    _b = branding or {}
+    report_title = _b.get("report_title") or None
+    website      = _b.get("website", "") or ""
+    contact      = _b.get("contact", "") or ""
+    footer_note  = _b.get("footer_note") or None
 
     issuer  = getattr(terms, "issuer", "") or ""
     # Issuer logo: try a local branding/ticker_logos/{issuer}.png first, else URL.
     issuer_logo_bytes = _load_ticker_logo(issuer, issuer_logo_url) if (issuer or issuer_logo_url) else None
 
-    doc_ref = f"{_t('series_title', lang)} | {terms.name}"
+    doc_ref = f"{report_title or _t('series_title', lang)} | {terms.name}"
     pdf = _NotePDF(
         lang            = lang,
         issuer          = issuer,
@@ -1734,6 +1854,10 @@ def generate_pdf_report(
         accent_color    = accent_color,
         firm_name       = firm_name,
         firm_logo_bytes = brand_logo_bytes,
+        report_title    = report_title,
+        website         = website,
+        contact         = contact,
+        footer_note     = footer_note,
     )
 
     # ── 1. Cover ───────────────────────────────────────────────────────────
@@ -1779,7 +1903,8 @@ def generate_pdf_report(
     ])
 
     src_mc = f"{_t('src_mc', lang)}, {n_paths_val:,} {_t('paths_word', lang)}"
-    _kw = dict(primary_color=primary_color, accent_color=accent_color)
+    _kw = dict(primary_color=primary_color, accent_color=accent_color,
+               secondary_color=secondary_color)
     pdf.figure(_fig_to_png(figures.get("irr_dist"), **_kw), _t("fig_irr", lang), src_mc)
     pdf.figure(_fig_to_png(figures.get("wof_fan"),  **_kw), _t("fig_wof", lang), src_mc)
 
