@@ -98,28 +98,40 @@ h3 { font-size: 1.12rem; }
     color: var(--blue);
     background: var(--slate2);
 }
-/* Primary buttons: navy fill */
+/* Primary buttons: navy fill. Streamlit's config textColor (navy) is applied
+   to the inner label with high specificity, so force white on the button AND
+   all its descendants (covers old + new baseweb testids). */
 .stButton > button[kind="primary"],
-.stButton > button[data-testid="baseButton-primary"] {
-    background: var(--navy);
-    color: #ffffff;
-    border: 1px solid var(--navy);
+.stButton > button[data-testid="baseButton-primary"],
+.stButton > button[data-testid="stBaseButton-primary"] {
+    background: var(--navy) !important;
+    color: #ffffff !important;
+    border: 1px solid var(--navy) !important;
+}
+.stButton > button[kind="primary"] *,
+.stButton > button[data-testid="baseButton-primary"] *,
+.stButton > button[data-testid="stBaseButton-primary"] * {
+    color: #ffffff !important;
 }
 .stButton > button[kind="primary"]:hover,
-.stButton > button[data-testid="baseButton-primary"]:hover {
-    background: var(--blue);
-    border-color: var(--blue);
-    color: #ffffff;
+.stButton > button[data-testid="baseButton-primary"]:hover,
+.stButton > button[data-testid="stBaseButton-primary"]:hover {
+    background: var(--blue) !important;
+    border-color: var(--blue) !important;
+    color: #ffffff !important;
 }
 .stDownloadButton > button {
-    background: var(--blue);
-    color: #ffffff;
-    border-color: var(--blue);
+    background: var(--blue) !important;
+    color: #ffffff !important;
+    border-color: var(--blue) !important;
+}
+.stDownloadButton > button * {
+    color: #ffffff !important;
 }
 .stDownloadButton > button:hover {
-    background: var(--blue-d);
-    color: #ffffff;
-    border-color: var(--blue-d);
+    background: var(--blue-d) !important;
+    color: #ffffff !important;
+    border-color: var(--blue-d) !important;
 }
 
 /* ---- Metric cards ---- */

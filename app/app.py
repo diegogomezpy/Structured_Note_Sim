@@ -490,9 +490,13 @@ if st.session_state["page"] == "setup":
         memory = st.toggle("Memory coupon", value=base.memory)
 
     with col3:
+        # Bonus / capital-protected notes disable autocall by setting the
+        # barrier impossibly high (e.g. 200%). Bound at 300% and clamp the
+        # default so such configs load without a ValueAboveMax crash.
+        _ac_val = round(base.autocall_barrier * 100, 4)
         autocall_bar_pct = st.number_input(
-            "Autocall barrier (%)", 50.0, 150.0,
-            value=round(base.autocall_barrier * 100, 4), step=0.5, format="%.2f",
+            "Autocall barrier (%)", 50.0, 300.0,
+            value=min(max(_ac_val, 50.0), 300.0), step=0.5, format="%.2f",
         )
         ki_bar_pct = st.number_input(
             "Knock-in barrier (%)", 0.0, 100.0,
