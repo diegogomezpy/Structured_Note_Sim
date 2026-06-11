@@ -509,6 +509,7 @@ def build_backtest_outcome_bar(
         color_discrete_map=color_map,
         title=tr("outcome_dist"),
         text=tr("count"),
+        labels={"Outcome": tr("chart_outcome_axis")},
     )
     fig.update_layout(showlegend=False)
     return _plain_layout(fig)
@@ -561,6 +562,14 @@ def build_backtest_irr_scatter(
         color_discrete_map=color_map,
         hover_data=["Payout", "Worst Asset", "Worst Final Perf"],
         title=tr("realised_irr_title"),
+        labels={
+            "Issue Date":      tr("chart_issue_date_axis"),
+            "IRR":             tr("chart_irr_axis"),
+            "Outcome":         tr("chart_outcome_axis"),
+            "Payout":          tr("chart_payout_axis"),
+            "Worst Asset":     tr("chart_worst_asset_axis"),
+            "Worst Final Perf":tr("chart_worst_final_perf_axis"),
+        },
     )
     fig.add_hline(
         y=0, line_dash="dash", line_color=_GREY,
