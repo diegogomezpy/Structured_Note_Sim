@@ -293,12 +293,12 @@ tr = Translator("es" if lang_choice == "Español" else "en")
 # ==========================================================================
 if st.session_state["page"] == "setup":
 
-    st.title("Structured Note Simulator")
-    st.markdown("Configure the note below, then click **Confirm & Run** to load the dashboard.")
+    st.title(tr("setup_title"))
+    st.markdown(tr("setup_intro"))
     st.divider()
 
     # ── JSON upload ───────────────────────────────────────────────────────
-    uploaded = st.file_uploader("Upload note config (JSON) — optional",
+    uploaded = st.file_uploader(tr("setup_upload_label"),
                                  type=["json"], key="setup_upload")
     if uploaded is not None:
         try:
@@ -343,7 +343,7 @@ if st.session_state["page"] == "setup":
                     st.session_state["setup_underlyings"] = resolved
                     st.session_state["setup_ul_default"]  = resolved
         except Exception as e:
-            st.error(f"Invalid JSON: {e}")
+            st.error(tr("setup_invalid_json", e=e))
 
     # Restore loaded_terms from session state so it survives reruns
     loaded_terms = (
@@ -352,14 +352,14 @@ if st.session_state["page"] == "setup":
         else None
     )
     if loaded_terms is not None:
-        st.success(f"Config loaded: **{loaded_terms.name}**")
+        st.success(tr("setup_config_loaded", name=loaded_terms.name))
 
     base = loaded_terms or NoteTerms()
 
     st.divider()
 
     # ── Underlyings ───────────────────────────────────────────────────────
-    st.subheader("Underlyings")
+    st.subheader(tr("setup_underlyings_header"))
 
     # Build full option list including any custom tickers from session state
     custom_tickers = st.session_state.get("custom_tickers", {})
@@ -376,24 +376,24 @@ if st.session_state["page"] == "setup":
     default_ul = [d for d in default_ul if d in all_labels]
 
     selected_labels = st.multiselect(
-        "Select underlyings (2–5)", all_labels,
+        tr("setup_select_underlyings"), all_labels,
         default=default_ul,
         key="setup_underlyings",
     )
 
     # ── Custom ticker input ───────────────────────────────────────────────
-    with st.expander("Add a custom ticker (not in the list above)"):
-        st.caption("Enter any valid yfinance symbol, e.g. UBER, 2222.SR, BTC-USD")
+    with st.expander(tr("setup_add_custom_expander")):
+        st.caption(tr("setup_custom_caption"))
         cc1, cc2, cc3 = st.columns([2, 2, 1])
         with cc1:
-            custom_sym = st.text_input("yfinance symbol", placeholder="e.g. UBER",
+            custom_sym = st.text_input(tr("setup_custom_symbol"), placeholder="e.g. UBER",
                                         key="custom_sym_input").strip().upper()
         with cc2:
-            custom_name = st.text_input("Display name", placeholder="e.g. Uber",
+            custom_name = st.text_input(tr("setup_display_name"), placeholder="e.g. Uber",
                                          key="custom_name_input").strip()
         with cc3:
             st.markdown("<br>", unsafe_allow_html=True)
-            if st.button("Add", key="add_custom_btn"):
+            if st.button(tr("setup_add_btn"), key="add_custom_btn"):
                 if custom_sym and custom_name:
                     ct = dict(st.session_state.get("custom_tickers", {}))
                     ct[custom_sym] = custom_name
@@ -406,7 +406,7 @@ if st.session_state["page"] == "setup":
                     st.session_state["setup_ul_default"] = current
                     st.rerun()
                 else:
-                    st.warning("Enter both a symbol and a display name.")
+                    st.warning(tr("setup_enter_both"))
 
     # ── Logo row for selected tickers ─────────────────────────────────────
     if selected_labels:
@@ -434,12 +434,12 @@ if st.session_state["page"] == "setup":
     st.divider()
 
     # ── Note terms ────────────────────────────────────────────────────────
-    st.subheader("Note Terms")
+    st.subheader(tr("setup_note_terms"))
 
     note_name = st.text_input(
-        "Note name",
+        tr("setup_note_name"),
         value=base.name if loaded_terms else "Custom Note",
-        help="Display name used in the dashboard and PDF report.",
+        help=tr("setup_note_name_help"),
     )
 
     col1, col2, col3 = st.columns(3)
@@ -450,44 +450,51 @@ if st.session_state["page"] == "setup":
     if base.maturity not in maturity_opts:
         maturity_opts = sorted(set(maturity_opts + [base.maturity]))
     freq_opts     = ["monthly", "quarterly", "semi-annual", "annual"]
+    _freq_label = {
+        "monthly":     tr("freq_monthly"),
+        "quarterly":   tr("freq_quarterly"),
+        "semi-annual": tr("freq_semi_annual"),
+        "annual":      tr("freq_annual"),
+    }
     from core.note import _FREQ_TO_PERIODS
 
     with col1:
         maturity = st.selectbox(
-            "Maturity (years)", maturity_opts,
+            tr("setup_maturity_years"), maturity_opts,
             index=maturity_opts.index(base.maturity)
                   if base.maturity in maturity_opts else 1,
         )
         payment_freq = st.selectbox(
-            "Payment frequency", freq_opts,
+            tr("setup_payment_freq"), freq_opts,
             index=freq_opts.index(base.payment_freq)
                   if base.payment_freq in freq_opts else 1,
+            format_func=lambda f: _freq_label.get(f, f),
         )
         _n_obs_derived = round(maturity * _FREQ_TO_PERIODS[payment_freq])
-        st.caption(f"→ **{_n_obs_derived} observation periods** "
-                   f"({_FREQ_TO_PERIODS[payment_freq]}×/yr × {maturity}Y)")
+        st.caption(tr("setup_obs_periods_caption", n=_n_obs_derived,
+                      per_yr=_FREQ_TO_PERIODS[payment_freq], mat=maturity))
         autocall_start = st.number_input(
-            "Autocall start period", 1, _n_obs_derived,
+            tr("setup_autocall_start"), 1, _n_obs_derived,
             value=min(base.autocall_start_period, _n_obs_derived),
-            help="First N periods are coupon-only (no autocall trigger).",
+            help=tr("setup_autocall_start_help"),
         )
 
     with col2:
         coupon_pa_pct = st.number_input(
-            "Coupon p.a. (%)", 0.0, 50.0,
+            tr("setup_coupon_pa"), 0.0, 50.0,
             value=round(base.coupon_pa * 100, 4),
             step=0.5, format="%.4f",
-            help="Annualised coupon rate. Per-period rate is derived automatically.",
+            help=tr("setup_coupon_pa_help"),
         )
         _coupon_per_period = coupon_pa_pct / 100.0 / _FREQ_TO_PERIODS[payment_freq]
-        st.caption(f"→ **{_coupon_per_period*100:.4f}% per period**")
+        st.caption(tr("setup_coupon_period_caption", v=_coupon_per_period * 100))
         # number_input (not int slider): term sheets use sub-percent barriers
         # (e.g. 55.5%, 53.7%) which an int slider silently truncates.
         coupon_bar_pct = st.number_input(
-            "Coupon barrier (%)", 0.0, 100.0,
+            tr("setup_coupon_barrier"), 0.0, 100.0,
             value=round(base.coupon_barrier * 100, 4), step=0.5, format="%.2f",
         )
-        memory = st.toggle("Memory coupon", value=base.memory)
+        memory = st.toggle(tr("setup_memory_coupon"), value=base.memory)
 
     with col3:
         # Bonus / capital-protected notes disable autocall by setting the
@@ -495,47 +502,49 @@ if st.session_state["page"] == "setup":
         # default so such configs load without a ValueAboveMax crash.
         _ac_val = round(base.autocall_barrier * 100, 4)
         autocall_bar_pct = st.number_input(
-            "Autocall barrier (%)", 50.0, 300.0,
+            tr("setup_autocall_barrier"), 50.0, 300.0,
             value=min(max(_ac_val, 50.0), 300.0), step=0.5, format="%.2f",
         )
         ki_bar_pct = st.number_input(
-            "Knock-in barrier (%)", 0.0, 100.0,
+            tr("setup_ki_barrier"), 0.0, 100.0,
             value=round(base.knock_in_barrier * 100, 4), step=0.5, format="%.2f",
         )
 
     st.divider()
 
     # ── Basket types ──────────────────────────────────────────────────────
-    st.subheader("Basket Types")
+    st.subheader(tr("setup_basket_types"))
     basket_opts = ["worst_of", "best_of", "average"]
+    _basket_label = {
+        "worst_of": tr("basket_worst_of"),
+        "best_of":  tr("basket_best_of"),
+        "average":  tr("basket_average"),
+    }
     bc1, bc2, bc3 = st.columns(3)
     with bc1:
-        coupon_basket = st.selectbox("Coupon barrier check", basket_opts,
-                                      index=basket_opts.index(base.coupon_basket))
+        coupon_basket = st.selectbox(tr("setup_coupon_check"), basket_opts,
+                                      index=basket_opts.index(base.coupon_basket),
+                                      format_func=lambda b: _basket_label.get(b, b))
     with bc2:
-        autocall_basket = st.selectbox("Autocall trigger check", basket_opts,
-                                        index=basket_opts.index(base.autocall_basket))
+        autocall_basket = st.selectbox(tr("setup_autocall_check"), basket_opts,
+                                        index=basket_opts.index(base.autocall_basket),
+                                        format_func=lambda b: _basket_label.get(b, b))
     with bc3:
         # Best-of capital rescue clause (e.g. BBVA XS3378405743 Final Payout xi):
         # at maturity, capital is returned at par if the BEST performer is at or
         # above the rescue barrier, even when the knock-in barrier was breached.
         # Off = standard worst-of note: knock-in alone determines the loss.
         rescue_on = st.toggle(
-            "Best-of capital rescue at maturity",
+            tr("setup_rescue_toggle"),
             value=(base.final_basket == "best_of"),
-            help="If ON: even when the knock-in barrier is breached, capital is "
-                 "returned at 100% as long as the best-performing underlying "
-                 "finishes at or above the rescue barrier (BBVA-style 'Barrier "
-                 "and Knock-in' clause). If OFF: standard worst-of redemption — "
-                 "a knock-in always results in delivery of the worst performer.",
+            help=tr("setup_rescue_help"),
         )
         if rescue_on:
             rescue_bar_pct = st.number_input(
-                "Rescue barrier (% of initial)", 50.0, 150.0,
+                tr("setup_rescue_barrier"), 50.0, 150.0,
                 value=round(getattr(base, "final_redemption_barrier", 1.0) * 100, 4),
                 step=0.5, format="%.2f",
-                help="Best performer must finish at or above this level for the "
-                     "rescue to apply. Term sheets typically use 100%.",
+                help=tr("setup_rescue_barrier_help"),
             )
         else:
             rescue_bar_pct = 100.0
@@ -548,36 +557,30 @@ if st.session_state["page"] == "setup":
     # pass-through-only anymore.
     _adv_active = bool(getattr(base, "autocall_step_down", 0.0)
                        or getattr(base, "coupon_at_autocall_only", False))
-    with st.expander("Advanced — Growth / Classic Autocall (step-down barrier, premium at call)",
+    with st.expander(tr("setup_advanced_expander"),
                      expanded=_adv_active):
         ac1, ac2, ac3 = st.columns(3)
         with ac1:
             step_down_pct = st.number_input(
-                "Autocall step-down per period (%)", 0.0, 10.0,
+                tr("setup_step_down"), 0.0, 10.0,
                 value=round(getattr(base, "autocall_step_down", 0.0) * 100, 4),
                 step=0.5, format="%.2f",
-                help="The autocall barrier declines by this amount each period "
-                     "from the first callable observation. 0 = constant barrier "
-                     "(plain Phoenix).",
+                help=tr("setup_step_down_help"),
             )
         with ac2:
             _base_floor = getattr(base, "autocall_floor", None)
             floor_pct = st.number_input(
-                "Autocall barrier floor (%)", 0.0, 100.0,
+                tr("setup_autocall_floor"), 0.0, 100.0,
                 value=round((_base_floor if _base_floor is not None else 0.0) * 100, 4),
                 step=0.5, format="%.2f",
-                help="Minimum barrier level under step-down. 0 = no floor. "
-                     "Ignored when step-down is 0.",
+                help=tr("setup_autocall_floor_help"),
             )
         with ac3:
             st.markdown("<br>", unsafe_allow_html=True)
             premium_at_call = st.toggle(
-                "Premium only at autocall",
+                tr("setup_premium_at_call"),
                 value=bool(getattr(base, "coupon_at_autocall_only", False)),
-                help="Growth autocall: no periodic coupon — an accrued premium of "
-                     "coupon p.a. × elapsed periods is paid as a lump only when "
-                     "the note autocalls (zero if held to maturity). "
-                     "E.g. Citi XS3096699163.",
+                help=tr("setup_premium_at_call_help"),
             )
         if step_down_pct > 0:
             _sd_preview = NoteTerms(
@@ -587,14 +590,14 @@ if st.session_state["page"] == "setup":
                 autocall_step_down=step_down_pct / 100.0,
                 autocall_floor=(floor_pct / 100.0) if floor_pct > 0 else None,
             ).autocall_barrier_schedule()
-            st.caption("Barrier schedule: " +
+            st.caption(tr("setup_barrier_schedule") +
                        " → ".join(f"{lvl:.0%}" for lvl in _sd_preview))
 
     st.divider()
 
     # ── Issuer (optional) ────────────────────────────────────────────────
-    st.subheader("Issuer (optional)")
-    st.caption("Name of the bank or institution that issued this note — used for display only.")
+    st.subheader(tr("setup_issuer_header"))
+    st.caption(tr("setup_issuer_caption"))
     # Source of truth: loaded_terms (from JSON) takes priority over widget state.
     # Push the loaded issuer into session_state before the widget renders, so the
     # Streamlit keyed-widget problem (value= is ignored on reruns) doesn't drop it.
@@ -602,7 +605,7 @@ if st.session_state["page"] == "setup":
     if loaded_terms is not None and _base_issuer and st.session_state.get("setup_issuer") != _base_issuer:
         st.session_state["setup_issuer"] = _base_issuer
     issuer_input = st.text_input(
-        "Issuer name",
+        tr("setup_issuer_name"),
         value=_base_issuer,
         placeholder="e.g. BBVA, HSBC, BNP Paribas",
         key="setup_issuer",
@@ -619,8 +622,8 @@ if st.session_state["page"] == "setup":
     st.divider()
 
     # ── Issue Date (optional) ─────────────────────────────────────────────
-    st.subheader("Issue Date (optional)")
-    st.caption("If set to today or earlier, a **Current Performance** tab will appear on the dashboard.")
+    st.subheader(tr("setup_issue_date_header"))
+    st.caption(tr("setup_issue_date_caption"))
     import datetime as _dt2
 
     # Source of truth: loaded_terms (from JSON) takes priority over widget state.
@@ -638,64 +641,66 @@ if st.session_state["page"] == "setup":
         st.session_state["setup_issue_date"] = _base_issue
 
     issue_date_input = st.date_input(
-        "Note issue date (leave blank for hypothetical notes)",
+        tr("setup_issue_date_input"),
         value=_base_issue,
         min_value=None,
         max_value=None,
         key="setup_issue_date",
-        help="Populated automatically from JSON config. Set to a past or current date to enable live tracking.",
+        help=tr("setup_issue_date_help"),
     )
 
     # A note is live if it has an issue date on or before today
     _issue_is_live = bool(issue_date_input) and issue_date_input <= _dt2.date.today()
     if _issue_is_live:
-        st.success(f"Live note · issued {issue_date_input} · **Current Performance** tab will appear on the dashboard.")
+        st.success(tr("setup_live_note", date=issue_date_input))
     elif issue_date_input:
-        st.info("Issue date is in the future — Current Performance tab will appear once trading begins.")
+        st.info(tr("setup_future_issue"))
 
     st.divider()
 
     # ── Simulation ────────────────────────────────────────────────────────
-    st.subheader("Simulation")
+    st.subheader(tr("setup_simulation_header"))
     sc1, sc2 = st.columns(2)
     with sc1:
-        n_paths = st.slider("Monte Carlo paths", 1000, 50000,
+        n_paths = st.slider(tr("setup_mc_paths"), 1000, 50000,
                              st.session_state["n_paths"], step=1000)
     with sc2:
-        seed = int(st.number_input("Random seed", value=int(st.session_state["seed"])))
+        seed = int(st.number_input(tr("setup_random_seed"), value=int(st.session_state["seed"])))
 
     st.divider()
 
     # ── Historical Data ───────────────────────────────────────────────────────────────
-    st.subheader("Historical Data")
+    st.subheader(tr("setup_historical_data"))
     # Always pull the maximum available history. The backtest benefits from
     # every available issue date, and the calibration window below controls
     # how much of it is actually used for Heston parameter estimation.
     history_years = None
-    st.caption("Price history: **Max (all available)** — aligned across underlyings, "
-               "so the common start is set by the shortest-history asset (e.g. latest IPO).")
+    st.caption(tr("setup_price_history_caption"))
 
     _calib_opts   = [1.0, 2.0, 3.0, 5.0, 10.0]
-    _calib_labels = ["1 Year", "2 Years", "3 Years", "5 Years", "10 Years"]
+    _calib_labels = {
+        1.0:  tr("setup_calib_1y"),  2.0: tr("setup_calib_2y"),
+        3.0:  tr("setup_calib_3y"),  5.0: tr("setup_calib_5y"),
+        10.0: tr("setup_calib_10y"),
+    }
     _calib_cur    = st.session_state.get("calib_years", 5.0)
     _calib_default_idx = _calib_opts.index(_calib_cur) if _calib_cur in _calib_opts else 3
-    _calib_choice = st.radio(
-        "Calibration window (Heston params estimated on this recent period only)",
-        _calib_labels,
+    calib_years = st.radio(
+        tr("setup_calib_window"),
+        _calib_opts,
         index=_calib_default_idx,
         horizontal=True,
-        help="Keep short (2–5Y) for forward-looking drift and vol. "
-             "Longer windows drag mu negative when they include major crashes (e.g. 2008 for bank stocks).",
+        format_func=lambda y: _calib_labels.get(y, str(y)),
+        help=tr("setup_calib_window_help"),
     )
-    calib_years = _calib_opts[_calib_labels.index(_calib_choice)]
 
     st.divider()
 
     # ── Confirm ───────────────────────────────────────────────────────────────────
     if len(selected_labels) < 1:
-        st.warning("Select at least 1 underlying to continue.")
+        st.warning(tr("setup_select_min_one"))
     else:
-        if st.button("Confirm & Load Dashboard", type="primary",
+        if st.button(tr("setup_confirm_btn"), type="primary",
                      use_container_width=True):
             custom_tickers = st.session_state.get("custom_tickers", {})
             # Build reverse map including custom tickers
@@ -770,7 +775,7 @@ elif st.session_state["page"] == "dashboard":
     tickers_tuple    = tuple(selected_tickers.items())
 
     # ── Sidebar ───────────────────────────────────────────────────────────
-    st.sidebar.header("Note")
+    st.sidebar.header(tr("sidebar_note"))
     st.sidebar.markdown(f"**{terms.name}**")
     if getattr(terms, "issuer", ""):
         _sb_logo = get_issuer_logo_url(terms.issuer)
@@ -788,7 +793,7 @@ elif st.session_state["page"] == "dashboard":
         f"{terms.coupon_pa*100:.2g}% p.a."
     )
     st.sidebar.download_button(
-        "Download config (JSON)",
+        tr("sidebar_download_config"),
         data=terms.to_json(),
         file_name="note_config.json",
         mime="application/json",
@@ -796,11 +801,10 @@ elif st.session_state["page"] == "dashboard":
     # ── Branding JSON uploader ────────────────────────────────────────────
     # Persist the parsed branding dict in session state so it survives reruns.
     _branding_upload = st.sidebar.file_uploader(
-        "Corporate branding (JSON) — optional",
+        tr("sidebar_branding_label"),
         type=["json"],
         key="branding_upload",
-        help="Upload a branding JSON to customise the PDF with your firm's colors and logo. "
-             "Schema: {firm_name, primary_color, accent_color, logo_url}",
+        help=tr("sidebar_branding_help"),
     )
     if _branding_upload is not None:
         try:
@@ -808,35 +812,34 @@ elif st.session_state["page"] == "dashboard":
             _branding_raw = _branding_upload.read().decode()
             st.session_state["branding"] = _json.loads(_branding_raw)
         except Exception as _be:
-            st.sidebar.warning(f"Branding JSON invalid: {_be}")
+            st.sidebar.warning(tr("sidebar_branding_invalid", e=_be))
     _branding_dict = st.session_state.get("branding")
     if _branding_dict:
         _bfirm = _branding_dict.get("firm_name", "")
         _bcolor = _branding_dict.get("primary_color", "")
-        st.sidebar.caption(f"Branding: **{_bfirm}** {_bcolor}")
-        if st.sidebar.button("Clear branding", key="clear_branding"):
+        st.sidebar.caption(tr("sidebar_branding_caption", firm=_bfirm, color=_bcolor))
+        if st.sidebar.button(tr("sidebar_clear_branding"), key="clear_branding"):
             st.session_state["branding"] = None
             st.rerun()
 
     _pdf_btn = st.sidebar.button(
-        "Generate PDF Report",
+        tr("sidebar_generate_pdf"),
         disabled=not bool(st.session_state.get("results")),
-        help="Builds the report, then a download button appears below. "
-             "Run a simulation first to enable it.",
+        help=tr("sidebar_generate_pdf_help"),
     )
     # Placeholder so the generated download button appears right here, directly
     # under the trigger button — not buried at the bottom of the sidebar.
     _pdf_slot = st.sidebar.empty()
     st.sidebar.divider()
-    if st.sidebar.button("Reconfigure Note"):
+    if st.sidebar.button(tr("sidebar_reconfigure")):
         st.session_state["page"]             = "setup"
         st.session_state["results"]          = None
         st.session_state["loaded_terms_dict"] = None
         st.rerun()
-    run_button = st.sidebar.button("Run Simulation", type="primary")
+    run_button = st.sidebar.button(tr("run_simulation"), type="primary")
 
     # ── Title ─────────────────────────────────────────────────────────────
-    st.title("Multi-Asset Structured Note Simulator")
+    st.title(tr("page_title"))
     _issuer_str = getattr(terms, "issuer", "") or ""
     _issuer_logo = get_issuer_logo_url(_issuer_str) if _issuer_str else None
     if _issuer_str:
@@ -850,8 +853,8 @@ elif st.session_state["page"] == "dashboard":
             f"<b>{terms.name}</b> — "
             f"{', '.join(selected_tickers.values())} · "
             f"{int(terms.maturity*12)}M · {terms.n_obs} obs · "
-            f"Coupon {terms.coupon_pa*100:.2g}% p.a. · "
-            f"{'Memory' if terms.memory else 'No memory'} · "
+            f"{tr('metric_coupon_pa')} {terms.coupon_pa*100:.2g}% · "
+            f"{tr('dash_memory') if terms.memory else tr('dash_no_memory')} · "
             f"KI {terms.knock_in_barrier:.0%} · Autocall {terms.autocall_barrier:.0%}</div>",
             unsafe_allow_html=True,
         )
@@ -860,8 +863,8 @@ elif st.session_state["page"] == "dashboard":
             f"**{terms.name}** — "
             f"{', '.join(selected_tickers.values())} · "
             f"{int(terms.maturity*12)}M · {terms.n_obs} obs · "
-            f"Coupon {terms.coupon_pa*100:.2g}% p.a. · "
-            f"{'Memory' if terms.memory else 'No memory'} · "
+            f"{tr('metric_coupon_pa')} {terms.coupon_pa*100:.2g}% · "
+            f"{tr('dash_memory') if terms.memory else tr('dash_no_memory')} · "
             f"KI {terms.knock_in_barrier:.0%} · Autocall {terms.autocall_barrier:.0%}"
         )
 
@@ -872,8 +875,8 @@ elif st.session_state["page"] == "dashboard":
             _exp_issuer_html = (
                 f'<img src="{_exp_logo}" height="24" style="vertical-align:middle;margin-right:8px" '
                 f'onerror="this.style.display=\'none\'">'
-                f"<strong>Issuer:</strong> {terms.issuer}"
-            ) if _exp_logo else f"<strong>Issuer:</strong> {terms.issuer}"
+                f"<strong>{tr('structure_issuer_label')}</strong> {terms.issuer}"
+            ) if _exp_logo else f"<strong>{tr('structure_issuer_label')}</strong> {terms.issuer}"
             st.markdown(_exp_issuer_html, unsafe_allow_html=True)
 
         # Underlyings table with logos
@@ -897,8 +900,8 @@ elif st.session_state["page"] == "dashboard":
             "<table style='border-collapse:collapse;width:100%'>"
             "<thead><tr>"
             "<th style='padding:4px 8px;text-align:left;border-bottom:1px solid #ddd;width:36px;'></th>"
-            "<th style='padding:4px 8px;text-align:left;border-bottom:1px solid #ddd;'>Display Name</th>"
-            "<th style='padding:4px 8px;text-align:left;border-bottom:1px solid #ddd;'>yfinance Symbol</th>"
+            f"<th style='padding:4px 8px;text-align:left;border-bottom:1px solid #ddd;'>{tr('col_display_name')}</th>"
+            f"<th style='padding:4px 8px;text-align:left;border-bottom:1px solid #ddd;'>{tr('col_yf_symbol')}</th>"
             "</tr></thead>"
             f"<tbody>{_ul_rows_html}</tbody>"
             "</table>",
@@ -921,7 +924,7 @@ elif st.session_state["page"] == "dashboard":
         obs_df = pd.DataFrame({
             tr("col_period"): range(1, terms.n_obs + 1),
             tr("col_time_y"): [f"{t:.4g}" for t in terms.obs_times()],
-            tr("col_autocall_eligible"): ["Yes" if i + 1 >= terms.autocall_start_period else "Coupon only"
+            tr("col_autocall_eligible"): [tr("autocall_eligible_yes") if i + 1 >= terms.autocall_start_period else tr("autocall_eligible_coupon_only")
                                    for i in range(terms.n_obs)],
         })
         st.dataframe(obs_df, use_container_width=True, hide_index=True)
@@ -939,7 +942,7 @@ elif st.session_state["page"] == "dashboard":
 
     # ── Run simulation (triggered by sidebar button) ──────────────────────
     if run_button:
-        with st.spinner("Running Heston calibration and Monte Carlo simulation…"):
+        with st.spinner(tr("mc_run_spinner")):
             _hist_years = st.session_state.get("history_years", None)
             # Calibrate drift/vol/correlations on ADJUSTED closes (total-return
             # dynamics — ex-date jumps must not pollute the estimates) ...
@@ -981,8 +984,7 @@ elif st.session_state["page"] == "dashboard":
             try:
                 _divs = _load_dividends_cached(tickers_tuple)
             except Exception as _div_e:
-                st.warning(f"Could not load dividend history ({_div_e}) — "
-                           "simulating without dividend jumps.")
+                st.warning(tr("mc_div_warning", e=_div_e))
                 _divs = {}
             _div_sched = build_dividend_schedule(
                 [_divs.get(p.name, pd.Series(dtype=float)) for p in cal_result.params],
@@ -1074,9 +1076,9 @@ elif st.session_state["page"] == "dashboard":
         _ac_sched_t = _ac_sched_st = None
 
     if _has_live:
-        tab_mc, tab_bt, tab_live = st.tabs(["Monte Carlo", "Historical Backtest", "Current Performance"])
+        tab_mc, tab_bt, tab_live = st.tabs([tr("tab_monte_carlo"), tr("tab_historical_backtest"), tr("tab_current_performance")])
     else:
-        tab_mc, tab_bt = st.tabs(["Monte Carlo", "Historical Backtest"])
+        tab_mc, tab_bt = st.tabs([tr("tab_monte_carlo"), tr("tab_historical_backtest")])
         tab_live = None
 
     # ══════════════════════════════════════════════════════════════════
@@ -1084,13 +1086,13 @@ elif st.session_state["page"] == "dashboard":
     # ══════════════════════════════════════════════════════════════════
     with tab_mc:
         if not _has_sim:
-            st.info("Click **Run Simulation** in the sidebar to run the Monte Carlo engine.")
-            with st.spinner(f"Pre-fetching market data for {', '.join(selected_tickers.values())}…"):
+            st.info(tr("mc_click_run_info"))
+            with st.spinner(tr("mc_prefetch_spinner", tickers=', '.join(selected_tickers.values()))):
                 try:
                     _load_prices(tickers_tuple, years=st.session_state.get("history_years", None))
-                    st.success("Market data ready. Click **Run Simulation** in the sidebar.")
+                    st.success(tr("mc_market_ready"))
                 except Exception as e:
-                    st.error(f"Failed to fetch prices: {e}")
+                    st.error(tr("mc_fetch_failed", e=e))
         else:
             st.success(tr("sim_complete"))
             # Cache MC figures for PDF generation (used by sidebar PDF button)
@@ -1104,38 +1106,21 @@ elif st.session_state["page"] == "dashboard":
                     autocall_barrier=run_terms.autocall_barrier,
                     autocall_schedule=_ac_sched_t,
                 ),
-                "corr": build_corr_heatmap(R["corr_SS"], asset_names, "Input"),
+                "corr": build_corr_heatmap(R["corr_SS"], asset_names, tr("corr_input")),
             }
             # ── Summary metrics ───────────────────────────────────────
             st.header(tr("summary_stats_header"))
             c1, c2, c3, c4, c5 = st.columns(5)
             c1.metric(tr("expected_irr_pa"),  f"{R['expected_irr']:.2%}",
-                      help="Average of per-path annualized returns: mean(return ÷ holding time). "
-                           "Early autocalls divide a small gain by a short holding period, so they "
-                           "contribute large positive IRRs; knock-in losses are spread over the full "
-                           "maturity. This can be positive even when Expected Total Return is "
-                           "negative (average of ratios ≠ ratio of averages), and implicitly assumes "
-                           "autocall proceeds are reinvested at similar rates.")
+                      help=tr("mc_help_expected_irr"))
             c2.metric(tr("expected_total_return"), f"{R['expected_total_return']:.2%}",
-                      help="Average money outcome per 1.00 invested over the note's life: "
-                           "mean(payout − 1) = coupons received + principal returned − 1. "
-                           "Not annualized. The more conservative headline number.")
+                      help=tr("mc_help_expected_return"))
             c3.metric(tr("expected_coupon_metric"), f"{R['expected_coupon']:.2%}",
-                      help="Average total coupon income received over the note's life, per path "
-                           "(coupons across all periods, including memory catch-up payments). "
-                           "Expressed as a fraction of par. Does not include principal redemption.")
+                      help=tr("mc_help_expected_coupon"))
             c4.metric(tr("prob_autocalled"),   f"{R['prob_autocall']:.2%}",
-                      help="Probability the issuer exercises the call at any observation date "
-                           "before (or at) maturity. An autocall terminates the note early, "
-                           "returning principal plus the period coupon. Higher autocall barriers "
-                           "reduce this probability; the autocall start period locks out early "
-                           "observations from triggering.")
+                      help=tr("mc_help_prob_autocall"))
             c5.metric(tr("prob_knock_in_metric"), f"{R['prob_knock_in_total']:.2%}",
-                      help="Probability of capital loss at maturity: knock-in barrier breached "
-                           "AND the final redemption condition not met. For notes with a best-of "
-                           "final basket (e.g. BBVA XS3378405743), paths where the best performer "
-                           "finishes ≥ the redemption barrier are 'rescued' to par even if the "
-                           "worst breached the KI level — those are excluded here.")
+                      help=tr("mc_help_prob_knock_in"))
             if R.get("prob_rescued", 0) > 0:
                 st.caption(
                     tr("barrier_rescued_caption",
@@ -1151,7 +1136,7 @@ elif st.session_state["page"] == "dashboard":
                     tr("col_period"):    range(1, run_terms.n_obs + 1),
                     tr("col_time_y"):    [f"{t:.3g}" for t in obs_times_l],
                     tr("col_p_autocall"): [f"{p:.2%}" for p in prob_by_period],
-                    tr("col_eligible"): ["Yes" if i + 1 >= run_terms.autocall_start_period else "No"
+                    tr("col_eligible"): [tr("yes") if i + 1 >= run_terms.autocall_start_period else tr("no_str")
                                      for i in range(run_terms.n_obs)],
                 })
                 st.dataframe(ac_df, use_container_width=True, hide_index=True)
@@ -1197,11 +1182,11 @@ elif st.session_state["page"] == "dashboard":
                 st.subheader(tr("single_path_subheader"))
                 max_path = sim_prices.shape[0] - 1
                 pc1, pc2, pc3 = st.columns(3)
-                if pc1.button("Random"):
+                if pc1.button(tr("btn_random")):
                     st.session_state["path_num"] = random.randint(0, max_path)
-                if pc2.button("Prev"):
+                if pc2.button(tr("btn_prev")):
                     st.session_state["path_num"] = max(0, st.session_state["path_num"] - 1)
-                if pc3.button("Next"):
+                if pc3.button(tr("btn_next")):
                     st.session_state["path_num"] = min(max_path, st.session_state["path_num"] + 1)
 
                 pn = st.session_state["path_num"]
@@ -1245,19 +1230,11 @@ elif st.session_state["page"] == "dashboard":
 
                 mc1, mc2, mc3 = st.columns(3)
                 mc1.metric(tr("metric_principal"), f"{principal:.2%}",
-                           help="Principal returned on this path as a fraction of par: 100% if "
-                                "the note autocalled or matured without a knock-in; the worst-of "
-                                "final performance if knock-in was triggered without a best-of "
-                                "rescue.")
+                           help=tr("mc_help_principal"))
                 mc2.metric(tr("metric_coupons"),   f"{coupons:.2%}",
-                           help="Total coupon income received on this single path as a fraction "
-                                "of par, summing all paid periods (including memory catch-up "
-                                "payments if applicable).")
+                           help=tr("mc_help_coupons"))
                 mc3.metric(tr("metric_irr_pa"),    f"{irr:.2%}",
-                           help="Simple annualised return for this single path: "
-                                "(principal + coupons − 1) ÷ holding time. "
-                                "Short autocall paths can show very high IRRs because the same "
-                                "coupon income is divided by a small holding period.")
+                           help=tr("mc_help_irr_pa"))
 
                 # Per-asset final performance with logos
                 _disp_to_sym_pe = {disp: sym for sym, disp in selected_tickers.items()}
@@ -1276,7 +1253,7 @@ elif st.session_state["page"] == "dashboard":
                         f"{_pe_logo_html}<b style='vertical-align:middle;'>{_pe_name}</b>",
                         unsafe_allow_html=True,
                     )
-                    _pe_col.metric("Final perf.", f"{_pe_final:.1%}")
+                    _pe_col.metric(tr("mc_final_perf"), f"{_pe_final:.1%}")
 
             with mc_tab4:
                 st.subheader(tr("corr_diag_subheader"))
@@ -1284,18 +1261,16 @@ elif st.session_state["page"] == "dashboard":
                 realized_corr = R["sim_results"]["realized_corr"]
                 diff          = realized_corr - corr_SS
                 hm1, hm2, hm3 = st.columns(3)
-                hm1.plotly_chart(build_corr_heatmap(corr_SS,       asset_names, "Input"),    use_container_width=True)
-                hm2.plotly_chart(build_corr_heatmap(realized_corr, asset_names, "Realized"), use_container_width=True)
-                hm3.plotly_chart(build_corr_heatmap(diff, asset_names, "Difference",
+                hm1.plotly_chart(build_corr_heatmap(corr_SS,       asset_names, tr("corr_input")),    use_container_width=True)
+                hm2.plotly_chart(build_corr_heatmap(realized_corr, asset_names, tr("corr_realized")), use_container_width=True)
+                hm3.plotly_chart(build_corr_heatmap(diff, asset_names, tr("corr_difference"),
                                                       zmin=-0.1, zmax=0.1),                  use_container_width=True)
                 max_err = float(np.max(np.abs(diff - np.diag(np.diag(diff)))))
+                _corr_quality = (tr("corr_quality_good") if max_err < 0.02
+                                 else tr("corr_quality_acceptable") if max_err < 0.05
+                                 else tr("corr_quality_elevated"))
                 (st.success if max_err < 0.05 else st.warning)(
-                    f"Max off-diagonal error: **{max_err:.4f}** "
-                    f"({'good' if max_err < 0.02 else 'acceptable' if max_err < 0.05 else 'elevated — consider more paths'}). "
-                    f"This is the largest absolute difference between a target and realized "
-                    f"pairwise correlation. Values < 0.05 are acceptable for pricing; "
-                    f"> 0.05 suggests the Cholesky decomposition is not well converged — "
-                    f"try increasing Monte Carlo paths."
+                    tr("corr_max_err_message", err=max_err, quality=_corr_quality)
                 )
                 st.markdown("---")
                 st.subheader(tr("calib_heston_subheader"))
@@ -1312,14 +1287,14 @@ elif st.session_state["page"] == "dashboard":
                         if _logo_url else ""
                     )
                     rows.append({
-                        "Asset": f"{_logo_html}{p.name}", "S₀": f"{p.S0:.1f}",
+                        tr("asset"): f"{_logo_html}{p.name}", "S₀": f"{p.S0:.1f}",
                         "μ p.a.": f"{p.mu*100:.1f}%",
                         "V₀ σ":   f"{np.sqrt(p.V0)*100:.1f}%",
                         "θ σ LR": f"{np.sqrt(p.theta)*100:.1f}%",
                         "κ": f"{p.kappa:.3f}", "ξ": f"{p.xi:.3f}", "ρ": f"{p.rho:.3f}",
-                        "Feller": "Pass" if ok else "Warn",
+                        tr("heston_col_feller"): tr("heston_feller_pass") if ok else tr("heston_feller_warn"),
                     })
-                _heston_cols = ["Asset", "S₀", "μ p.a.", "V₀ σ", "θ σ LR", "κ", "ξ", "ρ", "Feller"]
+                _heston_cols = [tr("asset"), "S₀", "μ p.a.", "V₀ σ", "θ σ LR", "κ", "ξ", "ρ", tr("heston_col_feller")]
                 _th_cells = "".join(
                     f"<th style='padding:4px 8px;text-align:left;border-bottom:1px solid #ddd;white-space:nowrap;'>{c}</th>"
                     for c in _heston_cols
@@ -1338,19 +1313,7 @@ elif st.session_state["page"] == "dashboard":
                     f"</table></div>",
                     unsafe_allow_html=True,
                 )
-                st.caption(
-                    "**Column guide:** "
-                    "**μ** = arithmetic drift (annualised); "
-                    "**V₀ σ** = current implied vol (√V₀); "
-                    "**θ σ LR** = long-run vol mean (√θ, the level V reverts toward); "
-                    "**κ** = mean-reversion speed (higher → vol snaps back faster; typical equity: 1–5); "
-                    "**ξ** = vol-of-vol, volatility of the variance process (higher → fatter tails; typical: 0.1–0.8); "
-                    "**ρ** = leverage effect, correlation between spot and variance shocks "
-                    "(negative for equities — down moves spike vol; typical: −0.7 to −0.3); "
-                    "**Feller** = 'Pass' if 2κθ > ξ² (Feller condition), ensuring variance stays positive; "
-                    "'Warn' means variance can touch zero, which is a known Heston model artefact and "
-                    "generally has negligible pricing impact."
-                )
+                st.caption(tr("heston_column_guide"))
                 st.info(tr("t_copula_dof", v=R.get('t_dof', 'N/A')))
 
 
@@ -1386,13 +1349,12 @@ elif st.session_state["page"] == "dashboard":
         )
 
         if _all_prices is None:
-            st.warning("Could not load price history for the backtest.")
+            st.warning(tr("bt_no_price_history"))
         elif not _bt_feasible:
             st.warning(
-                f"**Not enough history for this note.** A {terms.maturity:g}Y note needs "
-                f"one full {terms.maturity:g}-year calendar window of realized prices after "
-                f"the first issue date, but the aligned history across all underlyings only "
-                f"spans {_all_prices.index[0].date()} → {_all_prices.index[-1].date()}."
+                tr("bt_not_enough_history", mat=terms.maturity,
+                   start=_all_prices.index[0].date(),
+                   end=_all_prices.index[-1].date())
             )
 
         if not _bt_feasible:
@@ -1474,7 +1436,7 @@ elif st.session_state["page"] == "dashboard":
             bt_start_str = str(_confirmed_start) if _confirmed_start else None
             bt_end_str   = str(_confirmed_end)   if _confirmed_end   else None
 
-            with st.spinner("Running historical backtest…"):
+            with st.spinner(tr("bt_running")):
                 try:
                     bt, bt_summary = _run_backtest_cached(
                         tickers_tuple, terms.to_json(),
@@ -1483,48 +1445,40 @@ elif st.session_state["page"] == "dashboard":
                         history_years=st.session_state.get("history_years", None),
                     )
                 except Exception as e:
-                    st.error(f"Backtest failed: {e}")
+                    st.error(tr("bt_failed", e=e))
                     bt, bt_summary = pd.DataFrame(), {}
 
         if bt.empty:
-            st.warning("No backtest results. Check underlyings have sufficient history.")
+            st.warning(tr("bt_no_results"))
         else:
+            # Outcome labels are localized for display; the color_map keys use the
+            # same translated strings so the chart legend and palette stay aligned.
+            _bt_maturity   = tr("bt_outcome_maturity")
+            _bt_knock_in   = tr("bt_outcome_knock_in")
             bt["Outcome"] = bt["Call Quarter"].map(
-                {0: "Maturity", **{i: f"Autocalled P{i}" for i in range(1, terms.n_obs + 1)}}
+                {0: _bt_maturity, **{i: tr("bt_outcome_autocalled_p", i=i) for i in range(1, terms.n_obs + 1)}}
             )
-            bt.loc[(bt["Call Quarter"] == 0) & bt["Knock-in"], "Outcome"] = "Knock-in"
+            bt.loc[(bt["Call Quarter"] == 0) & bt["Knock-in"], "Outcome"] = _bt_knock_in
             # Navy/blue institutional palette (matches charts.py + PDF):
             # Maturity = warm grey, Knock-in = red, Autocalls = navy→light-blue ramp.
             color_map = {
-                "Maturity": "#6b7280", "Knock-in": "#dc2626",
-                **{f"Autocalled P{i}":
+                _bt_maturity: "#6b7280", _bt_knock_in: "#dc2626",
+                **{tr("bt_outcome_autocalled_p", i=i):
                    f"hsl(217,{max(35, 70 - i*3)}%,{min(70, 28 + i*5)}%)"
                    for i in range(1, terms.n_obs + 1)},
             }
 
             b1, b2, b3, b4, b5 = st.columns(5)
             b1.metric(tr("bt_metric_issue_dates"),    str(bt_summary.get("n_issues", 0)),
-                      help="Number of distinct historical issue dates tested. Each date seeds "
-                           "an independent note life using the actual realized price path of "
-                           "the underlyings. The backtest slides a window of length = maturity "
-                           "across the full price history, one issue date per trading day.")
+                      help=tr("bt_help_issue_dates"))
             b2.metric(tr("bt_metric_mean_irr"),       f"{bt_summary.get('mean_irr', 0):.2%}",
-                      help="Average of per-issue simple annualised returns: "
-                           "mean((payout − 1) ÷ holding time). Simple annualisation — not "
-                           "compound. Skewed upward by early autocalls that divide coupon "
-                           "income by a short holding period.")
+                      help=tr("bt_help_mean_irr"))
             b3.metric(tr("bt_metric_median_irr"),     f"{bt_summary.get('median_irr', 0):.2%}",
-                      help="Median simple annualised return across all historical issue dates. "
-                           "Less sensitive than the mean to the skew introduced by very early "
-                           "autocalls; a better central-tendency estimate for most note structures.")
+                      help=tr("bt_help_median_irr"))
             b4.metric(tr("bt_metric_knock_in_pct"),   f"{bt_summary.get('prob_knock_in', 0):.1%}",
-                      help="Fraction of historical issue dates where the knock-in barrier was "
-                           "breached AND the final redemption condition was not met, resulting "
-                           "in a capital loss. Notes with a best-of rescue clause show a lower "
-                           "figure here than the raw barrier-breach rate.")
+                      help=tr("bt_help_knock_in_pct"))
             b5.metric(tr("bt_metric_autocalled_pct"), f"{bt_summary.get('prob_called', 0):.1%}",
-                      help="Fraction of historical issue dates where the note was called early "
-                           "at an autocall observation date before maturity.")
+                      help=tr("bt_help_autocalled_pct"))
 
             _bt_outcome_fig = build_backtest_outcome_bar(bt, color_map, tr)
             _bt_irr_fig     = build_backtest_irr_scatter(bt, color_map, tr)
@@ -1598,7 +1552,7 @@ elif st.session_state["page"] == "dashboard":
                             use_container_width=True,
                         )
                 except Exception as e:
-                    st.error(f"Could not build path: {e}")
+                    st.error(tr("bt_could_not_build_path", e=e))
 
 
     # ══════════════════════════════════════════════════════════════════
@@ -1636,14 +1590,13 @@ elif st.session_state["page"] == "dashboard":
                 _anchor_live = _full_prices.index[_issue_idx_full]
                 if (_anchor_live - _issue_ts).days > 7:
                     st.warning(
-                        f"Aligned price history only starts {_anchor_live.date()} — after the "
-                        f"stated issue date {_issue_ts.date()}. The initial fixing uses the "
-                        f"first available close, so levels may not match the term sheet."
+                        tr("live_history_warning",
+                           anchor=_anchor_live.date(), issue=_issue_ts.date())
                     )
                 _live_prices = _full_prices.iloc[_issue_idx_full:]
 
                 if len(_live_prices) < 2:
-                    st.warning("Not enough live price data since issue date.")
+                    st.warning(tr("live_not_enough_data"))
                 else:
                     _S0          = _full_prices.iloc[_issue_idx_full].values.astype(float)
                     _today_slice = _live_prices[_live_prices.index <= _today_ts]
@@ -1658,32 +1611,19 @@ elif st.session_state["page"] == "dashboard":
                     _lc1, _lc2, _lc3, _lc4 = st.columns(4)
                     _lc1.metric(tr("live_metric_wof_today"),  f"{_wof_today:.1%}",
                                 delta=tr("live_metric_vs_strike", v=_wof_today - 1.0),
-                                help="Current level of the worst-performing underlying relative "
-                                     "to its initial fixing price (strike = 100%). This is the "
-                                     "key risk indicator: coupon and autocall eligibility, and "
-                                     "knock-in exposure, are all measured against this figure.")
+                                help=tr("live_help_wof_today"))
                     _lc2.metric(tr("live_metric_worst_asset"), _worst_asset_today,
-                                help="The underlying currently dragging the worst-of basket — "
-                                     "i.e. the one with the lowest performance relative to its "
-                                     "initial fixing. This asset sets the barrier observation level.")
+                                help=tr("live_help_worst_asset"))
                     _lc3.metric(tr("live_metric_vs_ki"),
                                 f"{_wof_today / run_terms.knock_in_barrier:.1%}",
                                 delta=f"{_wof_today - run_terms.knock_in_barrier:.1%}",
                                 delta_color="normal",
-                                help=f"Worst-of level as a percentage of the knock-in barrier "
-                                     f"({run_terms.knock_in_barrier:.0%}). "
-                                     f"Values > 100% mean the worst-of is above the KI barrier "
-                                     f"(no knock-in risk yet). The delta shows distance to the "
-                                     f"barrier in percentage-point terms.")
+                                help=tr("live_help_vs_ki", barrier=run_terms.knock_in_barrier))
                     _lc4.metric(tr("live_metric_vs_autocall"),
                                 f"{_wof_today / run_terms.autocall_barrier:.1%}",
                                 delta=f"{_wof_today - run_terms.autocall_barrier:.1%}",
                                 delta_color="normal",
-                                help=f"Worst-of level as a percentage of the autocall barrier "
-                                     f"({run_terms.autocall_barrier:.0%}). "
-                                     f"Values ≥ 100% at an eligible observation date would "
-                                     f"trigger an early call. The delta shows distance to the "
-                                     f"barrier in percentage-point terms.")
+                                help=tr("live_help_vs_autocall", barrier=run_terms.autocall_barrier))
 
                     # ── Per-asset current performance ─────────────────
                     st.markdown(tr("live_asset_perf_header"))
@@ -1744,11 +1684,12 @@ elif st.session_state["page"] == "dashboard":
                             # Upcoming — or after an autocall terminated the note
                             if _replay["autocall_period"] and _q + 1 > _replay["autocall_period"]:
                                 break                       # note no longer exists
-                            _est = _obs_cal[_q].date() if _q < len(_obs_cal) else "—"
+                            _est = _obs_cal[_q].date() if _q < len(_obs_cal) else tr("live_obs_dash")
                             _obs_rows.append({
                                 _k_period: _label, _k_date: str(_est),
-                                _k_status: "Upcoming",
-                                _k_wof: "—", _k_coupon: "—", _k_cumulative: "—",
+                                _k_status: tr("live_status_upcoming"),
+                                _k_wof: tr("live_obs_dash"), _k_coupon: tr("live_obs_dash"),
+                                _k_cumulative: tr("live_obs_dash"),
                             })
                             continue
 
@@ -1756,19 +1697,19 @@ elif st.session_state["page"] == "dashboard":
                         _obs_wof  = float(_perf_obs[_q].min())
                         _running_total += _r["coupon_amount"]
                         if _r["autocalled"]:
-                            _status = "Autocalled"
+                            _status = tr("live_status_autocalled")
                         elif run_terms.coupon_at_autocall_only:
-                            _status = "— No periodic coupon (premium at call)"
+                            _status = tr("live_status_no_coupon")
                         elif _r["coupon_met"]:
-                            _status = "Coupon paid"
+                            _status = tr("live_status_coupon_paid")
                         else:
-                            _status = "Coupon missed"
+                            _status = tr("live_status_coupon_missed")
                         _obs_rows.append({
                             _k_period:     _label,
                             _k_date:       str(_snap.date()),
                             _k_status:     _status,
                             _k_wof:        f"{_obs_wof:.1%}",
-                            _k_coupon:     f"{_r['coupon_amount']:.4%}" if _r["coupon_amount"] > 0 else "—",
+                            _k_coupon:     f"{_r['coupon_amount']:.4%}" if _r["coupon_amount"] > 0 else tr("live_obs_dash"),
                             _k_cumulative: f"{_running_total:.4%}",
                         })
                         _obs_markers.append({
@@ -1796,21 +1737,15 @@ elif st.session_state["page"] == "dashboard":
                         )
                     if run_terms.coupon_at_autocall_only and not _replay["autocall_period"]:
                         st.info(
-                            f"Growth autocall: no periodic coupons — an accrued premium of "
-                            f"{run_terms.coupon_rate:.2%} per period "
-                            f"({run_terms.coupon_pa:.0%} p.a.) is paid only if the note "
-                            f"autocalls. Premium if called at the next eligible observation: "
-                            f"{run_terms.coupon_rate * (len(_replay['rows']) + 1):.2%}."
+                            tr("live_growth_premium_info",
+                               rate=run_terms.coupon_rate,
+                               pa=run_terms.coupon_pa,
+                               next_premium=run_terms.coupon_rate * (len(_replay['rows']) + 1))
                         )
 
                     _irr_to_date = _total_coupons_paid / max(_elapsed_years, 1/252)
                     st.metric(tr("live_coupon_irr_metric"), f"{_irr_to_date:.2%}",
-                              help="Total coupons paid so far ÷ elapsed time in years — a simple "
-                                   "(not compound) annualisation of income received. Does not "
-                                   "include any accrued-but-unpaid memory coupons or the principal "
-                                   "return at maturity. Comparable to a running yield on a bond, "
-                                   "but note it overstates the realized return for notes where "
-                                   "coupons cluster toward the end of the life.")
+                              help=tr("live_help_coupon_irr"))
 
                     # ── Live performance chart ────────────────────────
                     # Future observation reference lines (calendar dates),
@@ -1852,13 +1787,13 @@ elif st.session_state["page"] == "dashboard":
                     st.session_state["_pdf_live_figure"] = _live_fig
 
             except Exception as _e:
-                st.error(f"Could not load live price data: {_e}")
+                st.error(tr("live_could_not_load", e=_e))
 
     # ══════════════════════════════════════════════════════════════════
     # PDF GENERATION (sidebar button — runs after all tab content)
     # ══════════════════════════════════════════════════════════════════
     if _pdf_btn and _has_sim:
-        with st.spinner("Building PDF report…"):
+        with st.spinner(tr("building_pdf")):
             from pdf_report import generate_pdf_report
             # Build logo URL maps from the already-populated TICKER_LOGOS dict
             _pdf_logo_urls = {
@@ -1885,7 +1820,7 @@ elif st.session_state["page"] == "dashboard":
                 logo_tickers     = _pdf_logo_tickers,
             )
         _pdf_slot.download_button(
-            "Download PDF",
+            tr("sidebar_download_pdf"),
             data=_pdf_bytes,
             file_name=f"{run_terms.name.replace(' ', '_')}_report.pdf",
             mime="application/pdf",
