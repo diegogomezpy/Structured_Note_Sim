@@ -107,27 +107,26 @@ def run_pipeline(terms: NoteTerms, n_paths: int = 2000, seed: int = 7) -> dict:
     return results
 
 
-# ── Minimal standalone Plotly figures (no charts.py dependency) ──────────────
-def build_figures(results: dict, terms: NoteTerms) -> dict:
-    irr = np.asarray(results.get("annualized_returns", []))
-    f_irr = go.Figure(go.Histogram(x=irr, nbinsx=40))
-    f_irr.update_layout(xaxis_title="IRR p.a.", yaxis_title="Paths")
+# ── Real charts.py figures (exercises the actual palette + aspect ratios) ─────
+def build_figures(results: dict, terms: NoteTerms, lang: str = "en") -> dict:
+    import sys as _sys
+    _sys.path.insert(0, str(ROOT / "app"))
+    import charts
+    from translations import Translator
 
-    wof = results["worst_of_paths"]
-    t = results["t_grid_years"]
-    bands = np.percentile(wof, [5, 25, 50, 75, 95], axis=0)
-    f_wof = go.Figure()
-    f_wof.add_trace(go.Scatter(x=np.concatenate([t, t[::-1]]),
-                               y=np.concatenate([bands[4], bands[0][::-1]]),
-                               fill="toself", line=dict(color="rgba(0,0,0,0)"),
-                               name="5-95%"))
-    f_wof.add_trace(go.Scatter(x=t, y=bands[2], mode="lines", name="median"))
-    f_wof.add_hline(y=terms.knock_in_barrier, line_dash="dash", line_color="red")
+    tr = Translator(lang)
+    obs_times = list(results.get("obs_times", []))
+    obs_pairs = [(f"P{i+1}", float(t)) for i, t in enumerate(obs_times)]
 
-    corr = np.asarray(results["corr_SS"])
-    names = results["asset_names"]
-    f_corr = go.Figure(go.Heatmap(z=corr, x=names, y=names, zmin=-1, zmax=1,
-                                  text=np.round(corr, 3), texttemplate="%{text}"))
+    f_irr = charts.build_irr_distribution(
+        results["annualized_returns"], results["autocall_events"],
+        results["expected_irr"], terms.coupon_pa, tr)
+    f_wof = charts.build_wof_fan(
+        results["worst_of_paths"], results["t_grid_years"],
+        terms.knock_in_barrier, obs_pairs, tr,
+        autocall_barrier=terms.autocall_barrier)
+    f_corr = charts.build_corr_heatmap(
+        results["corr_SS"], results["asset_names"], tr("corr_input"))
 
     return {"irr_dist": f_irr, "wof_fan": f_wof, "corr": f_corr}
 
@@ -153,7 +152,6 @@ def main():
 
     print("== Running pipeline ==")
     results = run_pipeline(terms, n_paths=2000)
-    figures = build_figures(results, terms)
 
     asset_names = results["asset_names"]
     logo_urls = {name: f"https://assets.parqet.com/logos/symbol/{sym}?format=png"
@@ -163,6 +161,7 @@ def main():
 
     for lang, out in [("en", "/tmp/report_en.pdf"), ("es", "/tmp/report_es.pdf")]:
         print(f"== Generating {lang} -> {out} ==")
+        figures = build_figures(results, terms, lang)
         pdf_bytes = pdf_report.generate_pdf_report(
             terms=terms,
             results=results,

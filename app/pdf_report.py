@@ -33,6 +33,7 @@ Branding dict schema (all keys optional):
 from __future__ import annotations
 
 import io
+import re
 import datetime
 import urllib.request
 import numpy as np
@@ -727,10 +728,23 @@ class _NotePDF(FPDF):
         self.ln(4)
 
     def figure(self, img_bytes: bytes | None, caption: str, source: str,
-               w: float = 172, h: float = 80):
+               w: float = 172, h: float | None = None, max_h: float = 118):
         if img_bytes is None:
             return
         self._fig_no += 1
+        # Derive the placement height from the PNG's true pixel aspect ratio so
+        # charts keep their natural proportions instead of being squashed into a
+        # fixed box. A very tall chart is fitted by height and re-centred.
+        if h is None:
+            try:
+                from PIL import Image
+                iw, ih = Image.open(io.BytesIO(img_bytes)).size
+                h = w * ih / iw
+                if h > max_h:
+                    h = max_h
+                    w = h * iw / ih
+            except Exception:
+                h = 80
         needed = h + 18
         if self.get_y() + needed > self.h - 28:
             self.add_page()
@@ -1011,17 +1025,144 @@ def _load_ticker_logo(display_name: str, url: str | None,
 # Figure export helper
 # ──────────────────────────────────────────────────────────────────────────────
 
-def _theme_figure(fig, primary_color: tuple, accent_color: tuple):
-    """Apply a clean print theme to a Plotly figure before rasterising.
+# ── Branded recolouring ───────────────────────────────────────────────────────
+# The app charts (app/charts.py) are built on a fixed navy/blue palette. For the
+# PDF we remap *only that known source palette* onto the branding colours, so a
+# CADIEM report comes out green while a default report stays navy/blue. The remap
+# is keyed on exact source values, so semantic colours not in the map (red KI
+# line, grey autocall line, orange coupon line, white) pass through untouched,
+# and the fan-chart band hierarchy is preserved (both bands share the accent RGB
+# but keep their distinct 0.08 vs 0.20 alpha).
+_SRC_NAVY  = (26, 46, 74)     # #1a2e4a  worst-of line / maturity bars / dark series
+_SRC_BLUE  = (37, 99, 235)    # #2563eb  median / mean line / primary series / band fills
+_SRC_LIGHT = (96, 165, 250)   # #60a5fa  autocalled bars / light secondary series
+_SRC_EXTRA = {(8, 145, 178), (124, 58, 237), (13, 148, 136)}  # >3-asset series colours
 
-    Only sets white backgrounds, report typography, light gridlines and removes
-    the Plotly logo. It deliberately does NOT recolor traces: the chart builders
-    in app/charts.py already assign distinguishable, semantically-meaningful
-    colors (e.g. green "coupon paid" vs red "missed", star autocall markers,
-    fan-chart bands at 0.08 vs 0.20 alpha). Blindly cycling a 2-colour palette
-    over every trace used to collapse the fan-chart bands into one shade and
-    flatten the paid/missed marker colours — so we leave trace colours alone.
+
+def _blend(rgb: tuple, target: tuple, f: float) -> tuple:
+    return tuple(round(rgb[i] * (1 - f) + target[i] * f) for i in range(3))
+
+
+def _build_color_remap(primary: tuple, accent: tuple) -> dict:
+    """RGB-tuple -> RGB-tuple map from the charts.py source palette to branding."""
+    white = (255, 255, 255)
+    extras = list(_SRC_EXTRA)
+    return {
+        _SRC_NAVY:  primary,
+        _SRC_BLUE:  accent,
+        _SRC_LIGHT: _blend(accent, white, 0.45),
+        extras[0]:  _blend(accent, white, 0.25),
+        extras[1]:  _blend(primary, white, 0.30),
+        extras[2]:  _blend(accent, primary, 0.50),
+    }
+
+
+def _parse_rgb(c: str):
+    """Return (r,g,b,alpha_or_None) for a hex or rgb()/rgba() string, else None."""
+    if not isinstance(c, str):
+        return None
+    s = c.strip().lower()
+    if s.startswith("#"):
+        s = s[1:]
+        if len(s) == 3:
+            s = "".join(ch * 2 for ch in s)
+        if len(s) == 6:
+            try:
+                return (int(s[0:2], 16), int(s[2:4], 16), int(s[4:6], 16), None)
+            except ValueError:
+                return None
+        return None
+    m = re.match(r"rgba?\(\s*([\d.]+)\s*,\s*([\d.]+)\s*,\s*([\d.]+)\s*(?:,\s*([\d.]+)\s*)?\)", s)
+    if m:
+        r, g, b = (int(float(m.group(i))) for i in (1, 2, 3))
+        a = float(m.group(4)) if m.group(4) is not None else None
+        return (r, g, b, a)
+    return None
+
+
+def _remap_color(c, remap: dict):
+    """Map one colour through the branding remap, preserving any alpha. Colours
+    whose RGB isn't a known source palette value are returned unchanged."""
+    p = _parse_rgb(c)
+    if p is None:
+        return c
+    rgb, alpha = p[:3], p[3]
+    tgt = remap.get(rgb)
+    if tgt is None:
+        return c
+    if alpha is None:
+        return f"rgb({tgt[0]},{tgt[1]},{tgt[2]})"
+    return f"rgba({tgt[0]},{tgt[1]},{tgt[2]},{alpha})"
+
+
+def _rebrand_figure(fig, primary: tuple, accent: tuple):
+    """Remap the figure's navy/blue source palette onto the branding colours."""
+    # Identity short-circuit: default palette == source palette, nothing to do.
+    if primary == _SRC_NAVY and accent == _SRC_BLUE:
+        return
+    remap = _build_color_remap(primary, accent)
+    rc = lambda c: _remap_color(c, remap)
+    try:
+        if getattr(fig.layout, "colorway", None):
+            fig.layout.colorway = tuple(rc(c) for c in fig.layout.colorway)
+    except Exception:
+        pass
+    for tr in fig.data:
+        for path in ("line.color", "fillcolor", "marker.color", "marker.line.color"):
+            try:
+                obj = tr
+                parts = path.split(".")
+                for p in parts[:-1]:
+                    obj = getattr(obj, p)
+                val = getattr(obj, parts[-1], None)
+                if val is None:
+                    continue
+                if isinstance(val, (list, tuple)):
+                    setattr(obj, parts[-1], type(val)(rc(v) for v in val))
+                else:
+                    setattr(obj, parts[-1], rc(val))
+            except Exception:
+                pass
+        # Heatmap / continuous colorscale: [(pos, color), ...]
+        try:
+            cs = getattr(tr, "colorscale", None)
+            if cs:
+                tr.colorscale = tuple((pos, rc(col)) for pos, col in cs)
+        except Exception:
+            pass
+    # add_vline / add_hline (e.g. the mean / expected-IRR line) are layout
+    # shapes, not traces — remap their line colour too. Semantic shapes
+    # (red zero line, grey coupon line) aren't in the source map, so untouched.
+    try:
+        for shp in fig.layout.shapes or ():
+            try:
+                if getattr(shp.line, "color", None) is not None:
+                    shp.line.color = rc(shp.line.color)
+            except Exception:
+                pass
+    except Exception:
+        pass
+    # px.imshow heatmaps keep their colourscale on layout.coloraxis, not on the
+    # trace — remap the navy endpoint of the correlation scale to the brand.
+    try:
+        cax = fig.layout.coloraxis
+        if cax is not None and getattr(cax, "colorscale", None):
+            cax.colorscale = tuple((pos, rc(col)) for pos, col in cax.colorscale)
+    except Exception:
+        pass
+
+
+def _theme_figure(fig, primary_color: tuple, accent_color: tuple):
+    """Apply the print theme to a Plotly figure before rasterising: white
+    backgrounds, report typography, light gridlines, no Plotly logo — and remap
+    the source navy/blue palette onto the branding colours (no-op for the default
+    palette). Semantic colours (red KI line, grey autocall, orange coupon) and
+    the fan-chart band alpha hierarchy are preserved by `_rebrand_figure`.
     """
+    try:
+        _rebrand_figure(fig, primary_color, accent_color)
+    except Exception:
+        pass
     try:
         fig.update_layout(
             paper_bgcolor="white",
@@ -1180,29 +1321,45 @@ def _cover_page(
         except Exception:
             has_logo = False
 
-    # Report eyebrow (white) — top-left when no logo, else top-right of centre
-    eb_x = pdf.l_margin if not has_logo else 70
-    pdf.set_xy(eb_x, 7 if not has_logo else 10)
-    pdf._sf(8.5, "semibold")
-    pdf.set_text_color(*_WHITE)
-    try:
-        pdf.set_char_spacing(1.2)
-    except Exception:
-        pass
-    pdf.cell(64, 5, _t("report_eyebrow", lang).upper())
-    try:
-        pdf.set_char_spacing(0)
-    except Exception:
-        pass
-
-    # Generation date (right-aligned in band)
-    pdf.set_xy(pdf.w - pdf.r_margin - 55, 7 if not has_logo else 10)
-    pdf._sf(7.5, "light")
-    pdf.set_text_color(220, 230, 245)
-    pdf.cell(55, 5, _fmt_long_date(datetime.date.today(), lang), align="R")
-
-    # Firm name (second line) — only when there is no logo wordmark
-    if not has_logo:
+    _today_long = _fmt_long_date(datetime.date.today(), lang)
+    if has_logo:
+        # Logo carries identity on the left; eyebrow + date form a clean
+        # right-aligned block, vertically centred against the logo.
+        rx, rw = pdf.w - pdf.r_margin - 100, 100
+        pdf.set_xy(rx, 14)
+        pdf._sf(8, "semibold")
+        pdf.set_text_color(*_WHITE)
+        try:
+            pdf.set_char_spacing(1.4)
+        except Exception:
+            pass
+        pdf.cell(rw, 5, _t("report_eyebrow", lang).upper(), align="R")
+        try:
+            pdf.set_char_spacing(0)
+        except Exception:
+            pass
+        pdf.set_xy(rx, 20.5)
+        pdf._sf(8, "light")
+        pdf.set_text_color(220, 230, 245)
+        pdf.cell(rw, 5, _today_long, align="R")
+    else:
+        # No logo: eyebrow top-left, date top-right, firm wordmark below.
+        pdf.set_xy(pdf.l_margin, 7)
+        pdf._sf(8.5, "semibold")
+        pdf.set_text_color(*_WHITE)
+        try:
+            pdf.set_char_spacing(1.2)
+        except Exception:
+            pass
+        pdf.cell(120, 5, _t("report_eyebrow", lang).upper())
+        try:
+            pdf.set_char_spacing(0)
+        except Exception:
+            pass
+        pdf.set_xy(pdf.w - pdf.r_margin - 55, 7)
+        pdf._sf(7.5, "light")
+        pdf.set_text_color(220, 230, 245)
+        pdf.cell(55, 5, _today_long, align="R")
         pdf.set_xy(pdf.l_margin, 14)
         pdf._sf(13, "bold")
         pdf.set_text_color(*_WHITE)
