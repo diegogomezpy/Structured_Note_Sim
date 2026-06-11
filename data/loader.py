@@ -178,7 +178,22 @@ def _from_yfinance(
             kwargs["session"] = session
         raw = yf.download(ticker_symbols, **kwargs)
 
+    if len(raw) == 0:
+        raise ValueError(
+            f"yfinance returned no data for {ticker_symbols}. "
+            "This is usually a transient rate-limit or network error — "
+            "wait a moment and try again. If the problem persists, check "
+            "that all ticker symbols are valid on Yahoo Finance."
+        )
+
     col = "Close" if field == "close" else "Adj Close"
+    if col not in raw.columns.get_level_values(0) if isinstance(raw.columns, pd.MultiIndex) else raw.columns:
+        raise ValueError(
+            f"yfinance response is missing the '{col}' column. "
+            f"Columns present: {list(raw.columns)}. "
+            "Set field='close' or field='adj_close'."
+        )
+
     # yfinance returns a MultiIndex for multiple tickers, flat for one
     if isinstance(raw.columns, pd.MultiIndex):
         prices = raw[col][ticker_symbols]
@@ -240,14 +255,14 @@ def _align(prices: pd.DataFrame, source_label: str) -> pd.DataFrame:
         print(f"[loader] Dropped {n_before - n_after} rows with missing prices "
               f"(non-overlapping holidays).")
 
-    print(f"[loader] Aligned: {n_after} common trading days "
-          f"({prices.index[0].date()} → {prices.index[-1].date()})")
-
     if n_after == 0:
         raise ValueError(
             f"No data returned (source='{source_label}'). "
             f"Check your ticker symbols, date range, or network connection."
         )
+
+    print(f"[loader] Aligned: {n_after} common trading days "
+          f"({prices.index[0].date()} → {prices.index[-1].date()})")
 
     if n_after < 60:
         raise ValueError(
