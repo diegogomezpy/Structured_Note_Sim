@@ -391,6 +391,10 @@ class _NotePDF(FPDF):
         self.accent_color  = accent_color
         self.firm_name     = firm_name
         self.firm_logo_bytes = firm_logo_bytes
+        # Aspect ratio (so a wide wordmark isn't squashed into a square box) and a
+        # white knockout for legible placement on the coloured cover band.
+        self.firm_logo_aspect = _logo_aspect(firm_logo_bytes, default=1.0)
+        self.firm_logo_white_bytes = _white_knockout(firm_logo_bytes)
         self._is_cover     = False
         self._cover_page_no = None   # page number that holds the cover (no running footer)
         self._fig_no       = 0
@@ -487,13 +491,16 @@ class _NotePDF(FPDF):
         if self._is_cover:
             return
 
-        # ── Firm logo (top-left) ─────────────────────────────────────
+        # ── Firm logo (top-left) — original colour on the white page, sized by
+        #    true aspect ratio so a wide wordmark isn't squashed ─────────────
         logo_w = 0.0
         if self.firm_logo_bytes:
             try:
+                h = 6.0
+                w = min(h * self.firm_logo_aspect, 46.0)
                 self.image(io.BytesIO(self.firm_logo_bytes),
-                           x=self.l_margin, y=8, w=8, h=8)
-                logo_w = 10.0
+                           x=self.l_margin, y=8, w=w, h=h)
+                logo_w = w + 3.0
             except Exception:
                 logo_w = 0.0
 
@@ -819,6 +826,43 @@ def _to_embeddable_png(raw: bytes | None) -> bytes | None:
         return None
 
 
+def _logo_aspect(png: bytes | None, default: float = 1.0) -> float:
+    """Width/height aspect ratio of a logo, so it can be sized without squashing
+    a wide wordmark into a square box. Falls back to `default` on any error."""
+    if not png:
+        return default
+    try:
+        from PIL import Image
+        w, h = Image.open(io.BytesIO(png)).size
+        return (w / h) if h else default
+    except Exception:
+        return default
+
+
+def _white_knockout(png: bytes | None) -> bytes | None:
+    """Recolour every opaque pixel of a logo to white, preserving the alpha mask.
+    Used to render a (typically dark/coloured) firm wordmark legibly on the
+    coloured cover band, where the original colour would clash or vanish. Returns
+    None if the source is missing or can't be processed (caller falls back)."""
+    if not png:
+        return None
+    try:
+        from PIL import Image
+        import numpy as np
+        im = Image.open(io.BytesIO(png)).convert("RGBA")
+        arr = np.array(im)
+        opaque = arr[..., 3] > 0
+        arr[opaque, 0] = 255
+        arr[opaque, 1] = 255
+        arr[opaque, 2] = 255
+        out = io.BytesIO()
+        Image.fromarray(arr, "RGBA").save(out, format="PNG")
+        return out.getvalue()
+    except Exception as exc:
+        print(f"[PDF logo] white-knockout FAIL: {exc}")
+        return None
+
+
 def _fetch_image_bytes(url: str, timeout: int = 8) -> bytes | None:
     """Download an image from a URL. Returns raw bytes or None on failure.
 
@@ -1120,41 +1164,49 @@ def _cover_page(
     pdf.set_fill_color(*pdf.primary_color)
     pdf.rect(0, 0, pdf.w, band_h, style="F")
 
-    # Firm logo (top-left in band)
-    logo_x = pdf.l_margin
-    if pdf.firm_logo_bytes:
+    # Firm logo (white knockout, left, vertically centred in the band). When a
+    # logo is present it carries the firm identity, so the redundant firm-name
+    # text line is suppressed; the eyebrow + date sit to its right.
+    logo_x   = pdf.l_margin
+    has_logo = False
+    band_logo = pdf.firm_logo_white_bytes or pdf.firm_logo_bytes
+    if band_logo:
         try:
-            pdf.image(io.BytesIO(pdf.firm_logo_bytes),
-                      x=logo_x, y=(band_h - 9) / 2, w=9, h=9)
-            logo_x += 12
+            lh = 12.0
+            lw = min(lh * pdf.firm_logo_aspect, 60.0)
+            pdf.image(io.BytesIO(band_logo),
+                      x=logo_x, y=(band_h - lh) / 2, w=lw, h=lh)
+            has_logo = True
         except Exception:
-            pass
+            has_logo = False
 
-    # Report title (white, in band)
-    pdf.set_xy(logo_x, 7)
+    # Report eyebrow (white) — top-left when no logo, else top-right of centre
+    eb_x = pdf.l_margin if not has_logo else 70
+    pdf.set_xy(eb_x, 7 if not has_logo else 10)
     pdf._sf(8.5, "semibold")
     pdf.set_text_color(*_WHITE)
     try:
         pdf.set_char_spacing(1.2)
     except Exception:
         pass
-    pdf.cell(140, 5, _t("report_eyebrow", lang).upper())
+    pdf.cell(64, 5, _t("report_eyebrow", lang).upper())
     try:
         pdf.set_char_spacing(0)
     except Exception:
         pass
 
     # Generation date (right-aligned in band)
-    pdf.set_xy(pdf.w - pdf.r_margin - 55, 7)
+    pdf.set_xy(pdf.w - pdf.r_margin - 55, 7 if not has_logo else 10)
     pdf._sf(7.5, "light")
     pdf.set_text_color(220, 230, 245)
     pdf.cell(55, 5, _fmt_long_date(datetime.date.today(), lang), align="R")
 
-    # Firm name (second line in band)
-    pdf.set_xy(logo_x, 14)
-    pdf._sf(13, "bold")
-    pdf.set_text_color(*_WHITE)
-    pdf.cell(140, 7, _safe(pdf.firm_name))
+    # Firm name (second line) — only when there is no logo wordmark
+    if not has_logo:
+        pdf.set_xy(pdf.l_margin, 14)
+        pdf._sf(13, "bold")
+        pdf.set_text_color(*_WHITE)
+        pdf.cell(140, 7, _safe(pdf.firm_name))
 
     # ── Sidebar panel (right column) ──────────────────────────────────────
     sb_x, sb_w = 138, pdf.w - pdf.r_margin - 138
