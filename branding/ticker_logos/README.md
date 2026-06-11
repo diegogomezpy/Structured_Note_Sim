@@ -21,8 +21,9 @@ that order.
   are skipped (the report falls back to the next source, or shows the name only).
 - A missing or unreadable file never crashes the report — it simply omits the
   logo and prints a diagnostic to the console.
-- The firm/issuer logo for branding is configured separately via the
-  `logo_file` field in your `branding_*.json` (see `branding_example.json`).
+- The firm/issuer logo is configured separately in your `branding_*.json`, not
+  here — via `logo_file`, `logo_base64` (embedded, self-contained, so no file is
+  needed on disk), or `logo_url`. `branding_example.json` shows all the keys.
 - Square images around 128×128 px look best in the small logo slots.
 
 ## Examples
@@ -30,5 +31,4 @@ that order.
 ```
 branding/ticker_logos/NVDA.png        # by ticker symbol
 branding/ticker_logos/Citigroup.png   # by display name
-branding/ticker_logos/cadiem.png      # firm logo (referenced from branding JSON)
 ```

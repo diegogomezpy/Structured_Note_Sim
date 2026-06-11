@@ -472,10 +472,8 @@ class _NotePDF(FPDF):
         self.website       = website or ""
         self.contact       = contact or ""
         self.footer_note   = footer_note
-        # Aspect ratio (so a wide wordmark isn't squashed into a square box) and a
-        # white knockout for legible placement on the coloured cover band.
+        # Aspect ratio so a wide wordmark isn't squashed into a square box.
         self.firm_logo_aspect = _logo_aspect(firm_logo_bytes, default=1.0)
-        self.firm_logo_white_bytes = _white_knockout(firm_logo_bytes)
         self._is_cover     = False
         self._cover_page_no = None   # page number that holds the cover (no running footer)
         self._fig_no       = 0
@@ -1002,30 +1000,6 @@ def _logo_aspect(png: bytes | None, default: float = 1.0) -> float:
         return default
 
 
-def _white_knockout(png: bytes | None) -> bytes | None:
-    """Recolour every opaque pixel of a logo to white, preserving the alpha mask.
-    Used to render a (typically dark/coloured) firm wordmark legibly on the
-    coloured cover band, where the original colour would clash or vanish. Returns
-    None if the source is missing or can't be processed (caller falls back)."""
-    if not png:
-        return None
-    try:
-        from PIL import Image
-        import numpy as np
-        im = Image.open(io.BytesIO(png)).convert("RGBA")
-        arr = np.array(im)
-        opaque = arr[..., 3] > 0
-        arr[opaque, 0] = 255
-        arr[opaque, 1] = 255
-        arr[opaque, 2] = 255
-        out = io.BytesIO()
-        Image.fromarray(arr, "RGBA").save(out, format="PNG")
-        return out.getvalue()
-    except Exception as exc:
-        print(f"[PDF logo] white-knockout FAIL: {exc}")
-        return None
-
-
 def _fetch_image_bytes(url: str, timeout: int = 8) -> bytes | None:
     """Download an image from a URL. Returns raw bytes or None on failure.
 
@@ -1499,23 +1473,21 @@ def _cover_page(
     # add_page, by which point _is_cover is already False).
     pdf._cover_page_no = pdf.page_no()
 
-    # ── Full-width colored top band ───────────────────────────────────────
+    # ── Clean header — the real logo on white, no colored band ────────────
+    # A full-width brand band forced a white-knockout of the logo, which flattens
+    # a multi-colour wordmark (e.g. a navy mark with a coloured glyph) to a solid
+    # white silhouette. Instead the cover header is white and shows the logo in
+    # its own colours; brand presence comes from a thin accent rule beneath it
+    # plus the note name, sidebar accent stripe and table headers throughout.
     band_h = _COVER_BAND_H
-    pdf.set_fill_color(*pdf.primary_color)
-    pdf.rect(0, 0, pdf.w, band_h, style="F")
-
-    # Firm logo (white knockout, left, vertically centred in the band). When a
-    # logo is present it carries the firm identity, so the redundant firm-name
-    # text line is suppressed; the eyebrow + date sit to its right.
     logo_x   = pdf.l_margin
     has_logo = False
-    band_logo = pdf.firm_logo_white_bytes or pdf.firm_logo_bytes
-    if band_logo:
+    if pdf.firm_logo_bytes:
         try:
-            lh = 12.0
-            lw = min(lh * pdf.firm_logo_aspect, 60.0)
-            pdf.image(io.BytesIO(band_logo),
-                      x=logo_x, y=(band_h - lh) / 2, w=lw, h=lh)
+            lh = 14.0
+            lw = min(lh * pdf.firm_logo_aspect, 66.0)
+            pdf.image(io.BytesIO(pdf.firm_logo_bytes),
+                      x=logo_x, y=(band_h - lh) / 2 - 2, w=lw, h=lh)
             has_logo = True
         except Exception:
             has_logo = False
@@ -1524,12 +1496,12 @@ def _cover_page(
     # B5: a branding report_title overrides the default eyebrow / subtitle.
     _eyebrow = (pdf.report_title or _t("report_eyebrow", lang)).upper()
     if has_logo:
-        # Logo carries identity on the left; eyebrow + date form a clean
-        # right-aligned block, vertically centred against the logo.
+        # Logo carries identity on the left; eyebrow (brand colour) + date (grey)
+        # form a clean right-aligned block, vertically centred against the logo.
         rx, rw = pdf.w - pdf.r_margin - 100, 100
-        pdf.set_xy(rx, 14)
+        pdf.set_xy(rx, 12)
         pdf._sf(8, "semibold")
-        pdf.set_text_color(*_WHITE)
+        pdf.set_text_color(*pdf.primary_color)
         try:
             pdf.set_char_spacing(1.4)
         except Exception:
@@ -1539,15 +1511,15 @@ def _cover_page(
             pdf.set_char_spacing(0)
         except Exception:
             pass
-        pdf.set_xy(rx, 20.5)
+        pdf.set_xy(rx, 18.5)
         pdf._sf(8, "light")
-        pdf.set_text_color(220, 230, 245)
+        pdf.set_text_color(*_TEXT_SOFT)
         pdf.cell(rw, 5, _today_long, align="R")
     else:
-        # No logo: eyebrow top-left, date top-right, firm wordmark below.
-        pdf.set_xy(pdf.l_margin, 7)
-        pdf._sf(8.5, "semibold")
-        pdf.set_text_color(*_WHITE)
+        # No logo: firm wordmark in brand colour, eyebrow + date in grey.
+        pdf.set_xy(pdf.l_margin, 8)
+        pdf._sf(8, "semibold")
+        pdf.set_text_color(*_TEXT_SOFT)
         try:
             pdf.set_char_spacing(1.2)
         except Exception:
@@ -1557,14 +1529,19 @@ def _cover_page(
             pdf.set_char_spacing(0)
         except Exception:
             pass
-        pdf.set_xy(pdf.w - pdf.r_margin - 55, 7)
+        pdf.set_xy(pdf.w - pdf.r_margin - 55, 8)
         pdf._sf(7.5, "light")
-        pdf.set_text_color(220, 230, 245)
+        pdf.set_text_color(*_TEXT_SOFT)
         pdf.cell(55, 5, _today_long, align="R")
-        pdf.set_xy(pdf.l_margin, 14)
-        pdf._sf(13, "bold")
-        pdf.set_text_color(*_WHITE)
-        pdf.cell(140, 7, _safe(pdf.firm_name))
+        pdf.set_xy(pdf.l_margin, 15)
+        pdf._sf(15, "bold")
+        pdf.set_text_color(*pdf.primary_color)
+        pdf.cell(140, 8, _safe(pdf.firm_name))
+
+    # Thin accent rule at the base of the header — brand definition without a band
+    pdf.set_draw_color(*pdf.primary_color)
+    pdf.set_line_width(0.6)
+    pdf.line(pdf.l_margin, band_h - 3, pdf.w - pdf.r_margin, band_h - 3)
 
     # ── Sidebar panel (right column) ──────────────────────────────────────
     sb_x, sb_w = 138, pdf.w - pdf.r_margin - 138
