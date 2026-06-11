@@ -185,6 +185,21 @@ _LABELS: dict[str, dict[str, str]] = {
     "live_asset_perf":       {"en": "Current Asset Performance",         "es": "Rendimiento Actual por Activo"},
     "live_obs_history":      {"en": "Observation History",               "es": "Historial de Observaciones"},
     "performance":           {"en": "Performance",                       "es": "Rendimiento"},
+    # Inline fragments that get interpolated into f-strings — kept here so the
+    # whole report (not just the standalone labels) translates.
+    "page_of":               {"en": "Page",                              "es": "Página"},
+    "page_of_mid":           {"en": "of",                                "es": "de"},
+    "paths_word":            {"en": "paths",                             "es": "caminos"},
+    "observations_word":     {"en": "observations",                      "es": "observaciones"},
+    "per_period":            {"en": "per period",                        "es": "por período"},
+    "pa_short":              {"en": "p.a.",                              "es": "anual"},
+    "guaranteed_zero":       {"en": "Guaranteed (0%)",                   "es": "Garantizado (0%)"},
+    "about_report_head":     {"en": "About this report",                 "es": "Acerca de este informe"},
+    "calib_s0":              {"en": "S0",                                "es": "S0"},
+    "calib_mu":              {"en": "mu p.a.",                           "es": "mu anual"},
+    "calib_v0":              {"en": "Vol (V0)",                          "es": "Vol (V0)"},
+    "calib_theta":           {"en": "Vol (theta)",                       "es": "Vol (theta)"},
+    "figure_word":           {"en": "Figure",                            "es": "Figura"},
     "about_this_report": {
         "en": "This report presents a quantitative analysis of the structured note's expected "
               "performance under a multi-asset Heston stochastic-volatility model. It covers "
@@ -237,6 +252,31 @@ _LABELS: dict[str, dict[str, str]] = {
 
 def _t(key: str, lang: str) -> str:
     return _LABELS.get(key, {}).get(lang, _LABELS.get(key, {}).get("en", key))
+
+
+_ES_MONTHS = ["", "enero", "febrero", "marzo", "abril", "mayo", "junio",
+              "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"]
+
+# payment_freq enum (core/note.py) -> Spanish wording. Unknown values pass
+# through unchanged so a custom freq label is never mangled.
+_FREQ_ES = {
+    "monthly":     "mensual",
+    "quarterly":   "trimestral",
+    "semi-annual": "semestral",
+    "annual":      "anual",
+}
+
+
+def _fmt_freq(freq: str, lang: str) -> str:
+    return _FREQ_ES.get(str(freq).lower(), str(freq)) if lang == "es" else str(freq)
+
+
+def _fmt_long_date(d: datetime.date, lang: str) -> str:
+    """Locale-aware long date. English uses the platform month name; Spanish uses
+    a built-in month table (no system locale dependency, no leftover English)."""
+    if lang == "es":
+        return f"{d.day} de {_ES_MONTHS[d.month]} de {d.year}"
+    return d.strftime("%-d %B %Y")
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -352,8 +392,11 @@ class _NotePDF(FPDF):
         self.firm_name     = firm_name
         self.firm_logo_bytes = firm_logo_bytes
         self._is_cover     = False
+        self._cover_page_no = None   # page number that holds the cover (no running footer)
         self._fig_no       = 0
-        self._gen_dt       = datetime.datetime.now().strftime("%d %b %Y  %H:%M")
+        # Locale-neutral numeric timestamp so the footer never shows an English
+        # month abbreviation in a Spanish report.
+        self._gen_dt       = datetime.datetime.now().strftime("%Y-%m-%d  %H:%M")
         self.set_margins(16, 16, 16)
         self.set_auto_page_break(auto=True, margin=28)
         self.alias_nb_pages()
@@ -475,6 +518,11 @@ class _NotePDF(FPDF):
         self.set_y(21)
 
     def footer(self):
+        # The cover renders its own self-contained bottom disclaimer band; the
+        # running footer (rule + footer_line + page number) would print on top of
+        # it, producing the garbled overlap seen at the bottom of page 1. Skip it.
+        if self._is_cover or self.page_no() == self._cover_page_no:
+            return
         # ── Thin rule above footer ────────────────────────────────────
         self.set_draw_color(*_HAIRLINE)
         self.set_line_width(0.2)
@@ -492,12 +540,32 @@ class _NotePDF(FPDF):
         self.set_text_color(*_TEXT_SOFT)
         self.cell(0, 4.5, self._safe(self._gen_dt), align="L")
         self.set_y(-11)
-        self.cell(0, 4.5, f"Page {self.page_no()} of {{nb}}", align="R")
+        _page = _t("page_of", self.lang)
+        _mid  = _t("page_of_mid", self.lang)
+        self.cell(0, 4.5, f"{_page} {self.page_no()} {_mid} {{nb}}", align="R")
         self.set_text_color(*_TEXT)
 
     # ------------------------------------------------------------------
     # Building blocks
     # ------------------------------------------------------------------
+    def start_section(self, text: str, min_room: float = 110.0):
+        """Begin a major section, breaking to a new page only when needed.
+
+        Sections used to each call an unconditional ``add_page()``, which left
+        big voids whenever a section had little content (a 1-row observation
+        table dropped onto an otherwise-blank page). Instead we keep flowing on
+        the current page and only break when fewer than ``min_room`` mm remain
+        below the cursor — enough for the title plus a meaningful chunk of the
+        section. The result fills pages naturally without orphan sections.
+        """
+        if self.page_no() == 0:
+            self.add_page()
+        elif self.get_y() > self.h - self.b_margin - min_room:
+            self.add_page()
+        else:
+            self.ln(6)   # generous separation between stacked sections
+        self.section_title(text)
+
     def section_title(self, text: str):
         """SemiBold 11pt section header with micro-space above and thin rule below."""
         if self.get_y() > self.h - 60:
@@ -662,7 +730,7 @@ class _NotePDF(FPDF):
         # Caption above figure — SemiBold 8.5pt in accent color
         self._sf(8.5, "semibold")
         self.set_text_color(*self.accent_color)
-        self.multi_cell(0, 4.5, f"Figure {self._fig_no}: {caption}", align="C")
+        self.multi_cell(0, 4.5, f"{_t('figure_word', self.lang)} {self._fig_no}: {caption}", align="C")
         self.ln(1)
         x = (self.w - w) / 2
         self.image(io.BytesIO(img_bytes), x=x, w=w, h=h)
@@ -706,6 +774,50 @@ class _NotePDF(FPDF):
 # ──────────────────────────────────────────────────────────────────────────────
 # Logo fetching
 # ──────────────────────────────────────────────────────────────────────────────
+
+# fpdf2 can only embed PNG, JPEG and GIF. Favicon services frequently hand back
+# ICO (Google s2/favicons, duckduckgo), and some CDNs return WEBP — both make
+# pdf.image() raise, which previously silently dropped the logo. We normalise
+# *every* logo byte string through Pillow to a clean RGBA PNG before it ever
+# reaches pdf.image(): the format is guaranteed embeddable, the alpha channel is
+# preserved, and a multi-resolution ICO is collapsed to its largest frame.
+_EMBEDDABLE_MAGIC = (b"\x89PNG", b"\xff\xd8\xff", b"GIF8")  # PNG / JPEG / GIF
+
+
+def _to_embeddable_png(raw: bytes | None) -> bytes | None:
+    """Return PNG bytes fpdf2 can embed, or None.
+
+    If `raw` is already a PNG/JPEG/GIF it is returned unchanged (cheap path).
+    Otherwise — ICO, WEBP, BMP, TIFF, multi-frame favicon … — it is decoded by
+    Pillow and re-encoded as a single RGBA PNG. Any decode failure returns None
+    so a bad image is dropped rather than crashing the report.
+    """
+    if not raw:
+        return None
+    if raw[:4] in _EMBEDDABLE_MAGIC:
+        return raw
+    try:
+        from PIL import Image
+        im = Image.open(io.BytesIO(raw))
+        # ICO files carry several sizes; Pillow opens the first — pick the
+        # largest available frame for the crispest logo.
+        sizes = getattr(im, "ico", None)
+        if sizes is not None:
+            try:
+                biggest = max(im.ico.sizes())
+                im = im.ico.getimage(biggest)
+            except Exception:
+                pass
+        im = im.convert("RGBA")
+        out = io.BytesIO()
+        im.save(out, format="PNG")
+        data = out.getvalue()
+        print(f"[PDF logo] converted {len(raw):,}b -> PNG {len(data):,}b ({im.size[0]}x{im.size[1]})")
+        return data
+    except Exception as exc:
+        print(f"[PDF logo] convert FAIL ({len(raw)}b): {exc}")
+        return None
+
 
 def _fetch_image_bytes(url: str, timeout: int = 8) -> bytes | None:
     """Download an image from a URL. Returns raw bytes or None on failure.
@@ -786,7 +898,7 @@ def _load_logo(branding: dict | None) -> bytes | None:
     # 1. Local file
     spec = branding.get("logo_file")
     if spec:
-        data = _read_local_image(_resolve_local_path(spec))
+        data = _to_embeddable_png(_read_local_image(_resolve_local_path(spec)))
         if data:
             return data
         print(f"[PDF logo] logo_file unusable ({spec}); trying next source")
@@ -795,16 +907,16 @@ def _load_logo(branding: dict | None) -> bytes | None:
     if b64:
         try:
             payload = b64.split(",", 1)[1] if b64.strip().startswith("data:") else b64
-            data = base64.b64decode(payload)
+            data = _to_embeddable_png(base64.b64decode(payload))
             if data:
-                print(f"[PDF logo] OK  {len(data):,} bytes  (base64)")
+                print(f"[PDF logo] OK  base64 -> embeddable PNG")
                 return data
         except Exception as exc:
             print(f"[PDF logo] FAIL base64: {exc}")
     # 3. Remote URL
     url = branding.get("logo_url")
     if url:
-        return _fetch_image_bytes(url)
+        return _to_embeddable_png(_fetch_image_bytes(url))
     return None
 
 
@@ -843,11 +955,11 @@ def _load_ticker_logo(display_name: str, url: str | None,
             continue
         local = _find_ticker_logo_file(stem)
         if local is not None:
-            data = _read_local_image(local)
+            data = _to_embeddable_png(_read_local_image(local))
             if data:
                 return data
     if url:
-        return _fetch_image_bytes(url)
+        return _to_embeddable_png(_fetch_image_bytes(url))
     return None
 
 
@@ -908,10 +1020,10 @@ def _fig_to_png(fig, width: int = 900, height: int = 500,
 
 def _term_rows(terms, lang: str) -> list[tuple[str, str]]:
     rows = [
-        (_t("maturity",         lang), f"{terms.maturity:g}Y ({terms.n_obs} observations, {terms.payment_freq})"),
-        (_t("coupon_pa",        lang), f"{terms.coupon_pa * 100:.2f}%  ({terms.coupon_rate * 100:.4f}% per period)"),
+        (_t("maturity",         lang), f"{terms.maturity:g}Y ({terms.n_obs} {_t('observations_word', lang)}, {_fmt_freq(terms.payment_freq, lang)})"),
+        (_t("coupon_pa",        lang), f"{terms.coupon_pa * 100:.2f}%  ({terms.coupon_rate * 100:.4f}% {_t('per_period', lang)})"),
         (_t("coupon_barrier",   lang), f"{terms.coupon_barrier:.1%}" if terms.coupon_barrier > 0 else
-                                       ("Guaranteed (0%)" if lang == "en" else "Garantizado (0%)")),
+                                       _t("guaranteed_zero", lang)),
         (_t("memory",           lang), _t("yes", lang) if terms.memory else _t("no", lang)),
         (_t("autocall_barrier", lang), f"{terms.autocall_barrier:.1%}"),
         (_t("autocall_start",   lang), f"P{terms.autocall_start_period}"),
@@ -928,7 +1040,7 @@ def _term_rows(terms, lang: str) -> list[tuple[str, str]]:
             rows.append((_t("ac_floor", lang), f"{terms.autocall_floor:.0%}"))
     if getattr(terms, "coupon_at_autocall_only", False):
         rows.append((_t("premium_at_call", lang),
-                     f"{_t('yes', lang)} ({terms.coupon_pa * 100:.2f}% p.a.)"))
+                     f"{_t('yes', lang)} ({terms.coupon_pa * 100:.2f}% {_t('pa_short', lang)})"))
     if getattr(terms, "issue_date", None):
         rows.append((_t("issue_date", lang), terms.issue_date))
     return rows
@@ -998,6 +1110,10 @@ def _cover_page(
     # names, many bullets) does NOT automatically insert a blank page 2.
     pdf.set_auto_page_break(auto=False)
     pdf.add_page()
+    # Remember which page is the cover so footer() suppresses the running footer
+    # there even after _is_cover is reset (footer fires lazily on the next
+    # add_page, by which point _is_cover is already False).
+    pdf._cover_page_no = pdf.page_no()
 
     # ── Full-width colored top band ───────────────────────────────────────
     band_h = _COVER_BAND_H
@@ -1032,7 +1148,7 @@ def _cover_page(
     pdf.set_xy(pdf.w - pdf.r_margin - 55, 7)
     pdf._sf(7.5, "light")
     pdf.set_text_color(220, 230, 245)
-    pdf.cell(55, 5, datetime.date.today().strftime("%-d %B %Y"), align="R")
+    pdf.cell(55, 5, _fmt_long_date(datetime.date.today(), lang), align="R")
 
     # Firm name (second line in band)
     pdf.set_xy(logo_x, 14)
@@ -1102,7 +1218,7 @@ def _cover_page(
 
     y = _sb_label(y + 3, _t("key_terms", lang))
     mini = [
-        (_t("maturity", lang),        f"{terms.maturity:g}Y {terms.payment_freq}"),
+        (_t("maturity", lang),        f"{terms.maturity:g}Y {_fmt_freq(terms.payment_freq, lang)}"),
         (_t("coupon_pa", lang),        f"{terms.coupon_pa*100:.2f}%"),
         (_t("autocall_barrier", lang), f"{terms.autocall_barrier:.0%}"),
         (_t("ki_barrier", lang).split(" (")[0], f"{terms.knock_in_barrier:.1%}"),
@@ -1201,7 +1317,7 @@ def _cover_page(
         pdf.set_char_spacing(0.4)
     except Exception:
         pass
-    pdf.cell(main_w, 5, ("ABOUT THIS REPORT" if lang == "en" else "ACERCA DE ESTE INFORME"),
+    pdf.cell(main_w, 5, _t("about_report_head", lang).upper(),
              new_x="LMARGIN", new_y="NEXT")
     try:
         pdf.set_char_spacing(0)
@@ -1316,6 +1432,7 @@ def generate_pdf_report(
                 logo_urls, issuer_logo_bytes, logo_tickers)
 
     # ── 2. Note terms ──────────────────────────────────────────────────────
+    # First content section — always on a fresh page after the cover.
     pdf.add_page()
     pdf.section_title(_t("note_terms", lang))
     pdf.kv_table(_term_rows(terms, lang))
@@ -1338,8 +1455,11 @@ def generate_pdf_report(
     pdf.callout(_t("model_box_title", lang), _t("model_box_body", lang))
 
     # ── 3. Monte Carlo ─────────────────────────────────────────────────────
-    pdf.add_page()
-    pdf.section_title(_t("sim_summary", lang))
+    # Low min_room: the metric band + first figure caption pack onto the Note
+    # Terms page if there is room; figure() then moves any figure that won't fit
+    # to the next page on its own. This keeps page 2 full instead of breaking
+    # the whole MC block to a fresh page and leaving Note Terms half-empty.
+    pdf.start_section(_t("sim_summary", lang), min_room=55.0)
     n_paths_val = int(np.asarray(results.get("annualized_returns", np.array([]))).shape[0])
     pdf.metric_band([
         (_t("expected_irr",       lang), f"{results.get('expected_irr', 0):.2%}"),
@@ -1349,7 +1469,7 @@ def generate_pdf_report(
         (_t("n_paths",            lang), f"{n_paths_val:,}"),
     ])
 
-    src_mc = f"{_t('src_mc', lang)}, {n_paths_val:,} paths"
+    src_mc = f"{_t('src_mc', lang)}, {n_paths_val:,} {_t('paths_word', lang)}"
     _kw = dict(primary_color=primary_color, accent_color=accent_color)
     pdf.figure(_fig_to_png(figures.get("irr_dist"), **_kw), _t("fig_irr", lang), src_mc)
     pdf.figure(_fig_to_png(figures.get("wof_fan"),  **_kw), _t("fig_wof", lang), src_mc)
@@ -1371,8 +1491,7 @@ def generate_pdf_report(
     # ── 4. Calibration ─────────────────────────────────────────────────────
     params = results.get("params", [])
     if params:
-        pdf.add_page()
-        pdf.section_title(_t("calibration", lang))
+        pdf.start_section(_t("calibration", lang))
 
         # Build the calibration table.  The "Asset" column uses an inline logo +
         # name approach: we draw the table row-by-row so we can interleave the
@@ -1381,7 +1500,8 @@ def generate_pdf_report(
         col_w_asset = usable * 0.18
         col_w_rest  = usable * 0.1025
         col_widths  = [col_w_asset] + [col_w_rest] * 8
-        headers     = [_t("asset", lang), "S0", "mu p.a.", "Vol (V0)", "Vol (theta)",
+        headers     = [_t("asset", lang), _t("calib_s0", lang), _t("calib_mu", lang),
+                       _t("calib_v0", lang), _t("calib_theta", lang),
                        "kappa", "xi", "rho", _t("feller", lang)]
         aligns      = ["L"] + ["R"] * 8
 
@@ -1482,8 +1602,7 @@ def generate_pdf_report(
 
     # ── 5. Historical backtest ─────────────────────────────────────────────
     if bt_summary:
-        pdf.add_page()
-        pdf.section_title(_t("backtest", lang))
+        pdf.start_section(_t("backtest", lang))
         pdf.metric_band([
             (_t("bt_n_issues",       lang), str(bt_summary.get("n_issues", 0))),
             (_t("bt_mean_irr",       lang), f"{bt_summary.get('mean_irr', 0):.2%}"),
@@ -1499,8 +1618,7 @@ def generate_pdf_report(
 
     # ── 6. Current performance ─────────────────────────────────────────────
     if live_data:
-        pdf.add_page()
-        pdf.section_title(_t("live", lang))
+        pdf.start_section(_t("live", lang))
         pdf.metric_band([
             (_t("live_wof_today",   lang), f"{live_data.get('wof_today', 0):.1%}"),
             (_t("live_worst_asset", lang), str(live_data.get("worst_asset", ""))),
@@ -1534,8 +1652,10 @@ def generate_pdf_report(
         pdf.figure(_fig_to_png(live_figure, **_kw), _t("fig_live", lang), _t("src_hist", lang))
 
     # ── 7. Disclaimers ─────────────────────────────────────────────────────
-    pdf.add_page()
-    pdf.section_title(_t("disclaimer_title", lang))
+    # The full legal block is ~80mm tall; only break if it would otherwise be
+    # split awkwardly. Flowing it after the previous section avoids a near-empty
+    # page before the disclaimer.
+    pdf.start_section(_t("disclaimer_title", lang), min_room=90.0)
     pdf._sf(7.5, "regular")
     pdf.set_text_color(*_TEXT_SOFT)
     for para in _t("disclaimer_body", lang).split("\n\n"):

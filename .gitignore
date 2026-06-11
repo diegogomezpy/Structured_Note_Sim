@@ -43,5 +43,10 @@ Thumbs.db
 *.pdf
 heston_multi_diagnostics.png
 
+# Branding logo assets are required inputs for the PDF report, not generated
+# output — keep them tracked despite the blanket *.png ignore above.
+!branding/**/*.png
+!branding/*.png
+
 # ── Data — CSVs are not tracked; data is pulled live from yfinance ──
 data/*.csv
