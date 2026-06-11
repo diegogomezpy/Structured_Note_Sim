@@ -1147,26 +1147,27 @@ elif st.session_state["page"] == "dashboard":
                 "wof_fan":  _fig_wof,
                 "corr":     _fig_corr_input,
             }
-            # ── Summary metrics ───────────────────────────────────────
+            # ── Summary metrics (two rows of 3) ──────────────────────
             st.header(tr("summary_stats_header"))
-            c1, c2, c3, c4, c5, c6 = st.columns(6)
-            c1.metric(tr("expected_irr_pa"),  f"{R['expected_irr']:.2%}",
-                      help=tr("mc_help_expected_irr"))
-            c2.metric(tr("expected_total_return"), f"{R['expected_total_return']:.2%}",
-                      help=tr("mc_help_expected_return"))
-            c3.metric(tr("expected_coupon_metric"), f"{R['expected_coupon']:.2%}",
-                      help=tr("mc_help_expected_coupon"))
-            c4.metric(tr("prob_autocalled"),   f"{R['prob_autocall']:.2%}",
-                      help=tr("mc_help_prob_autocall"))
-            c5.metric(tr("prob_knock_in_metric"), f"{R['prob_knock_in_total']:.2%}",
-                      help=tr("mc_help_prob_knock_in"))
             _ki_mask = R.get("knock_in_triggered")
             _lgki_str = (
                 f"{float(R['annualized_returns'][_ki_mask].mean()):.2%}"
                 if _ki_mask is not None and _ki_mask.any()
                 else "—"
             )
-            c6.metric(tr("loss_given_ki_metric"), _lgki_str,
+            c1, c2, c3 = st.columns(3)
+            c1.metric(tr("expected_irr_pa"),        f"{R['expected_irr']:.2%}",
+                      help=tr("mc_help_expected_irr"))
+            c2.metric(tr("expected_total_return"),  f"{R['expected_total_return']:.2%}",
+                      help=tr("mc_help_expected_return"))
+            c3.metric(tr("expected_coupon_metric"), f"{R['expected_coupon']:.2%}",
+                      help=tr("mc_help_expected_coupon"))
+            c4, c5, c6 = st.columns(3)
+            c4.metric(tr("prob_autocalled"),        f"{R['prob_autocall']:.2%}",
+                      help=tr("mc_help_prob_autocall"))
+            c5.metric(tr("prob_knock_in_metric"),   f"{R['prob_knock_in_total']:.2%}",
+                      help=tr("mc_help_prob_knock_in"))
+            c6.metric(tr("loss_given_ki_metric"),   _lgki_str,
                       help=tr("mc_help_loss_given_ki"))
             if R.get("prob_rescued", 0) > 0:
                 st.caption(
@@ -1516,17 +1517,26 @@ elif st.session_state["page"] == "dashboard":
                    for i in range(1, terms.n_obs + 1)},
             }
 
-            b1, b2, b3, b4, b5 = st.columns(5)
+            _bt_ki_rows = bt[bt["Knock-in"]] if not bt.empty else pd.DataFrame()
+            _bt_lgki_str = (
+                f"{float(_bt_ki_rows['IRR'].mean()):.2%}"
+                if not _bt_ki_rows.empty
+                else "—"
+            )
+            b1, b2, b3 = st.columns(3)
             b1.metric(tr("bt_metric_issue_dates"),    str(bt_summary.get("n_issues", 0)),
                       help=tr("bt_help_issue_dates"))
             b2.metric(tr("bt_metric_mean_irr"),       f"{bt_summary.get('mean_irr', 0):.2%}",
                       help=tr("bt_help_mean_irr"))
             b3.metric(tr("bt_metric_median_irr"),     f"{bt_summary.get('median_irr', 0):.2%}",
                       help=tr("bt_help_median_irr"))
+            b4, b5, b6 = st.columns(3)
             b4.metric(tr("bt_metric_knock_in_pct"),   f"{bt_summary.get('prob_knock_in', 0):.1%}",
                       help=tr("bt_help_knock_in_pct"))
             b5.metric(tr("bt_metric_autocalled_pct"), f"{bt_summary.get('prob_called', 0):.1%}",
                       help=tr("bt_help_autocalled_pct"))
+            b6.metric(tr("loss_given_ki_metric"),     _bt_lgki_str,
+                      help=tr("bt_help_loss_given_ki"))
 
             _bt_outcome_fig = build_backtest_outcome_bar(bt, color_map, tr)
             _bt_irr_fig     = build_backtest_irr_scatter(bt, color_map, tr)
@@ -1534,8 +1544,11 @@ elif st.session_state["page"] == "dashboard":
             col1.plotly_chart(_bt_outcome_fig,                   use_container_width=True)
             col2.plotly_chart(build_worst_asset_pie(bt, tr),     use_container_width=True)
             st.plotly_chart(_bt_irr_fig,                         use_container_width=True)
-            # Cache for PDF
-            st.session_state["_pdf_bt_summary"] = bt_summary
+            # Cache for PDF — augment bt_summary with loss-given-KI
+            _pdf_bt_summary = dict(bt_summary)
+            if not _bt_ki_rows.empty:
+                _pdf_bt_summary["loss_given_ki"] = float(_bt_ki_rows["IRR"].mean())
+            st.session_state["_pdf_bt_summary"] = _pdf_bt_summary
             st.session_state["_pdf_bt_figures"] = {"outcome": _bt_outcome_fig, "irr_scatter": _bt_irr_fig}
 
             try:

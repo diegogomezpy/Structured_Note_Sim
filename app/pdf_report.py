@@ -217,6 +217,7 @@ _LABELS: dict[str, dict[str, str]] = {
     "expected_coupon":       {"en": "Expected coupon income",            "es": "Cupón total esperado"},
     "prob_autocall":         {"en": "P(autocall)",                       "es": "P(autocall)"},
     "prob_knock_in":         {"en": "P(capital loss)",                   "es": "P(pérdida de capital)"},
+    "loss_given_ki":         {"en": "IRR if knocked in",                 "es": "TIR si knock-in"},
     "n_paths":               {"en": "Simulated paths",                   "es": "Caminos simulados"},
     "autocall_by_period":    {"en": "Autocall Probability by Period",    "es": "Probabilidad de Autocall por Período"},
     "period":                {"en": "Period",                            "es": "Período"},
@@ -249,6 +250,7 @@ _LABELS: dict[str, dict[str, str]] = {
     "bt_median_irr":         {"en": "Median IRR p.a.",                   "es": "TIR mediana anual"},
     "bt_knock_in_pct":       {"en": "Knock-in rate",                     "es": "Tasa de knock-in"},
     "bt_autocalled_pct":     {"en": "Autocall rate",                     "es": "Tasa de autocall"},
+    "bt_loss_given_ki":      {"en": "IRR if knocked in",                 "es": "TIR si knock-in"},
     "live_wof_today":        {"en": "Worst-of today",                    "es": "Worst-of hoy"},
     "live_worst_asset":      {"en": "Worst asset",                       "es": "Peor activo"},
     "live_irr_to_date":      {"en": "Coupon IRR to date (ann.)",         "es": "TIR de cupones a fecha (anual)"},
@@ -1875,11 +1877,19 @@ def generate_pdf_report(
     # the whole MC block to a fresh page and leaving Note Terms half-empty.
     pdf.start_section(_t("sim_summary", lang), min_room=55.0)
     n_paths_val = int(np.asarray(results.get("annualized_returns", np.array([]))).shape[0])
+    _mc_ki_mask = np.asarray(results.get("knock_in_triggered", []), dtype=bool)
+    _mc_ann_ret = np.asarray(results.get("annualized_returns", []))
+    _mc_lgki_str = (
+        f"{float(_mc_ann_ret[_mc_ki_mask].mean()):.2%}"
+        if _mc_ki_mask.any() and len(_mc_ann_ret) == len(_mc_ki_mask)
+        else "—"
+    )
     pdf.metric_band([
         (_t("expected_irr",       lang), f"{results.get('expected_irr', 0):.2%}"),
         (_t("total_return_short", lang), f"{results.get('expected_total_return', 0):.2%}"),
         (_t("prob_autocall",      lang), f"{results.get('prob_autocall', 0):.1%}"),
         (_t("prob_knock_in",      lang), f"{results.get('prob_knock_in_total', 0):.2%}"),
+        (_t("loss_given_ki",      lang), _mc_lgki_str),
         (_t("n_paths",            lang), f"{n_paths_val:,}"),
     ])
 
@@ -2018,12 +2028,15 @@ def generate_pdf_report(
     # ── 5. Historical backtest ─────────────────────────────────────────────
     if bt_summary:
         pdf.start_section(_t("backtest", lang))
+        _bt_lgki = bt_summary.get("loss_given_ki")
+        _bt_lgki_pdf = f"{_bt_lgki:.2%}" if _bt_lgki is not None else "—"
         pdf.metric_band([
             (_t("bt_n_issues",       lang), str(bt_summary.get("n_issues", 0))),
             (_t("bt_mean_irr",       lang), f"{bt_summary.get('mean_irr', 0):.2%}"),
             (_t("bt_median_irr",     lang), f"{bt_summary.get('median_irr', 0):.2%}"),
             (_t("bt_autocalled_pct", lang), f"{bt_summary.get('prob_called', 0):.1%}"),
             (_t("bt_knock_in_pct",   lang), f"{bt_summary.get('prob_knock_in', 0):.1%}"),
+            (_t("bt_loss_given_ki",  lang), _bt_lgki_pdf),
         ])
         if bt_figures:
             pdf.figure(_fig_to_png(bt_figures.get("outcome"), **_kw),

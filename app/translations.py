@@ -237,6 +237,14 @@ _STRINGS: dict[str, tuple[str, str]] = {
         "Fracción de fechas de emisión históricas donde la nota fue cancelada "
         "anticipadamente en una fecha de observación antes del vencimiento.",
     ),
+    "bt_help_loss_given_ki":     (
+        "Mean realised annualised IRR on historical issue dates where the knock-in "
+        "barrier was breached at maturity. Shows '—' if no knock-in events occurred "
+        "in the backtest window.",
+        "TIR anualizada media realizada en fechas de emisión históricas donde la "
+        "barrera de knock-in fue tocada al vencimiento. Muestra '—' si no hubo "
+        "eventos de knock-in en la ventana del backtest.",
+    ),
 
     # ── Current Performance tab ────────────────────────────────────────────
     "live_tab_header_md":        (
