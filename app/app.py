@@ -1821,16 +1821,24 @@ elif st.session_state["page"] == "dashboard":
     if _pdf_btn and _has_sim:
         with st.spinner("Building PDF report…"):
             from pdf_report import generate_pdf_report
+            # Build logo URL maps from the already-populated TICKER_LOGOS dict
+            _pdf_logo_urls = {
+                name: (TICKER_LOGOS.get(sym) or _LOGO_BASE.format(sym=sym))
+                for sym, name in run_terms.tickers.items()
+            }
+            _pdf_issuer_logo_url = get_issuer_logo_url(getattr(run_terms, "issuer", "") or "")
             _pdf_bytes = generate_pdf_report(
-                terms       = run_terms,
-                results     = R,
-                asset_names = asset_names,
-                figures     = st.session_state.get("_pdf_mc_figures", {}),
-                lang        = "es" if lang_choice == "Español" else "en",
-                bt_summary  = st.session_state.get("_pdf_bt_summary"),
-                bt_figures  = st.session_state.get("_pdf_bt_figures"),
-                live_data   = st.session_state.get("_pdf_live_data"),
-                live_figure = st.session_state.get("_pdf_live_figure"),
+                terms            = run_terms,
+                results          = R,
+                asset_names      = asset_names,
+                figures          = st.session_state.get("_pdf_mc_figures", {}),
+                lang             = "es" if lang_choice == "Español" else "en",
+                bt_summary       = st.session_state.get("_pdf_bt_summary"),
+                bt_figures       = st.session_state.get("_pdf_bt_figures"),
+                live_data        = st.session_state.get("_pdf_live_data"),
+                live_figure      = st.session_state.get("_pdf_live_figure"),
+                logo_urls        = _pdf_logo_urls,
+                issuer_logo_url  = _pdf_issuer_logo_url,
             )
         _pdf_slot.download_button(
             "⬇ Download PDF",
