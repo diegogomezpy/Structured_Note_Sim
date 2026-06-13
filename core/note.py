@@ -508,7 +508,8 @@ def price_note(
         cap_level       = (1.0 + terms.upside_cap) if terms.upside_cap is not None else np.inf
         cp_payoff       = np.clip(worst_final_cp, terms.capital_guarantee, cap_level)  # (n_paths,)
         total_return_cp = cp_payoff - 1.0
-        irr_cp          = total_return_cp / t_maturity
+        # Guard against a degenerate near-zero holding time (QW5).
+        irr_cp          = total_return_cp / max(t_maturity, 1.0 / 252.0)
         zeros           = np.zeros(n_paths)
         return {
             # Per-path arrays
@@ -754,7 +755,8 @@ def price_note(
     # e.g. autocalled at 3M (t=0.25) with 2.5% coupon → IRR = 2.5%/0.25 = 10% p.a. ✓
     # Compound annualisation ((1+r)^(1/t)-1) overstates IRR for short tenors.
     total_return   = nominal_payoffs - 1.0
-    annualized_irr = total_return / t_held_arr
+    # Guard against a degenerate near-zero holding time (QW5).
+    annualized_irr = total_return / np.maximum(t_held_arr, 1.0 / 252.0)
 
     # ------------------------------------------------------------------
     # Summary statistics

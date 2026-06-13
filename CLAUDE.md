@@ -135,7 +135,7 @@ notebooks/tests (legacy path).
 
 By default `call_steepness=None` → hard trigger: the per-observation comparison `autocall_basket >= autocall_barrier_schedule()[j]` returns exactly 0.0 or 1.0, so `call_draws < prob` is fully deterministic regardless of RNG seed. Soft sigmoid triggers exist but require steepness ≥ ~2000 to approximate a hard trigger — at 100 the trigger is NOT effectively hard (see docstring).
 
-`price_note()` compares each observation against `terms.autocall_barrier_schedule()` (a per-period array), not a scalar. For constant-barrier notes the schedule is flat and this is identical to the old behaviour; for growth autocalls (`autocall_step_down > 0`) it declines each period from `autocall_start_period`, floored at `autocall_floor`. The standalone `NoteTerms.autocall_prob()` method still exists (scalar barrier) for soft/hard dispatch but the engine path uses the schedule directly.
+`price_note()` compares each observation against `terms.autocall_barrier_schedule()` (a per-period array), not a scalar. For constant-barrier notes the schedule is flat and this is identical to the old behaviour; for growth autocalls (`autocall_step_down > 0`) it declines each period from `autocall_start_period`, floored at `autocall_floor`. (The old standalone scalar `NoteTerms.autocall_prob()` method has been removed — the engine path uses the schedule directly.)
 
 **Single-asset notes:** `np.corrcoef` collapses to a 0-d scalar for one asset, so `calibrator._corr_SS`/`_corr_VV` wrap it in `np.atleast_2d` (→ `[[1.0]]`). The setup form allows ≥ 1 underlying.
 
@@ -190,7 +190,8 @@ Three optional fields (all default to a no-op, so plain Phoenix notes are unaffe
 
 Example: Citi XS3096699163 — barrier 100% stepping down 3%/period from obs 3 (floor 88%), 12% p.a. premium paid only at call. Config: `autocall_step_down: 0.03, autocall_floor: 0.88, coupon_at_autocall_only: true, coupon_pa: 0.12, autocall_start_period: 3`.
 
-These fields are **not** exposed as setup-form widgets; they are preserved from the loaded JSON config across a setup round-trip via `getattr(base, ...)` in `app/app.py`.
+These fields are exposed by the **Growth Autocall** template in the setup form's
+note-type picker (see below); they default to a no-op for the Phoenix family.
 
 ## Basket types and final redemption
 
@@ -200,7 +201,37 @@ The `final_basket` + `final_redemption_barrier` fields implement the BBVA-style 
 
 The app has two pages controlled by `st.session_state["page"]`: `"setup"` and `"dashboard"`. All heavy computation (calibration, simulation, backtest) is cached via `@st.cache_data`. Cache keys for the backtest use `tickers_tuple` (a `tuple` of `(sym, name)` pairs) and `terms.to_json()`. Simulation results are stored in `st.session_state["results"]` and are `None` until the user clicks "Run Simulation".
 
-Because Streamlit ignores a keyed widget's `value=` once its key exists in `session_state`, fields that must be populated from a loaded JSON config (e.g. `setup_issuer`, `setup_issue_date`) push the loaded value into `session_state` *before* the widget renders. Forgetting this is why a config field "doesn't load".
+Because Streamlit ignores a keyed widget's `value=` once its key exists in `session_state`, fields that must be populated from a loaded JSON config (e.g. `setup_issuer`, `setup_issue_date`, `setup_note_type`) push the loaded value into `session_state` *before* the widget renders. Forgetting this is why a config field "doesn't load".
+
+### Setup-form note-type picker
+
+The setup page leads with a **note-type template picker** (`setup_note_type`
+radio: `phoenix` / `reverse_conv` / `growth_autocall` / `bonus_cert` /
+`capital_protected` / `custom`). The picker drives **progressive disclosure** —
+`_show_*` booleans gate which sections render (Coupon, Protection/Barriers,
+Autocall, the step-down growth sub-block, capital-protection/min-return inputs).
+It does **not** change the `NoteTerms` build contract: every widget variable
+(`coupon_pa_pct`, `coupon_bar_pct`, `autocall_bar_pct`, `min_return_pct`,
+`capital_guarantee`, `upside_cap`, …) is first seeded from `base`, then a
+per-template block forces the canonical values the structure hard-codes (e.g.
+Bonus/Capital-Protected → `autocall_barrier=200%`, `coupon_pa=0`; Reverse
+Convertible → `coupon_barrier=0`, `memory=False`; Growth → `coupon_at_autocall_only=True`),
+so a field hidden by the template still builds correctly — even when switching
+type from a Phoenix base. The confirm block reads those variables unchanged.
+
+Two ordering rules the picker depends on:
+- `setup_note_type` is pushed into `session_state` **only inside the JSON-upload
+  block** (`_detect_note_type(_parsed)`), which runs once per new file — so a
+  manual override on later reruns is never clobbered.
+- `_detect_note_type()` (in `app/app.py`) infers the template from a loaded
+  config; **it must stay in sync with the per-template forcing logic** and the
+  payoff branches in `core/note.py`. Order matters: capital-protected and bonus
+  are checked before the Phoenix tests because they set fields those tests match.
+
+Metadata (name/issuer/issue-date) and engine settings (paths/seed/calibration
+window) live in collapsed `st.expander`s; the session-state-before-widget pushes
+for `setup_issuer`/`setup_issue_date` run inside the metadata expander body
+(which always executes).
 
 ## PDF report
 
@@ -228,8 +259,8 @@ For step-down (growth) autocalls, also pass `autocall_schedule` — a list of `(
 - **QW1 Pre-allocate `Z_full`** (`core/simulator.py`): replace per-step `np.concatenate([Z, -Z], axis=0)` with a pre-allocated buffer filled in-place. Saves one large allocation per time step; measurable at ≥10K paths.
 - **QW2 Vectorize basket extraction** (`core/note.py`): replace the `obs_steps` list comprehension in `price_note()` with advanced indexing `perf_paths[:, np.array(obs_steps), :]` + single axis reduction. Meaningful for 5Y monthly notes (60 obs).
 - **QW3 Fix `corr_VV` bias** (`core/calibrator.py`): use `np.diff(rv, axis=0)` instead of RV levels for `corr_VV`. One line — removes the documented upward bias in variance-variance correlation.
-- **QW4 Fix/deprecate `autocall_prob()` scalar method** (`core/note.py:333`): compares against `self.autocall_barrier` (scalar) rather than the per-period schedule. Silent wrong probabilities for step-down notes. Remove or add `period_idx` parameter.
-- **QW5 IRR denominator guard** (`core/note.py`): `np.maximum(t_held_arr, 1/252)` before division. Defensive guard against any floating-point near-zero edge case.
+- **QW4 ~~Fix/deprecate `autocall_prob()` scalar method~~ (DONE)**: the scalar `NoteTerms.autocall_prob()` method has been removed entirely — the engine path uses `autocall_barrier_schedule()` directly, so the step-down silent-wrong-probability risk is eliminated.
+- **QW5 ~~IRR denominator guard~~ (DONE)**: `np.maximum(t_held_arr, 1/252)` now guards the division at `core/note.py` (and the capital-protected branch guards `t_maturity` likewise). Defends against a degenerate near-zero holding time.
 - **QW6 Expose `t_dof` as UI slider** (`app/app.py`): already threaded through to simulator; a slider would let users stress-test copula tail sensitivity.
 - **QW7 Replace `print()` with `logging`** (`core/simulator.py`): Feller output and summary table go to terminal only; `logging.getLogger(__name__)` allows Streamlit callers to suppress/redirect.
 - **QW8 Unify RNG seed for soft-trigger backtest** (`core/backtest.py`): `run_backtest()` defaults `seed=42`; app passes `seed+1`. Document or unify — irrelevant for hard triggers but inconsistent for soft.
@@ -431,8 +462,8 @@ happen to be tuned to a green palette; it is NOT a general contract:
   `floor_*`, `call_3m/6m/9m`, `tab_fan/payoff/explorer/corr`, `outcome_*`, …).
   Verified by AST scan against all `tr("…")` call sites.
 - **D3 `app/app.py:227 _DISPLAY_TO_LABEL`** — built, never read.
-- **D4 `NoteTerms.autocall_prob()`** — no call sites anywhere (QW4 already
-  flags it as wrong for step-down notes; it can simply be removed).
+- **D4 ~~`NoteTerms.autocall_prob()`~~ (DONE)** — removed; no call sites
+  remained and it was wrong for step-down notes.
 - **D5 Write-only results keys**: `results["grid_dates"]` and
   `results["div_schedule"]` are stored by the run block and never read.
 - **D6 Unused engine outputs**: `price_note`'s `prob_floor` /

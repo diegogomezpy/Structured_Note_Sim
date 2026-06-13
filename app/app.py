@@ -308,6 +308,23 @@ def _safe_load_prices(tickers_tuple, **kw):
         st.info(tr("data_load_retry"))
         st.stop()
 
+
+def _detect_note_type(t: NoteTerms) -> str:
+    """Infer which setup-form template a loaded config corresponds to, so the
+    note-type picker can show only the relevant fields. Order matters: the two
+    standalone payoff branches (capital-protected, bonus) are checked first
+    because they set fields the Phoenix tests would otherwise match."""
+    if getattr(t, "capital_guarantee", None) is not None:
+        return "capital_protected"
+    if getattr(t, "min_return", 0.0) and t.min_return > 0:
+        return "bonus_cert"
+    if getattr(t, "coupon_at_autocall_only", False) or getattr(t, "autocall_step_down", 0.0) > 0:
+        return "growth_autocall"
+    if t.coupon_barrier == 0.0 and not t.memory:
+        return "reverse_conv"
+    return "phoenix"
+
+
 # ==========================================================================
 # ─────────────────────────────────────────────────────────────────────────
 #  PAGE 1 — SETUP
@@ -330,6 +347,10 @@ if st.session_state["page"] == "setup":
             _parsed_dict = _parsed.to_dict()
             if st.session_state["loaded_terms_dict"] != _parsed_dict:
                 st.session_state["loaded_terms_dict"] = _parsed_dict
+                # Fresh upload → set the note-type picker to the detected template.
+                # This is the ONLY place we force the picker, so a manual override
+                # on later reruns is never clobbered (this block runs once per file).
+                st.session_state["setup_note_type"] = _detect_note_type(_parsed)
                 # Resolve tickers to known labels (or register as custom)
                 if _parsed.tickers:
                     # Auto-correct inverted ticker dicts: if values look like yfinance symbols
@@ -455,266 +476,383 @@ if st.session_state["page"] == "setup":
 
     st.divider()
 
-    # ── Note terms ────────────────────────────────────────────────────────
-    st.subheader(tr("setup_note_terms"))
-
-    note_name = st.text_input(
-        tr("setup_note_name"),
-        value=base.name if loaded_terms else "Custom Note",
-        help=tr("setup_note_name_help"),
-    )
-
-    col1, col2, col3 = st.columns(3)
-
-    maturity_opts = [0.5, 1.0, 1.5, 2.0, 3.0, 5.0]
-    # Keep a loaded config's maturity selectable instead of silently snapping
-    # it to the nearest preset (e.g. a 9M note must not become 1Y).
-    if base.maturity not in maturity_opts:
-        maturity_opts = sorted(set(maturity_opts + [base.maturity]))
-    freq_opts     = ["monthly", "quarterly", "semi-annual", "annual"]
-    _freq_label = {
-        "monthly":     tr("freq_monthly"),
-        "quarterly":   tr("freq_quarterly"),
-        "semi-annual": tr("freq_semi_annual"),
-        "annual":      tr("freq_annual"),
+    # ── Note type ─────────────────────────────────────────────────────────
+    st.subheader(tr("setup_note_type_header"))
+    _nt_opts = ["phoenix", "reverse_conv", "growth_autocall",
+                "bonus_cert", "capital_protected", "custom"]
+    _nt_label = {
+        "phoenix": tr("nt_phoenix"), "reverse_conv": tr("nt_reverse_conv"),
+        "growth_autocall": tr("nt_growth_autocall"), "bonus_cert": tr("nt_bonus_cert"),
+        "capital_protected": tr("nt_capital_protected"), "custom": tr("nt_custom"),
     }
-    from core.note import _FREQ_TO_PERIODS
+    _nt_desc = {
+        "phoenix": tr("nt_phoenix_desc"), "reverse_conv": tr("nt_reverse_conv_desc"),
+        "growth_autocall": tr("nt_growth_autocall_desc"), "bonus_cert": tr("nt_bonus_cert_desc"),
+        "capital_protected": tr("nt_capital_protected_desc"), "custom": tr("nt_custom_desc"),
+    }
+    note_type = st.radio(
+        tr("setup_note_type"), _nt_opts,
+        format_func=lambda k: _nt_label[k],
+        horizontal=True,
+        key="setup_note_type",
+        help=tr("setup_note_type_help"),
+    )
+    st.info(_nt_desc[note_type])
 
-    with col1:
-        maturity = st.selectbox(
-            tr("setup_maturity_years"), maturity_opts,
-            index=maturity_opts.index(base.maturity)
-                  if base.maturity in maturity_opts else 1,
-        )
-        payment_freq = st.selectbox(
-            tr("setup_payment_freq"), freq_opts,
-            index=freq_opts.index(base.payment_freq)
-                  if base.payment_freq in freq_opts else 1,
-            format_func=lambda f: _freq_label.get(f, f),
-        )
-        _n_obs_derived = round(maturity * _FREQ_TO_PERIODS[payment_freq])
-        st.caption(tr("setup_obs_periods_caption", n=_n_obs_derived,
-                      per_yr=_FREQ_TO_PERIODS[payment_freq], mat=maturity))
-        autocall_start = st.number_input(
-            tr("setup_autocall_start"), 1, _n_obs_derived,
-            value=min(base.autocall_start_period, _n_obs_derived),
-            help=tr("setup_autocall_start_help"),
-        )
+    # Per-template field visibility
+    _is_phoenix = note_type == "phoenix"
+    _is_revconv = note_type == "reverse_conv"
+    _is_growth  = note_type == "growth_autocall"
+    _is_bonus   = note_type == "bonus_cert"
+    _is_capprot = note_type == "capital_protected"
+    _is_custom  = note_type == "custom"
 
-    with col2:
-        coupon_pa_pct = st.number_input(
-            tr("setup_coupon_pa"), 0.0, 50.0,
-            value=round(base.coupon_pa * 100, 4),
-            step=0.5, format="%.4f",
-            help=tr("setup_coupon_pa_help"),
-        )
-        _coupon_per_period = coupon_pa_pct / 100.0 / _FREQ_TO_PERIODS[payment_freq]
-        st.caption(tr("setup_coupon_period_caption", v=_coupon_per_period * 100))
-        # number_input (not int slider): term sheets use sub-percent barriers
-        # (e.g. 55.5%, 53.7%) which an int slider silently truncates.
-        coupon_bar_pct = st.number_input(
-            tr("setup_coupon_barrier"), 0.0, 100.0,
-            value=round(base.coupon_barrier * 100, 4), step=0.5, format="%.2f",
-        )
-        memory = st.toggle(tr("setup_memory_coupon"), value=base.memory)
+    _show_coupon         = note_type in ("phoenix", "reverse_conv", "growth_autocall", "custom")
+    _show_coupon_barrier = note_type in ("phoenix", "custom")
+    _show_memory         = note_type in ("phoenix", "custom")
+    _show_coupon_basket  = note_type in ("phoenix", "custom")
+    _show_autocall       = note_type in ("phoenix", "reverse_conv", "growth_autocall", "custom")
+    _show_growth         = note_type in ("growth_autocall", "custom")
+    _show_ki             = note_type in ("phoenix", "reverse_conv", "growth_autocall", "bonus_cert", "custom")
+    _show_min_return     = _is_bonus
+    _show_capprot        = _is_capprot
+    _show_rescue         = note_type in ("phoenix", "custom")
 
-    with col3:
-        # Bonus / capital-protected notes disable autocall by setting the
-        # barrier impossibly high (e.g. 200%). Bound at 300% and clamp the
-        # default so such configs load without a ValueAboveMax crash.
-        _ac_val = round(base.autocall_barrier * 100, 4)
-        autocall_bar_pct = st.number_input(
-            tr("setup_autocall_barrier"), 50.0, 300.0,
-            value=min(max(_ac_val, 50.0), 300.0), step=0.5, format="%.2f",
-        )
-        ki_bar_pct = st.number_input(
-            tr("setup_ki_barrier"), 0.0, 100.0,
-            value=round(base.knock_in_barrier * 100, 4), step=0.5, format="%.2f",
-        )
-
-    st.divider()
-
-    # ── Basket types ──────────────────────────────────────────────────────
-    st.subheader(tr("setup_basket_types"))
     basket_opts = ["worst_of", "best_of", "average"]
     _basket_label = {
         "worst_of": tr("basket_worst_of"),
         "best_of":  tr("basket_best_of"),
         "average":  tr("basket_average"),
     }
-    bc1, bc2, bc3 = st.columns(3)
-    with bc1:
-        coupon_basket = st.selectbox(tr("setup_coupon_check"), basket_opts,
-                                      index=basket_opts.index(base.coupon_basket),
-                                      format_func=lambda b: _basket_label.get(b, b))
-    with bc2:
-        autocall_basket = st.selectbox(tr("setup_autocall_check"), basket_opts,
-                                        index=basket_opts.index(base.autocall_basket),
-                                        format_func=lambda b: _basket_label.get(b, b))
-    with bc3:
-        # Best-of capital rescue clause (e.g. BBVA XS3378405743 Final Payout xi):
-        # at maturity, capital is returned at par if the BEST performer is at or
-        # above the rescue barrier, even when the knock-in barrier was breached.
-        # Off = standard worst-of note: knock-in alone determines the loss.
-        rescue_on = st.toggle(
-            tr("setup_rescue_toggle"),
-            value=(base.final_basket == "best_of"),
-            help=tr("setup_rescue_help"),
-        )
-        if rescue_on:
-            rescue_bar_pct = st.number_input(
-                tr("setup_rescue_barrier"), 50.0, 150.0,
-                value=round(getattr(base, "final_redemption_barrier", 1.0) * 100, 4),
-                step=0.5, format="%.2f",
-                help=tr("setup_rescue_barrier_help"),
-            )
-        else:
-            rescue_bar_pct = 100.0
-        final_basket = "best_of" if rescue_on else "worst_of"
+    from core.note import _FREQ_TO_PERIODS
 
-    st.divider()
+    # ── Field defaults ─────────────────────────────────────────────────────
+    # Seed every field from the loaded/base config, then force the
+    # template-canonical values for whatever this structure hard-codes — so
+    # switching type from a Phoenix base still builds a correct note even for
+    # the fields this template hides.
+    coupon_pa_pct    = round(base.coupon_pa * 100, 4)
+    coupon_bar_pct   = round(base.coupon_barrier * 100, 4)
+    memory           = base.memory
+    coupon_basket    = base.coupon_basket
+    autocall_basket  = base.autocall_basket
+    _ac_val          = round(base.autocall_barrier * 100, 4)
+    autocall_bar_pct = min(max(_ac_val, 50.0), 300.0)
+    ki_bar_pct       = round(base.knock_in_barrier * 100, 4)
+    step_down_pct    = round(getattr(base, "autocall_step_down", 0.0) * 100, 4)
+    _base_floor      = getattr(base, "autocall_floor", None)
+    floor_pct        = round((_base_floor if _base_floor is not None else 0.0) * 100, 4)
+    premium_at_call  = bool(getattr(base, "coupon_at_autocall_only", False))
+    min_return_pct   = round(getattr(base, "min_return", 0.0) * 100, 4)
+    rescue_on        = (base.final_basket == "best_of")
+    rescue_bar_pct   = round(getattr(base, "final_redemption_barrier", 1.0) * 100, 4)
+    capital_guarantee = getattr(base, "capital_guarantee", None)
+    upside_cap        = getattr(base, "upside_cap", None)
 
-    # ── Advanced — Growth / Classic Autocall ─────────────────────────────
-    # Every JSON-loadable field is editable here; nothing is silently
-    # pass-through-only anymore.
-    _adv_active = bool(getattr(base, "autocall_step_down", 0.0)
-                       or getattr(base, "coupon_at_autocall_only", False))
-    with st.expander(tr("setup_advanced_expander"),
-                     expanded=_adv_active):
-        ac1, ac2, ac3 = st.columns(3)
-        with ac1:
-            step_down_pct = st.number_input(
-                tr("setup_step_down"), 0.0, 10.0,
-                value=round(getattr(base, "autocall_step_down", 0.0) * 100, 4),
-                step=0.5, format="%.2f",
-                help=tr("setup_step_down_help"),
-            )
-        with ac2:
-            _base_floor = getattr(base, "autocall_floor", None)
-            floor_pct = st.number_input(
-                tr("setup_autocall_floor"), 0.0, 100.0,
-                value=round((_base_floor if _base_floor is not None else 0.0) * 100, 4),
-                step=0.5, format="%.2f",
-                help=tr("setup_autocall_floor_help"),
-            )
-        with ac3:
-            st.markdown("<br>", unsafe_allow_html=True)
-            premium_at_call = st.toggle(
-                tr("setup_premium_at_call"),
-                value=bool(getattr(base, "coupon_at_autocall_only", False)),
-                help=tr("setup_premium_at_call_help"),
-            )
-        if step_down_pct > 0:
-            _sd_preview = NoteTerms(
-                maturity=float(maturity), payment_freq=payment_freq,
-                autocall_barrier=autocall_bar_pct / 100.0,
-                autocall_start_period=int(autocall_start),
-                autocall_step_down=step_down_pct / 100.0,
-                autocall_floor=(floor_pct / 100.0) if floor_pct > 0 else None,
-            ).autocall_barrier_schedule()
-            st.caption(tr("setup_barrier_schedule") +
-                       " → ".join(f"{lvl:.0%}" for lvl in _sd_preview))
+    if _is_bonus:
+        # No coupons, no autocall (barrier set unreachable); KI + floor only.
+        coupon_pa_pct = 0.0; coupon_bar_pct = 0.0; memory = False
+        autocall_bar_pct = 200.0; autocall_basket = "worst_of"; coupon_basket = "worst_of"
+        step_down_pct = 0.0; floor_pct = 0.0; premium_at_call = False
+        capital_guarantee = None; upside_cap = None; rescue_on = False
+    elif _is_capprot:
+        # Standalone payoff: engine ignores coupon/autocall/KI entirely.
+        coupon_pa_pct = 0.0; coupon_bar_pct = 0.0; memory = False
+        autocall_bar_pct = 200.0; autocall_basket = "worst_of"; coupon_basket = "worst_of"
+        ki_bar_pct = 0.0; min_return_pct = 0.0
+        step_down_pct = 0.0; floor_pct = 0.0; premium_at_call = False
+        rescue_on = False
+    elif _is_revconv:
+        # Guaranteed coupon (barrier 0), no memory; standard worst-of redemption.
+        coupon_bar_pct = 0.0; memory = False
+        step_down_pct = 0.0; floor_pct = 0.0; premium_at_call = False
+        min_return_pct = 0.0; capital_guarantee = None; upside_cap = None; rescue_on = False
+    elif _is_growth:
+        # Premium paid only at autocall; coupon barrier/memory n/a.
+        memory = False; premium_at_call = True
+        min_return_pct = 0.0; capital_guarantee = None; upside_cap = None; rescue_on = False
+    elif _is_phoenix:
+        step_down_pct = 0.0; floor_pct = 0.0; premium_at_call = False
+        min_return_pct = 0.0; capital_guarantee = None; upside_cap = None
 
-    st.divider()
-
-    # ── Issuer (optional) ────────────────────────────────────────────────
-    st.subheader(tr("setup_issuer_header"))
-    st.caption(tr("setup_issuer_caption"))
-    # Source of truth: loaded_terms (from JSON) takes priority over widget state.
-    # Push the loaded issuer into session_state before the widget renders, so the
-    # Streamlit keyed-widget problem (value= is ignored on reruns) doesn't drop it.
-    _base_issuer = getattr(base, "issuer", "") or ""
-    if loaded_terms is not None and _base_issuer and st.session_state.get("setup_issuer") != _base_issuer:
-        st.session_state["setup_issuer"] = _base_issuer
-    issuer_input = st.text_input(
-        tr("setup_issuer_name"),
-        value=_base_issuer,
-        placeholder="e.g. BBVA, HSBC, BNP Paribas",
-        key="setup_issuer",
-    )
-    if issuer_input:
-        _logo_url = get_issuer_logo_url(issuer_input)
-        if _logo_url:
-            st.markdown(
-                f'<img src="{_logo_url}" height="32" style="margin-top:4px" '
-                f'onerror="this.style.display=\'none\'">',
-                unsafe_allow_html=True,
-            )
-
-    st.divider()
-
-    # ── Issue Date (optional) ─────────────────────────────────────────────
-    st.subheader(tr("setup_issue_date_header"))
-    st.caption(tr("setup_issue_date_caption"))
-    import datetime as _dt2
-
-    # Source of truth: loaded_terms (from JSON) takes priority over widget state.
-    # This avoids the Streamlit keyed-widget problem where value= is ignored on reruns.
-    _base_issue_str = getattr(base, "issue_date", None)
-    _base_issue = None
-    if _base_issue_str:
-        try:
-            _base_issue = _dt2.date.fromisoformat(_base_issue_str)
-        except Exception:
-            pass
-
-    # Clear the widget key when a new JSON is loaded so value= takes effect
-    if _base_issue is not None and st.session_state.get("setup_issue_date") != _base_issue:
-        st.session_state["setup_issue_date"] = _base_issue
-
-    issue_date_input = st.date_input(
-        tr("setup_issue_date_input"),
-        value=_base_issue,
-        min_value=None,
-        max_value=None,
-        key="setup_issue_date",
-        help=tr("setup_issue_date_help"),
-    )
-
-    # A note is live if it has an issue date on or before today
-    _issue_is_live = bool(issue_date_input) and issue_date_input <= _dt2.date.today()
-    if _issue_is_live:
-        st.success(tr("setup_live_note", date=issue_date_input))
-    elif issue_date_input:
-        st.info(tr("setup_future_issue"))
-
-    st.divider()
-
-    # ── Simulation ────────────────────────────────────────────────────────
-    st.subheader(tr("setup_simulation_header"))
-    sc1, sc2 = st.columns(2)
-    with sc1:
-        n_paths = st.slider(tr("setup_mc_paths"), 1000, _MAX_PATHS,
-                             min(st.session_state["n_paths"], _MAX_PATHS), step=1000)
-    with sc2:
-        seed = int(st.number_input(tr("setup_random_seed"), value=int(st.session_state["seed"])))
-
-    st.divider()
-
-    # ── Historical Data ───────────────────────────────────────────────────────────────
-    st.subheader(tr("setup_historical_data"))
-    # Always pull the maximum available history. The backtest benefits from
-    # every available issue date, and the calibration window below controls
-    # how much of it is actually used for Heston parameter estimation.
-    history_years = None
-    st.caption(tr("setup_price_history_caption"))
-
-    _calib_opts   = [1.0, 2.0, 3.0, 5.0, 10.0]
-    _calib_labels = {
-        1.0:  tr("setup_calib_1y"),  2.0: tr("setup_calib_2y"),
-        3.0:  tr("setup_calib_3y"),  5.0: tr("setup_calib_5y"),
-        10.0: tr("setup_calib_10y"),
+    # ── Schedule & Maturity ───────────────────────────────────────────────
+    st.subheader(tr("setup_schedule_header"))
+    maturity_opts = [0.5, 1.0, 1.5, 2.0, 3.0, 5.0]
+    # Keep a loaded config's maturity selectable instead of silently snapping
+    # it to the nearest preset (e.g. a 9M note must not become 1Y).
+    if base.maturity not in maturity_opts:
+        maturity_opts = sorted(set(maturity_opts + [base.maturity]))
+    freq_opts = ["monthly", "quarterly", "semi-annual", "annual"]
+    _freq_label = {
+        "monthly":     tr("freq_monthly"),
+        "quarterly":   tr("freq_quarterly"),
+        "semi-annual": tr("freq_semi_annual"),
+        "annual":      tr("freq_annual"),
     }
-    _calib_cur    = st.session_state.get("calib_years", 5.0)
-    _calib_default_idx = _calib_opts.index(_calib_cur) if _calib_cur in _calib_opts else 3
-    calib_years = st.radio(
-        tr("setup_calib_window"),
-        _calib_opts,
-        index=_calib_default_idx,
-        horizontal=True,
-        format_func=lambda y: _calib_labels.get(y, str(y)),
-        help=tr("setup_calib_window_help"),
-    )
+    sc_a, sc_b = st.columns(2)
+    with sc_a:
+        maturity = st.selectbox(
+            tr("setup_maturity_years"), maturity_opts,
+            index=maturity_opts.index(base.maturity)
+                  if base.maturity in maturity_opts else 1,
+        )
+    with sc_b:
+        payment_freq = st.selectbox(
+            tr("setup_payment_freq"), freq_opts,
+            index=freq_opts.index(base.payment_freq)
+                  if base.payment_freq in freq_opts else 1,
+            format_func=lambda f: _freq_label.get(f, f),
+        )
+    _n_obs_derived = round(maturity * _FREQ_TO_PERIODS[payment_freq])
+    st.caption(tr("setup_obs_periods_caption", n=_n_obs_derived,
+                  per_yr=_FREQ_TO_PERIODS[payment_freq], mat=maturity))
+
+    # ── Coupon ────────────────────────────────────────────────────────────
+    if _show_coupon:
+        st.subheader(tr("setup_coupon_header"))
+        cp_a, cp_b = st.columns(2)
+        with cp_a:
+            # Growth autocall: coupon_pa carries the premium accrual rate.
+            coupon_pa_pct = st.number_input(
+                tr("setup_premium_pa") if _is_growth else tr("setup_coupon_pa"),
+                0.0, 50.0, value=round(base.coupon_pa * 100, 4),
+                step=0.5, format="%.4f",
+                help=tr("setup_premium_pa_help") if _is_growth else tr("setup_coupon_pa_help"),
+            )
+            if not _is_growth:
+                _coupon_per_period = coupon_pa_pct / 100.0 / _FREQ_TO_PERIODS[payment_freq]
+                st.caption(tr("setup_coupon_period_caption", v=_coupon_per_period * 100))
+        with cp_b:
+            if _show_coupon_basket:
+                coupon_basket = st.selectbox(
+                    tr("setup_coupon_basket_rule"), basket_opts,
+                    index=basket_opts.index(base.coupon_basket),
+                    format_func=lambda b: _basket_label.get(b, b),
+                    help=tr("setup_basket_rule_help"),
+                )
+        if _show_coupon_barrier:
+            cb_a, cb_b = st.columns(2)
+            with cb_a:
+                # number_input (not int slider): term sheets use sub-percent
+                # barriers (e.g. 55.5%, 53.7%) which an int slider truncates.
+                coupon_bar_pct = st.number_input(
+                    tr("setup_coupon_barrier"), 0.0, 100.0,
+                    value=round(base.coupon_barrier * 100, 4), step=0.5, format="%.2f",
+                    help=tr("setup_coupon_barrier_help"),
+                )
+            with cb_b:
+                st.markdown("<br>", unsafe_allow_html=True)
+                memory = st.toggle(tr("setup_memory_coupon"), value=base.memory,
+                                   help=tr("setup_memory_help"))
+
+    # ── Protection / Barriers ─────────────────────────────────────────────
+    if _show_ki or _show_min_return or _show_capprot or _show_rescue:
+        st.subheader(tr("setup_barriers_header"))
+        st.caption(tr("setup_barriers_caption"))
+        if _show_ki:
+            ki_bar_pct = st.number_input(
+                tr("setup_ki_barrier"), 0.0, 100.0,
+                value=round(base.knock_in_barrier * 100, 4), step=0.5, format="%.2f",
+            )
+            if _is_bonus:
+                st.caption(tr("setup_ki_european_caption"))
+        if _show_min_return:
+            min_return_pct = st.number_input(
+                tr("setup_min_return"), 0.0, 100.0,
+                value=round(getattr(base, "min_return", 0.0) * 100, 4),
+                step=0.5, format="%.2f", help=tr("setup_min_return_help"),
+            )
+        if _show_capprot:
+            cg_a, cg_b = st.columns(2)
+            with cg_a:
+                _cg_def = getattr(base, "capital_guarantee", None)
+                cap_guar_pct = st.number_input(
+                    tr("setup_capital_guarantee"), 0.0, 100.0,
+                    value=round((_cg_def if _cg_def is not None else 1.0) * 100, 4),
+                    step=1.0, format="%.2f", help=tr("setup_capital_guarantee_help"),
+                )
+                capital_guarantee = cap_guar_pct / 100.0
+            with cg_b:
+                _uc_def = getattr(base, "upside_cap", None)
+                _cap_on = st.toggle(tr("setup_cap_upside_toggle"),
+                                    value=_uc_def is not None)
+                if _cap_on:
+                    uc_pct = st.number_input(
+                        tr("setup_upside_cap"), 0.0, 200.0,
+                        value=round((_uc_def if _uc_def is not None else 0.15) * 100, 4),
+                        step=1.0, format="%.2f", help=tr("setup_upside_cap_help"),
+                    )
+                    upside_cap = uc_pct / 100.0
+                else:
+                    upside_cap = None
+        if _show_rescue:
+            # Best-of capital rescue clause (e.g. BBVA XS3378405743 Final Payout
+            # xi): at maturity, capital is returned at par if the BEST performer
+            # is at or above the rescue barrier, even when the KI was breached.
+            rescue_on = st.toggle(
+                tr("setup_rescue_toggle"),
+                value=(base.final_basket == "best_of"),
+                help=tr("setup_rescue_help"),
+            )
+            if rescue_on:
+                rescue_bar_pct = st.number_input(
+                    tr("setup_rescue_barrier"), 50.0, 150.0,
+                    value=round(getattr(base, "final_redemption_barrier", 1.0) * 100, 4),
+                    step=0.5, format="%.2f",
+                    help=tr("setup_rescue_barrier_help"),
+                )
+    final_basket = "best_of" if rescue_on else "worst_of"
+
+    # ── Autocall ──────────────────────────────────────────────────────────
+    if _show_autocall:
+        st.subheader(tr("setup_autocall_header"))
+        au_a, au_b, au_c = st.columns(3)
+        with au_a:
+            # Bound at 300% and clamp the default so a Bonus/CP config (200%
+            # barrier) loads without a ValueAboveMax crash if switched here.
+            _ac_val = round(base.autocall_barrier * 100, 4)
+            autocall_bar_pct = st.number_input(
+                tr("setup_autocall_barrier"), 50.0, 300.0,
+                value=min(max(_ac_val, 50.0), 300.0), step=0.5, format="%.2f",
+            )
+        with au_b:
+            autocall_start = st.number_input(
+                tr("setup_autocall_start"), 1, _n_obs_derived,
+                value=min(base.autocall_start_period, _n_obs_derived),
+                help=tr("setup_autocall_start_help"),
+            )
+        with au_c:
+            autocall_basket = st.selectbox(
+                tr("setup_autocall_basket_rule"), basket_opts,
+                index=basket_opts.index(base.autocall_basket),
+                format_func=lambda b: _basket_label.get(b, b),
+                help=tr("setup_basket_rule_help"),
+            )
+        if _show_growth:
+            st.markdown("**" + tr("setup_growth_subheader") + "**")
+            gr_a, gr_b, gr_c = st.columns(3)
+            with gr_a:
+                step_down_pct = st.number_input(
+                    tr("setup_step_down"), 0.0, 10.0,
+                    value=round(getattr(base, "autocall_step_down", 0.0) * 100, 4),
+                    step=0.5, format="%.2f", help=tr("setup_step_down_help"),
+                )
+            with gr_b:
+                floor_pct = st.number_input(
+                    tr("setup_autocall_floor"), 0.0, 100.0,
+                    value=round((_base_floor if _base_floor is not None else 0.0) * 100, 4),
+                    step=0.5, format="%.2f", help=tr("setup_autocall_floor_help"),
+                )
+            with gr_c:
+                if _is_custom:
+                    st.markdown("<br>", unsafe_allow_html=True)
+                    premium_at_call = st.toggle(
+                        tr("setup_premium_at_call"),
+                        value=bool(getattr(base, "coupon_at_autocall_only", False)),
+                        help=tr("setup_premium_at_call_help"),
+                    )
+            if step_down_pct > 0:
+                _sd_preview = NoteTerms(
+                    maturity=float(maturity), payment_freq=payment_freq,
+                    autocall_barrier=autocall_bar_pct / 100.0,
+                    autocall_start_period=int(autocall_start),
+                    autocall_step_down=step_down_pct / 100.0,
+                    autocall_floor=(floor_pct / 100.0) if floor_pct > 0 else None,
+                ).autocall_barrier_schedule()
+                st.caption(tr("setup_barrier_schedule") +
+                           " → ".join(f"{lvl:.0%}" for lvl in _sd_preview))
+    else:
+        # Autocall hidden (Bonus / Capital-Protected): keep a valid start period.
+        autocall_start = max(min(base.autocall_start_period, _n_obs_derived), 1)
+
+    st.divider()
+
+    # ── Metadata & identification (optional) ──────────────────────────────
+    with st.expander(tr("setup_metadata_header")):
+        note_name = st.text_input(
+            tr("setup_note_name"),
+            value=base.name if loaded_terms else "Custom Note",
+            help=tr("setup_note_name_help"),
+        )
+        # Issuer — source of truth is loaded_terms (JSON) over widget state.
+        # Push the loaded issuer into session_state before the widget renders so
+        # the Streamlit keyed-widget problem (value= ignored on reruns) doesn't
+        # drop it. This runs inside the expander, whose body always executes.
+        _base_issuer = getattr(base, "issuer", "") or ""
+        if loaded_terms is not None and _base_issuer and st.session_state.get("setup_issuer") != _base_issuer:
+            st.session_state["setup_issuer"] = _base_issuer
+        issuer_input = st.text_input(
+            tr("setup_issuer_name"),
+            value=_base_issuer,
+            placeholder="e.g. BBVA, HSBC, BNP Paribas",
+            key="setup_issuer",
+            help=tr("setup_issuer_caption"),
+        )
+        if issuer_input:
+            _logo_url = get_issuer_logo_url(issuer_input)
+            if _logo_url:
+                st.markdown(
+                    f'<img src="{_logo_url}" height="32" style="margin-top:4px" '
+                    f'onerror="this.style.display=\'none\'">',
+                    unsafe_allow_html=True,
+                )
+
+        # Issue date — same keyed-widget guard as the issuer above.
+        import datetime as _dt2
+        _base_issue_str = getattr(base, "issue_date", None)
+        _base_issue = None
+        if _base_issue_str:
+            try:
+                _base_issue = _dt2.date.fromisoformat(_base_issue_str)
+            except Exception:
+                pass
+        if _base_issue is not None and st.session_state.get("setup_issue_date") != _base_issue:
+            st.session_state["setup_issue_date"] = _base_issue
+        issue_date_input = st.date_input(
+            tr("setup_issue_date_input"),
+            value=_base_issue,
+            min_value=None,
+            max_value=None,
+            key="setup_issue_date",
+            help=tr("setup_issue_date_help"),
+        )
+        st.caption(tr("setup_issue_date_caption"))
+        # A note is live if it has an issue date on or before today.
+        _issue_is_live = bool(issue_date_input) and issue_date_input <= _dt2.date.today()
+        if _issue_is_live:
+            st.success(tr("setup_live_note", date=issue_date_input))
+        elif issue_date_input:
+            st.info(tr("setup_future_issue"))
+
+    # ── Simulation engine settings ────────────────────────────────────────
+    with st.expander(tr("setup_engine_header")):
+        # Always pull the maximum available history; the calibration window
+        # below controls how much is used for Heston parameter estimation.
+        history_years = None
+        eng_a, eng_b = st.columns(2)
+        with eng_a:
+            n_paths = st.slider(tr("setup_mc_paths"), 1000, _MAX_PATHS,
+                                min(st.session_state["n_paths"], _MAX_PATHS), step=1000)
+        with eng_b:
+            seed = int(st.number_input(tr("setup_random_seed"),
+                                       value=int(st.session_state["seed"])))
+        st.caption(tr("setup_price_history_caption"))
+        _calib_opts   = [1.0, 2.0, 3.0, 5.0, 10.0]
+        _calib_labels = {
+            1.0:  tr("setup_calib_1y"),  2.0: tr("setup_calib_2y"),
+            3.0:  tr("setup_calib_3y"),  5.0: tr("setup_calib_5y"),
+            10.0: tr("setup_calib_10y"),
+        }
+        _calib_cur    = st.session_state.get("calib_years", 5.0)
+        _calib_default_idx = _calib_opts.index(_calib_cur) if _calib_cur in _calib_opts else 3
+        calib_years = st.radio(
+            tr("setup_calib_window"),
+            _calib_opts,
+            index=_calib_default_idx,
+            horizontal=True,
+            format_func=lambda y: _calib_labels.get(y, str(y)),
+            help=tr("setup_calib_window_help"),
+        )
 
     st.divider()
 
@@ -756,15 +894,16 @@ if st.session_state["page"] == "setup":
                 final_basket          = final_basket,
                 final_redemption_barrier = rescue_bar_pct / 100.0,
                 call_steepness        = None,   # hard trigger (deterministic)
-                # Growth/classic autocall fields from the Advanced expander
+                # Growth autocall fields (Growth / Custom templates).
                 autocall_step_down      = step_down_pct / 100.0,
                 autocall_floor          = (floor_pct / 100.0) if (step_down_pct > 0 and floor_pct > 0) else None,
                 coupon_at_autocall_only = bool(premium_at_call),
-                # Bonus Certificate / Capital Protected fields — not exposed in the
-                # setup form UI; preserved from the loaded JSON config across round-trips.
-                min_return              = getattr(base, "min_return", 0.0),
-                capital_guarantee       = getattr(base, "capital_guarantee", None),
-                upside_cap              = getattr(base, "upside_cap", None),
+                # Bonus Certificate / Capital Protected fields — exposed by the
+                # Bonus / Capital-Protected templates; default to a no-op for the
+                # Phoenix family so plain notes are unaffected.
+                min_return              = min_return_pct / 100.0,
+                capital_guarantee       = capital_guarantee,
+                upside_cap              = upside_cap,
                 tickers               = selected_tickers,
                 # Keep the issue date even when it is in the future, so a
                 # config round-trip through the setup form doesn't drop it;
