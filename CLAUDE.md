@@ -145,6 +145,29 @@ By default `call_steepness=None` → hard trigger: the per-observation compariso
 - Correlation block: `corr_SV` is a diagonal matrix; diagonal = each asset's own `rho`. Off-diagonals are zero. The full `2n×2n` block matrix is validated for PSD on construction; if not PSD, Higham (2002) nearest-PSD projection is applied.
 - Antithetic variates double the output paths: `n_paths` passed in → `2*n_paths` in all result arrays.
 
+### Realized vs effective correlation diagnostic
+
+`corr_SS` is the **instantaneous Brownian correlation** fed into the Cholesky,
+but the calibrator *estimates* it as the Pearson correlation of historical 2-day
+log-returns. The Correlation Diagnostics tab reports two realized matrices from
+`simulator.run()`:
+
+- **`realized_corr`** — pooled correlation of simulated daily returns **after
+  standardizing each step by its own `sqrt(V_t)`**. Removing the stochastic-vol
+  heteroskedasticity recovers the Brownian correlation, so this matches `corr_SS`
+  to <0.3% and is the honest "did the engine reproduce the input" check. The
+  "max off-diagonal error" success/warning banner is computed against this.
+- **`effective_corr`** — pooled correlation of the **raw** daily returns (no
+  standardization), shown in a separate expander labelled "effective basket
+  correlation". This is the co-movement the payoff actually sees, and it runs
+  **above** `corr_SS` by construction: pooling high- and low-vol days inflates
+  the sample correlation (Forbes–Rigobon heteroskedasticity bias), most for
+  high vol-of-vol underlyings. Do **not** flag the input-vs-effective gap as a
+  calibration error — that gap is expected and was the source of the old
+  "high off-diagonal error" false alarm. Both are measured on **base paths
+  only** (antithetic reflections would make the check circular) and with the
+  deterministic dividend jumps stripped out.
+
 ### IRR convention
 
 Simple annualisation: `total_return / t_held`. **Not** compound. This matches how structured note coupons are quoted as simple p.a. rates. Expected IRR ≠ ratio of expected total return to expected time held (it's the mean of per-path ratios).

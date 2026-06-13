@@ -661,20 +661,44 @@ _STRINGS: dict[str, tuple[str, str]] = {
     "corr_input":               ("Input",                              "Entrada"),
     "corr_realized":            ("Realized",                           "Realizada"),
     "corr_difference":          ("Difference",                         "Diferencia"),
+    "corr_realized_caption":    (
+        "**Realized** is the *instantaneous* correlation — each step's return is "
+        "standardized by its own volatility before measuring, so it recovers the "
+        "Brownian correlation that was actually fed into the simulation. This is "
+        "the apples-to-apples check against the calibrated input.",
+        "**Realizada** es la correlación *instantánea* — el retorno de cada paso se "
+        "estandariza por su propia volatilidad antes de medir, recuperando la "
+        "correlación browniana realmente usada en la simulación. Es la comparación "
+        "directa contra la entrada calibrada.",
+    ),
     "corr_quality_good":        ("good",                               "buena"),
     "corr_quality_acceptable":  ("acceptable",                         "aceptable"),
     "corr_quality_elevated":    ("elevated — consider more paths",     "elevada — considere más trayectorias"),
     "corr_max_err_message":     (
         "Max off-diagonal error: **{err:.4f}** ({quality}). "
-        "This is the largest absolute difference between a target and realized "
-        "pairwise correlation. Values < 0.05 are acceptable for pricing; "
-        "> 0.05 suggests the Cholesky decomposition is not well converged — "
-        "try increasing Monte Carlo paths.",
-        "Error máximo fuera de la diagonal: **{err:.4f}** ({quality}). Es la mayor "
-        "diferencia absoluta entre una correlación objetivo y la realizada por pares. "
-        "Valores < 0.05 son aceptables para valoración; > 0.05 sugiere que la "
-        "descomposición de Cholesky no convergió bien — intente aumentar las "
-        "trayectorias de Monte Carlo.",
+        "Largest absolute gap between the calibrated input and the realized "
+        "*instantaneous* correlation. Values < 0.05 confirm the engine reproduces "
+        "the target correlation; if elevated, increase Monte Carlo paths.",
+        "Error máximo fuera de la diagonal: **{err:.4f}** ({quality}). Mayor diferencia "
+        "absoluta entre la entrada calibrada y la correlación *instantánea* realizada. "
+        "Valores < 0.05 confirman que el motor reproduce la correlación objetivo; si es "
+        "elevada, aumente las trayectorias de Monte Carlo.",
+    ),
+    "corr_effective_header":    ("Effective basket correlation (what the payoff sees)",
+                                 "Correlación efectiva de la cesta (lo que ve el pago)"),
+    "corr_effective":           ("Effective",                          "Efectiva"),
+    "corr_effective_gap":       ("Gap vs input",                       "Brecha vs entrada"),
+    "corr_effective_caption":   (
+        "Correlation of pooled daily returns — the co-movement the basket actually "
+        "experiences. It runs **above** the instantaneous input by construction: "
+        "pooling high- and low-volatility days inflates sample correlation "
+        "(heteroskedasticity / Forbes-Rigobon). This gap is expected, not a "
+        "calibration error, and is largest for high vol-of-vol underlyings.",
+        "Correlación de los retornos diarios agrupados — el co-movimiento que realmente "
+        "experimenta la cesta. Es **mayor** que la entrada instantánea por construcción: "
+        "agrupar días de alta y baja volatilidad infla la correlación muestral "
+        "(heterocedasticidad / Forbes-Rigobon). Esta brecha es esperada, no un error de "
+        "calibración, y es mayor para subyacentes con alta volatilidad de la volatilidad.",
     ),
     "heston_feller_pass":       ("Pass",                               "Cumple"),
     "heston_feller_warn":       ("Warn",                               "Aviso"),

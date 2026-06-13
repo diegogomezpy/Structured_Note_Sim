@@ -1193,6 +1193,7 @@ elif st.session_state["page"] == "dashboard":
                 "params":         cal_result.params,
                 "corr_SS":        cal_result.corr_SS,
                 "realized_corr":  sim_results["realized_corr"],
+                "effective_corr": sim_results.get("effective_corr"),
                 "t_dof":          cal_result.t_dof,
                 "terms_snapshot": terms.to_dict(),
                 # Real-calendar grid metadata (drives charts + obs tables)
@@ -1453,6 +1454,7 @@ elif st.session_state["page"] == "dashboard":
                 hm2.plotly_chart(build_corr_heatmap(realized_corr, asset_names, tr("corr_realized")), use_container_width=True)
                 hm3.plotly_chart(build_corr_heatmap(diff, asset_names, tr("corr_difference"),
                                                       zmin=-0.1, zmax=0.1),                  use_container_width=True)
+                st.caption(tr("corr_realized_caption"))
                 max_err = float(np.max(np.abs(diff - np.diag(np.diag(diff)))))
                 _corr_quality = (tr("corr_quality_good") if max_err < 0.02
                                  else tr("corr_quality_acceptable") if max_err < 0.05
@@ -1460,6 +1462,21 @@ elif st.session_state["page"] == "dashboard":
                 (st.success if max_err < 0.05 else st.warning)(
                     tr("corr_max_err_message", err=max_err, quality=_corr_quality)
                 )
+                # Effective basket correlation — the heteroskedasticity-inflated
+                # co-movement the payoff actually sees. Shown for transparency,
+                # explicitly NOT compared against the input (it runs higher by
+                # construction). Guarded for legacy cached results without it.
+                effective_corr = R.get("effective_corr")
+                if effective_corr is not None:
+                    with st.expander(tr("corr_effective_header")):
+                        ec1, ec2 = st.columns([1, 1])
+                        ec1.plotly_chart(
+                            build_corr_heatmap(effective_corr, asset_names, tr("corr_effective")),
+                            use_container_width=True)
+                        _eff_gap = float(np.max(np.abs(
+                            (effective_corr - corr_SS) - np.diag(np.diag(effective_corr - corr_SS)))))
+                        ec2.metric(tr("corr_effective_gap"), f"{_eff_gap:+.3f}")
+                        ec2.caption(tr("corr_effective_caption"))
                 st.markdown("---")
                 st.subheader(tr("calib_heston_subheader"))
                 _disp_to_sym = {disp: sym for sym, disp in selected_tickers.items()}
