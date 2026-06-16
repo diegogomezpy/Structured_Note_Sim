@@ -310,6 +310,23 @@ lang_choice = st.sidebar.radio("Language / Idioma", ["English", "Español"],
 tr = Translator("es" if lang_choice == "Español" else "en")
 
 
+def _pdf_toggle(item_key: str, label: str | None = None):
+    """Render a compact 'include in PDF' checkbox for one report item (a single
+    chart, table or metric block). The state lives at session_state['pdf_inc_<key>']
+    and is collected at PDF-generation time; default on, so a fresh report is the
+    full document until the user starts unchecking pieces."""
+    return st.checkbox(label or tr("pdf_include_toggle"), value=True,
+                       key=f"pdf_inc_{item_key}", help=tr("pdf_include_help"))
+
+
+def _collect_pdf_sections() -> set[str]:
+    """Every checked per-item PDF toggle, keyed by item (the part after the
+    'pdf_inc_' prefix). Scanning session_state keeps this correct as the number
+    of per-underlying fan toggles changes with the basket size."""
+    return {k[len("pdf_inc_"):] for k, v in st.session_state.items()
+            if k.startswith("pdf_inc_") and v}
+
+
 def _safe_load_prices(tickers_tuple, **kw):
     """Wrap _load_prices so a Yahoo outage shows a clean message and halts the
     run, instead of surfacing a raw traceback to the user. The underlying
@@ -1350,6 +1367,7 @@ elif st.session_state["page"] == "dashboard":
                        basket=terms.final_basket.replace('_', '-'),
                        level=terms.final_redemption_barrier)
                 )
+            _pdf_toggle("mc_metrics")
 
             with st.expander(tr("autocall_by_period_expander"), expanded=False):
                 prob_by_period = R["prob_autocall_by_period"]
@@ -1361,6 +1379,7 @@ elif st.session_state["page"] == "dashboard":
                                      for i in range(run_terms.n_obs)],
                 })
                 st.dataframe(ac_df, use_container_width=True, hide_index=True)
+                _pdf_toggle("mc_autocall")
 
             st.markdown("---")
 
@@ -1370,26 +1389,25 @@ elif st.session_state["page"] == "dashboard":
             ])
 
             with mc_tab1:
-                st.checkbox(tr("pdf_include_toggle"), value=True, key="pdf_inc_mc_payoff",
-                            help=tr("pdf_include_help"))
                 st.subheader(tr("irr_dist_subheader"))
                 st.plotly_chart(_fig_irr, use_container_width=True)
+                _pdf_toggle("mc_irr")
                 if R["prob_knock_in_total"] > 0:
                     st.info(tr("knock_in_info", pct=R['prob_knock_in_total'],
                                barrier=run_terms.knock_in_barrier))
 
             with mc_tab2:
-                st.checkbox(tr("pdf_include_toggle"), value=True, key="pdf_inc_mc_paths",
-                            help=tr("pdf_include_help"))
                 st.subheader(tr("price_paths_subheader"))
                 st.markdown(tr("wof_basket_md"))
                 st.plotly_chart(_fig_wof, use_container_width=True)
+                _pdf_toggle("mc_wof")
                 st.markdown(tr("individual_paths_md"))
                 _individual_figs = []
                 for i, name in enumerate(asset_names):
                     _ind_fig = build_fan_chart(sim_prices[:, :, i], name, t_grid, obs_pairs, tr)
                     _individual_figs.append((name, _ind_fig))
                     st.plotly_chart(_ind_fig, use_container_width=True)
+                    _pdf_toggle(f"mc_fan_{i}")   # one toggle per underlying fan
                 # Cache per-underlying fans for the PDF (Price Paths analysis).
                 st.session_state["_pdf_mc_figures"]["individual"] = _individual_figs
 
@@ -1399,8 +1417,6 @@ elif st.session_state["page"] == "dashboard":
             # full run's arrays, which are stable until the next Run Simulation.
             @st.fragment
             def _mc_path_explorer():
-                st.checkbox(tr("pdf_include_toggle"), value=True, key="pdf_inc_mc_explorer",
-                            help=tr("pdf_include_help"))
                 st.subheader(tr("single_path_subheader"))
                 max_path = sim_prices.shape[0] - 1
                 pc1, pc2, pc3 = st.columns(3)
@@ -1420,6 +1436,7 @@ elif st.session_state["page"] == "dashboard":
                 )
                 _sp_price_fig = build_path_price_chart(path_df, pn, obs_steps_i, obs_labels, tr)
                 st.plotly_chart(_sp_price_fig, use_container_width=True)
+                _pdf_toggle("mc_single_price")
                 autocall_q    = int(R["autocall_events"][pn])
                 s0_arr        = np.array(R.get("s0_values") or [p.S0 for p in R["params"]])
                 asset_perf_pn = sim_prices[pn] / s0_arr[np.newaxis, :]
@@ -1442,6 +1459,7 @@ elif st.session_state["page"] == "dashboard":
                     coupon_flags=coupon_flags,
                 )
                 st.plotly_chart(_sp_wof_fig, use_container_width=True)
+                _pdf_toggle("mc_single_wof")
                 # Cache the viewed path's figures for the PDF (Path Explorer).
                 if "_pdf_mc_figures" in st.session_state:
                     st.session_state["_pdf_mc_figures"].update({
@@ -1495,8 +1513,6 @@ elif st.session_state["page"] == "dashboard":
                 _mc_path_explorer()
 
             with mc_tab4:
-                st.checkbox(tr("pdf_include_toggle"), value=True, key="pdf_inc_calibration",
-                            help=tr("pdf_include_help"))
                 st.subheader(tr("corr_diag_subheader"))
                 corr_SS       = R["corr_SS"]
                 # realized_corr is the only field kept from the simulator's full
@@ -1534,6 +1550,7 @@ elif st.session_state["page"] == "dashboard":
                             (effective_corr - corr_SS) - np.diag(np.diag(effective_corr - corr_SS)))))
                         ec2.metric(tr("corr_effective_gap"), f"{_eff_gap:+.3f}")
                         ec2.caption(tr("corr_effective_caption"))
+                _pdf_toggle("calib_corr")
                 st.markdown("---")
                 st.subheader(tr("calib_heston_subheader"))
                 _disp_to_sym = {disp: sym for sym, disp in selected_tickers.items()}
@@ -1577,6 +1594,7 @@ elif st.session_state["page"] == "dashboard":
                 )
                 st.caption(tr("heston_column_guide"))
                 st.info(tr("t_copula_dof", v=R.get('t_dof', 'N/A')))
+                _pdf_toggle("calib_table")
 
 
     # ══════════════════════════════════════════════════════════════════
@@ -1745,8 +1763,6 @@ elif st.session_state["page"] == "dashboard":
             ])
 
             with bt_tab1:
-                st.checkbox(tr("pdf_include_toggle"), value=True, key="pdf_inc_bt_outcomes",
-                            help=tr("pdf_include_help"))
                 b1, b2, b3 = st.columns(3)
                 b1.metric(tr("bt_metric_issue_dates"),    str(bt_summary.get("n_issues", 0)),
                           help=tr("bt_help_issue_dates"))
@@ -1761,14 +1777,20 @@ elif st.session_state["page"] == "dashboard":
                           help=tr("bt_help_autocalled_pct"))
                 b6.metric(tr("loss_given_ki_metric"),     _bt_lgki_str,
                           help=tr("bt_help_loss_given_ki"))
+                _pdf_toggle("bt_metrics")
 
                 _bt_outcome_fig = build_backtest_outcome_bar(bt, color_map, tr)
                 _bt_irr_fig     = build_backtest_irr_scatter(bt, color_map, tr)
                 _bt_pie_fig     = build_worst_asset_pie(bt, tr)
                 col1, col2 = st.columns(2)
-                col1.plotly_chart(_bt_outcome_fig, use_container_width=True)
-                col2.plotly_chart(_bt_pie_fig,     use_container_width=True)
-                st.plotly_chart(_bt_irr_fig,       use_container_width=True)
+                with col1:
+                    st.plotly_chart(_bt_outcome_fig, use_container_width=True)
+                    _pdf_toggle("bt_outcome")
+                with col2:
+                    st.plotly_chart(_bt_pie_fig, use_container_width=True)
+                    _pdf_toggle("bt_pie")
+                st.plotly_chart(_bt_irr_fig, use_container_width=True)
+                _pdf_toggle("bt_irr")
                 # Cache for PDF — augment bt_summary with loss-given-KI
                 _pdf_bt_summary = dict(bt_summary)
                 if not _bt_ki_rows.empty:
@@ -1909,8 +1931,6 @@ elif st.session_state["page"] == "dashboard":
                    elapsed=_elapsed_years, remaining=max(_remaining_years, 0))
             )
             st.progress(min(_pct_elapsed, 1.0))
-            st.checkbox(tr("pdf_include_toggle"), value=True, key="pdf_inc_live",
-                        help=tr("pdf_include_help"))
 
             # Fetch live prices (raw closes — what the term sheet observes)
             try:
@@ -1990,6 +2010,7 @@ elif st.session_state["page"] == "dashboard":
                             _acol.metric("", f"{_ap:.1%}", tr("live_metric_vs_strike", v=_ap - 1.0))
                         else:
                             _acol.metric(_aname, f"{_ap:.1%}", tr("live_metric_vs_strike", v=_ap - 1.0))
+                    _pdf_toggle("live_asset_table")
 
                     # ── Coupon status replay (shared engine logic) ────────
                     # All payoff semantics (memory, step-down autocall
@@ -2071,6 +2092,7 @@ elif st.session_state["page"] == "dashboard":
 
                     _obs_df = pd.DataFrame(_obs_rows)
                     st.dataframe(_obs_df, use_container_width=True, hide_index=True)
+                    _pdf_toggle("live_obs_table")
 
                     _pending_coupons    = _replay["pending_coupons"]
                     _total_coupons_paid = _replay["total_coupons"]
@@ -2092,6 +2114,7 @@ elif st.session_state["page"] == "dashboard":
                     _irr_to_date = _total_coupons_paid / max(_elapsed_years, 1/252)
                     st.metric(tr("live_coupon_irr_metric"), f"{_irr_to_date:.2%}",
                               help=tr("live_help_coupon_irr"))
+                    _pdf_toggle("live_metrics")
 
                     # ── Live performance chart ────────────────────────
                     # Future observation reference lines (calendar dates),
@@ -2121,6 +2144,7 @@ elif st.session_state["page"] == "dashboard":
                         autocall_schedule  = _live_sched,
                     )
                     st.plotly_chart(_live_fig, use_container_width=True)
+                    _pdf_toggle("live_chart")
                     # Cache for PDF
                     st.session_state["_pdf_live_data"] = {
                         "wof_today":    _wof_today,
@@ -2150,21 +2174,9 @@ elif st.session_state["page"] == "dashboard":
             # branding/ticker_logos/{SYMBOL}.png before fetching a URL.
             _pdf_logo_tickers = {name: sym for sym, name in run_terms.tickers.items()}
             _pdf_issuer_logo_url = get_issuer_logo_url(getattr(run_terms, "issuer", "") or "")
-            # Per-analysis include flags set by the "Include in PDF" checkboxes
-            # placed at each dashboard subtab. Default True so an un-rendered tab
-            # (e.g. backtest infeasible) doesn't silently drop a wanted analysis.
-            _pdf_sections = {
-                key for key, ss in (
-                    ("mc_payoff",   "pdf_inc_mc_payoff"),
-                    ("mc_paths",    "pdf_inc_mc_paths"),
-                    ("mc_explorer", "pdf_inc_mc_explorer"),
-                    ("calibration", "pdf_inc_calibration"),
-                    ("bt_outcomes", "pdf_inc_bt_outcomes"),
-                    ("bt_prices",   "pdf_inc_bt_prices"),
-                    ("bt_explorer", "pdf_inc_bt_explorer"),
-                    ("live",        "pdf_inc_live"),
-                ) if st.session_state.get(ss, True)
-            }
+            # Per-item include flags from every "Include in PDF" checkbox placed
+            # next to a chart/table/metric block across the dashboard.
+            _pdf_sections = _collect_pdf_sections()
             _pdf_bytes = generate_pdf_report(
                 terms            = run_terms,
                 results          = R,

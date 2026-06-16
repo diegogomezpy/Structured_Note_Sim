@@ -792,7 +792,15 @@ class _NotePDF(FPDF):
             self.set_text_color(*_TEXT)
             self._sf(8, "regular")
 
-        if self.get_y() > self.h - 55:
+        # Keep the whole table together when it can fit on one page: if the
+        # header + all rows won't fit in the space left but WOULD fit on a fresh
+        # page, break first instead of splitting a short table across pages.
+        _needed   = 7 + len(rows) * 6 + 6
+        _avail    = self.h - 30 - self.get_y()
+        _page_cap = self.h - 30 - 21   # usable height below the running header
+        if _needed > _avail and _needed <= _page_cap:
+            self.add_page()
+        elif self.get_y() > self.h - 55:
             self.add_page()
         _header_row()
 
@@ -841,7 +849,13 @@ class _NotePDF(FPDF):
             self.set_text_color(*_TEXT)
             self._sf(8, "regular")
 
-        if self.get_y() > self.h - 55:
+        # Keep the whole table together when it fits on one page (see data_table).
+        _needed   = 7 + len(rows) * ROW_H + 6
+        _avail    = self.h - 30 - self.get_y()
+        _page_cap = self.h - 30 - 21
+        if _needed > _avail and _needed <= _page_cap:
+            self.add_page()
+        elif self.get_y() > self.h - 55:
             self.add_page()
         _header_row()
 
@@ -1320,13 +1334,21 @@ def _rebrand_figure(fig, primary: tuple, accent: tuple, secondary: tuple):
     ramp_hue = _rgb_to_hue(accent)          # blue autocall ramp -> brand accent hue
     rc = lambda c: _remap_color(c, remap, ramp_hue)   # series / marker colours
     sc = lambda c: _remap_color(c, scale, ramp_hue)   # intensity scales (stay brand)
-    try:
-        if getattr(fig.layout, "colorway", None):
-            fig.layout.colorway = tuple(rc(c) for c in fig.layout.colorway)
-    except Exception:
-        pass
+    # colorway (most charts) and piecolorway (px.pie stores its slice palette
+    # here, NOT on the trace) — remap both or a branded report keeps blue pies.
+    for _attr in ("colorway", "piecolorway"):
+        try:
+            cw = getattr(fig.layout, _attr, None)
+            if cw:
+                setattr(fig.layout, _attr, tuple(rc(c) for c in cw))
+        except Exception:
+            pass
     for tr in fig.data:
-        for path in ("line.color", "fillcolor", "marker.color", "marker.line.color"):
+        # "marker.colors" (plural) is the per-slice colour list on pie/donut
+        # traces — without it, px.pie's color_discrete_sequence is never
+        # rebranded and the pie stays blue on a green report.
+        for path in ("line.color", "fillcolor", "marker.color", "marker.colors",
+                     "marker.line.color"):
             try:
                 obj = tr
                 parts = path.split(".")
@@ -1841,22 +1863,26 @@ def _cover_page(
     pdf.set_line_width(0.2)
     pdf.line(pdf.l_margin, pdf.get_y() + 0.5, pdf.l_margin + main_w, pdf.get_y() + 0.5)
     pdf.ln(2)
+    # A section lists in the TOC if ANY of its per-chart items is included.
+    _n_assets = len(asset_names or [])
+    _any_fan  = any(inc(f"mc_fan_{i}") for i in range(_n_assets))
     toc = [_t("note_terms", lang)]
-    if inc("mc_payoff"):
+    if inc("mc_metrics") or inc("mc_irr") or inc("mc_autocall"):
         toc.append(_t("mc_subtab_payoff", lang))
-    if inc("mc_paths"):
+    if inc("mc_wof") or _any_fan:
         toc.append(_t("mc_subtab_paths", lang))
-    if inc("mc_explorer"):
+    if inc("mc_single_price") or inc("mc_single_wof"):
         toc.append(_t("mc_subtab_explorer", lang))
-    if results.get("params") and inc("calibration"):
+    if results.get("params") and (inc("calib_table") or inc("calib_corr")):
         toc.append(_t("calibration", lang))
-    if bt_summary and inc("bt_outcomes"):
+    if bt_summary and (inc("bt_metrics") or inc("bt_outcome") or inc("bt_pie") or inc("bt_irr")):
         toc.append(_t("bt_subtab_outcomes", lang))
     if bt_summary and inc("bt_prices"):
         toc.append(_t("bt_subtab_prices", lang))
     if bt_summary and inc("bt_explorer"):
         toc.append(_t("bt_subtab_explorer", lang))
-    if live_data and inc("live"):
+    if live_data and (inc("live_metrics") or inc("live_asset_table")
+                      or inc("live_obs_table") or inc("live_chart")):
         toc.append(_t("live", lang))
     toc.append(_t("disclaimer_title", lang))
     for item in toc:
@@ -1912,14 +1938,19 @@ def generate_pdf_report(
                       logo_file/logo_base64/logo_url, and report_title / website /
                       contact / footer_note content keys). Unknown keys warn and
                       malformed hex falls back to defaults.
-    include_sections — set of optional analysis keys to write: any of
-                      {"mc_payoff", "mc_paths", "mc_explorer", "calibration",
-                       "bt_outcomes", "bt_prices", "bt_explorer", "live"}
-                      (one per dashboard subtab). None (default) includes every
-                      analysis for which data is available, so existing callers
-                      are unaffected. The cover, Note Terms and disclaimer are
-                      always written. An analysis is only rendered when BOTH
-                      selected here AND its figure/data was supplied.
+    include_sections — set of per-chart item keys to write. One key per figure
+                      / table / metric-block, e.g. {"mc_metrics", "mc_irr",
+                      "mc_autocall", "mc_wof", "mc_fan_0", "mc_fan_1", ...,
+                      "mc_single_price", "mc_single_wof", "calib_table",
+                      "calib_corr", "bt_metrics", "bt_outcome", "bt_pie",
+                      "bt_irr", "bt_prices", "bt_explorer", "live_metrics",
+                      "live_asset_table", "live_obs_table", "live_chart"}.
+                      None (default) includes every item for which data is
+                      available, so existing callers are unaffected. The cover,
+                      Note Terms and disclaimer are always written. An item is
+                      rendered only when BOTH selected here AND its data/figure
+                      was supplied; section headers appear only when at least one
+                      of their items is included.
     All optional parameters default to None; existing callers are unaffected.
     """
     # None = include everything; otherwise only the listed sections. The cover,
@@ -1996,9 +2027,21 @@ def generate_pdf_report(
                secondary_color=secondary_color)
     src_mc = f"{_t('src_mc', lang)}, {n_paths_val:,} {_t('paths_word', lang)}"
 
+    def _lazy_section(title, min_room=110.0):
+        """Emit a section header at most once, only when its first included item
+        is actually drawn — so a section with everything toggled off leaves no
+        empty header behind."""
+        state = {"done": False}
+        def ensure():
+            if not state["done"]:
+                pdf.start_section(title, min_room=min_room)
+                state["done"] = True
+        return ensure
+
     # 3a. Payoff & Distribution — summary metrics, IRR distribution, autocall table
-    if _inc("mc_payoff"):
-        pdf.start_section(_t("mc_subtab_payoff", lang), min_room=55.0)
+    _sec = _lazy_section(_t("mc_subtab_payoff", lang), min_room=55.0)
+    if _inc("mc_metrics"):
+        _sec()
         _mc_ki_mask = np.asarray(results.get("knock_in_triggered", []), dtype=bool)
         _mc_ann_ret = np.asarray(results.get("annualized_returns", []))
         _mc_lgki_str = (
@@ -2014,47 +2057,52 @@ def generate_pdf_report(
             (_t("loss_given_ki",      lang), _mc_lgki_str),
             (_t("n_paths",            lang), f"{n_paths_val:,}"),
         ])
+    if _inc("mc_irr"):
+        _sec()
         pdf.figure(_fig_to_png(figures.get("irr_dist"), **_kw), _t("fig_irr", lang), src_mc)
-
-        prob_by_period = results.get("prob_autocall_by_period", [])
-        if prob_by_period:
-            pdf.subsection(_t("autocall_by_period", lang))
-            rows = []
-            for i, (t_obs, p_ac) in enumerate(zip(obs_times, prob_by_period)):
-                eligible = _t("yes", lang) if (i + 1) >= terms.autocall_start_period else _t("no", lang)
-                rows.append([f"P{i+1}", f"{t_obs:.3g}", f"{p_ac:.2%}", eligible])
-            pdf.data_table(
-                [_t("period", lang), _t("time_y", lang), _t("p_autocall", lang), _t("eligible", lang)],
-                rows,
-                col_widths=[usable * 0.2, usable * 0.25, usable * 0.3, usable * 0.25],
-                aligns=["L", "R", "R", "R"],
-            )
+    prob_by_period = results.get("prob_autocall_by_period", [])
+    if _inc("mc_autocall") and prob_by_period:
+        _sec()
+        pdf.subsection(_t("autocall_by_period", lang))
+        rows = []
+        for i, (t_obs, p_ac) in enumerate(zip(obs_times, prob_by_period)):
+            eligible = _t("yes", lang) if (i + 1) >= terms.autocall_start_period else _t("no", lang)
+            rows.append([f"P{i+1}", f"{t_obs:.3g}", f"{p_ac:.2%}", eligible])
+        pdf.data_table(
+            [_t("period", lang), _t("time_y", lang), _t("p_autocall", lang), _t("eligible", lang)],
+            rows,
+            col_widths=[usable * 0.2, usable * 0.25, usable * 0.3, usable * 0.25],
+            aligns=["L", "R", "R", "R"],
+        )
 
     # 3b. Price Paths — worst-of fan + per-underlying simulated distributions
-    if _inc("mc_paths"):
-        pdf.start_section(_t("mc_subtab_paths", lang))
+    _sec = _lazy_section(_t("mc_subtab_paths", lang))
+    if _inc("mc_wof"):
+        _sec()
         pdf.figure(_fig_to_png(figures.get("wof_fan"), **_kw), _t("fig_wof", lang), src_mc)
-        for nm, fig in (figures.get("individual") or []):
+    for i, (nm, fig) in enumerate(figures.get("individual") or []):
+        if _inc(f"mc_fan_{i}"):
+            _sec()
             pdf.figure(_fig_to_png(fig, **_kw),
                        _t("fig_individual", lang).format(name=nm), src_mc)
 
     # 3c. Path Explorer — the single simulated path the user last viewed
-    if _inc("mc_explorer") and (figures.get("single_path_price") is not None
-                                or figures.get("single_path_wof") is not None):
-        pdf.start_section(_t("mc_subtab_explorer", lang))
-        _pn = figures.get("single_path_num", 0)
-        if figures.get("single_path_price") is not None:
-            pdf.figure(_fig_to_png(figures.get("single_path_price"), **_kw),
-                       _t("fig_single_price", lang).format(n=_pn), src_mc)
-        if figures.get("single_path_wof") is not None:
-            pdf.figure(_fig_to_png(figures.get("single_path_wof"), **_kw),
-                       _t("fig_single_wof", lang).format(n=_pn), src_mc)
+    _sec = _lazy_section(_t("mc_subtab_explorer", lang))
+    _pn = figures.get("single_path_num", 0)
+    if _inc("mc_single_price") and figures.get("single_path_price") is not None:
+        _sec()
+        pdf.figure(_fig_to_png(figures.get("single_path_price"), **_kw),
+                   _t("fig_single_price", lang).format(n=_pn), src_mc)
+    if _inc("mc_single_wof") and figures.get("single_path_wof") is not None:
+        _sec()
+        pdf.figure(_fig_to_png(figures.get("single_path_wof"), **_kw),
+                   _t("fig_single_wof", lang).format(n=_pn), src_mc)
 
     # ── 4. Calibration ─────────────────────────────────────────────────────
     params = results.get("params", [])
-    if params and _inc("calibration"):
-        pdf.start_section(_t("calibration", lang))
-
+    _sec = _lazy_section(_t("calibration", lang))
+    if params and _inc("calib_table"):
+        _sec()
         # Build the calibration table.  The "Asset" column uses an inline logo +
         # name approach: we draw the table row-by-row so we can interleave the
         # small logo image at the left edge of each asset row.
@@ -2162,14 +2210,17 @@ def generate_pdf_report(
         pdf.line(pdf.l_margin, pdf.get_y(),
                  pdf.l_margin + sum(col_widths), pdf.get_y())
         pdf.ln(4)
+    if _inc("calib_corr") and figures.get("corr") is not None:
+        _sec()
         pdf.figure(_fig_to_png(figures.get("corr"), width=560, height=460, **_kw),
                    _t("fig_corr", lang), _t("src_hist", lang), w=105, h=86)
 
     # ── 5. Historical backtest ─────────────────────────────────────────────
     bt_figures = bt_figures or {}
     # 5a. Outcomes & Summary — metrics, outcome bar, worst-asset pie, IRR scatter
-    if bt_summary and _inc("bt_outcomes"):
-        pdf.start_section(_t("bt_subtab_outcomes", lang))
+    _sec = _lazy_section(_t("bt_subtab_outcomes", lang))
+    if bt_summary and _inc("bt_metrics"):
+        _sec()
         _bt_lgki = bt_summary.get("loss_given_ki")
         _bt_lgki_pdf = f"{_bt_lgki:.2%}" if _bt_lgki is not None else "—"
         pdf.metric_band([
@@ -2180,11 +2231,16 @@ def generate_pdf_report(
             (_t("bt_knock_in_pct",   lang), f"{bt_summary.get('prob_knock_in', 0):.1%}"),
             (_t("bt_loss_given_ki",  lang), _bt_lgki_pdf),
         ])
+    if bt_summary and _inc("bt_outcome") and bt_figures.get("outcome") is not None:
+        _sec()
         pdf.figure(_fig_to_png(bt_figures.get("outcome"), **_kw),
                    _t("fig_bt_outcome", lang), _t("src_hist", lang))
-        if bt_figures.get("pie") is not None:
-            pdf.figure(_fig_to_png(bt_figures.get("pie"), **_kw),
-                       _t("fig_bt_pie", lang), _t("src_hist", lang))
+    if bt_summary and _inc("bt_pie") and bt_figures.get("pie") is not None:
+        _sec()
+        pdf.figure(_fig_to_png(bt_figures.get("pie"), **_kw),
+                   _t("fig_bt_pie", lang), _t("src_hist", lang))
+    if bt_summary and _inc("bt_irr") and bt_figures.get("irr_scatter") is not None:
+        _sec()
         pdf.figure(_fig_to_png(bt_figures.get("irr_scatter"), **_kw),
                    _t("fig_bt_irr", lang), _t("src_hist", lang))
 
@@ -2202,17 +2258,20 @@ def generate_pdf_report(
                    _t("src_hist", lang))
 
     # ── 6. Current performance ─────────────────────────────────────────────
-    if live_data and _inc("live"):
-        pdf.start_section(_t("live", lang))
-        pdf.metric_band([
-            (_t("live_wof_today",   lang), f"{live_data.get('wof_today', 0):.1%}"),
-            (_t("live_worst_asset", lang), str(live_data.get("worst_asset", ""))),
-            (_t("live_irr_to_date", lang), f"{live_data.get('irr_to_date', 0):.2%}"),
-            (_t("live_elapsed",     lang), f"{live_data.get('elapsed_years', 0):.2f}"),
-        ])
+    if live_data:
+        _sec = _lazy_section(_t("live", lang))
+        if _inc("live_metrics"):
+            _sec()
+            pdf.metric_band([
+                (_t("live_wof_today",   lang), f"{live_data.get('wof_today', 0):.1%}"),
+                (_t("live_worst_asset", lang), str(live_data.get("worst_asset", ""))),
+                (_t("live_irr_to_date", lang), f"{live_data.get('irr_to_date', 0):.2%}"),
+                (_t("live_elapsed",     lang), f"{live_data.get('elapsed_years', 0):.2f}"),
+            ])
 
         perf_today = live_data.get("perf_today", {})
-        if perf_today:
+        if perf_today and _inc("live_asset_table"):
+            _sec()
             pdf.subsection(_t("live_asset_perf", lang))
             _perf_logos = {
                 nm: _load_ticker_logo(nm, (logo_urls or {}).get(nm, ""),
@@ -2228,7 +2287,8 @@ def generate_pdf_report(
             )
 
         obs_rows = live_data.get("obs_rows", [])
-        if obs_rows:
+        if obs_rows and _inc("live_obs_table"):
+            _sec()
             pdf.subsection(_t("live_obs_history", lang))
             obs_headers = list(obs_rows[0].keys())
             obs_data    = [[str(r.get(h, "")) for h in obs_headers] for r in obs_rows]
@@ -2240,7 +2300,9 @@ def generate_pdf_report(
             pdf.data_table(obs_headers, obs_data, col_widths=obs_w,
                            aligns=["L"] * n_cols)
 
-        pdf.figure(_fig_to_png(live_figure, **_kw), _t("fig_live", lang), _t("src_hist", lang))
+        if _inc("live_chart") and live_figure is not None:
+            _sec()
+            pdf.figure(_fig_to_png(live_figure, **_kw), _t("fig_live", lang), _t("src_hist", lang))
 
     # ── 7. Disclaimers ─────────────────────────────────────────────────────
     # The full legal block is ~80mm tall; only break if it would otherwise be
