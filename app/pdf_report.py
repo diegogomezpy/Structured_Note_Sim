@@ -239,6 +239,32 @@ _LABELS: dict[str, dict[str, str]] = {
                               "es": "TIR anual simple realizada por fecha de emisión histórica"},
     "fig_live":              {"en": "Underlying performance since issue date with observation outcomes",
                               "es": "Rendimiento de los subyacentes desde emisión con resultados de observación"},
+    # Section titles for the per-subtab analyses (mirror the dashboard tabs)
+    "mc_subtab_payoff":      {"en": "Monte Carlo — Payoff & Distribution",
+                              "es": "Monte Carlo — Payoff y Distribución"},
+    "mc_subtab_paths":       {"en": "Monte Carlo — Price Paths",
+                              "es": "Monte Carlo — Trayectorias de Precio"},
+    "mc_subtab_explorer":    {"en": "Monte Carlo — Path Explorer",
+                              "es": "Monte Carlo — Explorador de Trayectorias"},
+    "bt_subtab_outcomes":    {"en": "Historical Backtest — Outcomes & Summary",
+                              "es": "Backtest Histórico — Resultados y Resumen"},
+    "bt_subtab_prices":      {"en": "Historical Backtest — Price History",
+                              "es": "Backtest Histórico — Histórico de Precios"},
+    "bt_subtab_explorer":    {"en": "Historical Backtest — Path Explorer",
+                              "es": "Backtest Histórico — Explorador de Trayectorias"},
+    # Captions for the newly-includable figures
+    "fig_individual":        {"en": "Simulated price distribution — {name}",
+                              "es": "Distribución simulada de precios — {name}"},
+    "fig_single_price":      {"en": "Simulated asset price paths — path #{n}",
+                              "es": "Trayectorias de precio simuladas — camino #{n}"},
+    "fig_single_wof":        {"en": "Worst-of performance with barriers — path #{n}",
+                              "es": "Rendimiento worst-of con barreras — camino #{n}"},
+    "fig_bt_pie":            {"en": "Worst-performing asset at the end of each backtest window",
+                              "es": "Activo con peor desempeño al final de cada ventana de backtest"},
+    "fig_bt_prices":         {"en": "Underlying price history over the backtest window",
+                              "es": "Histórico de precios de los subyacentes en la ventana de backtest"},
+    "fig_bt_path":           {"en": "Historical worst-of path — issue {issue}",
+                              "es": "Trayectoria worst-of histórica — emisión {issue}"},
     "src_mc":                {"en": "Source: Heston Monte Carlo simulation",
                               "es": "Fuente: simulación Monte Carlo Heston"},
     "src_hist":              {"en": "Source: Yahoo Finance daily closing prices",
@@ -1816,12 +1842,20 @@ def _cover_page(
     pdf.line(pdf.l_margin, pdf.get_y() + 0.5, pdf.l_margin + main_w, pdf.get_y() + 0.5)
     pdf.ln(2)
     toc = [_t("note_terms", lang)]
-    if inc("mc"):
-        toc.append(_t("sim_summary", lang))
+    if inc("mc_payoff"):
+        toc.append(_t("mc_subtab_payoff", lang))
+    if inc("mc_paths"):
+        toc.append(_t("mc_subtab_paths", lang))
+    if inc("mc_explorer"):
+        toc.append(_t("mc_subtab_explorer", lang))
     if results.get("params") and inc("calibration"):
         toc.append(_t("calibration", lang))
-    if bt_summary and inc("backtest"):
-        toc.append(_t("backtest", lang))
+    if bt_summary and inc("bt_outcomes"):
+        toc.append(_t("bt_subtab_outcomes", lang))
+    if bt_summary and inc("bt_prices"):
+        toc.append(_t("bt_subtab_prices", lang))
+    if bt_summary and inc("bt_explorer"):
+        toc.append(_t("bt_subtab_explorer", lang))
     if live_data and inc("live"):
         toc.append(_t("live", lang))
     toc.append(_t("disclaimer_title", lang))
@@ -1878,12 +1912,14 @@ def generate_pdf_report(
                       logo_file/logo_base64/logo_url, and report_title / website /
                       contact / footer_note content keys). Unknown keys warn and
                       malformed hex falls back to defaults.
-    include_sections — set of optional section keys to write: any of
-                      {"mc", "calibration", "backtest", "live"}. None (default)
-                      includes every section for which data is available, so
-                      existing callers are unaffected. The cover, Note Terms and
-                      disclaimer are always written. A section is only rendered
-                      when BOTH selected here AND its data was supplied.
+    include_sections — set of optional analysis keys to write: any of
+                      {"mc_payoff", "mc_paths", "mc_explorer", "calibration",
+                       "bt_outcomes", "bt_prices", "bt_explorer", "live"}
+                      (one per dashboard subtab). None (default) includes every
+                      analysis for which data is available, so existing callers
+                      are unaffected. The cover, Note Terms and disclaimer are
+                      always written. An analysis is only rendered when BOTH
+                      selected here AND its figure/data was supplied.
     All optional parameters default to None; existing callers are unaffected.
     """
     # None = include everything; otherwise only the listed sections. The cover,
@@ -1958,8 +1994,11 @@ def generate_pdf_report(
     # live figures, so it must be defined regardless of which sections are on.
     _kw = dict(primary_color=primary_color, accent_color=accent_color,
                secondary_color=secondary_color)
-    if _inc("mc"):
-        pdf.start_section(_t("sim_summary", lang), min_room=55.0)
+    src_mc = f"{_t('src_mc', lang)}, {n_paths_val:,} {_t('paths_word', lang)}"
+
+    # 3a. Payoff & Distribution — summary metrics, IRR distribution, autocall table
+    if _inc("mc_payoff"):
+        pdf.start_section(_t("mc_subtab_payoff", lang), min_room=55.0)
         _mc_ki_mask = np.asarray(results.get("knock_in_triggered", []), dtype=bool)
         _mc_ann_ret = np.asarray(results.get("annualized_returns", []))
         _mc_lgki_str = (
@@ -1975,10 +2014,7 @@ def generate_pdf_report(
             (_t("loss_given_ki",      lang), _mc_lgki_str),
             (_t("n_paths",            lang), f"{n_paths_val:,}"),
         ])
-
-        src_mc = f"{_t('src_mc', lang)}, {n_paths_val:,} {_t('paths_word', lang)}"
         pdf.figure(_fig_to_png(figures.get("irr_dist"), **_kw), _t("fig_irr", lang), src_mc)
-        pdf.figure(_fig_to_png(figures.get("wof_fan"),  **_kw), _t("fig_wof", lang), src_mc)
 
         prob_by_period = results.get("prob_autocall_by_period", [])
         if prob_by_period:
@@ -1993,6 +2029,26 @@ def generate_pdf_report(
                 col_widths=[usable * 0.2, usable * 0.25, usable * 0.3, usable * 0.25],
                 aligns=["L", "R", "R", "R"],
             )
+
+    # 3b. Price Paths — worst-of fan + per-underlying simulated distributions
+    if _inc("mc_paths"):
+        pdf.start_section(_t("mc_subtab_paths", lang))
+        pdf.figure(_fig_to_png(figures.get("wof_fan"), **_kw), _t("fig_wof", lang), src_mc)
+        for nm, fig in (figures.get("individual") or []):
+            pdf.figure(_fig_to_png(fig, **_kw),
+                       _t("fig_individual", lang).format(name=nm), src_mc)
+
+    # 3c. Path Explorer — the single simulated path the user last viewed
+    if _inc("mc_explorer") and (figures.get("single_path_price") is not None
+                                or figures.get("single_path_wof") is not None):
+        pdf.start_section(_t("mc_subtab_explorer", lang))
+        _pn = figures.get("single_path_num", 0)
+        if figures.get("single_path_price") is not None:
+            pdf.figure(_fig_to_png(figures.get("single_path_price"), **_kw),
+                       _t("fig_single_price", lang).format(n=_pn), src_mc)
+        if figures.get("single_path_wof") is not None:
+            pdf.figure(_fig_to_png(figures.get("single_path_wof"), **_kw),
+                       _t("fig_single_wof", lang).format(n=_pn), src_mc)
 
     # ── 4. Calibration ─────────────────────────────────────────────────────
     params = results.get("params", [])
@@ -2110,8 +2166,10 @@ def generate_pdf_report(
                    _t("fig_corr", lang), _t("src_hist", lang), w=105, h=86)
 
     # ── 5. Historical backtest ─────────────────────────────────────────────
-    if bt_summary and _inc("backtest"):
-        pdf.start_section(_t("backtest", lang))
+    bt_figures = bt_figures or {}
+    # 5a. Outcomes & Summary — metrics, outcome bar, worst-asset pie, IRR scatter
+    if bt_summary and _inc("bt_outcomes"):
+        pdf.start_section(_t("bt_subtab_outcomes", lang))
         _bt_lgki = bt_summary.get("loss_given_ki")
         _bt_lgki_pdf = f"{_bt_lgki:.2%}" if _bt_lgki is not None else "—"
         pdf.metric_band([
@@ -2122,11 +2180,26 @@ def generate_pdf_report(
             (_t("bt_knock_in_pct",   lang), f"{bt_summary.get('prob_knock_in', 0):.1%}"),
             (_t("bt_loss_given_ki",  lang), _bt_lgki_pdf),
         ])
-        if bt_figures:
-            pdf.figure(_fig_to_png(bt_figures.get("outcome"), **_kw),
-                       _t("fig_bt_outcome", lang), _t("src_hist", lang))
-            pdf.figure(_fig_to_png(bt_figures.get("irr_scatter"), **_kw),
-                       _t("fig_bt_irr", lang), _t("src_hist", lang))
+        pdf.figure(_fig_to_png(bt_figures.get("outcome"), **_kw),
+                   _t("fig_bt_outcome", lang), _t("src_hist", lang))
+        if bt_figures.get("pie") is not None:
+            pdf.figure(_fig_to_png(bt_figures.get("pie"), **_kw),
+                       _t("fig_bt_pie", lang), _t("src_hist", lang))
+        pdf.figure(_fig_to_png(bt_figures.get("irr_scatter"), **_kw),
+                   _t("fig_bt_irr", lang), _t("src_hist", lang))
+
+    # 5b. Price History — normalised underlying price paths over the window
+    if bt_summary and bt_figures.get("prices") is not None and _inc("bt_prices"):
+        pdf.start_section(_t("bt_subtab_prices", lang))
+        pdf.figure(_fig_to_png(bt_figures.get("prices"), **_kw),
+                   _t("fig_bt_prices", lang), _t("src_hist", lang))
+
+    # 5c. Path Explorer — the historical worst-of path the user last viewed
+    if bt_summary and bt_figures.get("path") is not None and _inc("bt_explorer"):
+        pdf.start_section(_t("bt_subtab_explorer", lang))
+        pdf.figure(_fig_to_png(bt_figures.get("path"), **_kw),
+                   _t("fig_bt_path", lang).format(issue=bt_figures.get("path_issue", "")),
+                   _t("src_hist", lang))
 
     # ── 6. Current performance ─────────────────────────────────────────────
     if live_data and _inc("live"):
