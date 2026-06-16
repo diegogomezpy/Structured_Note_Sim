@@ -44,7 +44,7 @@ _STRINGS: dict[str, tuple[str, str]] = {
     "asset_price_paths":        ("Asset Price Paths — Path #{n}",   "Trayectorias de Precios — Trayectoria #{n}"),
     "price_label":              ("Price",                            "Precio"),
     "time_step":                ("Time Step",                        "Paso de Tiempo"),
-    "wof_path_title":           ("Worst-of Performance Path #{n}",  "Trayectoria de Rendimiento Worst-of #{n}"),
+    "wof_path_title":           ("Exclusive Worst-of Performance Path #{n}",  "Trayectoria Worst-of Exclusivo #{n}"),
     "called_label":             ("← Called",                        "← Rescatada"),
     "continued_label":          ("(continued)",                     "(continúa)"),
     "coupon_paid_label":        ("coupon paid",                     "cupón pagado"),
@@ -85,8 +85,8 @@ _STRINGS: dict[str, tuple[str, str]] = {
     "expected_total_return":     ("Expected Total Return",             "Rendimiento Total Esperado"),
     "expected_coupon_metric":    ("Expected Coupon",                   "Cupón Esperado"),
     "prob_autocalled":           ("P(Autocalled)",                     "P(Autocall)"),
-    "prob_knock_in_metric":      ("P(Knock-in)",                       "P(Knock-in)"),
-    "loss_given_ki_metric":      ("IRR if Knocked In",                 "TIR si Knock-in"),
+    "prob_knock_in_metric":      ("P(capital loss)",                   "P(pérdida de capital)"),
+    "loss_given_ki_metric":      ("IRR if capital loss",               "TIR si pérdida de capital"),
     "barrier_rescued_caption":   (
         "Barrier breached on {barrier:.2%} of paths; {rescued:.2%} were rescued to par by the"
         "final redemption condition ({basket} ≥ {level:.0%}).",
@@ -114,13 +114,13 @@ _STRINGS: dict[str, tuple[str, str]] = {
     "irr_dist_subheader":        ("IRR Distribution — All Simulated Paths",
                                   "Distribución de TIR — Todas las Trayectorias Simuladas"),
     "knock_in_info":             (
-        "**{pct:.1%}** of paths trigger the knock-in barrier ({barrier:.0%}) at maturity.",
-        "**{pct:.1%}** de las trayectorias activan la barrera knock-in ({barrier:.0%}) al vencimiento.",
+        "**{pct:.1%}** of paths end in a capital loss at maturity (exclusive worst-of below the {barrier:.0%} knock-in barrier and not rescued).",
+        "**{pct:.1%}** de las trayectorias terminan en pérdida de capital al vencimiento (worst-of exclusivo bajo la barrera knock-in del {barrier:.0%} y no rescatadas).",
     ),
 
     # ── MC tab2 — price paths ──────────────────────────────────────────────
     "price_paths_subheader":     ("Simulated Price Path Fan Charts",   "Abanicos de Trayectorias de Precio Simuladas"),
-    "wof_basket_md":             ("#### Worst-of Basket Performance",  "#### Rendimiento de la Cesta Worst-of"),
+    "wof_basket_md":             ("#### Exclusive Worst-of Performance",  "#### Rendimiento Worst-of Exclusivo"),
     "individual_paths_md":       ("#### Individual Underlying Paths",  "#### Trayectorias Individuales de Subyacentes"),
 
     # ── MC tab3 — path explorer ────────────────────────────────────────────
@@ -128,10 +128,10 @@ _STRINGS: dict[str, tuple[str, str]] = {
     "path_caption":              ("Path #{n} of {total}",              "Trayectoria #{n} de {total}"),
     "autocalled_at_md":          ("### Autocalled at period {q} ({t:.3g}Y)",
                                   "### Autocall en período {q} ({t:.3g}A)"),
-    "maturity_knock_in_md":      ("### Maturity — Knock-in (worst-of: {wof:.1%})",
-                                  "### Vencimiento — Knock-in (worst-of: {wof:.1%})"),
-    "maturity_no_knock_in_md": ("### Maturity — No knock-in (worst-of: {wof:.1%})",
-                                  "### Vencimiento — Sin knock-in (worst-of: {wof:.1%})"),
+    "maturity_knock_in_md":      ("### Maturity — Capital loss (exclusive worst-of: {wof:.1%})",
+                                  "### Vencimiento — Pérdida de capital (worst-of exclusivo: {wof:.1%})"),
+    "maturity_no_knock_in_md": ("### Maturity — No capital loss (exclusive worst-of: {wof:.1%})",
+                                  "### Vencimiento — Sin pérdida de capital (worst-of exclusivo: {wof:.1%})"),
     "metric_principal":          ("Principal",                         "Principal"),
     "metric_coupons":            ("Coupons",                           "Cupones"),
     "metric_irr_pa":             ("IRR p.a.",                          "TIR p.a."),
@@ -266,7 +266,7 @@ _STRINGS: dict[str, tuple[str, str]] = {
         "**Transcurrido:** {elapsed:.2f}A &nbsp;·&nbsp; "
         "**Restante:** {remaining:.2f}A",
     ),
-    "live_metric_wof_today":     ("Worst-of Today",                    "Worst-of Hoy"),
+    "live_metric_wof_today":     ("Exclusive Worst-of Today",          "Worst-of Exclusivo Hoy"),
     "live_metric_vs_strike":     ("{v:.1%} vs strike",                 "{v:.1%} vs strike"),
     "live_metric_worst_asset":   ("Worst Asset",                       "Activo Más Débil"),
     "live_metric_vs_ki":         ("vs KI Barrier",                     "vs Barrera KI"),
@@ -280,7 +280,7 @@ _STRINGS: dict[str, tuple[str, str]] = {
     "live_col_period":           ("Period",                            "Período"),
     "live_col_date":             ("Date",                              "Fecha"),
     "live_col_status":           ("Status",                            "Estado"),
-    "live_col_wof":              ("Worst-of",                          "Worst-of"),
+    "live_col_wof":              ("Exclusive worst-of",                "Worst-of exclusivo"),
     "live_col_coupon":           ("Coupon",                            "Cupón"),
     "live_col_cumulative":       ("Cumulative",                        "Acumulado"),
     "live_pending_coupons_info": (
@@ -296,8 +296,8 @@ _STRINGS: dict[str, tuple[str, str]] = {
     # ── Backtest ───────────────────────────────────────────────────────────
     "outcome_dist":             ("Outcome Distribution",            "Distribución de Resultados"),
     "count":                    ("Count",                           "Cantidad"),
-    "worst_asset_at_mat":       ("Worst-of Asset at Maturity (uncalled notes)",
-                                 "Activo Worst-of al Vencimiento (notas no rescatadas)"),
+    "worst_asset_at_mat":       ("Exclusive Worst-of Asset at Maturity (uncalled notes)",
+                                 "Activo Worst-of Exclusivo al Vencimiento (notas no rescatadas)"),
     "realised_irr_title":       ("Realised IRR by Issue Date",      "TIR Realizada por Fecha de Emisión"),
     "break_even":               ("Break-even",                      "Break-even"),
     "backtest_start":           ("Backtest start",                  "Inicio backtest"),
@@ -348,7 +348,7 @@ _STRINGS: dict[str, tuple[str, str]] = {
     "setup_memory_coupon":      ("Memory coupon",                      "Cupón con memoria"),
     "setup_autocall_barrier":   ("Autocall barrier (%)",               "Barrera de autocall (%)"),
     "setup_ki_barrier":         ("Knock-in barrier (%)",               "Barrera de knock-in (%)"),
-    "setup_basket_types":       ("Basket Types",                       "Tipos de Cesta"),
+    "setup_basket_types":       ("Performance Rule",                       "Regla de Rendimiento"),
     "setup_coupon_check":       ("Coupon barrier check",               "Comprobación de barrera de cupón"),
     "setup_autocall_check":     ("Autocall trigger check",             "Comprobación del disparador de autocall"),
     "setup_rescue_toggle":      ("Best-of capital rescue at maturity", "Rescate de capital best-of al vencimiento"),
@@ -453,8 +453,8 @@ _STRINGS: dict[str, tuple[str, str]] = {
     "nt_bonus_cert":            ("Bonus Certificate",                  "Certificado Bonus"),
     "nt_capital_protected":     ("Capital-Protected",                  "Capital protegido"),
     "nt_custom":                ("Custom",                             "Personalizado"),
-    "nt_phoenix_desc":          ("Periodic coupon when the basket is above the coupon barrier; redeems early above the autocall barrier; capital at risk below the knock-in.",
-                                 "Cupón periódico cuando la cesta está sobre la barrera de cupón; rescate anticipado sobre la barrera de autocall; capital en riesgo bajo el knock-in."),
+    "nt_phoenix_desc":          ("Periodic coupon when performance is above the coupon barrier; redeems early above the autocall barrier; capital at risk below the knock-in.",
+                                 "Cupón periódico cuando el rendimiento está sobre la barrera de cupón; rescate anticipado sobre la barrera de autocall; capital en riesgo bajo el knock-in."),
     "nt_reverse_conv_desc":     ("Guaranteed coupon every period (no coupon barrier); capital at risk below the knock-in at maturity.",
                                  "Cupón garantizado cada período (sin barrera de cupón); capital en riesgo bajo el knock-in al vencimiento."),
     "nt_growth_autocall_desc":  ("No periodic coupon — an accrued premium is paid only if the note autocalls. The autocall barrier steps down each period.",
@@ -482,14 +482,14 @@ _STRINGS: dict[str, tuple[str, str]] = {
                                  "0% = el cupón siempre paga (cupón garantizado / Reverse Convertible)."),
     "setup_memory_help":        ("Missed coupons are stored and paid later if a future period recovers above the barrier.",
                                  "Los cupones no pagados se acumulan y se pagan si un período futuro recupera sobre la barrera."),
-    "setup_basket_rule_help":   ("How a multi-underlying basket is scored — worst-of uses the weakest performer.",
-                                 "Cómo se evalúa una cesta de varios subyacentes — peor rendimiento usa el más débil."),
+    "setup_basket_rule_help":   ("How multi-underlying performance is scored — exclusive worst-of uses the weakest performer.",
+                                 "Cómo se evalúa el rendimiento de varios subyacentes — worst-of exclusivo usa el más débil."),
     "setup_ki_european_caption":("Measured at maturity only (European knock-in).",
                                  "Se mide solo al vencimiento (knock-in europeo)."),
 
     # ── Setup renamed / new field labels ───────────────────────────────────
-    "setup_coupon_basket_rule": ("Coupon basket rule",                 "Regla de cesta del cupón"),
-    "setup_autocall_basket_rule":("Autocall basket rule",              "Regla de cesta del autocall"),
+    "setup_coupon_basket_rule": ("Coupon rule",                 "Regla del cupón"),
+    "setup_autocall_basket_rule":("Autocall rule",              "Regla del autocall"),
     "setup_premium_pa":         ("Premium p.a. (%)",                   "Prima anual (%)"),
     "setup_premium_pa_help":    ("Accrual rate of the premium paid at autocall (premium = this rate × periods elapsed).",
                                  "Tasa de acumulación de la prima pagada al autocall (prima = esta tasa × períodos transcurridos)."),
@@ -508,7 +508,7 @@ _STRINGS: dict[str, tuple[str, str]] = {
                                  "Rescate máximo sobre el nominal. Desmarque para subida sin tope."),
 
     # ── Basket option labels ───────────────────────────────────────────────
-    "basket_worst_of":          ("Worst-of",                           "Peor rendimiento"),
+    "basket_worst_of":          ("Exclusive worst-of",                 "Worst-of exclusivo"),
     "basket_best_of":           ("Best-of",                            "Mejor rendimiento"),
     "basket_average":           ("Average",                            "Promedio"),
 
@@ -625,11 +625,11 @@ _STRINGS: dict[str, tuple[str, str]] = {
     "mc_help_prob_knock_in":    (
         "Probability of capital loss at maturity: knock-in barrier breached "
         "AND the final redemption condition not met. For notes with a best-of "
-        "final basket (e.g. BBVA XS3378405743), paths where the best performer "
+        "final redemption rule (e.g. BBVA XS3378405743), paths where the best performer "
         "finishes ≥ the redemption barrier are 'rescued' to par even if the "
         "worst breached the KI level — those are excluded here.",
         "Probabilidad de pérdida de capital al vencimiento: barrera de knock-in tocada Y "
-        "condición de redención final no cumplida. Para notas con cesta final best-of "
+        "condición de redención final no cumplida. Para notas con regla de redención final best-of "
         "(ej. BBVA XS3378405743), las trayectorias donde el mejor subyacente termina ≥ "
         "la barrera de redención son 'rescatadas' a la par aunque el peor haya tocado el "
         "nivel de KI — esas se excluyen aquí.",
@@ -696,18 +696,18 @@ _STRINGS: dict[str, tuple[str, str]] = {
         "Valores < 0.05 confirman que el motor reproduce la correlación objetivo; si es "
         "elevada, aumente las trayectorias de Monte Carlo.",
     ),
-    "corr_effective_header":    ("Effective basket correlation (what the payoff sees)",
-                                 "Correlación efectiva de la cesta (lo que ve el pago)"),
+    "corr_effective_header":    ("Effective worst-of correlation (what the payoff sees)",
+                                 "Correlación efectiva del worst-of (lo que ve el pago)"),
     "corr_effective":           ("Effective",                          "Efectiva"),
     "corr_effective_gap":       ("Gap vs input",                       "Brecha vs entrada"),
     "corr_effective_caption":   (
-        "Correlation of pooled daily returns — the co-movement the basket actually "
+        "Correlation of pooled daily returns — the co-movement the exclusive worst-of actually "
         "experiences. It runs **above** the instantaneous input by construction: "
         "pooling high- and low-volatility days inflates sample correlation "
         "(heteroskedasticity / Forbes-Rigobon). This gap is expected, not a "
         "calibration error, and is largest for high vol-of-vol underlyings.",
         "Correlación de los retornos diarios agrupados — el co-movimiento que realmente "
-        "experimenta la cesta. Es **mayor** que la entrada instantánea por construcción: "
+        "experimenta el worst-of. Es **mayor** que la entrada instantánea por construcción: "
         "agrupar días de alta y baja volatilidad infla la correlación muestral "
         "(heterocedasticidad / Forbes-Rigobon). Esta brecha es esperada, no un error de "
         "calibración, y es mayor para subyacentes con alta volatilidad de la volatilidad.",
@@ -758,10 +758,10 @@ _STRINGS: dict[str, tuple[str, str]] = {
         "cupón y del autocall, y la exposición al knock-in, se miden contra esta cifra.",
     ),
     "live_help_worst_asset":    (
-        "The underlying currently dragging the worst-of basket — "
+        "The underlying currently dragging the exclusive worst-of — "
         "i.e. the one with the lowest performance relative to its "
         "initial fixing. This asset sets the barrier observation level.",
-        "El subyacente que actualmente arrastra la cesta worst-of — es decir, el de menor "
+        "El subyacente que actualmente arrastra el worst-of exclusivo — es decir, el de menor "
         "rendimiento relativo a su fijación inicial. Este activo determina el nivel de "
         "observación de la barrera.",
     ),
@@ -787,7 +787,7 @@ _STRINGS: dict[str, tuple[str, str]] = {
         "anticipado. El delta muestra la distancia a la barrera en puntos porcentuales.",
     ),
     "live_help_ki_buffer":      (
-        "How far the worst-of basket is above the knock-in barrier ({barrier:.0%}), "
+        "How far the exclusive worst-of is above the knock-in barrier ({barrier:.0%}), "
         "in percentage-point terms. Positive = safe; negative = barrier already breached. "
         "The note loses principal protection if the worst-of closes below the KI barrier "
         "on the final observation date.",
@@ -797,7 +797,7 @@ _STRINGS: dict[str, tuple[str, str]] = {
         "barrera KI en la fecha de observación final.",
     ),
     "live_help_ac_buffer":      (
-        "How far the worst-of basket is above the autocall barrier ({barrier:.0%}), "
+        "How far the exclusive worst-of is above the autocall barrier ({barrier:.0%}), "
         "in percentage-point terms. Positive = the note could be called at the next "
         "eligible observation; negative = not yet at the call level.",
         "Cuánto está el worst-of por encima de la barrera de autocall ({barrier:.0%}), "
@@ -850,7 +850,7 @@ _STRINGS: dict[str, tuple[str, str]] = {
     # ── Chart-internal strings (app/charts.py) ─────────────────────────────
     # Levels ({lvl}) and amounts ({v}, {pct}) are passed pre-formatted by the
     # caller so a single key serves both .0% and .1% precisions.
-    "chart_worst_of":            ("Worst-of",                          "Worst-of"),
+    "chart_worst_of":            ("Exclusive worst-of",                "Worst-of exclusivo"),
     "chart_ki_barrier":          ("Knock-in barrier ({lvl})",          "Barrera knock-in ({lvl})"),
     "chart_autocall_barrier":    ("Autocall barrier",                  "Barrera autocall"),
     "chart_autocall_barrier_lvl":("Autocall barrier ({lvl})",          "Barrera autocall ({lvl})"),
@@ -882,8 +882,8 @@ _STRINGS: dict[str, tuple[str, str]] = {
     # Backtest worst-asset pie, historical price + worst-of path charts
     "chart_worst_asset_at_call": ("Worst Asset at Call Date",          "Activo más débil en la fecha de rescate"),
     "chart_hist_prices_title":   ("Historical Price Paths",            "Trayectorias Históricas de Precio"),
-    "chart_hist_wof_title":      ("Historical Worst-of Path — Issue: {issue} · Outcome: {outcome}",
-                                  "Trayectoria Histórica Worst-of — Emisión: {issue} · Resultado: {outcome}"),
+    "chart_hist_wof_title":      ("Historical Exclusive Worst-of Path — Issue: {issue} · Outcome: {outcome}",
+                                  "Trayectoria Histórica Worst-of Exclusivo — Emisión: {issue} · Resultado: {outcome}"),
     "chart_outcome_autocalled_p":("Autocalled P{q}",                   "Rescatada P{q}"),
     "chart_period_called":       ("P{p} ← CALLED",                     "P{p} ← RESCATADA"),
 

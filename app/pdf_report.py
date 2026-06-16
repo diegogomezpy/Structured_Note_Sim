@@ -201,9 +201,9 @@ _LABELS: dict[str, dict[str, str]] = {
     "autocall_start":        {"en": "First autocall observation",        "es": "Primera observación autocall"},
     "ki_barrier":            {"en": "Knock-in barrier (European)",       "es": "Barrera knock-in (europea)"},
     "memory":                {"en": "Memory coupon",                     "es": "Cupón con memoria"},
-    "coupon_basket":         {"en": "Coupon basket",                     "es": "Cesta de cupón"},
-    "autocall_basket":       {"en": "Autocall basket",                   "es": "Cesta de autocall"},
-    "final_basket":          {"en": "Final redemption basket",           "es": "Cesta de redención final"},
+    "coupon_basket":         {"en": "Coupon rule",                       "es": "Regla del cupón"},
+    "autocall_basket":       {"en": "Autocall rule",                     "es": "Regla del autocall"},
+    "final_basket":          {"en": "Final redemption rule",             "es": "Regla de redención final"},
     "rescue_barrier":        {"en": "Final redemption barrier",          "es": "Barrera de redención final"},
     "ac_step_down":          {"en": "Autocall step-down / period",       "es": "Reducción de barrera / período"},
     "ac_floor":              {"en": "Autocall barrier floor",            "es": "Suelo de barrera autocall"},
@@ -216,8 +216,9 @@ _LABELS: dict[str, dict[str, str]] = {
     "in_this_report":        {"en": "In this report",                    "es": "En este informe"},
     "expected_coupon":       {"en": "Expected coupon income",            "es": "Cupón total esperado"},
     "prob_autocall":         {"en": "P(autocall)",                       "es": "P(autocall)"},
-    "prob_knock_in":         {"en": "P(capital loss)",                   "es": "P(pérdida de capital)"},
-    "loss_given_ki":         {"en": "IRR if knocked in",                 "es": "TIR si knock-in"},
+    "prob_knock_in":         {"en": "P(knock-in)",                       "es": "P(knock-in)"},
+    "prob_capital_loss":     {"en": "P(capital loss)",                   "es": "P(pérdida de capital)"},
+    "loss_given_ki":         {"en": "IRR if capital loss",               "es": "TIR si pérdida de capital"},
     "n_paths":               {"en": "Simulated paths",                   "es": "Caminos simulados"},
     "autocall_by_period":    {"en": "Autocall Probability by Period",    "es": "Probabilidad de Autocall por Período"},
     "period":                {"en": "Period",                            "es": "Período"},
@@ -229,8 +230,8 @@ _LABELS: dict[str, dict[str, str]] = {
     "no":                    {"en": "No",                                "es": "No"},
     "fig_irr":               {"en": "Distribution of simple annualised IRR across simulated paths",
                               "es": "Distribución de TIR anual simple en los caminos simulados"},
-    "fig_wof":               {"en": "Worst-of basket performance fan with barrier levels",
-                              "es": "Abanico de la cesta worst-of con niveles de barrera"},
+    "fig_wof":               {"en": "Exclusive worst-of performance fan with barrier levels",
+                              "es": "Abanico worst-of exclusivo con niveles de barrera"},
     "fig_corr":              {"en": "Calibrated return correlation matrix",
                               "es": "Matriz de correlaciones de retorno calibrada"},
     "fig_bt_outcome":        {"en": "Distribution of historical outcomes by issue date",
@@ -1554,7 +1555,7 @@ def _exec_bullets(terms, results, bt_summary, live_data, lang: str) -> list[str]
                 f"{bt_summary.get('prob_knock_in', 0):.1%}.")
         if live_data:
             b.append(
-                f"Since issue, the worst-of basket trades at {live_data.get('wof_today', 0):.1%} of strike "
+                f"Since issue, the exclusive worst-of trades at {live_data.get('wof_today', 0):.1%} of strike "
                 f"({live_data.get('worst_asset', '')} is the worst performer); coupon IRR to date is "
                 f"{live_data.get('irr_to_date', 0):.1%} annualised.")
     return b
@@ -2038,8 +2039,10 @@ def generate_pdf_report(
                 state["done"] = True
         return ensure
 
-    # 3a. Payoff & Distribution — summary metrics, IRR distribution, autocall table
-    _sec = _lazy_section(_t("mc_subtab_payoff", lang), min_room=55.0)
+    # 3a. Payoff & Distribution — summary metrics, IRR distribution, autocall table.
+    # Reserve enough room for the metric band + the IRR figure so the section
+    # doesn't start a band at the bottom of a page and orphan its chart overleaf.
+    _sec = _lazy_section(_t("mc_subtab_payoff", lang), min_room=150.0)
     if _inc("mc_metrics"):
         _sec()
         _mc_ki_mask = np.asarray(results.get("knock_in_triggered", []), dtype=bool)
@@ -2049,14 +2052,24 @@ def generate_pdf_report(
             if _mc_ki_mask.any() and len(_mc_ann_ret) == len(_mc_ki_mask)
             else "—"
         )
-        pdf.metric_band([
+        # Knock-in (barrier breached) and capital loss (breached AND not rescued)
+        # are the same event for a plain worst-of note, but a best-of rescue
+        # clause makes them differ. Show P(knock-in) separately only then.
+        _p_loss    = results.get("prob_knock_in_total", 0)
+        _p_barrier = results.get("prob_barrier_event", _p_loss)
+        _band = [
             (_t("expected_irr",       lang), f"{results.get('expected_irr', 0):.2%}"),
             (_t("total_return_short", lang), f"{results.get('expected_total_return', 0):.2%}"),
             (_t("prob_autocall",      lang), f"{results.get('prob_autocall', 0):.1%}"),
-            (_t("prob_knock_in",      lang), f"{results.get('prob_knock_in_total', 0):.2%}"),
+        ]
+        if results.get("prob_rescued", 0) > 0:
+            _band.append((_t("prob_knock_in", lang), f"{_p_barrier:.2%}"))
+        _band += [
+            (_t("prob_capital_loss",  lang), f"{_p_loss:.2%}"),
             (_t("loss_given_ki",      lang), _mc_lgki_str),
             (_t("n_paths",            lang), f"{n_paths_val:,}"),
-        ])
+        ]
+        pdf.metric_band(_band)
     if _inc("mc_irr"):
         _sec()
         pdf.figure(_fig_to_png(figures.get("irr_dist"), **_kw), _t("fig_irr", lang), src_mc)
@@ -2217,8 +2230,9 @@ def generate_pdf_report(
 
     # ── 5. Historical backtest ─────────────────────────────────────────────
     bt_figures = bt_figures or {}
-    # 5a. Outcomes & Summary — metrics, outcome bar, worst-asset pie, IRR scatter
-    _sec = _lazy_section(_t("bt_subtab_outcomes", lang))
+    # 5a. Outcomes & Summary — metrics, outcome bar, worst-asset pie, IRR scatter.
+    # Same keep-together reserve as the MC payoff section (band + first chart).
+    _sec = _lazy_section(_t("bt_subtab_outcomes", lang), min_room=150.0)
     if bt_summary and _inc("bt_metrics"):
         _sec()
         _bt_lgki = bt_summary.get("loss_given_ki")
@@ -2259,7 +2273,7 @@ def generate_pdf_report(
 
     # ── 6. Current performance ─────────────────────────────────────────────
     if live_data:
-        _sec = _lazy_section(_t("live", lang))
+        _sec = _lazy_section(_t("live", lang), min_room=140.0)
         if _inc("live_metrics"):
             _sec()
             pdf.metric_band([
