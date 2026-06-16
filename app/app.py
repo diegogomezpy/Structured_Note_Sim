@@ -507,16 +507,20 @@ if st.session_state["page"] == "setup":
     _is_capprot = note_type == "capital_protected"
     _is_custom  = note_type == "custom"
 
-    _show_coupon         = note_type in ("phoenix", "reverse_conv", "growth_autocall", "custom")
-    _show_coupon_barrier = note_type in ("phoenix", "custom")
-    _show_memory         = note_type in ("phoenix", "custom")
-    _show_coupon_basket  = note_type in ("phoenix", "custom")
-    _show_autocall       = note_type in ("phoenix", "reverse_conv", "growth_autocall", "custom")
-    _show_growth         = note_type in ("growth_autocall", "custom")
-    _show_ki             = note_type in ("phoenix", "reverse_conv", "growth_autocall", "bonus_cert", "custom")
-    _show_min_return     = _is_bonus
-    _show_capprot        = _is_capprot
-    _show_rescue         = note_type in ("phoenix", "custom")
+    # Every section is always shown so the full set of note features is visible
+    # regardless of the broad note-type picked. The picker only pre-fills
+    # template-canonical defaults (see the _is_* block below); it never hides
+    # fields — hiding them based on category was confusing.
+    _show_coupon         = True
+    _show_coupon_barrier = True
+    _show_memory         = True
+    _show_coupon_basket  = True
+    _show_autocall       = True
+    _show_growth         = True
+    _show_ki             = True
+    _show_min_return     = True
+    _show_capprot        = True
+    _show_rescue         = True
 
     basket_opts = ["worst_of", "best_of", "average"]
     _basket_label = {
@@ -663,28 +667,42 @@ if st.session_state["page"] == "setup":
                 step=0.5, format="%.2f", help=tr("setup_min_return_help"),
             )
         if _show_capprot:
-            cg_a, cg_b = st.columns(2)
-            with cg_a:
-                _cg_def = getattr(base, "capital_guarantee", None)
-                cap_guar_pct = st.number_input(
-                    tr("setup_capital_guarantee"), 0.0, 100.0,
-                    value=round((_cg_def if _cg_def is not None else 1.0) * 100, 4),
-                    step=1.0, format="%.2f", help=tr("setup_capital_guarantee_help"),
-                )
-                capital_guarantee = cap_guar_pct / 100.0
-            with cg_b:
-                _uc_def = getattr(base, "upside_cap", None)
-                _cap_on = st.toggle(tr("setup_cap_upside_toggle"),
-                                    value=_uc_def is not None)
-                if _cap_on:
-                    uc_pct = st.number_input(
-                        tr("setup_upside_cap"), 0.0, 200.0,
-                        value=round((_uc_def if _uc_def is not None else 0.15) * 100, 4),
-                        step=1.0, format="%.2f", help=tr("setup_upside_cap_help"),
+            # Capital protection is a mutually-exclusive payoff mode: when on,
+            # the engine skips the entire Phoenix/autocall/KI waterfall. Gate it
+            # behind an explicit toggle so it doesn't silently override every
+            # other note type now that the section is always visible. Defaults
+            # on only for a config that already has a capital guarantee.
+            _capprot_on = st.toggle(
+                tr("setup_capital_protected_toggle"),
+                value=getattr(base, "capital_guarantee", None) is not None,
+                help=tr("setup_capital_protected_toggle_help"),
+            )
+            if _capprot_on:
+                cg_a, cg_b = st.columns(2)
+                with cg_a:
+                    _cg_def = getattr(base, "capital_guarantee", None)
+                    cap_guar_pct = st.number_input(
+                        tr("setup_capital_guarantee"), 0.0, 100.0,
+                        value=round((_cg_def if _cg_def is not None else 1.0) * 100, 4),
+                        step=1.0, format="%.2f", help=tr("setup_capital_guarantee_help"),
                     )
-                    upside_cap = uc_pct / 100.0
-                else:
-                    upside_cap = None
+                    capital_guarantee = cap_guar_pct / 100.0
+                with cg_b:
+                    _uc_def = getattr(base, "upside_cap", None)
+                    _cap_on = st.toggle(tr("setup_cap_upside_toggle"),
+                                        value=_uc_def is not None)
+                    if _cap_on:
+                        uc_pct = st.number_input(
+                            tr("setup_upside_cap"), 0.0, 200.0,
+                            value=round((_uc_def if _uc_def is not None else 0.15) * 100, 4),
+                            step=1.0, format="%.2f", help=tr("setup_upside_cap_help"),
+                        )
+                        upside_cap = uc_pct / 100.0
+                    else:
+                        upside_cap = None
+            else:
+                capital_guarantee = None
+                upside_cap = None
         if _show_rescue:
             # Best-of capital rescue clause (e.g. BBVA XS3378405743 Final Payout
             # xi): at maturity, capital is returned at par if the BEST performer
@@ -744,13 +762,14 @@ if st.session_state["page"] == "setup":
                     step=0.5, format="%.2f", help=tr("setup_autocall_floor_help"),
                 )
             with gr_c:
-                if _is_custom:
-                    st.markdown("<br>", unsafe_allow_html=True)
-                    premium_at_call = st.toggle(
-                        tr("setup_premium_at_call"),
-                        value=bool(getattr(base, "coupon_at_autocall_only", False)),
-                        help=tr("setup_premium_at_call_help"),
-                    )
+                st.markdown("<br>", unsafe_allow_html=True)
+                # Seed from the template-aware default (premium_at_call) so the
+                # Growth template still defaults this on; always visible now.
+                premium_at_call = st.toggle(
+                    tr("setup_premium_at_call"),
+                    value=bool(premium_at_call),
+                    help=tr("setup_premium_at_call_help"),
+                )
             if step_down_pct > 0:
                 _sd_preview = NoteTerms(
                     maturity=float(maturity), payment_freq=payment_freq,
