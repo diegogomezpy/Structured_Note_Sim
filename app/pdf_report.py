@@ -192,6 +192,7 @@ _LABELS: dict[str, dict[str, str]] = {
     "calibration":           {"en": "Model Calibration",                 "es": "Calibración del Modelo"},
     "backtest":              {"en": "Historical Backtest",               "es": "Backtest Histórico"},
     "live":                  {"en": "Current Performance",               "es": "Rendimiento Actual"},
+    "glossary_title":        {"en": "Glossary of Terms",                 "es": "Glosario de Términos"},
     "disclaimer_title":      {"en": "Important Information",             "es": "Información Importante"},
     "maturity":              {"en": "Maturity",                          "es": "Vencimiento"},
     "freq":                  {"en": "Payment frequency",                 "es": "Frecuencia de pago"},
@@ -230,8 +231,8 @@ _LABELS: dict[str, dict[str, str]] = {
     "no":                    {"en": "No",                                "es": "No"},
     "fig_irr":               {"en": "Distribution of simple annualised IRR across simulated paths",
                               "es": "Distribución de TIR anual simple en los caminos simulados"},
-    "fig_wof":               {"en": "Exclusive worst-of performance fan with barrier levels",
-                              "es": "Abanico worst-of exclusivo con niveles de barrera"},
+    "fig_wof":               {"en": "Worst-of performance fan with barrier levels",
+                              "es": "Abanico worst-of con niveles de barrera"},
     "fig_corr":              {"en": "Calibrated return correlation matrix",
                               "es": "Matriz de correlaciones de retorno calibrada"},
     "fig_bt_outcome":        {"en": "Distribution of historical outcomes by issue date",
@@ -347,6 +348,49 @@ _LABELS: dict[str, dict[str, str]] = {
               "Datos de mercado procedentes de Yahoo Finance, que pueden estar retrasados, incompletos o ser inexactos. No se ofrece "
               "ninguna garantía, expresa o implícita, sobre la exactitud o integridad de la información aquí contenida.",
     },
+}
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Glossary — relevant financial terms, rendered near the end of every report.
+# Each entry is (term, definition); kept here so both languages stay in sync.
+# ──────────────────────────────────────────────────────────────────────────────
+_GLOSSARY: dict[str, list[tuple[str, str]]] = {
+    "en": [
+        ("Autocallable note", "A structured note that redeems early ('autocalls') if the underlyings are at or above the autocall barrier on a scheduled observation date."),
+        ("Autocall barrier", "The level the reference performance must reach on an observation date to trigger early redemption at par."),
+        ("Autocall observation", "A scheduled date on which the autocall and coupon conditions are tested; the first eligible date may be later than the first coupon date."),
+        ("Coupon (p.a.)", "Periodic income, quoted as an annualised rate; the per-period amount is the annual rate divided by the number of observations per year."),
+        ("Coupon barrier", "The performance level at or above which a coupon is paid on an observation date. A barrier of 0% means the coupon is guaranteed."),
+        ("Memory coupon", "Coupons missed because the barrier was not met accumulate and are paid in full on the next date the barrier is met."),
+        ("Knock-in barrier", "A downside level which, if breached, removes capital protection. European knock-in means it is observed only at maturity."),
+        ("Knock-in", "The event of the knock-in barrier being breached. For a note with a rescue clause this does not by itself cause a loss."),
+        ("Capital loss", "Redemption below par: the knock-in barrier was breached AND the final-redemption (rescue) condition was not met."),
+        ("Worst-of", "The payoff references the weakest-performing underlying on each observation date, rather than an average of the basket."),
+        ("Phoenix", "An autocallable paying conditional (often memory) coupons above a coupon barrier, with capital at risk below a knock-in barrier."),
+        ("Final redemption / best-of rescue", "A clause that redeems the note at par if the best performer finishes at or above a set level, even when the knock-in was breached."),
+        ("Strike / initial fixing", "The reference price of each underlying at issue, set to 100%; all performance levels are measured against it."),
+        ("IRR (simple, p.a.)", "Annualised return on a path, computed as total return divided by time held — the convention used to quote note coupons."),
+        ("Heston model", "A stochastic-volatility model in which variance itself follows a mean-reverting random process; used here to simulate the underlyings."),
+        ("Student-t copula", "A dependence structure linking the assets' shocks with fatter joint tails than a Gaussian copula, capturing co-movement in stress."),
+    ],
+    "es": [
+        ("Nota autocancelable", "Nota estructurada que se rescata anticipadamente ('autocancela') si los subyacentes están en o sobre la barrera de autocall en una fecha de observación."),
+        ("Barrera de autocall", "Nivel que el rendimiento de referencia debe alcanzar en una fecha de observación para activar el rescate anticipado a la par."),
+        ("Observación de autocall", "Fecha programada en la que se evalúan las condiciones de autocall y cupón; la primera fecha elegible puede ser posterior al primer cupón."),
+        ("Cupón (anual)", "Renta periódica, expresada como tasa anual; el importe por período es la tasa anual dividida por el número de observaciones al año."),
+        ("Barrera de cupón", "Nivel de rendimiento en o sobre el cual se paga un cupón en una observación. Una barrera del 0% significa cupón garantizado."),
+        ("Cupón con memoria", "Los cupones no pagados por no alcanzarse la barrera se acumulan y se pagan íntegros en la siguiente fecha en que se cumpla la barrera."),
+        ("Barrera de knock-in", "Nivel a la baja que, si se toca, elimina la protección del capital. Knock-in europeo significa que solo se observa al vencimiento."),
+        ("Knock-in", "El evento de tocar la barrera de knock-in. En una nota con cláusula de rescate no provoca por sí solo una pérdida."),
+        ("Pérdida de capital", "Rescate por debajo de la par: se tocó la barrera de knock-in Y no se cumplió la condición de redención final (rescate)."),
+        ("Worst-of", "El pago se basa en el subyacente con peor rendimiento en cada observación, no en un promedio de la cesta."),
+        ("Phoenix", "Autocancelable que paga cupones condicionales (a menudo con memoria) sobre una barrera de cupón, con capital en riesgo bajo el knock-in."),
+        ("Redención final / rescate best-of", "Cláusula que rescata la nota a la par si el mejor subyacente termina en o sobre un nivel dado, incluso si se tocó el knock-in."),
+        ("Strike / fijación inicial", "Precio de referencia de cada subyacente en la emisión, fijado al 100%; todos los niveles de rendimiento se miden contra él."),
+        ("TIR (simple, anual)", "Retorno anualizado de una trayectoria, calculado como retorno total dividido por el tiempo mantenido — convención usada para cotizar cupones."),
+        ("Modelo de Heston", "Modelo de volatilidad estocástica en el que la varianza sigue un proceso aleatorio con reversión a la media; usado para simular los subyacentes."),
+        ("Cópula t-Student", "Estructura de dependencia que une los choques de los activos con colas conjuntas más gruesas que una cópula gaussiana, capturando el co-movimiento en estrés."),
+    ],
 }
 
 
@@ -1555,7 +1599,7 @@ def _exec_bullets(terms, results, bt_summary, live_data, lang: str) -> list[str]
                 f"{bt_summary.get('prob_knock_in', 0):.1%}.")
         if live_data:
             b.append(
-                f"Since issue, the exclusive worst-of trades at {live_data.get('wof_today', 0):.1%} of strike "
+                f"Since issue, the worst-of trades at {live_data.get('wof_today', 0):.1%} of strike "
                 f"({live_data.get('worst_asset', '')} is the worst performer); coupon IRR to date is "
                 f"{live_data.get('irr_to_date', 0):.1%} annualised.")
     return b
@@ -1885,6 +1929,7 @@ def _cover_page(
     if live_data and (inc("live_metrics") or inc("live_asset_table")
                       or inc("live_obs_table") or inc("live_chart")):
         toc.append(_t("live", lang))
+    toc.append(_t("glossary_title", lang))
     toc.append(_t("disclaimer_title", lang))
     for item in toc:
         pdf.set_x(pdf.l_margin)
@@ -2318,7 +2363,24 @@ def generate_pdf_report(
             _sec()
             pdf.figure(_fig_to_png(live_figure, **_kw), _t("fig_live", lang), _t("src_hist", lang))
 
-    # ── 7. Disclaimers ─────────────────────────────────────────────────────
+    # ── 7. Glossary ────────────────────────────────────────────────────────
+    # Reference list of the financial terms used throughout the report. Always
+    # included (like the disclaimer). Each entry flows as a bold term followed
+    # by its definition, wrapping naturally.
+    pdf.start_section(_t("glossary_title", lang), min_room=70.0)
+    for _term, _defn in _GLOSSARY.get(lang, _GLOSSARY["en"]):
+        if pdf.get_y() > pdf.h - 34:
+            pdf.add_page()
+        pdf._sf(8, "semibold")
+        pdf.set_text_color(*pdf.primary_color)
+        pdf.write(4.4, pdf._safe(f"{_term} — "))
+        pdf._sf(8, "regular")
+        pdf.set_text_color(*_TEXT)
+        pdf.write(4.4, pdf._safe(_defn))
+        pdf.ln(6.2)
+    pdf.set_text_color(*_TEXT)
+
+    # ── 8. Disclaimers ─────────────────────────────────────────────────────
     # The full legal block is ~80mm tall; only break if it would otherwise be
     # split awkwardly. Flowing it after the previous section avoids a near-empty
     # page before the disclaimer.

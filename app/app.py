@@ -1739,12 +1739,17 @@ elif st.session_state["page"] == "dashboard":
                 {0: _bt_maturity, **{i: tr("bt_outcome_autocalled_p", i=i) for i in range(1, terms.n_obs + 1)}}
             )
             bt.loc[(bt["Call Quarter"] == 0) & bt["Knock-in"], "Outcome"] = _bt_knock_in
-            # Navy/blue institutional palette (matches charts.py + PDF):
-            # Maturity = warm grey, Knock-in = red, Autocalls = navy→light-blue ramp.
+            # Maturity = stark dark slate (deliberately off the blue ramp so it
+            # never reads as "just another autocall period"); Knock-in = red;
+            # Autocalls = a smooth blue gradient that darkens monotonically with
+            # the period (P1 light → final period deep blue). In the branded PDF
+            # the blue ramp is hue-rotated onto the accent colour, while the slate
+            # and red pass through (see _rebrand_figure).
+            _n_ac = max(terms.n_obs - 1, 1)
             color_map = {
-                _bt_maturity: "#6b7280", _bt_knock_in: "#dc2626",
+                _bt_maturity: "#334155", _bt_knock_in: "#dc2626",
                 **{tr("bt_outcome_autocalled_p", i=i):
-                   f"hsl(217,{max(35, 70 - i*3)}%,{min(70, 28 + i*5)}%)"
+                   f"hsl(217,72%,{70 - ((i - 1) / _n_ac) * 40:.0f}%)"
                    for i in range(1, terms.n_obs + 1)},
             }
 

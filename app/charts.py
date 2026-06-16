@@ -49,6 +49,7 @@ _SERIES_COLORS = [_BLUE, _NAVY, _BLUE_LIGHT, "#0891b2", "#7c3aed", "#0d9488"]
 _BASE_FONT = "IBM Plex Sans, Arial, sans-serif"
 
 # Light fill tints for fan-chart bands (blue, low alpha)
+_FILL_OUTERMOST = "rgba(37,99,235,0.04)"   # 1st–99th pct (faintest, widest)
 _FILL_OUTER = "rgba(37,99,235,0.08)"
 _FILL_INNER = "rgba(37,99,235,0.20)"
 
@@ -286,26 +287,33 @@ def build_fan_chart(
     tr:         Translator,
 ) -> go.Figure:
     S0 = paths[:, 0].mean()
-    pcts = [5, 25, 50, 75, 95]
+    pcts = [1, 5, 25, 50, 75, 95, 99]
     bands = np.percentile(paths, pcts, axis=0)
-
+    # index map: 0=1st 1=5th 2=25th 3=median 4=75th 5=95th 6=99th
     fig = go.Figure()
     fig.add_trace(go.Scatter(
         x=np.concatenate([t_grid, t_grid[::-1]]),
-        y=np.concatenate([bands[4], bands[0][::-1]]),
+        y=np.concatenate([bands[6], bands[0][::-1]]),
+        fill="toself", fillcolor=_FILL_OUTERMOST,
+        line=dict(color="rgba(0,0,0,0)"),
+        name=tr("pct_1_99"),
+    ))
+    fig.add_trace(go.Scatter(
+        x=np.concatenate([t_grid, t_grid[::-1]]),
+        y=np.concatenate([bands[5], bands[1][::-1]]),
         fill="toself", fillcolor=_FILL_OUTER,
         line=dict(color="rgba(0,0,0,0)"),
         name=tr("pct_5_95"),
     ))
     fig.add_trace(go.Scatter(
         x=np.concatenate([t_grid, t_grid[::-1]]),
-        y=np.concatenate([bands[3], bands[1][::-1]]),
+        y=np.concatenate([bands[4], bands[2][::-1]]),
         fill="toself", fillcolor=_FILL_INNER,
         line=dict(color="rgba(0,0,0,0)"),
         name=tr("pct_25_75"),
     ))
     fig.add_trace(go.Scatter(
-        x=t_grid, y=bands[2],
+        x=t_grid, y=bands[3],
         mode="lines", name=tr("median"),
         line=dict(color=_BLUE, width=2),
     ))
@@ -339,24 +347,30 @@ def build_wof_fan(
     autocall_barrier: float | None = None,
     autocall_schedule: list[tuple[float, float]] | None = None,
 ) -> go.Figure:
-    pcts = [5, 25, 50, 75, 95]
+    pcts = [1, 5, 25, 50, 75, 95, 99]
     bands = np.percentile(worst_of_paths, pcts, axis=0)
-
+    # index map: 0=1st 1=5th 2=25th 3=median 4=75th 5=95th 6=99th
     fig = go.Figure()
     fig.add_trace(go.Scatter(
         x=np.concatenate([t_grid, t_grid[::-1]]),
-        y=np.concatenate([bands[4], bands[0][::-1]]),
+        y=np.concatenate([bands[6], bands[0][::-1]]),
+        fill="toself", fillcolor=_FILL_OUTERMOST,
+        line=dict(color="rgba(0,0,0,0)"), name=tr("pct_1_99"),
+    ))
+    fig.add_trace(go.Scatter(
+        x=np.concatenate([t_grid, t_grid[::-1]]),
+        y=np.concatenate([bands[5], bands[1][::-1]]),
         fill="toself", fillcolor=_FILL_OUTER,
         line=dict(color="rgba(0,0,0,0)"), name=tr("pct_5_95"),
     ))
     fig.add_trace(go.Scatter(
         x=np.concatenate([t_grid, t_grid[::-1]]),
-        y=np.concatenate([bands[3], bands[1][::-1]]),
+        y=np.concatenate([bands[4], bands[2][::-1]]),
         fill="toself", fillcolor=_FILL_INNER,
         line=dict(color="rgba(0,0,0,0)"), name=tr("pct_25_75"),
     ))
     fig.add_trace(go.Scatter(
-        x=t_grid, y=bands[2],
+        x=t_grid, y=bands[3],
         mode="lines", name=tr("median"),
         line=dict(color=_BLUE, width=2),
     ))

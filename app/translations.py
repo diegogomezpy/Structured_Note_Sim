@@ -36,6 +36,7 @@ _STRINGS: dict[str, tuple[str, str]] = {
     "time_years":               ("Time (years)",                     "Tiempo (años)"),
     "price":                    ("Price",                            "Precio"),
     "median":                   ("Median",                           "Mediana"),
+    "pct_1_99":                 ("1st–99th pct",                     "Pct 1–99"),
     "pct_5_95":                 ("5th–95th pct",                     "Pct 5–95"),
     "pct_25_75":                ("25th–75th pct",                    "Pct 25–75"),
     "perf_vs_initial":          ("Performance vs Initial",           "Rendimiento vs Inicial"),
@@ -44,7 +45,7 @@ _STRINGS: dict[str, tuple[str, str]] = {
     "asset_price_paths":        ("Asset Price Paths — Path #{n}",   "Trayectorias de Precios — Trayectoria #{n}"),
     "price_label":              ("Price",                            "Precio"),
     "time_step":                ("Time Step",                        "Paso de Tiempo"),
-    "wof_path_title":           ("Exclusive Worst-of Performance Path #{n}",  "Trayectoria Worst-of Exclusivo #{n}"),
+    "wof_path_title":           ("Worst-of Performance Path #{n}",  "Trayectoria Worst-of #{n}"),
     "called_label":             ("← Called",                        "← Rescatada"),
     "continued_label":          ("(continued)",                     "(continúa)"),
     "coupon_paid_label":        ("coupon paid",                     "cupón pagado"),
@@ -114,13 +115,13 @@ _STRINGS: dict[str, tuple[str, str]] = {
     "irr_dist_subheader":        ("IRR Distribution — All Simulated Paths",
                                   "Distribución de TIR — Todas las Trayectorias Simuladas"),
     "knock_in_info":             (
-        "**{pct:.1%}** of paths end in a capital loss at maturity (exclusive worst-of below the {barrier:.0%} knock-in barrier and not rescued).",
-        "**{pct:.1%}** de las trayectorias terminan en pérdida de capital al vencimiento (worst-of exclusivo bajo la barrera knock-in del {barrier:.0%} y no rescatadas).",
+        "**{pct:.1%}** of paths end in a capital loss at maturity (worst-of below the {barrier:.0%} knock-in barrier and not rescued).",
+        "**{pct:.1%}** de las trayectorias terminan en pérdida de capital al vencimiento (worst-of bajo la barrera knock-in del {barrier:.0%} y no rescatadas).",
     ),
 
     # ── MC tab2 — price paths ──────────────────────────────────────────────
     "price_paths_subheader":     ("Simulated Price Path Fan Charts",   "Abanicos de Trayectorias de Precio Simuladas"),
-    "wof_basket_md":             ("#### Exclusive Worst-of Performance",  "#### Rendimiento Worst-of Exclusivo"),
+    "wof_basket_md":             ("#### Worst-of Performance",  "#### Rendimiento Worst-of"),
     "individual_paths_md":       ("#### Individual Underlying Paths",  "#### Trayectorias Individuales de Subyacentes"),
 
     # ── MC tab3 — path explorer ────────────────────────────────────────────
@@ -128,10 +129,10 @@ _STRINGS: dict[str, tuple[str, str]] = {
     "path_caption":              ("Path #{n} of {total}",              "Trayectoria #{n} de {total}"),
     "autocalled_at_md":          ("### Autocalled at period {q} ({t:.3g}Y)",
                                   "### Autocall en período {q} ({t:.3g}A)"),
-    "maturity_knock_in_md":      ("### Maturity — Capital loss (exclusive worst-of: {wof:.1%})",
-                                  "### Vencimiento — Pérdida de capital (worst-of exclusivo: {wof:.1%})"),
-    "maturity_no_knock_in_md": ("### Maturity — No capital loss (exclusive worst-of: {wof:.1%})",
-                                  "### Vencimiento — Sin pérdida de capital (worst-of exclusivo: {wof:.1%})"),
+    "maturity_knock_in_md":      ("### Maturity — Capital loss (worst-of: {wof:.1%})",
+                                  "### Vencimiento — Pérdida de capital (worst-of: {wof:.1%})"),
+    "maturity_no_knock_in_md": ("### Maturity — No capital loss (worst-of: {wof:.1%})",
+                                  "### Vencimiento — Sin pérdida de capital (worst-of: {wof:.1%})"),
     "metric_principal":          ("Principal",                         "Principal"),
     "metric_coupons":            ("Coupons",                           "Cupones"),
     "metric_irr_pa":             ("IRR p.a.",                          "TIR p.a."),
@@ -266,7 +267,7 @@ _STRINGS: dict[str, tuple[str, str]] = {
         "**Transcurrido:** {elapsed:.2f}A &nbsp;·&nbsp; "
         "**Restante:** {remaining:.2f}A",
     ),
-    "live_metric_wof_today":     ("Exclusive Worst-of Today",          "Worst-of Exclusivo Hoy"),
+    "live_metric_wof_today":     ("Worst-of Today",          "Worst-of Hoy"),
     "live_metric_vs_strike":     ("{v:.1%} vs strike",                 "{v:.1%} vs strike"),
     "live_metric_worst_asset":   ("Worst Asset",                       "Activo Más Débil"),
     "live_metric_vs_ki":         ("vs KI Barrier",                     "vs Barrera KI"),
@@ -280,7 +281,7 @@ _STRINGS: dict[str, tuple[str, str]] = {
     "live_col_period":           ("Period",                            "Período"),
     "live_col_date":             ("Date",                              "Fecha"),
     "live_col_status":           ("Status",                            "Estado"),
-    "live_col_wof":              ("Exclusive worst-of",                "Worst-of exclusivo"),
+    "live_col_wof":              ("Worst-of",                "Worst-of"),
     "live_col_coupon":           ("Coupon",                            "Cupón"),
     "live_col_cumulative":       ("Cumulative",                        "Acumulado"),
     "live_pending_coupons_info": (
@@ -296,8 +297,8 @@ _STRINGS: dict[str, tuple[str, str]] = {
     # ── Backtest ───────────────────────────────────────────────────────────
     "outcome_dist":             ("Outcome Distribution",            "Distribución de Resultados"),
     "count":                    ("Count",                           "Cantidad"),
-    "worst_asset_at_mat":       ("Exclusive Worst-of Asset at Maturity (uncalled notes)",
-                                 "Activo Worst-of Exclusivo al Vencimiento (notas no rescatadas)"),
+    "worst_asset_at_mat":       ("Worst-of Asset at Maturity (uncalled notes)",
+                                 "Activo Worst-of al Vencimiento (notas no rescatadas)"),
     "realised_irr_title":       ("Realised IRR by Issue Date",      "TIR Realizada por Fecha de Emisión"),
     "break_even":               ("Break-even",                      "Break-even"),
     "backtest_start":           ("Backtest start",                  "Inicio backtest"),
@@ -482,8 +483,8 @@ _STRINGS: dict[str, tuple[str, str]] = {
                                  "0% = el cupón siempre paga (cupón garantizado / Reverse Convertible)."),
     "setup_memory_help":        ("Missed coupons are stored and paid later if a future period recovers above the barrier.",
                                  "Los cupones no pagados se acumulan y se pagan si un período futuro recupera sobre la barrera."),
-    "setup_basket_rule_help":   ("How multi-underlying performance is scored — exclusive worst-of uses the weakest performer.",
-                                 "Cómo se evalúa el rendimiento de varios subyacentes — worst-of exclusivo usa el más débil."),
+    "setup_basket_rule_help":   ("How multi-underlying performance is scored — worst-of uses the weakest performer.",
+                                 "Cómo se evalúa el rendimiento de varios subyacentes — worst-of usa el más débil."),
     "setup_ki_european_caption":("Measured at maturity only (European knock-in).",
                                  "Se mide solo al vencimiento (knock-in europeo)."),
 
@@ -508,7 +509,7 @@ _STRINGS: dict[str, tuple[str, str]] = {
                                  "Rescate máximo sobre el nominal. Desmarque para subida sin tope."),
 
     # ── Basket option labels ───────────────────────────────────────────────
-    "basket_worst_of":          ("Exclusive worst-of",                 "Worst-of exclusivo"),
+    "basket_worst_of":          ("Worst-of",                 "Worst-of"),
     "basket_best_of":           ("Best-of",                            "Mejor rendimiento"),
     "basket_average":           ("Average",                            "Promedio"),
 
@@ -701,7 +702,7 @@ _STRINGS: dict[str, tuple[str, str]] = {
     "corr_effective":           ("Effective",                          "Efectiva"),
     "corr_effective_gap":       ("Gap vs input",                       "Brecha vs entrada"),
     "corr_effective_caption":   (
-        "Correlation of pooled daily returns — the co-movement the exclusive worst-of actually "
+        "Correlation of pooled daily returns — the co-movement the worst-of actually "
         "experiences. It runs **above** the instantaneous input by construction: "
         "pooling high- and low-volatility days inflates sample correlation "
         "(heteroskedasticity / Forbes-Rigobon). This gap is expected, not a "
@@ -758,10 +759,10 @@ _STRINGS: dict[str, tuple[str, str]] = {
         "cupón y del autocall, y la exposición al knock-in, se miden contra esta cifra.",
     ),
     "live_help_worst_asset":    (
-        "The underlying currently dragging the exclusive worst-of — "
+        "The underlying currently dragging the worst-of — "
         "i.e. the one with the lowest performance relative to its "
         "initial fixing. This asset sets the barrier observation level.",
-        "El subyacente que actualmente arrastra el worst-of exclusivo — es decir, el de menor "
+        "El subyacente que actualmente arrastra el worst-of — es decir, el de menor "
         "rendimiento relativo a su fijación inicial. Este activo determina el nivel de "
         "observación de la barrera.",
     ),
@@ -787,7 +788,7 @@ _STRINGS: dict[str, tuple[str, str]] = {
         "anticipado. El delta muestra la distancia a la barrera en puntos porcentuales.",
     ),
     "live_help_ki_buffer":      (
-        "How far the exclusive worst-of is above the knock-in barrier ({barrier:.0%}), "
+        "How far the worst-of is above the knock-in barrier ({barrier:.0%}), "
         "in percentage-point terms. Positive = safe; negative = barrier already breached. "
         "The note loses principal protection if the worst-of closes below the KI barrier "
         "on the final observation date.",
@@ -797,7 +798,7 @@ _STRINGS: dict[str, tuple[str, str]] = {
         "barrera KI en la fecha de observación final.",
     ),
     "live_help_ac_buffer":      (
-        "How far the exclusive worst-of is above the autocall barrier ({barrier:.0%}), "
+        "How far the worst-of is above the autocall barrier ({barrier:.0%}), "
         "in percentage-point terms. Positive = the note could be called at the next "
         "eligible observation; negative = not yet at the call level.",
         "Cuánto está el worst-of por encima de la barrera de autocall ({barrier:.0%}), "
@@ -850,7 +851,7 @@ _STRINGS: dict[str, tuple[str, str]] = {
     # ── Chart-internal strings (app/charts.py) ─────────────────────────────
     # Levels ({lvl}) and amounts ({v}, {pct}) are passed pre-formatted by the
     # caller so a single key serves both .0% and .1% precisions.
-    "chart_worst_of":            ("Exclusive worst-of",                "Worst-of exclusivo"),
+    "chart_worst_of":            ("Worst-of",                "Worst-of"),
     "chart_ki_barrier":          ("Knock-in barrier ({lvl})",          "Barrera knock-in ({lvl})"),
     "chart_autocall_barrier":    ("Autocall barrier",                  "Barrera autocall"),
     "chart_autocall_barrier_lvl":("Autocall barrier ({lvl})",          "Barrera autocall ({lvl})"),
@@ -882,8 +883,8 @@ _STRINGS: dict[str, tuple[str, str]] = {
     # Backtest worst-asset pie, historical price + worst-of path charts
     "chart_worst_asset_at_call": ("Worst Asset at Call Date",          "Activo más débil en la fecha de rescate"),
     "chart_hist_prices_title":   ("Historical Price Paths",            "Trayectorias Históricas de Precio"),
-    "chart_hist_wof_title":      ("Historical Exclusive Worst-of Path — Issue: {issue} · Outcome: {outcome}",
-                                  "Trayectoria Histórica Worst-of Exclusivo — Emisión: {issue} · Resultado: {outcome}"),
+    "chart_hist_wof_title":      ("Historical Worst-of Path — Issue: {issue} · Outcome: {outcome}",
+                                  "Trayectoria Histórica Worst-of — Emisión: {issue} · Resultado: {outcome}"),
     "chart_outcome_autocalled_p":("Autocalled P{q}",                   "Rescatada P{q}"),
     "chart_period_called":       ("P{p} ← CALLED",                     "P{p} ← RESCATADA"),
 
