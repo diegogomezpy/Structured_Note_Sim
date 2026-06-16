@@ -1,10 +1,10 @@
 {
-  "name": "Autocall with Guaranteed Coupons — 12M Quarterly (DELL/IBM/MSFT)",
+  "name": "Autocall — 12M Quarterly (DELL/IBM/MSFT)",
   "issuer": "",
   "maturity": 1.0,
   "payment_freq": "quarterly",
-  "coupon_pa": 0.1345,
-  "coupon_barrier": 0.0,
+  "coupon_pa": 0.27,
+  "coupon_barrier": 0.5,
   "autocall_barrier": 1.0,
   "autocall_start_period": 1,
   "knock_in_barrier": 0.50,
@@ -20,7 +20,7 @@
   "coupon_at_autocall_only": false,
   "tickers": {
     "DELL": "Dell Technologies Inc",
-    "IBM": "International Business Machines Corp",
+    "IBM": "International Business Machines",
     "MSFT": "Microsoft Corp"
   }
 }
