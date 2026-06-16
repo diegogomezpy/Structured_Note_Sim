@@ -1403,6 +1403,16 @@ elif st.session_state["page"] == "dashboard":
                 autocall_q    = int(R["autocall_events"][pn])
                 s0_arr        = np.array(R.get("s0_values") or [p.S0 for p in R["params"]])
                 asset_perf_pn = sim_prices[pn] / s0_arr[np.newaxis, :]
+                # Per-observation coupon-paid flags via the canonical engine
+                # (replay_note honours memory / coupon basket / autocall-only).
+                # replay stops at the autocall date, so pad later periods False.
+                _perf_obs_pn = asset_perf_pn[obs_steps_i, :]
+                _replay_pn   = replay_note(_perf_obs_pn, run_terms)
+                _cpn_rows    = _replay_pn["rows"]
+                coupon_flags = [
+                    (_cpn_rows[i]["coupon_amount"] > 0) if i < len(_cpn_rows) else False
+                    for i in range(len(obs_steps_i))
+                ]
                 st.plotly_chart(
                     build_path_wof_chart(
                         wof_paths[pn], autocall_q, obs_steps_i, obs_labels,
@@ -1410,6 +1420,7 @@ elif st.session_state["page"] == "dashboard":
                         asset_paths=asset_perf_pn, asset_names=asset_names,
                         autocall_barrier=run_terms.autocall_barrier,
                         autocall_schedule=_ac_sched_st,
+                        coupon_flags=coupon_flags,
                     ),
                     use_container_width=True,
                 )
@@ -1786,6 +1797,21 @@ elif st.session_state["page"] == "dashboard":
                                 list(zip(_pe_obs_dates, terms.autocall_barrier_schedule()))
                                 if terms.autocall_step_down else None
                             )
+                            # Engine-true coupon-paid flags per observation date
+                            # (replay_note — same logic the payoff used). Built
+                            # from per-asset perf vs the issue-date fixing.
+                            _pe_issue_loc = _all_prices.index.searchsorted(_pe_anchor)
+                            _pe_s0 = _all_prices.iloc[_pe_issue_loc].values.astype(float)
+                            _pe_perf_obs = []
+                            for _d in _pe_obs_dates:
+                                _loc = _all_prices.index.searchsorted(_d)
+                                if _loc >= len(_all_prices):
+                                    break
+                                _pe_perf_obs.append(_all_prices.iloc[_loc].values.astype(float) / _pe_s0)
+                            _pe_flags = [
+                                r["coupon_amount"] > 0
+                                for r in replay_note(np.array(_pe_perf_obs), terms)["rows"]
+                            ] if _pe_perf_obs else None
                             st.plotly_chart(
                                 build_historical_wof_path(
                                     _all_prices,
@@ -1798,6 +1824,7 @@ elif st.session_state["page"] == "dashboard":
                                     tr                = tr,
                                     autocall_schedule = _pe_sched,
                                     coupon_at_autocall_only = terms.coupon_at_autocall_only,
+                                    coupon_flags      = _pe_flags,
                                 ),
                                 use_container_width=True,
                             )

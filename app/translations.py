@@ -47,6 +47,8 @@ _STRINGS: dict[str, tuple[str, str]] = {
     "wof_path_title":           ("Worst-of Performance Path #{n}",  "Trayectoria de Rendimiento Worst-of #{n}"),
     "called_label":             ("← Called",                        "← Rescatada"),
     "continued_label":          ("(continued)",                     "(continúa)"),
+    "coupon_paid_label":        ("coupon paid",                     "cupón pagado"),
+    "coupon_missed_label":      ("no coupon",                       "sin cupón"),
 
     # ── Tab 4 — Correlation ────────────────────────────────────────────────
     "asset":                    ("Asset",                            "Activo"),

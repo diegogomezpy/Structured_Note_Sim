@@ -40,6 +40,7 @@ _BLUE         = "#2563eb"   # accent / median / primary series
 _BLUE_LIGHT   = "#60a5fa"   # light blue secondary series
 _RED          = "#dc2626"   # barrier / loss / negative
 _GREY         = "#6b7280"   # warm grey — secondary lines/text
+_GREEN        = "#16a34a"   # coupon paid / positive event
 _WHITE        = "white"
 
 # Extra categorical colours for multi-asset charts (>3 underlyings)
@@ -416,6 +417,7 @@ def build_path_wof_chart(
     asset_names:      list[str]  | None = None,
     autocall_barrier: float | None      = None,
     autocall_schedule: list[tuple[float, float]] | None = None,
+    coupon_flags:     list[bool] | None = None,
 ) -> go.Figure:
     asset_colors = [_BLUE, _BLUE_LIGHT, _NAVY, "#f39c12", "#9b59b6"]
     fig = go.Figure()
@@ -442,14 +444,27 @@ def build_path_wof_chart(
     _add_autocall_barrier(fig, autocall_barrier, autocall_schedule, tr, x0=0)
     for i, (step, label) in enumerate(zip(obs_steps, obs_labels)):
         called_here  = (autocall_q == i + 1)
-        marker_color = _BLUE if called_here else _GREY
         marker_sym   = "star"     if called_here else "circle"
         suffix       = tr("called_label") if called_here else tr("continued_label")
+        # When coupon_flags is supplied, colour the marker by whether a coupon
+        # was actually paid at this observation (green = paid, grey = none) so
+        # the coupon outcome is visible at each date; the star/circle shape
+        # still distinguishes the autocall. Falls back to the call-based blue
+        # when no coupon data is available.
+        if coupon_flags is not None:
+            paid         = bool(coupon_flags[i]) if i < len(coupon_flags) else False
+            marker_color = _GREEN if paid else _GREY
+            cpn_suffix   = tr("coupon_paid_label") if paid else tr("coupon_missed_label")
+            name         = f"{label} {suffix} · {cpn_suffix}"
+        else:
+            marker_color = _BLUE if called_here else _GREY
+            name         = f"{label} {suffix}"
         fig.add_trace(go.Scatter(
             x=[step], y=[worst_path[step]],
             mode="markers",
-            marker=dict(size=12, color=marker_color, symbol=marker_sym),
-            name=f"{label} {suffix}",
+            marker=dict(size=14 if called_here else 11, color=marker_color,
+                        symbol=marker_sym, line=dict(width=1.5, color=_WHITE)),
+            name=name,
         ))
         fig.add_vline(x=step, line_dash="dot", line_color="#aaa",
                       annotation_text=label, annotation_position="top")
@@ -622,6 +637,7 @@ def build_historical_wof_path(
     tr:               Translator,
     autocall_schedule: list[tuple] | None = None,
     coupon_at_autocall_only: bool = False,
+    coupon_flags:     list[bool] | None = None,
 ) -> go.Figure:
     """
     Show per-asset performance + worst-of line for one historical issue date.
@@ -681,14 +697,24 @@ def build_historical_wof_path(
             break
         wof_val = float(wof[loc])
         is_call = (call_quarter == q + 1)
-        if coupon_at_autocall_only:
-            # No periodic coupon — colour by the call, not a coupon barrier
-            color = _BLUE if is_call else _GREY
-        else:
-            color = _BLUE if wof_val >= coupon_barrier else _RED
         symbol  = "star" if is_call else "circle"
         size    = 14 if is_call else 9
         label   = tr("chart_period_called", p=q + 1) if is_call else f"P{q+1}"
+
+        # Colour by whether a coupon was actually paid at this observation.
+        # Prefer the engine-computed flags (replay_note) when supplied — they
+        # honour memory, the coupon basket and coupon_at_autocall_only. Fall
+        # back to the simple worst-of vs coupon-barrier test only when no flags
+        # are passed (older callers).
+        if coupon_flags is not None:
+            paid  = bool(coupon_flags[q]) if q < len(coupon_flags) else False
+            color = _GREEN if paid else _GREY
+            label = f"{label} · {tr('coupon_paid_label') if paid else tr('coupon_missed_label')}"
+        elif coupon_at_autocall_only:
+            # No periodic coupon — colour by the call, not a coupon barrier
+            color = _BLUE if is_call else _GREY
+        else:
+            color = _GREEN if wof_val >= coupon_barrier else _RED
 
         fig.add_trace(go.Scatter(
             x=[obs_date], y=[wof_val],
