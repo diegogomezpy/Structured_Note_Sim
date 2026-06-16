@@ -1723,50 +1723,60 @@ elif st.session_state["page"] == "dashboard":
                 if not _bt_ki_rows.empty
                 else "—"
             )
-            b1, b2, b3 = st.columns(3)
-            b1.metric(tr("bt_metric_issue_dates"),    str(bt_summary.get("n_issues", 0)),
-                      help=tr("bt_help_issue_dates"))
-            b2.metric(tr("bt_metric_mean_irr"),       f"{bt_summary.get('mean_irr', 0):.2%}",
-                      help=tr("bt_help_mean_irr"))
-            b3.metric(tr("bt_metric_median_irr"),     f"{bt_summary.get('median_irr', 0):.2%}",
-                      help=tr("bt_help_median_irr"))
-            b4, b5, b6 = st.columns(3)
-            b4.metric(tr("bt_metric_knock_in_pct"),   f"{bt_summary.get('prob_knock_in', 0):.1%}",
-                      help=tr("bt_help_knock_in_pct"))
-            b5.metric(tr("bt_metric_autocalled_pct"), f"{bt_summary.get('prob_called', 0):.1%}",
-                      help=tr("bt_help_autocalled_pct"))
-            b6.metric(tr("loss_given_ki_metric"),     _bt_lgki_str,
-                      help=tr("bt_help_loss_given_ki"))
 
-            _bt_outcome_fig = build_backtest_outcome_bar(bt, color_map, tr)
-            _bt_irr_fig     = build_backtest_irr_scatter(bt, color_map, tr)
-            col1, col2 = st.columns(2)
-            col1.plotly_chart(_bt_outcome_fig,                   use_container_width=True)
-            col2.plotly_chart(build_worst_asset_pie(bt, tr),     use_container_width=True)
-            st.plotly_chart(_bt_irr_fig,                         use_container_width=True)
-            # Cache for PDF — augment bt_summary with loss-given-KI
-            _pdf_bt_summary = dict(bt_summary)
-            if not _bt_ki_rows.empty:
-                _pdf_bt_summary["loss_given_ki"] = float(_bt_ki_rows["IRR"].mean())
-            st.session_state["_pdf_bt_summary"] = _pdf_bt_summary
-            st.session_state["_pdf_bt_figures"] = {"outcome": _bt_outcome_fig, "irr_scatter": _bt_irr_fig}
+            # Subtabs mirror the Monte Carlo tab's layout so both analyses read
+            # the same way instead of the backtest being one long scroll.
+            bt_tab1, bt_tab2, bt_tab3 = st.tabs([
+                tr("bt_subtab_outcomes"), tr("bt_subtab_prices"),
+                tr("bt_subtab_explorer"),
+            ])
 
-            try:
-                # P4: this chart plots max-history daily closes (decades ×
-                # n_assets points) and re-serialises to the browser every rerun.
-                # Downsample to weekly for DISPLAY only — visually identical at
-                # this scale, a fraction of the JSON payload. Raw daily prices are
-                # still used everywhere the payoff is evaluated.
-                _hist_chart_prices = (
-                    _load_prices(tickers_tuple, years=None)
-                    .resample("W-FRI").last().dropna()
-                )
-                bt_start_mark = bt["Issue Date"].min()
-                bt_end_mark   = bt["Issue Date"].max()
-                st.plotly_chart(build_historical_prices(_hist_chart_prices, bt_start_mark, bt_end_mark, tr),
-                                use_container_width=True)
-            except Exception:
-                pass
+            with bt_tab1:
+                b1, b2, b3 = st.columns(3)
+                b1.metric(tr("bt_metric_issue_dates"),    str(bt_summary.get("n_issues", 0)),
+                          help=tr("bt_help_issue_dates"))
+                b2.metric(tr("bt_metric_mean_irr"),       f"{bt_summary.get('mean_irr', 0):.2%}",
+                          help=tr("bt_help_mean_irr"))
+                b3.metric(tr("bt_metric_median_irr"),     f"{bt_summary.get('median_irr', 0):.2%}",
+                          help=tr("bt_help_median_irr"))
+                b4, b5, b6 = st.columns(3)
+                b4.metric(tr("bt_metric_knock_in_pct"),   f"{bt_summary.get('prob_knock_in', 0):.1%}",
+                          help=tr("bt_help_knock_in_pct"))
+                b5.metric(tr("bt_metric_autocalled_pct"), f"{bt_summary.get('prob_called', 0):.1%}",
+                          help=tr("bt_help_autocalled_pct"))
+                b6.metric(tr("loss_given_ki_metric"),     _bt_lgki_str,
+                          help=tr("bt_help_loss_given_ki"))
+
+                _bt_outcome_fig = build_backtest_outcome_bar(bt, color_map, tr)
+                _bt_irr_fig     = build_backtest_irr_scatter(bt, color_map, tr)
+                col1, col2 = st.columns(2)
+                col1.plotly_chart(_bt_outcome_fig,                   use_container_width=True)
+                col2.plotly_chart(build_worst_asset_pie(bt, tr),     use_container_width=True)
+                st.plotly_chart(_bt_irr_fig,                         use_container_width=True)
+                # Cache for PDF — augment bt_summary with loss-given-KI
+                _pdf_bt_summary = dict(bt_summary)
+                if not _bt_ki_rows.empty:
+                    _pdf_bt_summary["loss_given_ki"] = float(_bt_ki_rows["IRR"].mean())
+                st.session_state["_pdf_bt_summary"] = _pdf_bt_summary
+                st.session_state["_pdf_bt_figures"] = {"outcome": _bt_outcome_fig, "irr_scatter": _bt_irr_fig}
+
+            with bt_tab2:
+                try:
+                    # P4: this chart plots max-history daily closes (decades ×
+                    # n_assets points) and re-serialises to the browser every rerun.
+                    # Downsample to weekly for DISPLAY only — visually identical at
+                    # this scale, a fraction of the JSON payload. Raw daily prices are
+                    # still used everywhere the payoff is evaluated.
+                    _hist_chart_prices = (
+                        _load_prices(tickers_tuple, years=None)
+                        .resample("W-FRI").last().dropna()
+                    )
+                    bt_start_mark = bt["Issue Date"].min()
+                    bt_end_mark   = bt["Issue Date"].max()
+                    st.plotly_chart(build_historical_prices(_hist_chart_prices, bt_start_mark, bt_end_mark, tr),
+                                    use_container_width=True)
+                except Exception:
+                    pass
 
             # P2: the issue-date selector reruns ONLY this fragment, so picking
             # a different historical issue no longer rebuilds the MC tab, the
@@ -1845,7 +1855,8 @@ elif st.session_state["page"] == "dashboard":
                     except Exception as e:
                         st.error(tr("bt_could_not_build_path", e=e))
 
-            _bt_path_explorer()
+            with bt_tab3:
+                _bt_path_explorer()
 
 
     # ══════════════════════════════════════════════════════════════════

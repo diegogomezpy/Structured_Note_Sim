@@ -102,6 +102,9 @@ _STRINGS: dict[str, tuple[str, str]] = {
     "mc_subtab_paths":           ("Price Paths",                    "Trayectorias de Precio"),
     "mc_subtab_explorer":        ("Path Explorer",                  "Explorador de Trayectorias"),
     "mc_subtab_corr":            ("Correlation Diagnostics",        "Diagnóstico de Correlaciones"),
+    "bt_subtab_outcomes":        ("Outcomes & Summary",             "Resultados y Resumen"),
+    "bt_subtab_prices":          ("Price History",                  "Histórico de Precios"),
+    "bt_subtab_explorer":        ("Path Explorer",                  "Explorador de Trayectorias"),
 
     # ── MC tab1 — IRR distribution ─────────────────────────────────────────
     "irr_dist_subheader":        ("IRR Distribution — All Simulated Paths",
