@@ -1523,7 +1523,12 @@ def _cover_page(
     logo_urls: dict[str, str] | None,
     issuer_logo_bytes: bytes | None,
     logo_tickers: dict[str, str] | None = None,
+    inc=None,
 ):
+    # inc(section_key) -> bool: which optional sections are included, so the
+    # cover "In this report" list matches the body. Defaults to all-on.
+    if inc is None:
+        inc = lambda _k: True
     pdf._is_cover = True
     # Disable auto-page-break for the cover so overflowing content (long note
     # names, many bullets) does NOT automatically insert a blank page 2.
@@ -1810,10 +1815,14 @@ def _cover_page(
     pdf.set_line_width(0.2)
     pdf.line(pdf.l_margin, pdf.get_y() + 0.5, pdf.l_margin + main_w, pdf.get_y() + 0.5)
     pdf.ln(2)
-    toc = [_t("note_terms", lang), _t("sim_summary", lang), _t("calibration", lang)]
-    if bt_summary:
+    toc = [_t("note_terms", lang)]
+    if inc("mc"):
+        toc.append(_t("sim_summary", lang))
+    if results.get("params") and inc("calibration"):
+        toc.append(_t("calibration", lang))
+    if bt_summary and inc("backtest"):
         toc.append(_t("backtest", lang))
-    if live_data:
+    if live_data and inc("live"):
         toc.append(_t("live", lang))
     toc.append(_t("disclaimer_title", lang))
     for item in toc:
@@ -1857,6 +1866,7 @@ def generate_pdf_report(
     issuer_logo_url: str | None = None,
     branding: dict | None = None,
     logo_tickers: dict[str, str] | None = None,
+    include_sections: set[str] | None = None,
 ) -> bytes:
     """
     Build the full institutional-style PDF report.
@@ -1868,8 +1878,18 @@ def generate_pdf_report(
                       logo_file/logo_base64/logo_url, and report_title / website /
                       contact / footer_note content keys). Unknown keys warn and
                       malformed hex falls back to defaults.
+    include_sections — set of optional section keys to write: any of
+                      {"mc", "calibration", "backtest", "live"}. None (default)
+                      includes every section for which data is available, so
+                      existing callers are unaffected. The cover, Note Terms and
+                      disclaimer are always written. A section is only rendered
+                      when BOTH selected here AND its data was supplied.
     All optional parameters default to None; existing callers are unaffected.
     """
+    # None = include everything; otherwise only the listed sections. The cover,
+    # Note Terms and disclaimer ignore this gate (always present).
+    def _inc(key: str) -> bool:
+        return include_sections is None or key in include_sections
     # ── Resolve + validate branding ───────────────────────────────────
     _validate_branding(branding)
     primary_color, accent_color, secondary_color, firm_name = _resolve_palette(branding)
@@ -1903,7 +1923,7 @@ def generate_pdf_report(
 
     # ── 1. Cover ───────────────────────────────────────────────────────────
     _cover_page(pdf, terms, results, asset_names, bt_summary, live_data, lang,
-                logo_urls, issuer_logo_bytes, logo_tickers)
+                logo_urls, issuer_logo_bytes, logo_tickers, inc=_inc)
 
     # ── 2. Note terms ──────────────────────────────────────────────────────
     # First content section — always on a fresh page after the cover.
@@ -1933,47 +1953,50 @@ def generate_pdf_report(
     # Terms page if there is room; figure() then moves any figure that won't fit
     # to the next page on its own. This keeps page 2 full instead of breaking
     # the whole MC block to a fresh page and leaving Note Terms half-empty.
-    pdf.start_section(_t("sim_summary", lang), min_room=55.0)
     n_paths_val = int(np.asarray(results.get("annualized_returns", np.array([]))).shape[0])
-    _mc_ki_mask = np.asarray(results.get("knock_in_triggered", []), dtype=bool)
-    _mc_ann_ret = np.asarray(results.get("annualized_returns", []))
-    _mc_lgki_str = (
-        f"{float(_mc_ann_ret[_mc_ki_mask].mean()):.2%}"
-        if _mc_ki_mask.any() and len(_mc_ann_ret) == len(_mc_ki_mask)
-        else "—"
-    )
-    pdf.metric_band([
-        (_t("expected_irr",       lang), f"{results.get('expected_irr', 0):.2%}"),
-        (_t("total_return_short", lang), f"{results.get('expected_total_return', 0):.2%}"),
-        (_t("prob_autocall",      lang), f"{results.get('prob_autocall', 0):.1%}"),
-        (_t("prob_knock_in",      lang), f"{results.get('prob_knock_in_total', 0):.2%}"),
-        (_t("loss_given_ki",      lang), _mc_lgki_str),
-        (_t("n_paths",            lang), f"{n_paths_val:,}"),
-    ])
-
-    src_mc = f"{_t('src_mc', lang)}, {n_paths_val:,} {_t('paths_word', lang)}"
+    # Shared figure-rebrand kwargs — used by the MC, calibration, backtest and
+    # live figures, so it must be defined regardless of which sections are on.
     _kw = dict(primary_color=primary_color, accent_color=accent_color,
                secondary_color=secondary_color)
-    pdf.figure(_fig_to_png(figures.get("irr_dist"), **_kw), _t("fig_irr", lang), src_mc)
-    pdf.figure(_fig_to_png(figures.get("wof_fan"),  **_kw), _t("fig_wof", lang), src_mc)
-
-    prob_by_period = results.get("prob_autocall_by_period", [])
-    if prob_by_period:
-        pdf.subsection(_t("autocall_by_period", lang))
-        rows = []
-        for i, (t_obs, p_ac) in enumerate(zip(obs_times, prob_by_period)):
-            eligible = _t("yes", lang) if (i + 1) >= terms.autocall_start_period else _t("no", lang)
-            rows.append([f"P{i+1}", f"{t_obs:.3g}", f"{p_ac:.2%}", eligible])
-        pdf.data_table(
-            [_t("period", lang), _t("time_y", lang), _t("p_autocall", lang), _t("eligible", lang)],
-            rows,
-            col_widths=[usable * 0.2, usable * 0.25, usable * 0.3, usable * 0.25],
-            aligns=["L", "R", "R", "R"],
+    if _inc("mc"):
+        pdf.start_section(_t("sim_summary", lang), min_room=55.0)
+        _mc_ki_mask = np.asarray(results.get("knock_in_triggered", []), dtype=bool)
+        _mc_ann_ret = np.asarray(results.get("annualized_returns", []))
+        _mc_lgki_str = (
+            f"{float(_mc_ann_ret[_mc_ki_mask].mean()):.2%}"
+            if _mc_ki_mask.any() and len(_mc_ann_ret) == len(_mc_ki_mask)
+            else "—"
         )
+        pdf.metric_band([
+            (_t("expected_irr",       lang), f"{results.get('expected_irr', 0):.2%}"),
+            (_t("total_return_short", lang), f"{results.get('expected_total_return', 0):.2%}"),
+            (_t("prob_autocall",      lang), f"{results.get('prob_autocall', 0):.1%}"),
+            (_t("prob_knock_in",      lang), f"{results.get('prob_knock_in_total', 0):.2%}"),
+            (_t("loss_given_ki",      lang), _mc_lgki_str),
+            (_t("n_paths",            lang), f"{n_paths_val:,}"),
+        ])
+
+        src_mc = f"{_t('src_mc', lang)}, {n_paths_val:,} {_t('paths_word', lang)}"
+        pdf.figure(_fig_to_png(figures.get("irr_dist"), **_kw), _t("fig_irr", lang), src_mc)
+        pdf.figure(_fig_to_png(figures.get("wof_fan"),  **_kw), _t("fig_wof", lang), src_mc)
+
+        prob_by_period = results.get("prob_autocall_by_period", [])
+        if prob_by_period:
+            pdf.subsection(_t("autocall_by_period", lang))
+            rows = []
+            for i, (t_obs, p_ac) in enumerate(zip(obs_times, prob_by_period)):
+                eligible = _t("yes", lang) if (i + 1) >= terms.autocall_start_period else _t("no", lang)
+                rows.append([f"P{i+1}", f"{t_obs:.3g}", f"{p_ac:.2%}", eligible])
+            pdf.data_table(
+                [_t("period", lang), _t("time_y", lang), _t("p_autocall", lang), _t("eligible", lang)],
+                rows,
+                col_widths=[usable * 0.2, usable * 0.25, usable * 0.3, usable * 0.25],
+                aligns=["L", "R", "R", "R"],
+            )
 
     # ── 4. Calibration ─────────────────────────────────────────────────────
     params = results.get("params", [])
-    if params:
+    if params and _inc("calibration"):
         pdf.start_section(_t("calibration", lang))
 
         # Build the calibration table.  The "Asset" column uses an inline logo +
@@ -2087,7 +2110,7 @@ def generate_pdf_report(
                    _t("fig_corr", lang), _t("src_hist", lang), w=105, h=86)
 
     # ── 5. Historical backtest ─────────────────────────────────────────────
-    if bt_summary:
+    if bt_summary and _inc("backtest"):
         pdf.start_section(_t("backtest", lang))
         _bt_lgki = bt_summary.get("loss_given_ki")
         _bt_lgki_pdf = f"{_bt_lgki:.2%}" if _bt_lgki is not None else "—"
@@ -2106,7 +2129,7 @@ def generate_pdf_report(
                        _t("fig_bt_irr", lang), _t("src_hist", lang))
 
     # ── 6. Current performance ─────────────────────────────────────────────
-    if live_data:
+    if live_data and _inc("live"):
         pdf.start_section(_t("live", lang))
         pdf.metric_band([
             (_t("live_wof_today",   lang), f"{live_data.get('wof_today', 0):.1%}"),

@@ -1362,6 +1362,9 @@ elif st.session_state["page"] == "dashboard":
                 })
                 st.dataframe(ac_df, use_container_width=True, hide_index=True)
 
+            st.checkbox(tr("pdf_include_toggle"), value=True, key="pdf_inc_mc",
+                        help=tr("pdf_include_help"))
+
             st.markdown("---")
 
             mc_tab1, mc_tab2, mc_tab3, mc_tab4 = st.tabs([
@@ -1484,6 +1487,8 @@ elif st.session_state["page"] == "dashboard":
                 _mc_path_explorer()
 
             with mc_tab4:
+                st.checkbox(tr("pdf_include_toggle"), value=True, key="pdf_inc_calibration",
+                            help=tr("pdf_include_help"))
                 st.subheader(tr("corr_diag_subheader"))
                 corr_SS       = R["corr_SS"]
                 # realized_corr is the only field kept from the simulator's full
@@ -1732,6 +1737,8 @@ elif st.session_state["page"] == "dashboard":
             ])
 
             with bt_tab1:
+                st.checkbox(tr("pdf_include_toggle"), value=True, key="pdf_inc_backtest",
+                            help=tr("pdf_include_help"))
                 b1, b2, b3 = st.columns(3)
                 b1.metric(tr("bt_metric_issue_dates"),    str(bt_summary.get("n_issues", 0)),
                           help=tr("bt_help_issue_dates"))
@@ -1882,6 +1889,8 @@ elif st.session_state["page"] == "dashboard":
                    elapsed=_elapsed_years, remaining=max(_remaining_years, 0))
             )
             st.progress(min(_pct_elapsed, 1.0))
+            st.checkbox(tr("pdf_include_toggle"), value=True, key="pdf_inc_live",
+                        help=tr("pdf_include_help"))
 
             # Fetch live prices (raw closes — what the term sheet observes)
             try:
@@ -2121,6 +2130,17 @@ elif st.session_state["page"] == "dashboard":
             # branding/ticker_logos/{SYMBOL}.png before fetching a URL.
             _pdf_logo_tickers = {name: sym for sym, name in run_terms.tickers.items()}
             _pdf_issuer_logo_url = get_issuer_logo_url(getattr(run_terms, "issuer", "") or "")
+            # Per-section include flags set by the "Include in PDF" checkboxes
+            # placed at each analysis. Default True so an un-rendered tab (e.g.
+            # backtest infeasible) doesn't silently drop a section the user wanted.
+            _pdf_sections = {
+                key for key, ss in (
+                    ("mc",          "pdf_inc_mc"),
+                    ("calibration", "pdf_inc_calibration"),
+                    ("backtest",    "pdf_inc_backtest"),
+                    ("live",        "pdf_inc_live"),
+                ) if st.session_state.get(ss, True)
+            }
             _pdf_bytes = generate_pdf_report(
                 terms            = run_terms,
                 results          = R,
@@ -2135,6 +2155,7 @@ elif st.session_state["page"] == "dashboard":
                 issuer_logo_url  = _pdf_issuer_logo_url,
                 branding         = st.session_state.get("branding"),
                 logo_tickers     = _pdf_logo_tickers,
+                include_sections = _pdf_sections,
             )
         _pdf_slot.download_button(
             tr("sidebar_download_pdf"),
