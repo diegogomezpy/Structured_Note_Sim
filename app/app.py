@@ -1466,7 +1466,7 @@ elif st.session_state["page"] == "dashboard":
                 _pe_cols = st.columns(len(asset_names))
                 for _pe_i, (_pe_name, _pe_col) in enumerate(zip(asset_names, _pe_cols)):
                     _pe_sym = _disp_to_sym_pe.get(_pe_name, "")
-                    _pe_logo = TICKER_LOGOS.get(_pe_sym, "")
+                    _pe_logo = (TICKER_LOGOS.get(_pe_sym) or _LOGO_BASE.format(sym=_pe_sym)) if _pe_sym else ""
                     _pe_logo_html = (
                         f"<img src='{_pe_logo}' width='24' height='24' "
                         f"style='border-radius:4px;vertical-align:middle;margin-right:4px;' "
@@ -1528,7 +1528,7 @@ elif st.session_state["page"] == "dashboard":
                 for p in R["params"]:
                     ok, _ = p.feller_condition()
                     _sym = _disp_to_sym.get(p.name, "")
-                    _logo_url = TICKER_LOGOS.get(_sym, "")
+                    _logo_url = (TICKER_LOGOS.get(_sym) or _LOGO_BASE.format(sym=_sym)) if _sym else ""
                     _logo_html = (
                         f"<img src='{_logo_url}' width='24' height='24' "
                         f"style='border-radius:4px;vertical-align:middle;margin-right:6px;' "
