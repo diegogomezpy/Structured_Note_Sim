@@ -543,6 +543,20 @@ class _NotePDF(FPDF):
             family, style = _hmap.get(weight, ("Helvetica", ""))
         self.set_font(family, style, size)
 
+    def _fit_font(self, text: str, max_w: float, size: float,
+                  weight: str = "regular", min_size: float = 5.5) -> None:
+        """Set the font to the largest size <= `size` at which `text` fits in
+        `max_w` mm on one line, never going below `min_size`. Prevents the
+        single-line name cells (calibration table, cover sidebar) from either
+        overflowing into the neighbouring column or being clipped — long names
+        shrink just enough to fit instead."""
+        s = size
+        self._sf(s, weight)
+        safe = self._safe(text)
+        while s > min_size and self.get_string_width(safe) > max_w:
+            s -= 0.25
+            self._sf(s, weight)
+
     def _safe(self, text: object) -> str:
         return _safe(text, latin1=not self._use_unicode)
 
@@ -825,9 +839,10 @@ class _NotePDF(FPDF):
                 except Exception:
                     pass
             self.set_xy(text_x, row_y + (ROW_H - 4) / 2)
-            self._sf(8, "semibold")
+            _name_w = col_widths[0] - (text_x - self.l_margin) - 1
+            self._fit_font(name, _name_w, 8, "semibold")
             self.set_text_color(*_TEXT)
-            self.cell(col_widths[0] - (text_x - self.l_margin) - 1, 4, self._safe(name))
+            self.cell(_name_w, 4, self._safe(name))
             # Remaining columns
             self._sf(8, "regular")
             self.set_xy(self.l_margin + col_widths[0], row_y)
@@ -1640,9 +1655,10 @@ def _cover_page(
                           w=_LOGO_W, h=_LOGO_H)
                 text_x = sb_x + 4 + _LOGO_W + 2
                 pdf.set_xy(text_x, row_y + (_LOGO_H - 4.5) / 2)
-                pdf._sf(8.5, "semibold")
+                _nm_w = sb_w - (_LOGO_W + 12)
+                pdf._fit_font(nm, _nm_w, 8.5, "semibold")
                 pdf.set_text_color(*_TEXT)
-                pdf.cell(sb_w - (_LOGO_W + 12), 4.5, _safe(nm))
+                pdf.cell(_nm_w, 4.5, _safe(nm))
             except Exception:
                 _sb_text(y + 1, nm, "semibold", 8.5)
         else:
@@ -1700,7 +1716,9 @@ def _cover_page(
     pdf.set_xy(pdf.l_margin, y_name)
     pdf._sf(18, "bold")
     pdf.set_text_color(*pdf.primary_color)
-    pdf.multi_cell(main_w, 9, _safe(terms.name))
+    # Left-align: multi_cell defaults to justified, which stretches the word
+    # spacing of a short wrapped title into ugly gaps (e.g. "Autocall — 12M").
+    pdf.multi_cell(main_w, 9, _safe(terms.name), align="L")
 
     # Report type subtitle (branding report_title overrides the default)
     pdf.set_x(pdf.l_margin)
@@ -1962,8 +1980,11 @@ def generate_pdf_report(
         # name approach: we draw the table row-by-row so we can interleave the
         # small logo image at the left edge of each asset row.
         n_assets   = len(params)
-        col_w_asset = usable * 0.18
-        col_w_rest  = usable * 0.1025
+        # Asset column widened (long company names like "International Business
+        # Machines" were clipped at 0.18); the eight numeric columns absorb the
+        # difference and still fit their short values/headers.
+        col_w_asset = usable * 0.24
+        col_w_rest  = usable * 0.095
         col_widths  = [col_w_asset] + [col_w_rest] * 8
         headers     = [_t("asset", lang), _t("calib_s0", lang), _t("calib_mu", lang),
                        _t("calib_v0", lang), _t("calib_theta", lang),
@@ -2042,9 +2063,9 @@ def generate_pdf_report(
                 except Exception:
                     pass  # logo failed; just print the name
             pdf.set_xy(text_x, row_y + (_ROW_H_CALIB - 4) / 2)
-            pdf._sf(8, "semibold")
-            pdf.set_text_color(*_TEXT)
             avail_w = col_w_asset - (text_x - pdf.l_margin) - 1
+            pdf._fit_font(nm, avail_w, 8, "semibold")
+            pdf.set_text_color(*_TEXT)
             pdf.cell(avail_w, 4, pdf._safe(nm))
 
             # ── Remaining data cells ──

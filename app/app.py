@@ -237,6 +237,20 @@ TICKER_LOGOS: dict[str, str] = {
 # Map by yfinance symbol → label for JSON loading
 _TICKER_TO_LABEL   = {v: k for k, v in UNDERLYING_OPTIONS.items()}
 
+
+def _label_to_name(lbl: str) -> str:
+    """Resolve a multiselect label to its human display name (never the ticker).
+
+    Universe labels are formatted ``"TICKER — Company"`` so the company name is
+    the part AFTER the em-dash; custom labels are ``"Company — SYM (custom)"`` so
+    it is the part BEFORE it. Using ``split(" — ")[0]`` unconditionally (the old
+    bug) returned the ticker for every universe pick, e.g. "MSFT" instead of
+    "Microsoft".
+    """
+    if lbl.endswith(" (custom)"):
+        return lbl.split(" — ", 1)[0]
+    return lbl.split(" — ", 1)[1] if " — " in lbl else lbl
+
 # ==========================================================================
 # Session state defaults
 # ==========================================================================
@@ -462,7 +476,7 @@ if st.session_state["page"] == "setup":
         for _i, _lbl in enumerate(selected_labels[:5]):
             _sym = _lbl_to_sym.get(_lbl)
             _logo_url = (TICKER_LOGOS.get(_sym) or _LOGO_BASE.format(sym=_sym)) if _sym else None
-            _short = _lbl.split(" — ")[0]
+            _short = _label_to_name(_lbl)
             with logo_cols[_i]:
                 if _logo_url:
                     # onerror hides the element if the URL fails instead of showing a broken icon
@@ -893,7 +907,7 @@ if st.session_state["page"] == "setup":
             selected_tickers = {}
             for lbl in selected_labels[:5]:
                 sym  = _all_label_to_sym.get(lbl)
-                disp = lbl.split(" — ")[0]
+                disp = _label_to_name(lbl)
                 if sym:
                     selected_tickers[sym] = disp
             terms = NoteTerms(
