@@ -1357,6 +1357,35 @@ def _theme_figure(fig, primary_color: tuple, accent_color: tuple,
         pass
 
 
+# Kaleido v1 drives an external Chrome/Chromium (unlike the self-contained
+# v0.2.x). On a headless host with no browser — e.g. Streamlit Community Cloud
+# without a `packages.txt` that installs `chromium` — every export raises and
+# the report silently drops all figures. We attempt a one-time runtime Chrome
+# download as a fallback so the report still renders charts when the system
+# package is missing. Guarded so we only try once per process.
+_CHROME_FETCH_TRIED = False
+
+
+def _ensure_chrome() -> None:
+    """Best-effort: make sure Kaleido has a Chrome to drive. No-op on failure.
+
+    Tries kaleido.get_chrome_sync() once (downloads Chromium into Kaleido's
+    cache). Only runs once per process; safe when a system Chromium already
+    exists (Kaleido prefers it and this is skipped after the first attempt)."""
+    global _CHROME_FETCH_TRIED
+    if _CHROME_FETCH_TRIED:
+        return
+    _CHROME_FETCH_TRIED = True
+    try:
+        import kaleido
+        get_chrome = getattr(kaleido, "get_chrome_sync", None)
+        if get_chrome is not None:
+            get_chrome()
+            print("[PDF figure] fetched Chromium for Kaleido")
+    except Exception as exc:
+        print(f"[PDF figure] Chrome fetch unavailable: {exc}")
+
+
 def _fig_to_png(fig, width: int = 900, height: int = 500,
                 primary_color: tuple = _DEFAULT_PRIMARY,
                 accent_color: tuple = _DEFAULT_ACCENT,
@@ -1365,17 +1394,28 @@ def _fig_to_png(fig, width: int = 900, height: int = 500,
 
     Applies `_theme_figure` before rendering so all charts use the report's
     branded color scheme and white background regardless of app theme.
+
+    Returns None on failure, but logs why first — a swallowed exception here
+    silently empties the whole report of charts, which is near-impossible to
+    diagnose after the fact. The most common cause is a missing Chrome for
+    Kaleido v1 on a headless deploy; we retry once after fetching one.
     """
+    import plotly.io as pio
+    import plotly.graph_objects as go
+    fig = go.Figure(fig)
+    fig.update_layout(title=None, margin=dict(t=24, b=40))
+    _theme_figure(fig, primary_color, accent_color, secondary_color)
     try:
-        import plotly.io as pio
-        import plotly.graph_objects as go
-        fig = go.Figure(fig)
-        fig.update_layout(title=None, margin=dict(t=24, b=40))
-        _theme_figure(fig, primary_color, accent_color, secondary_color)
-        return pio.to_image(fig, format="png", width=width, height=height,
-                            scale=3, engine="kaleido")
-    except Exception:
-        return None
+        return pio.to_image(fig, format="png", width=width, height=height, scale=3)
+    except Exception as exc:
+        print(f"[PDF figure] to_image failed ({type(exc).__name__}: {exc}); "
+              "retrying after Chrome fetch")
+        _ensure_chrome()
+        try:
+            return pio.to_image(fig, format="png", width=width, height=height, scale=3)
+        except Exception as exc2:
+            print(f"[PDF figure] to_image failed again: {type(exc2).__name__}: {exc2}")
+            return None
 
 
 # ──────────────────────────────────────────────────────────────────────────────
