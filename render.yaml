@@ -1,0 +1,13 @@
+# One-click deploy of the backend API to Render (https://render.com).
+# In the Render dashboard: New → Blueprint → point at this repo. After it's up,
+# set ALLOWED_ORIGINS to your GitHub Pages origin (e.g. https://you.github.io).
+services:
+  - type: web
+    name: structured-note-api
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    plan: free
+    healthCheckPath: /health
+    envVars:
+      - key: ALLOWED_ORIGINS
+        sync: false        # set in the dashboard to your Pages origin
