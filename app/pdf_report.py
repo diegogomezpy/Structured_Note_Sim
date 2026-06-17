@@ -756,10 +756,10 @@ class _NotePDF(FPDF):
         self.section_title(text)
 
     def section_title(self, text: str):
-        """Green section title text + thick chartreuse filled-rect band below (CADIEM style).
+        """Green section title text + thin chartreuse filled-rect band below (CADIEM style).
 
-        The band is a thin filled rectangle in section_rule_color, ~1.5mm tall,
-        spanning the full usable width. No drawn lines anywhere — pure filled rects only.
+        The band is a thin filled rectangle in section_rule_color, ~0.75mm tall,
+        spanning the full usable width. No drawn lines anywhere.
         """
         if self.get_y() > self.h - 60:
             self.add_page()
@@ -767,10 +767,11 @@ class _NotePDF(FPDF):
         self._sf(13, "semibold")           # slightly larger than the old 11pt — factsheet titles are ~13pt
         self.set_text_color(*self.primary_color)
         self.cell(0, 8, text, new_x="LMARGIN", new_y="NEXT")
-        # Thick filled band in section_rule_color (chartreuse #D1D62D for CADIEM)
-        band_h = 1.5   # mm — thin chartreuse rule matching reference factsheet
+        # Thin chartreuse band in section_rule_color, full width.
+        band_h = 0.6   # mm — thin chartreuse rule
+        band_w = self.w - self.l_margin - self.r_margin
         self.set_fill_color(*self.section_rule_color)
-        self.rect(self.l_margin, self.get_y(), self.w - self.l_margin - self.r_margin, band_h, style="F")
+        self.rect(self.l_margin, self.get_y(), band_w, band_h, style="F")
         self.ln(band_h + 4)
         self.set_text_color(*_TEXT)
 
@@ -1817,8 +1818,9 @@ def _cover_page(
         pdf.set_text_color(*pdf.primary_color)
         pdf.cell(140, 8, _safe(pdf.firm_name))
 
-    # Thin accent rule at the base of the header — brand definition without a band
-    pdf.set_draw_color(*pdf.primary_color)
+    # Thin accent rule at the base of the header — chartreuse (in line with the
+    # section bands), full width, 0.6mm.
+    pdf.set_draw_color(*pdf.section_rule_color)
     pdf.set_line_width(0.6)
     pdf.line(pdf.l_margin, band_h - 3, pdf.w - pdf.r_margin, band_h - 3)
 
@@ -2101,6 +2103,7 @@ def generate_pdf_report(
     live_figure=None,
     logo_urls: dict[str, str] | None = None,
     issuer_logo_url: str | None = None,
+    issuer_logo_override: bytes | None = None,
     branding: dict | None = None,
     logo_tickers: dict[str, str] | None = None,
     include_sections: set[str] | None = None,
@@ -2147,8 +2150,12 @@ def generate_pdf_report(
     footer_note  = _b.get("footer_note") or None
 
     issuer  = getattr(terms, "issuer", "") or ""
-    # Issuer logo: try a local branding/ticker_logos/{issuer}.png first, else URL.
-    issuer_logo_bytes = _load_ticker_logo(issuer, issuer_logo_url) if (issuer or issuer_logo_url) else None
+    # Issuer logo: a user-uploaded image wins (normalised to an embeddable PNG);
+    # otherwise try a local branding/ticker_logos/{issuer}.png, else the favicon URL.
+    if issuer_logo_override:
+        issuer_logo_bytes = _to_embeddable_png(issuer_logo_override)
+    else:
+        issuer_logo_bytes = _load_ticker_logo(issuer, issuer_logo_url) if (issuer or issuer_logo_url) else None
 
     doc_ref = f"{report_title or _t('series_title', lang)} | {terms.name}"
     pdf = _NotePDF(

@@ -416,6 +416,14 @@ _STRINGS: dict[str, tuple[str, str]] = {
     "setup_rating_sp":          ("S&P rating",                         "Calificación S&P"),
     "setup_rating_moody":       ("Moody's rating",                     "Calificación Moody's"),
     "setup_rating_fitch":       ("Fitch rating",                       "Calificación Fitch"),
+    "setup_issuer_logo":        ("Issuer logo (optional)",             "Logo del emisor (opcional)"),
+    "setup_issuer_logo_help":   (
+        "Upload a custom issuer logo (PNG/JPG). Overrides the auto-fetched "
+        "favicon — use this when the favicon can't be found.",
+        "Suba un logo personalizado del emisor (PNG/JPG). Reemplaza el favicon "
+        "obtenido automáticamente — útil cuando el favicon no se encuentra.",
+    ),
+    "setup_issuer_logo_clear":  ("Clear logo",                         "Quitar logo"),
     "setup_issue_date_header":  ("Issue Date (optional)",              "Fecha de Emisión (opcional)"),
     "setup_issue_date_caption": ("If set to today or earlier, a **Current Performance** tab will appear on the dashboard.",
                                  "Si se fija en la fecha de hoy o anterior, aparecerá una pestaña de **Rendimiento Actual** en el panel."),

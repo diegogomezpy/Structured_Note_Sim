@@ -72,6 +72,9 @@ _ISSUER_DOMAINS = {
     "deutsche bank":    "db.com",
     "societe generale": "societegenerale.com",
     "ubs":              "ubs.com",
+    "julius baer":      "juliusbaer.com",
+    "bank julius baer": "juliusbaer.com",
+    "bank julius baer & co. ltd.": "juliusbaer.com",
     "credit suisse":    "credit-suisse.com",
     "jpmorgan":         "jpmorgan.com",
     "jp morgan":        "jpmorgan.com",
@@ -122,10 +125,30 @@ _DEFAULTS = {
     "history_years":    None,    # always max history
     "calib_years":      5.0,     # years of recent data used for Heston calibration
     "branding":         None,    # parsed branding JSON dict (firm_name, colors, logo_url)
+    "issuer_logo_bytes": None,   # user-uploaded custom issuer logo (overrides favicon)
+    "pdf_selected":     set(),   # persisted set of checked "Include in PDF" items
 }
 for k, v in _DEFAULTS.items():
     if k not in st.session_state:
         st.session_state[k] = v
+
+# Auto-load a local firm branding file (branding/branding_<firm>.json — the
+# convention documented in .gitignore) ONCE per session, so the user's branding
+# stays "logged in" without re-uploading on every restart. A one-shot flag means
+# an explicitly cleared branding stays cleared on later reruns.
+if not st.session_state.get("_branding_autoloaded"):
+    st.session_state["_branding_autoloaded"] = True
+    if st.session_state.get("branding") is None:
+        import glob as _glob_b, json as _json_b, os as _os_b
+        for _bpath in sorted(_glob_b.glob("branding/branding_*.json")):
+            if _os_b.path.basename(_bpath) == "branding_example.json":
+                continue
+            try:
+                with open(_bpath, encoding="utf-8") as _bf:
+                    st.session_state["branding"] = _json_b.load(_bf)
+                break
+            except Exception:
+                pass
 
 # ==========================================================================
 # Cached helpers
@@ -166,19 +189,27 @@ tr = Translator("es" if lang_choice == "Español" else "en")
 
 def _pdf_toggle(item_key: str, label: str | None = None):
     """Render a compact 'include in PDF' checkbox for one report item (a single
-    chart, table or metric block). The state lives at session_state['pdf_inc_<key>']
-    and is collected at PDF-generation time; default off, so a fresh report starts
-    empty and the user opts each piece in."""
-    return st.checkbox(label or tr("pdf_include_toggle"), value=False,
-                       key=f"pdf_inc_{item_key}", help=tr("pdf_include_help"))
+    chart, table or metric block). Default off, so a fresh report starts empty
+    and the user opts each piece in.
+
+    The selection is mirrored into the non-widget set session_state['pdf_selected']
+    so it SURVIVES navigation: Streamlit garbage-collects widget-keyed state
+    (pdf_inc_*) when the widget isn't rendered (e.g. while on the setup page), but
+    a plain session_state set persists. The checkbox re-initialises from it."""
+    sel = st.session_state.setdefault("pdf_selected", set())
+    checked = st.checkbox(label or tr("pdf_include_toggle"),
+                          value=(item_key in sel),
+                          key=f"pdf_inc_{item_key}", help=tr("pdf_include_help"))
+    if checked:
+        sel.add(item_key)
+    else:
+        sel.discard(item_key)
+    return checked
 
 
 def _collect_pdf_sections() -> set[str]:
-    """Every checked per-item PDF toggle, keyed by item (the part after the
-    'pdf_inc_' prefix). Scanning session_state keeps this correct as the number
-    of per-underlying fan toggles changes with the basket size."""
-    return {k[len("pdf_inc_"):] for k, v in st.session_state.items()
-            if k.startswith("pdf_inc_") and v}
+    """The persisted set of checked per-item PDF toggles (see _pdf_toggle)."""
+    return set(st.session_state.get("pdf_selected", set()))
 
 
 def _safe_load_prices(tickers_tuple, **kw):
@@ -727,6 +758,24 @@ if st.session_state["page"] == "setup":
                 tr("setup_rating_fitch"), value=getattr(base, "issuer_rating_fitch", "") or "",
                 placeholder="AA-",
             )
+
+        # Custom issuer logo — overrides the auto-fetched favicon (e.g. when the
+        # favicon can't be resolved). Bytes are kept in a non-widget session key
+        # so they survive navigation between setup and dashboard.
+        _iss_logo_up = st.file_uploader(
+            tr("setup_issuer_logo"), type=["png", "jpg", "jpeg", "gif", "webp"],
+            key="issuer_logo_upload", help=tr("setup_issuer_logo_help"),
+        )
+        if _iss_logo_up is not None:
+            st.session_state["issuer_logo_bytes"] = _iss_logo_up.getvalue()
+        if st.session_state.get("issuer_logo_bytes"):
+            _il_a, _il_b = st.columns([1, 3])
+            with _il_a:
+                st.image(st.session_state["issuer_logo_bytes"], width=48)
+            with _il_b:
+                if st.button(tr("setup_issuer_logo_clear"), key="clear_issuer_logo"):
+                    st.session_state["issuer_logo_bytes"] = None
+                    st.rerun()
 
         # Issue date — same keyed-widget guard as the issuer above.
         import datetime as _dt2
@@ -1709,8 +1758,7 @@ elif st.session_state["page"] == "dashboard":
                 st.session_state["_pdf_bt_figures"] = _bt_figs
 
             with bt_tab2:
-                st.checkbox(tr("pdf_include_toggle"), value=False, key="pdf_inc_bt_prices",
-                            help=tr("pdf_include_help"))
+                _pdf_toggle("bt_prices")
                 try:
                     # P4: this chart plots max-history daily closes (decades ×
                     # n_assets points) and re-serialises to the browser every rerun.
@@ -1735,8 +1783,7 @@ elif st.session_state["page"] == "dashboard":
             # _all_prices / terms from the last full run (stable until rerun).
             @st.fragment
             def _bt_path_explorer():
-                st.checkbox(tr("pdf_include_toggle"), value=False, key="pdf_inc_bt_explorer",
-                            help=tr("pdf_include_help"))
+                _pdf_toggle("bt_explorer")
                 st.subheader(tr("bt_path_explorer_header"))
                 st.caption(tr("bt_path_explorer_caption"))
 
@@ -2095,6 +2142,7 @@ elif st.session_state["page"] == "dashboard":
                 live_figure      = st.session_state.get("_pdf_live_figure"),
                 logo_urls        = _pdf_logo_urls,
                 issuer_logo_url  = _pdf_issuer_logo_url,
+                issuer_logo_override = st.session_state.get("issuer_logo_bytes"),
                 branding         = st.session_state.get("branding"),
                 logo_tickers     = _pdf_logo_tickers,
                 include_sections = _pdf_sections,
