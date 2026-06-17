@@ -218,8 +218,7 @@ _LABELS: dict[str, dict[str, str]] = {
     "expected_coupon":       {"en": "Expected coupon income",            "es": "Cupón total esperado"},
     "prob_autocall":         {"en": "P(autocall)",                       "es": "P(autocall)"},
     "prob_knock_in":         {"en": "P(knock-in)",                       "es": "P(knock-in)"},
-    "prob_capital_loss":     {"en": "P(capital loss)",                   "es": "P(pérdida de capital)"},
-    "loss_given_ki":         {"en": "IRR if capital loss",               "es": "TIR si pérdida de capital"},
+    "loss_given_ki":         {"en": "Loss given knock-in",               "es": "Pérdida dado knock-in"},
     "n_paths":               {"en": "Simulated paths",                   "es": "Caminos simulados"},
     "autocall_by_period":    {"en": "Autocall Probability by Period",    "es": "Probabilidad de Autocall por Período"},
     "period":                {"en": "Period",                            "es": "Período"},
@@ -2090,31 +2089,19 @@ def generate_pdf_report(
     _sec = _lazy_section(_t("mc_subtab_payoff", lang), min_room=150.0)
     if _inc("mc_metrics"):
         _sec()
-        _mc_ki_mask = np.asarray(results.get("knock_in_triggered", []), dtype=bool)
-        _mc_ann_ret = np.asarray(results.get("annualized_returns", []))
-        _mc_lgki_str = (
-            f"{float(_mc_ann_ret[_mc_ki_mask].mean()):.2%}"
-            if _mc_ki_mask.any() and len(_mc_ann_ret) == len(_mc_ki_mask)
-            else "—"
-        )
-        # Knock-in (barrier breached) and capital loss (breached AND not rescued)
-        # are the same event for a plain worst-of note, but a best-of rescue
-        # clause makes them differ. Show P(knock-in) separately only then.
-        _p_loss    = results.get("prob_knock_in_total", 0)
-        _p_barrier = results.get("prob_barrier_event", _p_loss)
-        _band = [
+        # Knock-in metrics: probability the knock-in barrier is breached at
+        # maturity, and the mean IRR conditional on that knock-in.
+        _p_ki = results.get("prob_barrier_event", results.get("prob_knock_in_total", 0))
+        _lgki = results.get("loss_given_knock_in")
+        _lgki_str = f"{_lgki:.2%}" if _lgki is not None and _lgki == _lgki else "—"  # nan-safe
+        pdf.metric_band([
             (_t("expected_irr",       lang), f"{results.get('expected_irr', 0):.2%}"),
             (_t("total_return_short", lang), f"{results.get('expected_total_return', 0):.2%}"),
             (_t("prob_autocall",      lang), f"{results.get('prob_autocall', 0):.1%}"),
-        ]
-        if results.get("prob_rescued", 0) > 0:
-            _band.append((_t("prob_knock_in", lang), f"{_p_barrier:.2%}"))
-        _band += [
-            (_t("prob_capital_loss",  lang), f"{_p_loss:.2%}"),
-            (_t("loss_given_ki",      lang), _mc_lgki_str),
+            (_t("prob_knock_in",      lang), f"{_p_ki:.2%}"),
+            (_t("loss_given_ki",      lang), _lgki_str),
             (_t("n_paths",            lang), f"{n_paths_val:,}"),
-        ]
-        pdf.metric_band(_band)
+        ])
     if _inc("mc_irr"):
         _sec()
         pdf.figure(_fig_to_png(figures.get("irr_dist"), **_kw), _t("fig_irr", lang), src_mc)

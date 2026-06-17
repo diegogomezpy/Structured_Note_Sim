@@ -86,8 +86,8 @@ _STRINGS: dict[str, tuple[str, str]] = {
     "expected_total_return":     ("Expected Total Return",             "Rendimiento Total Esperado"),
     "expected_coupon_metric":    ("Expected Coupon",                   "Cupón Esperado"),
     "prob_autocalled":           ("P(Autocalled)",                     "P(Autocall)"),
-    "prob_knock_in_metric":      ("P(capital loss)",                   "P(pérdida de capital)"),
-    "loss_given_ki_metric":      ("IRR if capital loss",               "TIR si pérdida de capital"),
+    "prob_knock_in_metric":      ("P(knock-in)",                       "P(knock-in)"),
+    "loss_given_ki_metric":      ("Loss given knock-in",               "Pérdida dado knock-in"),
     "barrier_rescued_caption":   (
         "Barrier breached on {barrier:.2%} of paths; {rescued:.2%} were rescued to par by the"
         "final redemption condition ({basket} ≥ {level:.0%}).",
@@ -115,8 +115,8 @@ _STRINGS: dict[str, tuple[str, str]] = {
     "irr_dist_subheader":        ("IRR Distribution — All Simulated Paths",
                                   "Distribución de TIR — Todas las Trayectorias Simuladas"),
     "knock_in_info":             (
-        "**{pct:.1%}** of paths end in a capital loss at maturity (worst-of below the {barrier:.0%} knock-in barrier and not rescued).",
-        "**{pct:.1%}** de las trayectorias terminan en pérdida de capital al vencimiento (worst-of bajo la barrera knock-in del {barrier:.0%} y no rescatadas).",
+        "**{pct:.1%}** of paths breach the {barrier:.0%} knock-in barrier at maturity (worst-of below the barrier).",
+        "**{pct:.1%}** de las trayectorias tocan la barrera knock-in del {barrier:.0%} al vencimiento (worst-of bajo la barrera).",
     ),
 
     # ── MC tab2 — price paths ──────────────────────────────────────────────
@@ -624,24 +624,20 @@ _STRINGS: dict[str, tuple[str, str]] = {
         "observaciones tempranas.",
     ),
     "mc_help_prob_knock_in":    (
-        "Probability of capital loss at maturity: knock-in barrier breached "
-        "AND the final redemption condition not met. For notes with a best-of "
-        "final redemption rule (e.g. BBVA XS3378405743), paths where the best performer "
-        "finishes ≥ the redemption barrier are 'rescued' to par even if the "
-        "worst breached the KI level — those are excluded here.",
-        "Probabilidad de pérdida de capital al vencimiento: barrera de knock-in tocada Y "
-        "condición de redención final no cumplida. Para notas con regla de redención final best-of "
-        "(ej. BBVA XS3378405743), las trayectorias donde el mejor subyacente termina ≥ "
-        "la barrera de redención son 'rescatadas' a la par aunque el peor haya tocado el "
-        "nivel de KI — esas se excluyen aquí.",
+        "Probability that the knock-in barrier is breached at maturity (the "
+        "worst-of finishes below the knock-in level). This counts the knock-in "
+        "event itself, whether or not a best-of rescue clause later returns par.",
+        "Probabilidad de que la barrera de knock-in se toque al vencimiento (el "
+        "worst-of termina bajo el nivel de knock-in). Cuenta el evento de knock-in, "
+        "se rescate o no luego a la par por una cláusula best-of.",
     ),
     "mc_help_loss_given_ki":     (
-        "Expected annualised return (IRR) on paths where the knock-in barrier is "
-        "breached at maturity — i.e. the average outcome for the loss scenarios. "
-        "Shows '—' if no knock-in paths exist in this simulation.",
-        "Retorno anualizado esperado (TIR) en las trayectorias donde la barrera de "
-        "knock-in se toca al vencimiento — es decir, el resultado promedio de los "
-        "escenarios de pérdida. Muestra '—' si no hay trayectorias de knock-in.",
+        "Mean annualised return (IRR) across the paths that breach the knock-in "
+        "barrier at maturity — the average outcome conditional on a knock-in. "
+        "Shows '—' if no path knocks in.",
+        "Retorno anualizado medio (TIR) en las trayectorias que tocan la barrera de "
+        "knock-in al vencimiento — el resultado promedio condicionado a un knock-in. "
+        "Muestra '—' si ninguna trayectoria toca el knock-in.",
     ),
     "mc_help_principal":        (
         "Principal returned on this path as a fraction of par: 100% if "

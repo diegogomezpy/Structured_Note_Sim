@@ -518,6 +518,7 @@ def price_note(
             "principal_payoffs":    cp_payoff,
             "autocall_period":      zeros.astype(int),
             "knock_in_triggered":   np.zeros(n_paths, dtype=bool),
+            "knock_in_mask":        np.zeros(n_paths, dtype=bool),
             "annualized_returns":   irr_cp,
             # Legacy alias
             "autocall_events":      zeros.astype(int),
@@ -533,6 +534,7 @@ def price_note(
             "prob_knock_in_total":      0.0,
             "prob_barrier_event":       0.0,
             "prob_rescued":             0.0,
+            "loss_given_knock_in":      float("nan"),
         }
 
     # ------------------------------------------------------------------
@@ -767,6 +769,11 @@ def price_note(
     # baskets the two are identical; for best-of (BBVA) they differ.
     ki_total      = capital_loss & maturity_mask
     be_total      = barrier_event & maturity_mask   # barrier breached (incl. rescued paths)
+    # Loss given knock-in: mean annualised IRR over paths that breached the
+    # knock-in barrier at maturity (the 'knock-in' event), whether or not a
+    # rescue clause returned par. Distinct from the capital-loss conditional
+    # mean (which only averages the unrescued, loss-making paths).
+    lgki = float(annualized_irr[be_total].mean()) if be_total.any() else float("nan")
 
     return {
         # Per-path arrays (for Streamlit plots)
@@ -775,6 +782,7 @@ def price_note(
         "principal_payoffs":    principal,
         "autocall_period":      autocall_period,
         "knock_in_triggered":   ki_total,
+        "knock_in_mask":        be_total,   # barrier breached at maturity (knock-in)
         "annualized_returns":   annualized_irr,
 
         # Legacy alias (app.py uses this key)
@@ -792,6 +800,7 @@ def price_note(
         "prob_knock_in_total":      float(ki_total.mean()),
         "prob_barrier_event":       float(be_total.mean()),   # incl. paths rescued by final condition
         "prob_rescued":             float((be_total & ~ki_total).mean()),
+        "loss_given_knock_in":      lgki,
     }
 
 

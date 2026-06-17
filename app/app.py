@@ -1339,12 +1339,15 @@ elif st.session_state["page"] == "dashboard":
             }
             # ── Summary metrics (two rows of 3) ──────────────────────
             st.header(tr("summary_stats_header"))
-            _ki_mask = R.get("knock_in_triggered")
-            _lgki_str = (
-                f"{float(R['annualized_returns'][_ki_mask].mean()):.2%}"
-                if _ki_mask is not None and _ki_mask.any()
-                else "—"
-            )
+            # Knock-in (barrier breached at maturity), not capital loss: count the
+            # knock-in event itself and average the IRR over those paths.
+            _ki_mask = R.get("knock_in_mask")
+            if _ki_mask is None:
+                _ki_mask = R.get("knock_in_triggered")
+            _lgki = R.get("loss_given_knock_in")
+            if _lgki is None and _ki_mask is not None and _ki_mask.any():
+                _lgki = float(R["annualized_returns"][_ki_mask].mean())
+            _lgki_str = f"{_lgki:.2%}" if _lgki is not None and _lgki == _lgki else "—"  # nan check
             c1, c2, c3 = st.columns(3)
             c1.metric(tr("expected_irr_pa"),        f"{R['expected_irr']:.2%}",
                       help=tr("mc_help_expected_irr"))
@@ -1355,7 +1358,7 @@ elif st.session_state["page"] == "dashboard":
             c4, c5, c6 = st.columns(3)
             c4.metric(tr("prob_autocalled"),        f"{R['prob_autocall']:.2%}",
                       help=tr("mc_help_prob_autocall"))
-            c5.metric(tr("prob_knock_in_metric"),   f"{R['prob_knock_in_total']:.2%}",
+            c5.metric(tr("prob_knock_in_metric"),   f"{R.get('prob_barrier_event', R['prob_knock_in_total']):.2%}",
                       help=tr("mc_help_prob_knock_in"))
             c6.metric(tr("loss_given_ki_metric"),   _lgki_str,
                       help=tr("mc_help_loss_given_ki"))
@@ -1392,8 +1395,9 @@ elif st.session_state["page"] == "dashboard":
                 st.subheader(tr("irr_dist_subheader"))
                 st.plotly_chart(_fig_irr, use_container_width=True)
                 _pdf_toggle("mc_irr")
-                if R["prob_knock_in_total"] > 0:
-                    st.info(tr("knock_in_info", pct=R['prob_knock_in_total'],
+                _p_ki = R.get("prob_barrier_event", R["prob_knock_in_total"])
+                if _p_ki > 0:
+                    st.info(tr("knock_in_info", pct=_p_ki,
                                barrier=run_terms.knock_in_barrier))
 
             with mc_tab2:
