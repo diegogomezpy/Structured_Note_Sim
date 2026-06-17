@@ -1,3 +1,19 @@
+---
+title: Structured Note Simulator API
+emoji: 📈
+colorFrom: indigo
+colorTo: green
+sdk: docker
+app_port: 8000
+pinned: false
+---
+
+<!-- The YAML header above lets this repo deploy as a Hugging Face Docker Space:
+     HF builds the root Dockerfile and serves the FastAPI app (api/) on port 8000.
+     Set ALLOWED_ORIGINS in the Space's Settings → Variables to your frontend
+     origin (e.g. https://diegogomezpy.github.io). The Space URL
+     (https://<user>-<space>.hf.space) goes in web/config.js. -->
+
 # Multi-Asset Heston Simulator & Structured Note Engine
 
 A Python framework for calibrating, simulating, and pricing a **multi-asset Heston stochastic volatility model** against real market data, with a full structured product engine for **autocallable notes** — Phoenix Memory, Reverse Convertible, and Growth/Classic (step-down) autocalls — on any basket of equity underlyings (single-asset notes supported).

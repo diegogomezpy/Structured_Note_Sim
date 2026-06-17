@@ -32,6 +32,25 @@ that inject `$PORT` (Render/Railway/Fly) are handled by the `CMD`.
 ### Render (one click)
 `render.yaml` defines the service. New → Blueprint → this repo; then set
 `ALLOWED_ORIGINS` in the dashboard to your GitHub Pages origin.
+**Caveat:** Render free/Starter are 512 MB and OOM on a full simulation — use a
+host with ≥1–2 GB (see below).
+
+### Hugging Face Spaces (free, ~16 GB RAM — recommended)
+The root `README.md` carries the Space metadata (`sdk: docker`, `app_port: 8000`).
+1. huggingface.co → **New Space** → **Docker** (blank) → name it (e.g. `structured-note-api`).
+2. Push this repo to the Space's git remote:
+   ```bash
+   git remote add space https://huggingface.co/spaces/<user>/<space>
+   git push space main
+   ```
+   (Authenticate with an HF access token when prompted.)
+3. HF builds the root `Dockerfile` and serves on port 8000.
+4. Space **Settings → Variables and secrets** → add `ALLOWED_ORIGINS` =
+   your Pages origin (e.g. `https://diegogomezpy.github.io`).
+5. The Space URL is `https://<user>-<space>.hf.space` — put it in `web/config.js`.
+
+The free CPU tier (2 vCPU / ~16 GB) comfortably runs the default 8 k-path
+simulation and the PDF export.
 
 ## Config (env vars)
 - **`ALLOWED_ORIGINS`** — comma-separated CORS origins. Defaults to `*` (dev).

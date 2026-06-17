@@ -33,8 +33,10 @@ COPY fonts/       fonts/
 COPY branding/    branding/
 COPY note_configs/ note_configs/
 
-# Drop privileges.
-RUN useradd --create-home appuser
+# Drop privileges. HOME must be writable — kaleido/Chromium and the runtime
+# get_chrome fallback cache under it. (Hugging Face Spaces run the image's USER.)
+RUN useradd --create-home --uid 1000 appuser
+ENV HOME=/home/appuser
 USER appuser
 
 # Hosts (Render/Railway/Fly) inject $PORT; default to 8000 locally.
