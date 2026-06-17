@@ -171,6 +171,8 @@ _LABELS: dict[str, dict[str, str]] = {
     "key_terms":             {"en": "KEY TERMS",                         "es": "TÉRMINOS CLAVE"},
     "exec_summary":          {"en": "Executive Summary",                 "es": "Resumen Ejecutivo"},
     "note_terms":            {"en": "Note Terms",                        "es": "Términos de la Nota"},
+    "key_terms_col_characteristic": {"en": "Characteristic",              "es": "Característica"},
+    "key_terms_col_description":    {"en": "Description",                 "es": "Descripción"},
     "obs_schedule":          {"en": "Observation Schedule",              "es": "Calendario de Observaciones"},
     "sim_summary":           {"en": "Monte Carlo Simulation",            "es": "Simulación Monte Carlo"},
     "model_box_title":       {"en": "Model & Methodology",               "es": "Modelo y Metodología"},
@@ -752,8 +754,8 @@ class _NotePDF(FPDF):
     def section_title(self, text: str):
         """Green section title text + thick chartreuse filled-rect band below (CADIEM style).
 
-        The band is a filled rectangle in section_rule_color, ~10.3mm tall, spanning
-        the full usable width. No drawn lines anywhere — pure filled rects only.
+        The band is a thin filled rectangle in section_rule_color, ~1.5mm tall,
+        spanning the full usable width. No drawn lines anywhere — pure filled rects only.
         """
         if self.get_y() > self.h - 60:
             self.add_page()
@@ -762,7 +764,7 @@ class _NotePDF(FPDF):
         self.set_text_color(*self.primary_color)
         self.cell(0, 8, text, new_x="LMARGIN", new_y="NEXT")
         # Thick filled band in section_rule_color (chartreuse #D1D62D for CADIEM)
-        band_h = 10.3   # mm — matches the 29.1pt band extracted from the reference PDF
+        band_h = 1.5   # mm — thin chartreuse rule matching reference factsheet
         self.set_fill_color(*self.section_rule_color)
         self.rect(self.l_margin, self.get_y(), self.w - self.l_margin - self.r_margin, band_h, style="F")
         self.ln(band_h + 4)
@@ -807,7 +809,7 @@ class _NotePDF(FPDF):
             if row_idx % 2 == 0:
                 self.set_fill_color(*_ROW_ALT)
                 self.rect(self.l_margin, y0, col_w[0] + col_w[1], 8.5, style="F")
-            self._sf(8.5, "semibold")
+            self._sf(8.5, "regular")    # label — reference uses regular weight in table cells
             self.set_text_color(*_TEXT)
             self.cell(col_w[0], 8.5, k)
             self._sf(8.5, "regular")
@@ -1007,17 +1009,14 @@ class _NotePDF(FPDF):
         if y0 + box_h > self.h - 28:
             self.add_page()
             y0 = self.get_y()
-        self.set_fill_color(*_PANEL)
+        self.set_fill_color(244, 246, 249)   # #F4F6F9 — reference blurb panel color
         try:
             self.rect(x0, y0, w, box_h, style="F", round_corners=True, corner_radius=2)
         except TypeError:
             self.rect(x0, y0, w, box_h, style="F")
-        # Left accent bar
-        self.set_fill_color(*self.accent_color)
-        self.rect(x0, y0, 2, box_h, style="F")
         self.set_xy(x0 + 6, y0 + 3.5)
         self._sf(8.5, "semibold")
-        self.set_text_color(*self.primary_color)
+        self.set_text_color(*_TEXT)
         self.cell(w - 10, 5, title)
         self.set_xy(x0 + 6, y0 + 10)
         self._sf(8, "regular")
@@ -2024,7 +2023,14 @@ def generate_pdf_report(
     # First content section — always on a fresh page after the cover.
     pdf.add_page()
     pdf.section_title(_t("note_terms", lang))
-    pdf.kv_table(_term_rows(terms, lang))
+    _term_data = _term_rows(terms, lang)
+    usable = pdf.w - pdf.l_margin - pdf.r_margin
+    pdf.data_table(
+        [_t("key_terms_col_characteristic", lang), _t("key_terms_col_description", lang)],
+        [[k, v] for k, v in _term_data],
+        col_widths=[usable * 0.40, usable * 0.60],
+        aligns=["L", "L"],
+    )
 
     pdf.subsection(_t("obs_schedule", lang))
     obs_times = terms.obs_times()
