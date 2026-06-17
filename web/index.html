@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Structured Note Simulator</title>
+  <link rel="stylesheet" href="styles.css" />
+  <!-- Plotly.js renders the go.Figure JSON the API returns, unchanged. -->
+  <script src="https://cdn.plot.ly/plotly-2.35.2.min.js" charset="utf-8"></script>
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">Structured Note Simulator</div>
+    <details class="settings">
+      <summary>API</summary>
+      <label>Backend URL
+        <input id="apiBase" type="text" placeholder="http://localhost:8000" />
+      </label>
+      <button id="saveApi" type="button">Save</button>
+      <span id="apiStatus" class="muted"></span>
+    </details>
+  </header>
+
+  <main>
+    <!-- ── Configuration ─────────────────────────────────────────────── -->
+    <section class="card config">
+      <h2>Note configuration</h2>
+
+      <label>Name <input id="name" type="text" value="Custom Note" /></label>
+
+      <label>Underlyings (1–5)
+        <select id="tickers" multiple size="8"></select>
+        <span class="hint">⌘/Ctrl-click to select several</span>
+      </label>
+
+      <div class="grid2">
+        <label>Maturity (years)
+          <input id="maturity" type="number" step="0.25" min="0.25" value="1.0" />
+        </label>
+        <label>Payment frequency
+          <select id="payment_freq">
+            <option value="monthly">monthly</option>
+            <option value="quarterly" selected>quarterly</option>
+            <option value="semi-annual">semi-annual</option>
+            <option value="annual">annual</option>
+          </select>
+        </label>
+        <label>Coupon p.a. (%)
+          <input id="coupon_pa" type="number" step="0.1" value="10" />
+        </label>
+        <label>Coupon barrier (%)
+          <input id="coupon_barrier" type="number" step="1" value="50" />
+        </label>
+        <label>Autocall barrier (%)
+          <input id="autocall_barrier" type="number" step="1" value="100" />
+        </label>
+        <label>First autocall obs (period)
+          <input id="autocall_start_period" type="number" step="1" min="1" value="1" />
+        </label>
+        <label>Knock-in barrier (%)
+          <input id="knock_in_barrier" type="number" step="1" value="50" />
+        </label>
+        <label>Worst-of rule
+          <select id="basket">
+            <option value="worst_of" selected>Worst-of</option>
+            <option value="best_of">Best-of</option>
+            <option value="average">Average</option>
+          </select>
+        </label>
+      </div>
+
+      <div class="toggles">
+        <label class="inline"><input id="memory" type="checkbox" /> Memory coupon</label>
+        <label class="inline"><input id="rescue" type="checkbox" /> Best-of rescue at maturity</label>
+      </div>
+
+      <div class="grid2">
+        <label>Monte Carlo paths
+          <input id="n_paths" type="number" step="1000" min="100" max="50000" value="10000" />
+        </label>
+        <label>Seed <input id="seed" type="number" value="42" /></label>
+      </div>
+
+      <div class="actions">
+        <button id="run" type="button" class="primary">Run simulation</button>
+        <button id="pdf" type="button" disabled>Download PDF</button>
+      </div>
+      <p id="error" class="error"></p>
+    </section>
+
+    <!-- ── Results ───────────────────────────────────────────────────── -->
+    <section id="results" class="hidden">
+      <div class="card">
+        <h2 id="resultTitle">Results</h2>
+        <div id="metrics" class="metrics"></div>
+      </div>
+      <div class="card"><div id="fig_irr" class="chart"></div></div>
+      <div class="card"><div id="fig_wof" class="chart"></div></div>
+      <div class="card"><div id="fig_corr" class="chart"></div></div>
+      <div id="fans"></div>
+    </section>
+  </main>
+
+  <footer class="muted">
+    For information only — output of an automated simulation, not investment advice.
+  </footer>
+
+  <script src="app.js"></script>
+</body>
+</html>

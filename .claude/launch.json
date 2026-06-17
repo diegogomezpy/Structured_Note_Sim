@@ -6,6 +6,12 @@
       "runtimeExecutable": ".venv/bin/python",
       "runtimeArgs": ["-m", "streamlit", "run", "app/app.py", "--server.headless", "true", "--server.port", "8520"],
       "port": 8520
+    },
+    {
+      "name": "web",
+      "runtimeExecutable": ".venv/bin/python",
+      "runtimeArgs": ["-m", "http.server", "8530", "--directory", "web"],
+      "port": 8530
     }
   ]
 }

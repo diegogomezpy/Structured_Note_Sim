@@ -1,0 +1,64 @@
+:root {
+  --navy: #1a2e4a;
+  --blue: #2563eb;
+  --green: #16a34a;
+  --grey: #6b7280;
+  --line: #e2e8f0;
+  --panel: #f8fafc;
+  --red: #dc2626;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  font-family: -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  color: var(--navy);
+  background: #fff;
+}
+.topbar {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 14px 22px; border-bottom: 3px solid var(--blue);
+}
+.brand { font-size: 20px; font-weight: 700; letter-spacing: .2px; }
+.settings { font-size: 13px; }
+.settings summary { cursor: pointer; color: var(--grey); }
+.settings label { display: block; margin: 8px 0; }
+.settings input { width: 260px; }
+
+main { max-width: 1080px; margin: 0 auto; padding: 22px; }
+h2 { font-size: 15px; margin: 0 0 14px; color: var(--navy); }
+
+.card {
+  border: 1px solid var(--line); border-radius: 10px;
+  padding: 18px; margin-bottom: 18px; background: #fff;
+}
+label { display: block; font-size: 13px; color: var(--grey); margin-bottom: 12px; }
+label.inline { display: inline-flex; align-items: center; gap: 6px; margin-right: 22px; }
+input, select {
+  display: block; width: 100%; margin-top: 4px; padding: 7px 9px;
+  border: 1px solid var(--line); border-radius: 6px; font-size: 14px; color: var(--navy);
+}
+label.inline input { display: inline; width: auto; margin: 0; }
+.hint { font-size: 11px; color: var(--grey); }
+.grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 0 18px; }
+.toggles { margin: 6px 0 16px; }
+
+.actions { display: flex; gap: 12px; margin-top: 8px; }
+button {
+  padding: 9px 18px; border: 1px solid var(--line); border-radius: 7px;
+  background: #fff; color: var(--navy); font-size: 14px; cursor: pointer;
+}
+button.primary { background: var(--blue); color: #fff; border-color: var(--blue); }
+button:disabled { opacity: .5; cursor: not-allowed; }
+.error { color: var(--red); font-size: 13px; min-height: 1em; }
+
+.metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; }
+.metric { border: 1px solid var(--line); border-radius: 8px; padding: 12px; background: var(--panel); }
+.metric .k { font-size: 11px; text-transform: uppercase; letter-spacing: .4px; color: var(--grey); }
+.metric .v { font-size: 22px; font-weight: 700; margin-top: 4px; }
+
+.chart { width: 100%; min-height: 360px; }
+.hidden { display: none; }
+footer { text-align: center; color: var(--grey); font-size: 12px; padding: 24px; }
+.muted { color: var(--grey); }
+
+@media (max-width: 720px) { .grid2 { grid-template-columns: 1fr; } }
