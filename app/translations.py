@@ -115,8 +115,8 @@ _STRINGS: dict[str, tuple[str, str]] = {
     "irr_dist_subheader":        ("IRR Distribution — All Simulated Paths",
                                   "Distribución de TIR — Todas las Trayectorias Simuladas"),
     "knock_in_info":             (
-        "**{pct:.1%}** of paths breach the {barrier:.0%} knock-in barrier at maturity (worst-of below the barrier).",
-        "**{pct:.1%}** de las trayectorias tocan la barrera knock-in del {barrier:.0%} al vencimiento (worst-of bajo la barrera).",
+        "**{pct:.1%}** of paths knock in at maturity — worst-of below the {barrier:.0%} barrier and not rescued by the final redemption clause.",
+        "**{pct:.1%}** de las trayectorias hacen knock-in al vencimiento — worst-of bajo la barrera del {barrier:.0%} y no rescatadas por la condición de redención final.",
     ),
 
     # ── MC tab2 — price paths ──────────────────────────────────────────────
@@ -624,20 +624,24 @@ _STRINGS: dict[str, tuple[str, str]] = {
         "observaciones tempranas.",
     ),
     "mc_help_prob_knock_in":    (
-        "Probability that the knock-in barrier is breached at maturity (the "
-        "worst-of finishes below the knock-in level). This counts the knock-in "
-        "event itself, whether or not a best-of rescue clause later returns par.",
-        "Probabilidad de que la barrera de knock-in se toque al vencimiento (el "
-        "worst-of termina bajo el nivel de knock-in). Cuenta el evento de knock-in, "
-        "se rescate o no luego a la par por una cláusula best-of.",
+        "Probability of a capital-costing knock-in at maturity: the worst-of "
+        "finishes below the knock-in barrier AND the path is not rescued by the "
+        "final (best-of) redemption clause. Rescued breaches redeem at par and "
+        "are NOT counted. For worst-of notes (no rescue) this is just the "
+        "barrier-breach rate.",
+        "Probabilidad de un knock-in con pérdida de capital al vencimiento: el "
+        "worst-of termina bajo la barrera de knock-in Y la trayectoria no es "
+        "rescatada por la condición de redención final (best-of). Las trayectorias "
+        "rescatadas redimen a la par y NO se cuentan. En notas worst-of (sin "
+        "rescate) equivale a la tasa de toque de barrera.",
     ),
     "mc_help_loss_given_ki":     (
-        "Mean annualised return (IRR) across the paths that breach the knock-in "
-        "barrier at maturity — the average outcome conditional on a knock-in. "
-        "Shows '—' if no path knocks in.",
-        "Retorno anualizado medio (TIR) en las trayectorias que tocan la barrera de "
-        "knock-in al vencimiento — el resultado promedio condicionado a un knock-in. "
-        "Muestra '—' si ninguna trayectoria toca el knock-in.",
+        "Mean annualised return (IRR) across the knock-in paths — those that "
+        "breach the barrier at maturity and are not rescued. The average outcome "
+        "when capital is actually lost. Shows '—' if no path knocks in.",
+        "Retorno anualizado medio (TIR) en las trayectorias con knock-in — las que "
+        "tocan la barrera al vencimiento y no son rescatadas. El resultado promedio "
+        "cuando sí se pierde capital. Muestra '—' si ninguna hace knock-in.",
     ),
     "mc_help_principal":        (
         "Principal returned on this path as a fraction of par: 100% if "

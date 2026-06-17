@@ -2089,9 +2089,10 @@ def generate_pdf_report(
     _sec = _lazy_section(_t("mc_subtab_payoff", lang), min_room=150.0)
     if _inc("mc_metrics"):
         _sec()
-        # Knock-in metrics: probability the knock-in barrier is breached at
-        # maturity, and the mean IRR conditional on that knock-in.
-        _p_ki = results.get("prob_barrier_event", results.get("prob_knock_in_total", 0))
+        # Knock-in metrics: probability of a capital-costing knock-in (barrier
+        # breached AND not rescued) and the mean IRR conditional on it. Rescued
+        # breaches are excluded — they redeem at par, so they aren't knock-ins.
+        _p_ki = results.get("prob_knock_in_total", 0)
         _lgki = results.get("loss_given_knock_in")
         _lgki_str = f"{_lgki:.2%}" if _lgki is not None and _lgki == _lgki else "—"  # nan-safe
         pdf.metric_band([

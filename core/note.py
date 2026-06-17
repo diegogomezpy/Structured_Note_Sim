@@ -769,11 +769,12 @@ def price_note(
     # baskets the two are identical; for best-of (BBVA) they differ.
     ki_total      = capital_loss & maturity_mask
     be_total      = barrier_event & maturity_mask   # barrier breached (incl. rescued paths)
-    # Loss given knock-in: mean annualised IRR over paths that breached the
-    # knock-in barrier at maturity (the 'knock-in' event), whether or not a
-    # rescue clause returned par. Distinct from the capital-loss conditional
-    # mean (which only averages the unrescued, loss-making paths).
-    lgki = float(annualized_irr[be_total].mean()) if be_total.any() else float("nan")
+    # A 'knock-in' here means a breach that ACTUALLY costs capital — barrier
+    # breached AND not rescued by the final (best-of) redemption clause. Paths
+    # rescued to par are NOT counted as knock-ins. (For worst-of notes there is
+    # no rescue, so this equals the raw barrier-breach rate.) Loss given knock-in
+    # is the mean annualised IRR over exactly those unrescued breach paths.
+    lgki = float(annualized_irr[ki_total].mean()) if ki_total.any() else float("nan")
 
     return {
         # Per-path arrays (for Streamlit plots)
@@ -782,7 +783,7 @@ def price_note(
         "principal_payoffs":    principal,
         "autocall_period":      autocall_period,
         "knock_in_triggered":   ki_total,
-        "knock_in_mask":        be_total,   # barrier breached at maturity (knock-in)
+        "knock_in_mask":        ki_total,   # breached AND not rescued (a real knock-in)
         "annualized_returns":   annualized_irr,
 
         # Legacy alias (app.py uses this key)
