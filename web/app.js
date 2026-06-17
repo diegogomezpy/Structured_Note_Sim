@@ -10,10 +10,10 @@ function defaultApiBase() {
   const saved = localStorage.getItem("apiBase");
   if (saved) return clean(saved);                           // user set it in the box
   if (window.API_BASE) return clean(window.API_BASE);       // committed config.js
-  if (location.protocol.startsWith("http") && location.hostname !== "localhost") {
-    return location.origin;           // assume API reverse-proxied on the same origin
+  if (["localhost", "127.0.0.1"].includes(location.hostname)) {
+    return "http://localhost:8000";                          // local dev
   }
-  return "http://localhost:8000";                            // local dev
+  return "";   // deployed but no backend configured yet — show a clear prompt
 }
 let API_BASE = defaultApiBase();
 
@@ -29,6 +29,11 @@ $("saveApi").addEventListener("click", () => {
 });
 
 async function pingApi() {
+  if (!API_BASE) {
+    $("apiStatus").textContent = "● no backend set";
+    $("apiStatus").style.color = "var(--red)";
+    return;
+  }
   try {
     const r = await fetch(`${API_BASE}/health`);
     $("apiStatus").textContent = r.ok ? "● connected" : "● error";
@@ -42,6 +47,11 @@ async function pingApi() {
 // ── Populate the underlying picker from /universe ─────────────────────────────
 async function loadUniverse() {
   const sel = $("tickers");
+  if (!API_BASE) {
+    showError("No backend configured. Set your API URL in the API panel (top-right), "
+            + "or commit it to web/config.js, then reload.");
+    return;
+  }
   try {
     const r = await fetch(`${API_BASE}/universe`);
     const { options } = await r.json();
