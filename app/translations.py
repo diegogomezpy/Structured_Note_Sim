@@ -73,11 +73,13 @@ _STRINGS: dict[str, tuple[str, str]] = {
     "col_period":                ("Period",                            "Período"),
     "col_time_y":                ("Time (Y)",                          "Tiempo (A)"),
     "col_autocall_eligible":     ("Autocall eligible",                 "Elegible autocall"),
-    "best_of_rescue_info":       (
-        "**Best-of capital rescue:** at maturity, capital is returned at par if the"
-        "best performer finishes ≥ {barrier:.0%} of initial, even if the knock-in barrier was breached.",
-        "**Rescate best-of de capital:** al vencimiento, el capital se devuelve a la par si el"
-        "mejor subyacente termina ≥ {barrier:.0%} del inicial, incluso si la barrera knock-in fue tocada.",
+    "one_star_info":             (
+        "**One Star ({barrier:.0%}):** a single underlying at or above {barrier:.0%} of initial "
+        "pays the coupon, triggers the autocall, and returns capital at par at maturity — "
+        "even if the worst performer is below its barrier or the knock-in was breached.",
+        "**One Star ({barrier:.0%}):** un único subyacente en o por encima del {barrier:.0%} del inicial "
+        "paga el cupón, dispara el autocall y devuelve el capital a la par al vencimiento — "
+        "incluso si el peor subyacente está por debajo de su barrera o se tocó el knock-in.",
     ),
 
     # ── MC tab — top-level ─────────────────────────────────────────────────
@@ -90,9 +92,9 @@ _STRINGS: dict[str, tuple[str, str]] = {
     "loss_given_ki_metric":      ("Loss given knock-in",               "Pérdida dado knock-in"),
     "barrier_rescued_caption":   (
         "Barrier breached on {barrier:.2%} of paths; {rescued:.2%} were rescued to par by the"
-        "final redemption condition ({basket} ≥ {level:.0%}).",
+        "One Star condition (best-of ≥ {level:.0%}).",
         "Barrera tocada en el {barrier:.2%} de trayectorias; {rescued:.2%} fueron rescatadas a la par por"
-        "la condición de redención final ({basket} ≥ {level:.0%}).",
+        "la condición One Star (mejor de ≥ {level:.0%}).",
     ),
     "autocall_by_period_expander": ("Autocall probability by period", "Probabilidad de autocall por período"),
     "col_eligible":              ("Eligible",                          "Elegible"),
@@ -352,25 +354,25 @@ _STRINGS: dict[str, tuple[str, str]] = {
     "setup_basket_types":       ("Performance Rule",                       "Regla de Rendimiento"),
     "setup_coupon_check":       ("Coupon barrier check",               "Comprobación de barrera de cupón"),
     "setup_autocall_check":     ("Autocall trigger check",             "Comprobación del disparador de autocall"),
-    "setup_rescue_toggle":      ("Best-of capital rescue at maturity", "Rescate de capital best-of al vencimiento"),
-    "setup_rescue_help":        (
-        "If ON: even when the knock-in barrier is breached, capital is "
-        "returned at 100% as long as the best-performing underlying "
-        "finishes at or above the rescue barrier (BBVA-style 'Barrier "
-        "and Knock-in' clause). If OFF: standard worst-of redemption — "
-        "a knock-in always results in delivery of the worst performer.",
-        "Si está activado: incluso si se toca la barrera de knock-in, el capital se "
-        "devuelve al 100% siempre que el subyacente de mejor rendimiento termine "
-        "en o por encima de la barrera de rescate (cláusula tipo BBVA 'Barrier and "
-        "Knock-in'). Si está desactivado: redención worst-of estándar — un knock-in "
-        "siempre resulta en la entrega del peor subyacente.",
+    "setup_one_star_toggle":    ("One Star feature",                   "Función One Star"),
+    "setup_one_star_help":      (
+        "If ON: a single underlying at or above the One Star level satisfies the "
+        "coupon, autocall AND final-redemption conditions on its own — capital is "
+        "returned at par even when the knock-in is breached (BNP-style 'One Star', "
+        "also covers the BBVA 'Barrier and Knock-in' rescue). If OFF: standard "
+        "worst-of behaviour throughout.",
+        "Si está activado: un único subyacente en o por encima del nivel One Star "
+        "satisface por sí solo las condiciones de cupón, autocall y redención final "
+        "— el capital se devuelve a la par incluso si se toca el knock-in (tipo BNP "
+        "'One Star', también cubre el rescate 'Barrier and Knock-in' de BBVA). Si "
+        "está desactivado: comportamiento worst-of estándar.",
     ),
-    "setup_rescue_barrier":     ("Rescue barrier (% of initial)",      "Barrera de rescate (% del inicial)"),
-    "setup_rescue_barrier_help":(
-        "Best performer must finish at or above this level for the "
-        "rescue to apply. Term sheets typically use 100%.",
-        "El mejor subyacente debe terminar en o por encima de este nivel para que "
-        "aplique el rescate. Los term sheets suelen usar 100%.",
+    "setup_one_star_level":     ("One Star level (% of initial)",      "Nivel One Star (% del inicial)"),
+    "setup_one_star_level_help":(
+        "Any single underlying at or above this level triggers the coupon, autocall "
+        "and par redemption. Term sheets typically use 100%.",
+        "Cualquier subyacente en o por encima de este nivel dispara el cupón, el "
+        "autocall y la redención a la par. Los term sheets suelen usar 100%.",
     ),
     "setup_advanced_expander":  ("Advanced — Growth / Classic Autocall (step-down barrier, premium at call)",
                                  "Avanzado — Autocall Growth / Clásico (barrera escalonada, prima al rescate)"),
@@ -464,7 +466,7 @@ _STRINGS: dict[str, tuple[str, str]] = {
                                  "Sin cupones. Al vencimiento paga lo mejor entre el rendimiento del subyacente o un piso garantizado, salvo que se haya tocado el knock-in."),
     "nt_capital_protected_desc":("No coupons. Redemption is the underlying performance clipped between a guaranteed capital floor and an upside cap.",
                                  "Sin cupones. El rescate es el rendimiento del subyacente acotado entre un piso de capital garantizado y un techo de subida."),
-    "nt_custom_desc":           ("All fields exposed — build any Phoenix-family structure (step-down, best-of rescue, guaranteed coupon, …).",
+    "nt_custom_desc":           ("All fields exposed — build any Phoenix-family structure (step-down, One Star, guaranteed coupon, …).",
                                  "Todos los campos visibles — construya cualquier estructura de la familia Phoenix (step-down, rescate best-of, cupón garantizado, …)."),
 
     # ── Setup section headers (regrouped form) ─────────────────────────────
@@ -790,7 +792,7 @@ _STRINGS: dict[str, tuple[str, str]] = {
     "live_help_ki_buffer":      (
         "How far the worst-of is above the knock-in barrier ({barrier:.0%}), "
         "in percentage-point terms. Positive = safe; negative = barrier already breached. "
-        "A breach at the final observation costs capital — unless a best-of rescue "
+        "A breach at the final observation costs capital — unless a One Star "
         "clause (if this note has one) still returns par.",
         "Cuánto está el worst-of por encima de la barrera de knock-in ({barrier:.0%}), "
         "en puntos porcentuales. Positivo = seguro; negativo = barrera ya cruzada. "

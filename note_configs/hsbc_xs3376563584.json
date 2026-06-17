@@ -1,5 +1,5 @@
 {
-  "name": "HSBC XS3376563584 \u2014 24M Monthly Phoenix",
+  "name": "HSBC XS3376563584 — 24M Monthly Phoenix",
   "issuer": "HSBC",
   "maturity": 2.0,
   "payment_freq": "monthly",
@@ -12,8 +12,7 @@
   "memory": true,
   "coupon_basket": "worst_of",
   "autocall_basket": "worst_of",
-  "final_basket": "worst_of",
-  "final_redemption_barrier": 1.0,
+  "one_star_level": null,
   "call_steepness": null,
   "autocall_step_down": 0.0,
   "autocall_floor": null,

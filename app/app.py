@@ -405,7 +405,7 @@ if st.session_state["page"] == "setup":
     _show_ki             = True
     _show_min_return     = True
     _show_capprot        = True
-    _show_rescue         = True
+    _show_one_star       = True
 
     basket_opts = ["worst_of", "best_of", "average"]
     _basket_label = {
@@ -433,8 +433,9 @@ if st.session_state["page"] == "setup":
     floor_pct        = round((_base_floor if _base_floor is not None else 0.0) * 100, 4)
     premium_at_call  = bool(getattr(base, "coupon_at_autocall_only", False))
     min_return_pct   = round(getattr(base, "min_return", 0.0) * 100, 4)
-    rescue_on        = (base.final_basket == "best_of")
-    rescue_bar_pct   = round(getattr(base, "final_redemption_barrier", 1.0) * 100, 4)
+    _base_one_star   = getattr(base, "one_star_level", None)
+    one_star_on      = _base_one_star is not None
+    one_star_pct     = round((_base_one_star if _base_one_star is not None else 1.0) * 100, 4)
     capital_guarantee = getattr(base, "capital_guarantee", None)
     upside_cap        = getattr(base, "upside_cap", None)
 
@@ -443,23 +444,23 @@ if st.session_state["page"] == "setup":
         coupon_pa_pct = 0.0; coupon_bar_pct = 0.0; memory = False
         autocall_bar_pct = 200.0; autocall_basket = "worst_of"; coupon_basket = "worst_of"
         step_down_pct = 0.0; floor_pct = 0.0; premium_at_call = False
-        capital_guarantee = None; upside_cap = None; rescue_on = False
+        capital_guarantee = None; upside_cap = None; one_star_on = False
     elif _is_capprot:
         # Standalone payoff: engine ignores coupon/autocall/KI entirely.
         coupon_pa_pct = 0.0; coupon_bar_pct = 0.0; memory = False
         autocall_bar_pct = 200.0; autocall_basket = "worst_of"; coupon_basket = "worst_of"
         ki_bar_pct = 0.0; min_return_pct = 0.0
         step_down_pct = 0.0; floor_pct = 0.0; premium_at_call = False
-        rescue_on = False
+        one_star_on = False
     elif _is_revconv:
         # Guaranteed coupon (barrier 0), no memory; standard worst-of redemption.
         coupon_bar_pct = 0.0; memory = False
         step_down_pct = 0.0; floor_pct = 0.0; premium_at_call = False
-        min_return_pct = 0.0; capital_guarantee = None; upside_cap = None; rescue_on = False
+        min_return_pct = 0.0; capital_guarantee = None; upside_cap = None; one_star_on = False
     elif _is_growth:
         # Premium paid only at autocall; coupon barrier/memory n/a.
         memory = False; premium_at_call = True
-        min_return_pct = 0.0; capital_guarantee = None; upside_cap = None; rescue_on = False
+        min_return_pct = 0.0; capital_guarantee = None; upside_cap = None; one_star_on = False
     elif _is_phoenix:
         step_down_pct = 0.0; floor_pct = 0.0; premium_at_call = False
         min_return_pct = 0.0; capital_guarantee = None; upside_cap = None
@@ -535,7 +536,7 @@ if st.session_state["page"] == "setup":
                                    help=tr("setup_memory_help"))
 
     # ── Protection / Barriers ─────────────────────────────────────────────
-    if _show_ki or _show_min_return or _show_capprot or _show_rescue:
+    if _show_ki or _show_min_return or _show_capprot or _show_one_star:
         st.subheader(tr("setup_barriers_header"))
         st.caption(tr("setup_barriers_caption"))
         if _show_ki:
@@ -588,23 +589,24 @@ if st.session_state["page"] == "setup":
             else:
                 capital_guarantee = None
                 upside_cap = None
-        if _show_rescue:
-            # Best-of capital rescue clause (e.g. BBVA XS3378405743 Final Payout
-            # xi): at maturity, capital is returned at par if the BEST performer
-            # is at or above the rescue barrier, even when the KI was breached.
-            rescue_on = st.toggle(
-                tr("setup_rescue_toggle"),
-                value=(base.final_basket == "best_of"),
-                help=tr("setup_rescue_help"),
+        if _show_one_star:
+            # One Star overlay (BNP-style, also covers the BBVA XS3378405743
+            # 'Barrier and Knock-in' rescue): a single underlying at or above the
+            # One Star level pays the coupon, triggers the autocall, and returns
+            # capital at par at maturity even when the KI was breached.
+            one_star_on = st.toggle(
+                tr("setup_one_star_toggle"),
+                value=one_star_on,
+                help=tr("setup_one_star_help"),
             )
-            if rescue_on:
-                rescue_bar_pct = st.number_input(
-                    tr("setup_rescue_barrier"), 50.0, 150.0,
-                    value=round(getattr(base, "final_redemption_barrier", 1.0) * 100, 4),
+            if one_star_on:
+                one_star_pct = st.number_input(
+                    tr("setup_one_star_level"), 50.0, 150.0,
+                    value=one_star_pct,
                     step=0.5, format="%.2f",
-                    help=tr("setup_rescue_barrier_help"),
+                    help=tr("setup_one_star_level_help"),
                 )
-    final_basket = "best_of" if rescue_on else "worst_of"
+    one_star_level = (one_star_pct / 100.0) if one_star_on else None
 
     # ── Autocall ──────────────────────────────────────────────────────────
     if _show_autocall:
@@ -795,8 +797,7 @@ if st.session_state["page"] == "setup":
                 memory                = memory,
                 coupon_basket         = coupon_basket,
                 autocall_basket       = autocall_basket,
-                final_basket          = final_basket,
-                final_redemption_barrier = rescue_bar_pct / 100.0,
+                one_star_level        = one_star_level,
                 call_steepness        = None,   # hard trigger (deterministic)
                 # Growth autocall fields (Growth / Custom templates).
                 autocall_step_down      = step_down_pct / 100.0,
@@ -984,8 +985,8 @@ elif st.session_state["page"] == "dashboard":
         c3.metric(tr("metric_coupon_barrier"), f"{terms.coupon_barrier:.0%}")
         c3.metric(tr("metric_autocall_barrier"), f"{terms.autocall_barrier:.0%}")
         c3.metric(tr("metric_ki_barrier"), f"{terms.knock_in_barrier:.0%}")
-        if terms.final_basket == "best_of":
-            st.info(tr("best_of_rescue_info", barrier=terms.final_redemption_barrier))
+        if terms.one_star_level is not None:
+            st.info(tr("one_star_info", barrier=terms.one_star_level))
         obs_df = pd.DataFrame({
             tr("col_period"): range(1, terms.n_obs + 1),
             tr("col_time_y"): [f"{t:.4g}" for t in terms.obs_times()],
@@ -1221,8 +1222,7 @@ elif st.session_state["page"] == "dashboard":
                     tr("barrier_rescued_caption",
                        barrier=R['prob_barrier_event'],
                        rescued=R['prob_rescued'],
-                       basket=terms.final_basket.replace('_', '-'),
-                       level=terms.final_redemption_barrier)
+                       level=terms.one_star_level or 1.0)
                 )
             _pdf_toggle("mc_metrics")
 

@@ -1,19 +1,18 @@
 {
-  "name": "Autocall — 12M Quarterly (DELL/IBM/MSFT)",
-  "issuer": "",
+  "name": "Bank Julius Baer PR00529635 — 12M Quarterly Phoenix (DELL/IBM/MSFT)",
+  "issuer": "Bank Julius Baer",
   "maturity": 1.0,
   "payment_freq": "quarterly",
-  "coupon_pa": 0.27,
+  "coupon_pa": 0.28,
   "coupon_barrier": 0.5,
   "autocall_barrier": 1.0,
   "autocall_start_period": 1,
-  "knock_in_barrier": 0.50,
+  "knock_in_barrier": 0.5,
   "principal_protection": 1.0,
-  "memory": false,
+  "memory": true,
   "coupon_basket": "worst_of",
   "autocall_basket": "worst_of",
-  "final_basket": "best_of",
-  "final_redemption_barrier": 1.0,
+  "one_star_level": null,
   "call_steepness": null,
   "autocall_step_down": 0.0,
   "autocall_floor": null,
@@ -22,5 +21,6 @@
     "DELL": "Dell Technologies Inc",
     "IBM": "International Business Machines",
     "MSFT": "Microsoft Corp"
-  }
+  },
+  "issue_date": "2026-06-17"
 }

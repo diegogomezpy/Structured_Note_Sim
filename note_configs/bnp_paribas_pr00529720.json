@@ -1,9 +1,9 @@
 {
-  "name": "BBVA XS3378405743 — 18M Quarterly Phoenix",
-  "issuer": "BBVA",
-  "maturity": 1.5,
+  "name": "BNP Paribas PR00529720 — 12M Quarterly Phoenix One Star (DELL/IBM/MSFT)",
+  "issuer": "BNP Paribas",
+  "maturity": 1.0,
   "payment_freq": "quarterly",
-  "coupon_pa": 0.15,
+  "coupon_pa": 0.16,
   "coupon_barrier": 0.5,
   "autocall_barrier": 1.0,
   "autocall_start_period": 1,
@@ -18,9 +18,9 @@
   "autocall_floor": null,
   "coupon_at_autocall_only": false,
   "tickers": {
-    "NVDA": "NVIDIA",
-    "PLTR": "Palantir",
-    "TSLA": "Tesla"
+    "DELL": "Dell Technologies Inc",
+    "IBM": "International Business Machines",
+    "MSFT": "Microsoft Corp"
   },
-  "issue_date": "2026-06-09"
+  "issue_date": "2026-06-17"
 }

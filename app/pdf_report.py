@@ -204,8 +204,8 @@ _LABELS: dict[str, dict[str, str]] = {
     "memory":                {"en": "Memory coupon",                     "es": "Cupón con memoria"},
     "coupon_basket":         {"en": "Coupon rule",                       "es": "Regla del cupón"},
     "autocall_basket":       {"en": "Autocall rule",                     "es": "Regla del autocall"},
-    "final_basket":          {"en": "Final redemption rule",             "es": "Regla de redención final"},
-    "rescue_barrier":        {"en": "Final redemption barrier",          "es": "Barrera de redención final"},
+    "one_star":              {"en": "One Star feature",                  "es": "Función One Star"},
+    "one_star_level":        {"en": "One Star level",                    "es": "Nivel One Star"},
     "ac_step_down":          {"en": "Autocall step-down / period",       "es": "Reducción de barrera / período"},
     "ac_floor":              {"en": "Autocall barrier floor",            "es": "Suelo de barrera autocall"},
     "premium_at_call":       {"en": "Premium paid only at autocall",     "es": "Prima pagada solo al autocall"},
@@ -362,11 +362,11 @@ _GLOSSARY: dict[str, list[tuple[str, str]]] = {
         ("Coupon barrier", "The performance level at or above which a coupon is paid on an observation date. A barrier of 0% means the coupon is guaranteed."),
         ("Memory coupon", "Coupons missed because the barrier was not met accumulate and are paid in full on the next date the barrier is met."),
         ("Knock-in barrier", "A downside level which, if breached, removes capital protection. European knock-in means it is observed only at maturity."),
-        ("Knock-in", "The event of the knock-in barrier being breached. For a note with a rescue clause this does not by itself cause a loss."),
-        ("Capital loss", "Redemption below par: the knock-in barrier was breached AND the final-redemption (rescue) condition was not met."),
+        ("Knock-in", "The event of the knock-in barrier being breached. For a note with a One Star clause this does not by itself cause a loss."),
+        ("Capital loss", "Redemption below par: the knock-in barrier was breached AND the One Star condition was not met."),
         ("Worst-of", "The payoff references the weakest-performing underlying on each observation date, rather than an average of the basket."),
         ("Phoenix", "An autocallable paying conditional (often memory) coupons above a coupon barrier, with capital at risk below a knock-in barrier."),
-        ("Final redemption / best-of rescue", "A clause that redeems the note at par if the best performer finishes at or above a set level, even when the knock-in was breached."),
+        ("One Star", "A clause whereby a single underlying at or above a set level satisfies the coupon, autocall and par-redemption conditions on its own, even when the worst performer breached its barrier."),
         ("Strike / initial fixing", "The reference price of each underlying at issue, set to 100%; all performance levels are measured against it."),
         ("IRR (simple, p.a.)", "Annualised return on a path, computed as total return divided by time held — the convention used to quote note coupons."),
         ("Heston model", "A stochastic-volatility model in which variance itself follows a mean-reverting random process; used here to simulate the underlyings."),
@@ -1541,9 +1541,9 @@ def _term_rows(terms, lang: str) -> list[tuple[str, str]]:
         (_t("ki_barrier",       lang), f"{terms.knock_in_barrier:.1%}"),
         (_t("coupon_basket",    lang), terms.coupon_basket.replace("_", "-")),
         (_t("autocall_basket",  lang), terms.autocall_basket.replace("_", "-")),
-        (_t("final_basket",     lang), f"{terms.final_basket.replace('_', '-')}"
-                                       + (f"  ({_t('rescue_barrier', lang)} {terms.final_redemption_barrier:.0%})"
-                                          if terms.final_basket == "best_of" else "")),
+        (_t("one_star",         lang), (f"{_t('one_star_level', lang)} {terms.one_star_level:.0%}"
+                                          if terms.one_star_level is not None
+                                          else ("Off" if lang == "en" else "Desactivado"))),
     ]
     if getattr(terms, "autocall_step_down", 0.0):
         rows.append((_t("ac_step_down", lang), f"{terms.autocall_step_down:.1%}"))
