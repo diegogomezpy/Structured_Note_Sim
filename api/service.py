@@ -12,11 +12,20 @@ the request parameters — the API equivalent of app.py's @st.cache_data.
 from __future__ import annotations
 
 import functools
+import os
 import sys
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
+
+# ── Resource limits (env-overridable) ─────────────────────────────────────────
+# Each cached result holds the full simulated price array, so the cache is the
+# main memory risk on a small instance — keep it tiny. n_paths is capped because
+# peak memory scales with paths × steps × assets (antithetic doubles the input).
+# Tune up on a larger host: SNSIM_MAX_PATHS, SNSIM_CACHE_SIZE.
+_MAX_PATHS  = int(os.environ.get("SNSIM_MAX_PATHS", "8000"))
+_CACHE_SIZE = int(os.environ.get("SNSIM_CACHE_SIZE", "3"))
 
 # Make the repo root AND the app/ dir importable. app/charts.py and
 # app/pdf_report.py use bare imports (`from translations import ...`), exactly
@@ -45,7 +54,7 @@ from underlyings import TICKER_LOGOS, _LOGO_BASE             # noqa: E402
 # ──────────────────────────────────────────────────────────────────────────────
 # Heavy pipeline (cached): calibrate → simulate → price_note
 # ──────────────────────────────────────────────────────────────────────────────
-@functools.lru_cache(maxsize=64)
+@functools.lru_cache(maxsize=_CACHE_SIZE)
 def run_simulation(terms_json: str, n_paths: int, seed: int,
                    calib_years: float, history_years: float | None) -> dict:
     """Full Monte Carlo pipeline for one note. Cached on the exact arguments so
@@ -162,7 +171,8 @@ def _terms_json(terms_dict: dict) -> str:
 def simulate(req) -> dict:
     """Run the pipeline and return JSON-safe metrics + Plotly figure JSON."""
     tj = _terms_json(req.terms)
-    R  = run_simulation(tj, req.n_paths, req.seed, req.calib_years, req.history_years)
+    n_paths = min(req.n_paths, _MAX_PATHS)
+    R  = run_simulation(tj, n_paths, req.seed, req.calib_years, req.history_years)
     figs = build_mc_figures(R, req.lang)
 
     figures_json = {
@@ -188,7 +198,8 @@ def simulate(req) -> dict:
 def build_pdf(req) -> bytes:
     """Render the branded PDF, reusing app/pdf_report.py unchanged."""
     tj = _terms_json(req.terms)
-    R  = run_simulation(tj, req.n_paths, req.seed, req.calib_years, req.history_years)
+    n_paths = min(req.n_paths, _MAX_PATHS)
+    R  = run_simulation(tj, n_paths, req.seed, req.calib_years, req.history_years)
     figs = build_mc_figures(R, req.lang)
     terms = R["terms"]
 
@@ -208,7 +219,7 @@ def build_pdf(req) -> bytes:
 # ──────────────────────────────────────────────────────────────────────────────
 # Historical backtest
 # ──────────────────────────────────────────────────────────────────────────────
-@functools.lru_cache(maxsize=32)
+@functools.lru_cache(maxsize=_CACHE_SIZE)
 def _run_backtest(terms_json: str, bt_start: str | None, bt_end: str | None,
                   history_years: float | None):
     terms = NoteTerms.from_json(terms_json)

@@ -33,9 +33,20 @@ that inject `$PORT` (Render/Railway/Fly) are handled by the `CMD`.
 `render.yaml` defines the service. New → Blueprint → this repo; then set
 `ALLOWED_ORIGINS` in the dashboard to your GitHub Pages origin.
 
-## Config
+## Config (env vars)
 - **`ALLOWED_ORIGINS`** — comma-separated CORS origins. Defaults to `*` (dev).
   Set to your Pages origin in production.
+- **`SNSIM_MAX_PATHS`** (default `8000`) — hard cap on `n_paths`; requests above
+  it are clamped. Peak memory ≈ paths × steps × assets (antithetic doubles the
+  input), so keep low on small instances; raise on a bigger host.
+- **`SNSIM_CACHE_SIZE`** (default `3`) — how many full simulation/backtest
+  results are memoised. Each holds large arrays — the main memory driver.
+- **`SNSIM_MAX_CONCURRENCY`** (default `1`) — how many heavy requests run at
+  once; excess get a quick `503` + `Retry-After` instead of piling up.
+
+Rough sizing: defaults (8k paths, cache 3, concurrency 1) target a ~512 MB
+free tier. On a 2 GB instance, `SNSIM_MAX_PATHS=20000`, `SNSIM_CACHE_SIZE=8`,
+`SNSIM_MAX_CONCURRENCY=2` is comfortable.
 
 ## Notes
 - The heavy calibrate+simulate step is memoised (`lru_cache`) per request signature.

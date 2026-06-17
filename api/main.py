@@ -19,8 +19,9 @@ from __future__ import annotations
 
 import os
 import re
+import threading
 
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
 
@@ -36,6 +37,25 @@ app.add_middleware(
     allow_methods=["GET", "POST"],
     allow_headers=["*"],
 )
+
+
+# ── Concurrency guard ─────────────────────────────────────────────────────────
+# The heavy endpoints (calibration + Monte Carlo) are memory- and CPU-bound.
+# Bound how many run at once so a burst can't pile up and OOM a small instance;
+# excess requests get a quick 503 + Retry-After instead. Tune with
+# SNSIM_MAX_CONCURRENCY.
+_MAX_CONCURRENCY = int(os.environ.get("SNSIM_MAX_CONCURRENCY", "1"))
+_SEM = threading.BoundedSemaphore(_MAX_CONCURRENCY)
+
+
+def _slot():
+    if not _SEM.acquire(timeout=2.0):
+        raise HTTPException(status_code=503, detail="Server busy — retry shortly.",
+                            headers={"Retry-After": "5"})
+    try:
+        yield
+    finally:
+        _SEM.release()
 
 
 @app.get("/health")
@@ -61,22 +81,22 @@ def universe() -> dict:
 
 
 @app.post("/simulate")
-def simulate(req: SimRequest) -> dict:
+def simulate(req: SimRequest, _=Depends(_slot)) -> dict:
     return service.simulate(req)
 
 
 @app.post("/backtest")
-def backtest(req: BacktestRequest) -> dict:
+def backtest(req: BacktestRequest, _=Depends(_slot)) -> dict:
     return service.backtest(req)
 
 
 @app.post("/live")
-def live(req: LiveRequest) -> dict:
+def live(req: LiveRequest, _=Depends(_slot)) -> dict:
     return service.live(req)
 
 
 @app.post("/pdf")
-def pdf(req: PdfRequest) -> Response:
+def pdf(req: PdfRequest, _=Depends(_slot)) -> Response:
     data = service.build_pdf(req)
     # Content-Disposition is latin-1 only — the note name may contain an em-dash,
     # slashes, etc. Reduce to a safe ASCII filename.
