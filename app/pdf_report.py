@@ -750,19 +750,23 @@ class _NotePDF(FPDF):
         self.section_title(text)
 
     def section_title(self, text: str):
-        """SemiBold 11pt section header with thin rule below in section_rule_color."""
+        """Green section title text + thick chartreuse filled-rect band below (CADIEM style).
+
+        The band is a filled rectangle in section_rule_color, ~10.3mm tall, spanning
+        the full usable width. No drawn lines anywhere — pure filled rects only.
+        """
         if self.get_y() > self.h - 60:
             self.add_page()
-        self.ln(4)                          # breathing room above
-        self._sf(11, "semibold")
+        self.ln(4)
+        self._sf(13, "semibold")           # slightly larger than the old 11pt — factsheet titles are ~13pt
         self.set_text_color(*self.primary_color)
-        self.cell(0, 7, text, new_x="LMARGIN", new_y="NEXT")
-        # Rule in section_rule_color (not primary_color)
-        self.set_draw_color(*self.section_rule_color)
-        self.set_line_width(0.5)            # slightly thicker than the 0.3 default to match the factsheet
-        self.line(self.l_margin, self.get_y(), self.w - self.r_margin, self.get_y())
+        self.cell(0, 8, text, new_x="LMARGIN", new_y="NEXT")
+        # Thick filled band in section_rule_color (chartreuse #D1D62D for CADIEM)
+        band_h = 10.3   # mm — matches the 29.1pt band extracted from the reference PDF
+        self.set_fill_color(*self.section_rule_color)
+        self.rect(self.l_margin, self.get_y(), self.w - self.l_margin - self.r_margin, band_h, style="F")
+        self.ln(band_h + 4)
         self.set_text_color(*_TEXT)
-        self.ln(3)
 
     def subsection(self, text: str):
         """SemiBold 9pt sub-header with rule below."""
@@ -772,9 +776,6 @@ class _NotePDF(FPDF):
         self._sf(9, "semibold")
         self.set_text_color(*_TEXT)
         self.cell(0, 6, text.upper(), new_x="LMARGIN", new_y="NEXT")
-        self.set_draw_color(*_RULE_LIGHT)
-        self.set_line_width(0.2)
-        self.line(self.l_margin, self.get_y(), self.w - self.r_margin, self.get_y())
         self.set_text_color(*_TEXT)
         self.ln(2)
 
@@ -805,16 +806,12 @@ class _NotePDF(FPDF):
             # Light zebra on alternating rows — subtle background
             if row_idx % 2 == 0:
                 self.set_fill_color(*_ROW_ALT)
-                self.rect(self.l_margin, y0, col_w[0] + col_w[1], 6.4, style="F")
+                self.rect(self.l_margin, y0, col_w[0] + col_w[1], 8.5, style="F")
             self._sf(8.5, "semibold")
             self.set_text_color(*_TEXT)
-            self.cell(col_w[0], 6.4, k)
+            self.cell(col_w[0], 8.5, k)
             self._sf(8.5, "regular")
-            self.cell(col_w[1], 6.4, v, new_x="LMARGIN", new_y="NEXT")
-            self.set_draw_color(*_RULE_LIGHT)
-            self.set_line_width(0.15)
-            self.line(self.l_margin, self.get_y(),
-                      self.l_margin + col_w[0] + col_w[1], self.get_y())
+            self.cell(col_w[1], 8.5, v, new_x="LMARGIN", new_y="NEXT")
         self.ln(3)
 
     def data_table(self, headers: list[str], rows: list[list[str]],
@@ -833,20 +830,15 @@ class _NotePDF(FPDF):
             self.set_text_color(*_WHITE)
             self._sf(7.5, "semibold")
             for h, w, a in zip(headers, col_widths, aligns):
-                self.cell(w, 7, f" {h} ", border=0, fill=True, align=a)
+                self.cell(w, 9, f" {h} ", border=0, fill=True, align=a)
             self.ln()
-            # Thin separator between header and data
-            self.set_draw_color(*self.accent_color)
-            self.set_line_width(0.25)
-            self.line(self.l_margin, self.get_y(),
-                      self.l_margin + sum(col_widths), self.get_y())
             self.set_text_color(*_TEXT)
             self._sf(8, "regular")
 
         # Keep the whole table together when it can fit on one page: if the
         # header + all rows won't fit in the space left but WOULD fit on a fresh
         # page, break first instead of splitting a short table across pages.
-        _needed   = 7 + len(rows) * 6 + 6
+        _needed   = 9 + len(rows) * 8 + 6
         _avail    = self.h - 30 - self.get_y()
         _page_cap = self.h - 30 - 21   # usable height below the running header
         if _needed > _avail and _needed <= _page_cap:
@@ -862,14 +854,8 @@ class _NotePDF(FPDF):
             fill_color = _ROW_ALT if i % 2 == 0 else _WHITE
             self.set_fill_color(*fill_color)
             for cell_val, w, a in zip(row, col_widths, aligns):
-                self.cell(w, 6, f" {cell_val} ", border=0, fill=True, align=a)
+                self.cell(w, 8, f" {cell_val} ", border=0, fill=True, align=a)
             self.ln()
-
-        # Bottom rule
-        self.set_draw_color(*_HAIRLINE)
-        self.set_line_width(0.2)
-        self.line(self.l_margin, self.get_y(),
-                  self.l_margin + sum(col_widths), self.get_y())
 
     def logo_row_table(self, headers: list[str], rows: list[list[str]],
                        logos: dict, col_widths: list[float] | None = None,
@@ -884,24 +870,20 @@ class _NotePDF(FPDF):
         if aligns is None:
             aligns = ["L"] + ["R"] * (n - 1)
         LW = LH = 6.0
-        ROW_H = 8.0
+        ROW_H = 10.0
 
         def _header_row():
             self.set_fill_color(*self.accent_color)
             self.set_text_color(*_WHITE)
             self._sf(7.5, "semibold")
             for h, w, a in zip(headers, col_widths, aligns):
-                self.cell(w, 7, f" {h} ", border=0, fill=True, align=a)
+                self.cell(w, 9, f" {h} ", border=0, fill=True, align=a)
             self.ln()
-            self.set_draw_color(*self.accent_color)
-            self.set_line_width(0.25)
-            self.line(self.l_margin, self.get_y(),
-                      self.l_margin + sum(col_widths), self.get_y())
             self.set_text_color(*_TEXT)
             self._sf(8, "regular")
 
         # Keep the whole table together when it fits on one page (see data_table).
-        _needed   = 7 + len(rows) * ROW_H + 6
+        _needed   = 9 + len(rows) * ROW_H + 6
         _avail    = self.h - 30 - self.get_y()
         _page_cap = self.h - 30 - 21
         if _needed > _avail and _needed <= _page_cap:
@@ -942,10 +924,6 @@ class _NotePDF(FPDF):
                 self.cell(w, ROW_H, f" {cell_val} ", border=0, fill=True, align=a)
             self.set_y(row_y + ROW_H)
 
-        self.set_draw_color(*_HAIRLINE)
-        self.set_line_width(0.2)
-        self.line(self.l_margin, self.get_y(),
-                  self.l_margin + sum(col_widths), self.get_y())
         self.ln(4)
 
     def metric_band(self, metrics: list[tuple[str, str]]):
@@ -980,9 +958,6 @@ class _NotePDF(FPDF):
             x += w
 
         self.set_y(y0 + 18)
-        self.set_draw_color(*_RULE_LIGHT)
-        self.set_line_width(0.2)
-        self.line(self.l_margin, self.get_y(), self.w - self.r_margin, self.get_y())
         self.set_text_color(*_TEXT)
         self.ln(4)
 
