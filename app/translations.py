@@ -790,12 +790,12 @@ _STRINGS: dict[str, tuple[str, str]] = {
     "live_help_ki_buffer":      (
         "How far the worst-of is above the knock-in barrier ({barrier:.0%}), "
         "in percentage-point terms. Positive = safe; negative = barrier already breached. "
-        "The note loses principal protection if the worst-of closes below the KI barrier "
-        "on the final observation date.",
+        "A breach at the final observation costs capital — unless a best-of rescue "
+        "clause (if this note has one) still returns par.",
         "Cuánto está el worst-of por encima de la barrera de knock-in ({barrier:.0%}), "
         "en puntos porcentuales. Positivo = seguro; negativo = barrera ya cruzada. "
-        "La nota pierde protección del capital si el worst-of cierra por debajo de la "
-        "barrera KI en la fecha de observación final.",
+        "Un cruce en la observación final cuesta capital — salvo que una cláusula de "
+        "rescate best-of (si la nota la tiene) devuelva la par.",
     ),
     "live_help_ac_buffer":      (
         "How far the worst-of is above the autocall barrier ({barrier:.0%}), "
