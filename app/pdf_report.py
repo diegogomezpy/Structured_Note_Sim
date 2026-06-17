@@ -75,12 +75,12 @@ _IBM_BOLDITALIC  = _FONT_DIR / "IBMPlexSans-BoldItalic.ttf"
 # ──────────────────────────────────────────────────────────────────────────────
 _DEFAULT_PRIMARY  = (26,  46, 74)   # deep navy  #1a2e4a
 _DEFAULT_ACCENT   = (37,  99, 235)  # mid-blue   #2563eb
-_TEXT             = (33,  33, 33)   # near-black
+_TEXT             = (43,  61, 79)   # dark navy-slate #2B3D4F  (was near-black #212121)
 _TEXT_SOFT        = (107, 114, 128) # warm grey  #6b7280
 _HAIRLINE         = (203, 213, 225) # cool grey  #cbd5e1
 _RULE_LIGHT       = (226, 232, 240) # slate-100  #e2e8f0
-_PANEL            = (241, 245, 249) # slate-100  #f1f5f9
-_ROW_ALT          = (248, 250, 252) # slate-50   #f8fafc — zebra rows
+_PANEL            = (231, 245, 232) # light green tint #E7F5E8  (was slate-100 #f1f5f9)
+_ROW_ALT          = (245, 246, 250) # slate-50   #F5F6FA — zebra rows
 _WHITE            = (255, 255, 255)
 _COVER_BAND_H     = 38              # mm — height of the top cover band
 _DEFAULT_SECONDARY = (198, 148, 38) # warm institutional gold #C69426 — 2nd chart category
@@ -92,8 +92,10 @@ _KNOWN_BRANDING_KEYS = {
     "firm_name", "primary_color", "accent_color", "chart_secondary_color",
     "logo_file", "logo_base64", "logo_url",
     "report_title", "website", "contact", "footer_note",
+    "section_rule_color",   # NEW — color of the rule drawn under section titles
+    "disclaimer_body",      # NEW — overrides the full disclaimer body text
 }
-_HEX_KEYS = ("primary_color", "accent_color", "chart_secondary_color")
+_HEX_KEYS = ("primary_color", "accent_color", "chart_secondary_color", "section_rule_color")
 
 
 def _hex_to_rgb(hex_str: str) -> tuple[int, int, int]:
@@ -142,17 +144,20 @@ def _branding_color(branding: dict | None, key: str,
 
 
 def _resolve_palette(branding: dict | None) -> tuple[
-    tuple[int, int, int], tuple[int, int, int], tuple[int, int, int], str
+    tuple[int, int, int], tuple[int, int, int],
+    tuple[int, int, int], tuple[int, int, int], str
 ]:
-    """Return (primary, accent, secondary, firm_name) from the branding dict.
-    Malformed hex values fall back to defaults with a warning; never raises."""
+    """Return (primary, accent, secondary, section_rule, firm_name) from the
+    branding dict. Malformed hex values fall back to defaults with a warning;
+    never raises. section_rule defaults to the accent colour when absent."""
     if not branding:
-        return _DEFAULT_PRIMARY, _DEFAULT_ACCENT, _DEFAULT_SECONDARY, "Structured Note Analytics"
-    primary   = _branding_color(branding, "primary_color",         _DEFAULT_PRIMARY)
-    accent    = _branding_color(branding, "accent_color",          _DEFAULT_ACCENT)
-    secondary = _branding_color(branding, "chart_secondary_color", _DEFAULT_SECONDARY)
-    firm      = branding.get("firm_name", "Structured Note Analytics") or "Structured Note Analytics"
-    return primary, accent, secondary, firm
+        return _DEFAULT_PRIMARY, _DEFAULT_ACCENT, _DEFAULT_SECONDARY, _DEFAULT_ACCENT, "Structured Note Analytics"
+    primary      = _branding_color(branding, "primary_color",         _DEFAULT_PRIMARY)
+    accent       = _branding_color(branding, "accent_color",          _DEFAULT_ACCENT)
+    secondary    = _branding_color(branding, "chart_secondary_color", _DEFAULT_SECONDARY)
+    section_rule = _branding_color(branding, "section_rule_color",    accent)
+    firm         = branding.get("firm_name", "Structured Note Analytics") or "Structured Note Analytics"
+    return primary, accent, secondary, section_rule, firm
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -528,13 +533,15 @@ class _NotePDF(FPDF):
                  firm_logo_bytes: bytes | None = None,
                  report_title: str | None = None,
                  website: str = "", contact: str = "",
-                 footer_note: str | None = None):
+                 footer_note: str | None = None,
+                 section_rule_color: tuple = _DEFAULT_ACCENT):
         super().__init__(orientation="P", unit="mm", format="A4")
         self.lang          = lang
         self.issuer        = issuer
         self.doc_ref       = doc_ref
         self.primary_color = primary_color
         self.accent_color  = accent_color
+        self.section_rule_color = section_rule_color
         self.firm_name     = firm_name
         self.firm_logo_bytes = firm_logo_bytes
         # Optional branding content (B5). report_title overrides the default
@@ -743,16 +750,16 @@ class _NotePDF(FPDF):
         self.section_title(text)
 
     def section_title(self, text: str):
-        """SemiBold 11pt section header with micro-space above and thin rule below."""
+        """SemiBold 11pt section header with thin rule below in section_rule_color."""
         if self.get_y() > self.h - 60:
             self.add_page()
         self.ln(4)                          # breathing room above
         self._sf(11, "semibold")
         self.set_text_color(*self.primary_color)
         self.cell(0, 7, text, new_x="LMARGIN", new_y="NEXT")
-        # Thin rule directly below
-        self.set_draw_color(*self.primary_color)
-        self.set_line_width(0.3)
+        # Rule in section_rule_color (not primary_color)
+        self.set_draw_color(*self.section_rule_color)
+        self.set_line_width(0.5)            # slightly thicker than the 0.3 default to match the factsheet
         self.line(self.l_margin, self.get_y(), self.w - self.r_margin, self.get_y())
         self.set_text_color(*_TEXT)
         self.ln(3)
@@ -822,7 +829,7 @@ class _NotePDF(FPDF):
             aligns = ["L"] + ["R"] * (n - 1)
 
         def _header_row():
-            self.set_fill_color(*self.primary_color)
+            self.set_fill_color(*self.accent_color)
             self.set_text_color(*_WHITE)
             self._sf(7.5, "semibold")
             for h, w, a in zip(headers, col_widths, aligns):
@@ -880,7 +887,7 @@ class _NotePDF(FPDF):
         ROW_H = 8.0
 
         def _header_row():
-            self.set_fill_color(*self.primary_color)
+            self.set_fill_color(*self.accent_color)
             self.set_text_color(*_WHITE)
             self._sf(7.5, "semibold")
             for h, w, a in zip(headers, col_widths, aligns):
@@ -2004,7 +2011,7 @@ def generate_pdf_report(
         return include_sections is None or key in include_sections
     # ── Resolve + validate branding ───────────────────────────────────
     _validate_branding(branding)
-    primary_color, accent_color, secondary_color, firm_name = _resolve_palette(branding)
+    primary_color, accent_color, secondary_color, section_rule_color, firm_name = _resolve_palette(branding)
     # Local-file-first: logo_file -> logo_base64 -> logo_url
     brand_logo_bytes = _load_logo(branding)
     # Optional content keys (B5)
@@ -2031,6 +2038,7 @@ def generate_pdf_report(
         website         = website,
         contact         = contact,
         footer_note     = footer_note,
+        section_rule_color = section_rule_color,   # NEW
     )
 
     # ── 1. Cover ───────────────────────────────────────────────────────────
@@ -2373,9 +2381,16 @@ def generate_pdf_report(
     # split awkwardly. Flowing it after the previous section avoids a near-empty
     # page before the disclaimer.
     pdf.start_section(_t("disclaimer_title", lang), min_room=90.0)
-    pdf._sf(7.5, "regular")
     pdf.set_text_color(*_TEXT_SOFT)
-    for para in _t("disclaimer_body", lang).split("\n\n"):
+    _disclaimer_text = (_b.get("disclaimer_body") or _t("disclaimer_body", lang))
+    _disclaimer_paras = _disclaimer_text.split("\n\n")
+    for idx, para in enumerate(_disclaimer_paras):
+        is_last = (idx == len(_disclaimer_paras) - 1)
+        if is_last:
+            # Last paragraph rendered in bold (e.g. CADIEM legal attribution)
+            pdf._sf(7.5, "bold")
+        else:
+            pdf._sf(7.5, "regular")
         pdf.multi_cell(0, 3.8, _safe(para))
         pdf.ln(2.5)
     pdf.set_text_color(*_TEXT)
