@@ -27,12 +27,14 @@ for _p in (str(_ROOT), str(_ROOT / "app")):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
-from core import NoteTerms, price_note                       # noqa: E402
+from core import NoteTerms, price_note, replay_note          # noqa: E402
 from core.calibrator import HestonCalibrator                 # noqa: E402
 from core.simulator import HestonMultiSimulator              # noqa: E402
+from core.backtest import run_backtest, snapped_obs_dates    # noqa: E402
 from data.loader import (                                    # noqa: E402
     load_prices, load_dividends, build_dividend_schedule,
 )
+import datetime as _dt                                       # noqa: E402
 
 import charts                                                # noqa: E402  (app/charts.py)
 import pdf_report                                            # noqa: E402  (app/pdf_report.py)
@@ -201,3 +203,203 @@ def build_pdf(req) -> bytes:
         logo_urls=logo_urls, logo_tickers=logo_tickers,
         branding=req.branding, include_sections=include,
     )
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Historical backtest
+# ──────────────────────────────────────────────────────────────────────────────
+@functools.lru_cache(maxsize=32)
+def _run_backtest(terms_json: str, bt_start: str | None, bt_end: str | None,
+                  history_years: float | None):
+    terms = NoteTerms.from_json(terms_json)
+    tickers_tuple = tuple(sorted(terms.tickers.items()))
+    prices = load_prices("yfinance", dict(tickers_tuple), years=history_years, field="close")
+    bt, summary = run_backtest(
+        prices, terms,
+        bt_start=pd.Timestamp(bt_start) if bt_start else None,
+        bt_end=pd.Timestamp(bt_end) if bt_end else None,
+    )
+    return bt, summary, prices
+
+
+def _bt_path_figure(prices, terms, issue_date: str, bt, tr):
+    """Historical worst-of path for one issue date (mirrors app.py's explorer)."""
+    anchor, obs_dates = snapped_obs_dates(prices, terms, pd.Timestamp(issue_date))
+    sched = (list(zip(obs_dates, terms.autocall_barrier_schedule()))
+             if terms.autocall_step_down else None)
+    issue_loc = prices.index.searchsorted(anchor)
+    s0 = prices.iloc[issue_loc].values.astype(float)
+    perf_obs = []
+    for d in obs_dates:
+        loc = prices.index.searchsorted(d)
+        if loc >= len(prices):
+            break
+        perf_obs.append(prices.iloc[loc].values.astype(float) / s0)
+    flags = ([r["coupon_amount"] > 0 for r in replay_note(np.array(perf_obs), terms)["rows"]]
+             if perf_obs else None)
+    row = bt[bt["Issue Date"] == pd.Timestamp(issue_date)]
+    call_q = int(row.iloc[0]["Call Quarter"]) if not row.empty else 0
+    return charts.build_historical_wof_path(
+        prices, issue_date=anchor, obs_dates=obs_dates,
+        knock_in_barrier=terms.knock_in_barrier, autocall_barrier=terms.autocall_barrier,
+        coupon_barrier=terms.coupon_barrier, call_quarter=call_q, tr=tr,
+        autocall_schedule=sched, coupon_at_autocall_only=terms.coupon_at_autocall_only,
+        coupon_flags=flags,
+    )
+
+
+def backtest(req) -> dict:
+    terms = NoteTerms.from_dict(req.terms)
+    tj = terms.to_json()
+    bt, summary, prices = _run_backtest(tj, req.bt_start, req.bt_end, req.history_years)
+    tr = Translator(req.lang)
+    if bt is None or bt.empty:
+        return {"summary": {}, "figures": {}, "issue_dates": [], "status": "no_results"}
+
+    # Outcome labels + colour map — identical to app.py so the legend/palette
+    # match (autocall blue gradient, maturity stark slate, knock-in red).
+    bt = bt.copy()
+    mat_lbl = tr("bt_outcome_maturity")
+    ki_lbl  = tr("bt_outcome_knock_in")
+    bt["Outcome"] = bt["Call Quarter"].map(
+        {0: mat_lbl, **{i: tr("bt_outcome_autocalled_p", i=i) for i in range(1, terms.n_obs + 1)}})
+    bt.loc[(bt["Call Quarter"] == 0) & bt["Knock-in"], "Outcome"] = ki_lbl
+    n_ac = max(terms.n_obs - 1, 1)
+    color_map = {
+        mat_lbl: "#334155", ki_lbl: "#dc2626",
+        **{tr("bt_outcome_autocalled_p", i=i): f"hsl(217,72%,{70 - ((i - 1) / n_ac) * 40:.0f}%)"
+           for i in range(1, terms.n_obs + 1)},
+    }
+
+    ki_rows = bt[bt["Knock-in"]]
+    summary = dict(summary)
+    if not ki_rows.empty:
+        summary["loss_given_ki"] = float(ki_rows["IRR"].mean())
+
+    figures = {
+        "outcome":     charts.build_backtest_outcome_bar(bt, color_map, tr).to_json(),
+        "irr_scatter": charts.build_backtest_irr_scatter(bt, color_map, tr).to_json(),
+        "pie":         charts.build_worst_asset_pie(bt, tr).to_json(),
+    }
+    try:
+        weekly = prices.resample("W-FRI").last().dropna()
+        figures["prices"] = charts.build_historical_prices(
+            weekly, bt["Issue Date"].min(), bt["Issue Date"].max(), tr).to_json()
+    except Exception:
+        pass
+    if req.issue_date:
+        figures["path"] = _bt_path_figure(prices, terms, req.issue_date, bt, tr).to_json()
+
+    issue_dates = [pd.Timestamp(d).date().isoformat() for d in sorted(bt["Issue Date"].unique())]
+    return {"summary": summary, "figures": figures, "issue_dates": issue_dates, "status": "ok"}
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Current performance (live tracking)
+# ──────────────────────────────────────────────────────────────────────────────
+def live(req) -> dict:
+    terms = NoteTerms.from_dict(req.terms)
+    if not terms.issue_date:
+        raise ValueError("terms.issue_date is required for /live.")
+    tr = Translator(req.lang)
+    names = list(terms.tickers.values())
+    obs_labels = [f"P{i+1}" for i in range(terms.n_obs)]
+    disp_to_sym = {disp: sym for sym, disp in terms.tickers.items()}
+
+    full = load_prices("yfinance", dict(tuple(sorted(terms.tickers.items()))), years=None, field="close")
+    issue_ts = pd.Timestamp(terms.issue_date)
+    today    = pd.Timestamp(_dt.date.today())
+    mat_ts   = issue_ts + pd.DateOffset(months=round(terms.maturity * 12))
+    if today < issue_ts:
+        return {"status": "not_started", "issue_date": terms.issue_date}
+
+    elapsed_years = (today - issue_ts).days / 365.25
+    i0 = min(int(full.index.searchsorted(issue_ts)), len(full) - 1)
+    anchor = full.index[i0]
+    live_prices = full.iloc[i0:]
+    if len(live_prices) < 2:
+        return {"status": "not_enough_data"}
+
+    s0 = full.iloc[i0].values.astype(float)
+    today_slice = live_prices[live_prices.index <= today]
+    perf_today  = today_slice.iloc[-1].values / s0
+    wof_today   = float(perf_today.min())
+    worst_asset = names[int(perf_today.argmin())]
+
+    obs_cal  = terms.obs_calendar_dates(anchor)
+    ac_sched = terms.autocall_barrier_schedule()
+    next_idx = next((i for i, d in enumerate(obs_cal) if pd.Timestamp(d) > today), len(ac_sched) - 1)
+    next_ac  = float(ac_sched[next_idx])
+
+    # Snap observation dates that have already happened; replay coupons.
+    obs_snapped = []
+    for d in obs_cal:
+        j = int(full.index.searchsorted(d))
+        obs_snapped.append(full.index[j] if (j < len(full) and full.index[j] <= today) else None)
+    past = [d for d in obs_snapped if d is not None]
+    perf_obs = np.vstack([full.loc[d].values / s0 for d in past]) if past else np.empty((0, len(s0)))
+    replay = replay_note(perf_obs, terms)
+
+    rows, markers, running = [], [], 0.0
+    for q, label in enumerate(obs_labels):
+        snap = obs_snapped[q] if q < len(obs_snapped) else None
+        if q >= len(replay["rows"]) or snap is None:
+            if replay["autocall_period"] and q + 1 > replay["autocall_period"]:
+                break
+            est = obs_cal[q].date().isoformat() if q < len(obs_cal) else "—"
+            rows.append({"period": label, "date": est, "status": "upcoming",
+                         "worst_of": None, "coupon": None, "cumulative": None})
+            continue
+        r = replay["rows"][q]
+        obs_wof = float(perf_obs[q].min())
+        running += r["coupon_amount"]
+        if r["autocalled"]:
+            status = "autocalled"
+        elif terms.coupon_at_autocall_only:
+            status = "no_coupon"
+        elif r["coupon_met"]:
+            status = "coupon_paid"
+        else:
+            status = "coupon_missed"
+        rows.append({"period": label, "date": snap.date().isoformat(), "status": status,
+                     "worst_of": obs_wof, "coupon": float(r["coupon_amount"]) or None,
+                     "cumulative": float(running)})
+        markers.append({"date": snap, "label": label, "wof": obs_wof,
+                        "autocalled": r["autocalled"],
+                        "paid": bool(r["coupon_met"] or r["coupon_amount"] > 0),
+                        "amount": r["coupon_amount"]})
+        if r["autocalled"]:
+            break
+
+    total_coupons = replay["total_coupons"]
+    irr_to_date   = total_coupons / max(elapsed_years, 1 / 252)
+
+    future_obs = ([] if replay["autocall_period"]
+                  else [(obs_labels[q], obs_cal[q]) for q in range(len(replay["rows"]), terms.n_obs)])
+    live_sched = ([(d, ac_sched[q]) for q, d in enumerate(obs_cal)]
+                  if terms.autocall_step_down else None)
+    fig = charts.build_live_performance_chart(
+        hist_prices=live_prices, issue_date=anchor, today=today, maturity_date=mat_ts,
+        obs_markers=markers, future_obs=future_obs,
+        knock_in_barrier=terms.knock_in_barrier, autocall_barrier=terms.autocall_barrier,
+        coupon_barrier=terms.coupon_barrier, tr=tr, autocall_schedule=live_sched,
+    )
+
+    return {
+        "status": "ok",
+        "metrics": {
+            "wof_today": wof_today,
+            "worst_asset": worst_asset,
+            "ki_buffer": wof_today - terms.knock_in_barrier,
+            "ac_buffer": wof_today - next_ac,
+            "next_autocall_barrier": next_ac,
+            "irr_to_date": irr_to_date,
+            "elapsed_years": elapsed_years,
+            "remaining_years": max(terms.maturity - elapsed_years, 0.0),
+            "pending_coupons": int(replay["pending_coupons"]),
+        },
+        "perf_today": {n: float(p) for n, p in zip(names, perf_today)},
+        "obs_rows": rows,
+        "figure": fig.to_json(),
+        "meta": {"issue_date": anchor.date().isoformat(), "maturity_date": mat_ts.date().isoformat()},
+    }

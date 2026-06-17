@@ -25,7 +25,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
 
 from api import service
-from api.schemas import PdfRequest, SimRequest
+from api.schemas import BacktestRequest, LiveRequest, PdfRequest, SimRequest
 
 app = FastAPI(title="Structured Note Simulator API", version="0.1.0")
 
@@ -63,6 +63,16 @@ def universe() -> dict:
 @app.post("/simulate")
 def simulate(req: SimRequest) -> dict:
     return service.simulate(req)
+
+
+@app.post("/backtest")
+def backtest(req: BacktestRequest) -> dict:
+    return service.backtest(req)
+
+
+@app.post("/live")
+def live(req: LiveRequest) -> dict:
+    return service.live(req)
 
 
 @app.post("/pdf")
