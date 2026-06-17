@@ -45,13 +45,17 @@ app.add_middleware(
 # excess requests get a quick 503 + Retry-After instead. Tune with
 # SNSIM_MAX_CONCURRENCY.
 _MAX_CONCURRENCY = int(os.environ.get("SNSIM_MAX_CONCURRENCY", "1"))
+# How long a request will WAIT for a free slot before giving up. Generous so
+# overlapping requests queue and run sequentially (memory-safe) instead of
+# erroring — only a genuine pile-up beyond this returns 503.
+_BUSY_TIMEOUT = float(os.environ.get("SNSIM_BUSY_TIMEOUT", "45"))
 _SEM = threading.BoundedSemaphore(_MAX_CONCURRENCY)
 
 
 def _slot():
-    if not _SEM.acquire(timeout=2.0):
+    if not _SEM.acquire(timeout=_BUSY_TIMEOUT):
         raise HTTPException(status_code=503, detail="Server busy — retry shortly.",
-                            headers={"Retry-After": "5"})
+                            headers={"Retry-After": "10"})
     try:
         yield
     finally:

@@ -116,6 +116,21 @@ function requestBody() {
   };
 }
 
+// POST helper that auto-retries once on 503 (the free-tier backend serialises
+// heavy requests and may be waking from sleep).
+async function apiPost(path, body, onWait) {
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const r = await fetch(`${API_BASE}${path}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    if (r.status !== 503 || attempt === 1) return r;
+    if (onWait) onWait();
+    await new Promise((res) => setTimeout(res, 6000));
+  }
+}
+
 async function runSimulation() {
   showError("");
   let body;
@@ -124,11 +139,10 @@ async function runSimulation() {
   const btn = $("run");
   btn.disabled = true; btn.textContent = "Running…";
   try {
-    const r = await fetch(`${API_BASE}/simulate`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    });
+    const r = await apiPost("/simulate", body,
+      () => { btn.textContent = "Waking backend…"; });
+    if (r.status === 503) throw new Error(
+      "Backend is busy or waking up (free tier sleeps when idle). Give it ~30s and click Run again.");
     if (!r.ok) throw new Error(`API ${r.status}: ${await r.text()}`);
     const data = await r.json();
     renderResults(data);
@@ -190,11 +204,8 @@ $("pdf").addEventListener("click", async () => {
   const btn = $("pdf");
   btn.disabled = true; btn.textContent = "Building…";
   try {
-    const r = await fetch(`${API_BASE}/pdf`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    });
+    const r = await apiPost("/pdf", body, () => { btn.textContent = "Waking backend…"; });
+    if (r.status === 503) throw new Error("Backend busy — wait a moment and try again.");
     if (!r.ok) throw new Error(`API ${r.status}`);
     const blob = await r.blob();
     const a = document.createElement("a");
