@@ -4,14 +4,16 @@
 // Resolution order: ?api= query param → saved localStorage → same-origin (if the
 // API is reverse-proxied alongside the site) → localhost:8000 for dev.
 function defaultApiBase() {
+  const clean = (u) => u.replace(/\/$/, "");
   const q = new URLSearchParams(location.search).get("api");
-  if (q) return q.replace(/\/$/, "");
+  if (q) return clean(q);                                   // per-link override
   const saved = localStorage.getItem("apiBase");
-  if (saved) return saved.replace(/\/$/, "");
+  if (saved) return clean(saved);                           // user set it in the box
+  if (window.API_BASE) return clean(window.API_BASE);       // committed config.js
   if (location.protocol.startsWith("http") && location.hostname !== "localhost") {
-    return location.origin;           // assume API served under the same origin in prod
+    return location.origin;           // assume API reverse-proxied on the same origin
   }
-  return "http://localhost:8000";
+  return "http://localhost:8000";                            // local dev
 }
 let API_BASE = defaultApiBase();
 
