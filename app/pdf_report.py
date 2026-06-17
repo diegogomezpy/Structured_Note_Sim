@@ -988,17 +988,12 @@ class _NotePDF(FPDF):
         self.ln(4)
 
     def metric_band(self, metrics: list[tuple[str, str]]):
-        """Horizontal band of key metrics with accent top rule."""
+        """Horizontal band of key metrics. No top rule — the section's chartreuse
+        band already separates it (avoids a 'double bar' under the header)."""
         n = len(metrics)
         usable = self.w - self.l_margin - self.r_margin
         w = usable / n
         y0 = self.get_y()
-
-        # Accent top rule
-        self.set_draw_color(*self.accent_color)
-        self.set_line_width(0.6)
-        self.line(self.l_margin, y0, self.w - self.r_margin, y0)
-        self.ln(2.5)
 
         x = self.l_margin
         for label, value in metrics:
@@ -1040,7 +1035,8 @@ class _NotePDF(FPDF):
                     w = h * iw / ih
             except Exception:
                 h = 80
-        needed = h + 18
+        _fpad = 3.0   # padding between the chart and its panel edge
+        needed = h + 18 + 2 * _fpad
         if self.get_y() + needed > self.h - 28:
             self.add_page()
         # Caption above figure — SemiBold 8.5pt in accent color
@@ -1049,7 +1045,17 @@ class _NotePDF(FPDF):
         self.multi_cell(0, 4.5, f"{_t('figure_word', self.lang)} {self._fig_no}: {caption}", align="C")
         self.ln(1)
         x = (self.w - w) / 2
-        self.image(io.BytesIO(img_bytes), x=x, w=w, h=h)
+        # Faint rounded panel behind the chart, matching the text/issuer panels.
+        self.ln(_fpad)
+        _img_y = self.get_y()
+        self.set_fill_color(244, 246, 249)   # #F4F6F9
+        try:
+            self.rect(x - _fpad, _img_y - _fpad, w + 2 * _fpad, h + 2 * _fpad,
+                      style="F", round_corners=True, corner_radius=2)
+        except TypeError:
+            self.rect(x - _fpad, _img_y - _fpad, w + 2 * _fpad, h + 2 * _fpad, style="F")
+        self.image(io.BytesIO(img_bytes), x=x, y=_img_y, w=w, h=h)
+        self.set_y(_img_y + h + _fpad)
         self.ln(1.5)
         # Source line — Light 7pt
         self._sf(7, "light")
@@ -1822,11 +1828,19 @@ def _cover_page(
     sb_h       = 170
 
     pdf.set_fill_color(*_PANEL)
-    pdf.rect(sb_x, sb_y_top, sb_w, sb_h, style="F")
+    try:
+        pdf.rect(sb_x, sb_y_top, sb_w, sb_h, style="F",
+                 round_corners=True, corner_radius=3)
+    except TypeError:
+        pdf.rect(sb_x, sb_y_top, sb_w, sb_h, style="F")
 
-    # Accent top stripe on sidebar
+    # Accent top stripe (rounded top corners to match the panel)
     pdf.set_fill_color(*pdf.accent_color)
-    pdf.rect(sb_x, sb_y_top, sb_w, 1.5, style="F")
+    try:
+        pdf.rect(sb_x, sb_y_top, sb_w, 3.0, style="F",
+                 round_corners=("TOP_LEFT", "TOP_RIGHT"), corner_radius=3)
+    except TypeError:
+        pdf.rect(sb_x, sb_y_top, sb_w, 1.5, style="F")
 
     def _sb_label(y, txt):
         pdf.set_xy(sb_x + 5, y)
@@ -1847,7 +1861,7 @@ def _cover_page(
         pdf.set_xy(sb_x + 5, y)
         pdf._sf(size, weight)
         pdf.set_text_color(*color)
-        pdf.multi_cell(sb_w - 10, 4.2, _safe(txt))
+        pdf.multi_cell(sb_w - 10, 4.2, _safe(txt), align="L")
         return pdf.get_y()
 
     y = sb_y_top + 5
@@ -1860,21 +1874,22 @@ def _cover_page(
         logo_url  = (logo_urls or {}).get(nm, "")
         sym       = (logo_tickers or {}).get(nm)
         logo_data = _load_ticker_logo(nm, logo_url, sym)
-        row_y = y + 1.0
+        row_y  = y + 1.0
+        text_x = sb_x + 4
         if logo_data:
             try:
                 pdf.image(io.BytesIO(logo_data), x=sb_x + 4, y=row_y,
                           w=_LOGO_W, h=_LOGO_H)
                 text_x = sb_x + 4 + _LOGO_W + 2
-                pdf.set_xy(text_x, row_y + (_LOGO_H - 4.5) / 2)
-                _nm_w = sb_w - (_LOGO_W + 12)
-                pdf._fit_font(nm, _nm_w, 8.5, "semibold")
-                pdf.set_text_color(*_TEXT)
-                pdf.cell(_nm_w, 4.5, _safe(nm))
             except Exception:
-                _sb_text(y + 1, nm, "semibold", 8.5)
-        else:
-            _sb_text(y + 1, nm, "semibold", 8.5)
+                text_x = sb_x + 4
+        # Name on a single line next to the logo: fit the font to the available
+        # width (never wrap/justify, which produced glitched gaps for long names).
+        _nm_w = (sb_x + sb_w - 5) - text_x
+        pdf.set_xy(text_x, row_y + (_LOGO_H - 4.5) / 2)
+        pdf._fit_font(nm, _nm_w, 8.5, "semibold")
+        pdf.set_text_color(*_TEXT)
+        pdf.cell(_nm_w, 4.5, _safe(nm))
         y = row_y + _ROW_H
 
     y = _sb_label(y + 3, _t("key_terms", lang))
@@ -2185,6 +2200,7 @@ def generate_pdf_report(
         rounded=True,
     )
 
+    pdf.ln(8)   # breathing room between the observation table and the model box
     pdf.callout(_t("model_box_title", lang), _t("model_box_body", lang))
 
     # ── 2b. Issuer information (on by default whenever an issuer is set) ──────

@@ -511,7 +511,12 @@ def build_corr_heatmap(
         title=title, aspect="auto",
     )
     fig.update_layout(coloraxis_showscale=False)
-    return _apply_theme(fig)
+    fig = _apply_theme(fig)
+    # Long asset names get clipped on the y-axis (and x-axis) under the fixed
+    # theme margins — let plotly grow the margins to fit the full tick labels.
+    fig.update_xaxes(automargin=True)
+    fig.update_yaxes(automargin=True)
+    return fig
 
 
 # ---------------------------------------------------------------------------
