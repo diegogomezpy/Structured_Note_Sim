@@ -1,6 +1,10 @@
 {
   "name": "Bank Julius Baer PR00529635 — 12M Quarterly Phoenix (DELL/IBM/MSFT)",
   "issuer": "Bank Julius Baer",
+  "issuer_description": "Bank Julius Baer & Co. AG opera como una institución bancaria privada. Ofrece servicios de financiamiento, asesoría de inversiones y gestión de patrimonio a clientes privados e instituciones. Atiende a clientes en todo el mundo.",
+  "issuer_rating_sp": "",
+  "issuer_rating_moody": "A2",
+  "issuer_rating_fitch": "",
   "maturity": 1.0,
   "payment_freq": "quarterly",
   "coupon_pa": 0.28,

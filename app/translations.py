@@ -406,6 +406,16 @@ _STRINGS: dict[str, tuple[str, str]] = {
     "setup_issuer_caption":     ("Name of the bank or institution that issued this note — used for display only.",
                                  "Nombre del banco o institución que emitió esta nota — solo para visualización."),
     "setup_issuer_name":        ("Issuer name",                        "Nombre del emisor"),
+    "setup_issuer_description": ("Issuer description",                 "Descripción del emisor"),
+    "setup_issuer_description_help": (
+        "Short profile of the issuing institution. Shown in the PDF's "
+        "'Issuer Information' section (on by default).",
+        "Perfil breve de la institución emisora. Se muestra en la sección "
+        "'Información del Emisor' del PDF (activada por defecto).",
+    ),
+    "setup_rating_sp":          ("S&P rating",                         "Calificación S&P"),
+    "setup_rating_moody":       ("Moody's rating",                     "Calificación Moody's"),
+    "setup_rating_fitch":       ("Fitch rating",                       "Calificación Fitch"),
     "setup_issue_date_header":  ("Issue Date (optional)",              "Fecha de Emisión (opcional)"),
     "setup_issue_date_caption": ("If set to today or earlier, a **Current Performance** tab will appear on the dashboard.",
                                  "Si se fija en la fecha de hoy o anterior, aparecerá una pestaña de **Rendimiento Actual** en el panel."),

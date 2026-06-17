@@ -1,6 +1,10 @@
 {
   "name": "BNP Paribas PR00529720 — 12M Quarterly Phoenix One Star (DELL/IBM/MSFT)",
   "issuer": "BNP Paribas",
+  "issuer_description": "BNP Paribas presta servicios de banca comercial, minorista, de inversión y privada y corporativa. Ofrece servicios de gestión de activos y asesoramiento en inversiones a instituciones y particulares. Atiende a clientes de todo el mundo.",
+  "issuer_rating_sp": "A+",
+  "issuer_rating_moody": "A1",
+  "issuer_rating_fitch": "AA-",
   "maturity": 1.0,
   "payment_freq": "quarterly",
   "coupon_pa": 0.16,

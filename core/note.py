@@ -262,6 +262,11 @@ class NoteTerms:
     upside_cap:              float | None = None  # maximum redemption above par (e.g. 0.15 = 15% above par → 1.15 max)
     name:                   str         = "Phoenix Memory Note"
     issuer:                 str         = ""      # display-only: e.g. "BBVA", "HSBC"
+    # ── Issuer information (display-only; powers the PDF "Issuer Information" section) ──
+    issuer_description:     str         = ""      # short prose blurb about the issuer
+    issuer_rating_sp:       str         = ""      # S&P credit rating, e.g. "A+"
+    issuer_rating_moody:    str         = ""      # Moody's credit rating, e.g. "A1"
+    issuer_rating_fitch:    str         = ""      # Fitch credit rating, e.g. "AA-"
     tickers:                dict | None  = None
     issue_date:             str  | None = None   # "YYYY-MM-DD" — enables Current Performance tab
 
@@ -365,6 +370,10 @@ class NoteTerms:
             "min_return":             self.min_return,
             "capital_guarantee":      self.capital_guarantee,
             "upside_cap":             self.upside_cap,
+            "issuer_description":     self.issuer_description,
+            "issuer_rating_sp":       self.issuer_rating_sp,
+            "issuer_rating_moody":    self.issuer_rating_moody,
+            "issuer_rating_fitch":    self.issuer_rating_fitch,
             "tickers":                self.tickers,
             "issue_date":             self.issue_date,
         }

@@ -167,9 +167,9 @@ tr = Translator("es" if lang_choice == "Español" else "en")
 def _pdf_toggle(item_key: str, label: str | None = None):
     """Render a compact 'include in PDF' checkbox for one report item (a single
     chart, table or metric block). The state lives at session_state['pdf_inc_<key>']
-    and is collected at PDF-generation time; default on, so a fresh report is the
-    full document until the user starts unchecking pieces."""
-    return st.checkbox(label or tr("pdf_include_toggle"), value=True,
+    and is collected at PDF-generation time; default off, so a fresh report starts
+    empty and the user opts each piece in."""
+    return st.checkbox(label or tr("pdf_include_toggle"), value=False,
                        key=f"pdf_inc_{item_key}", help=tr("pdf_include_help"))
 
 
@@ -703,6 +703,31 @@ if st.session_state["page"] == "setup":
                     unsafe_allow_html=True,
                 )
 
+        # Issuer profile — powers the PDF "Issuer Information" section (on by
+        # default). All optional; blanks are simply hidden in the PDF.
+        issuer_description = st.text_area(
+            tr("setup_issuer_description"),
+            value=getattr(base, "issuer_description", "") or "",
+            height=80,
+            help=tr("setup_issuer_description_help"),
+        )
+        _rt_a, _rt_b, _rt_c = st.columns(3)
+        with _rt_a:
+            issuer_rating_sp = st.text_input(
+                tr("setup_rating_sp"), value=getattr(base, "issuer_rating_sp", "") or "",
+                placeholder="A+",
+            )
+        with _rt_b:
+            issuer_rating_moody = st.text_input(
+                tr("setup_rating_moody"), value=getattr(base, "issuer_rating_moody", "") or "",
+                placeholder="A1",
+            )
+        with _rt_c:
+            issuer_rating_fitch = st.text_input(
+                tr("setup_rating_fitch"), value=getattr(base, "issuer_rating_fitch", "") or "",
+                placeholder="AA-",
+            )
+
         # Issue date — same keyed-widget guard as the issuer above.
         import datetime as _dt2
         _base_issue_str = getattr(base, "issue_date", None)
@@ -786,6 +811,10 @@ if st.session_state["page"] == "setup":
             terms = NoteTerms(
                 name                  = note_name.strip() or "Custom Note",
                 issuer                = issuer_input.strip(),
+                issuer_description    = issuer_description.strip(),
+                issuer_rating_sp      = issuer_rating_sp.strip(),
+                issuer_rating_moody   = issuer_rating_moody.strip(),
+                issuer_rating_fitch   = issuer_rating_fitch.strip(),
                 maturity              = float(maturity),
                 payment_freq          = payment_freq,
                 coupon_pa             = coupon_pa_pct / 100.0,
@@ -944,6 +973,21 @@ elif st.session_state["page"] == "dashboard":
                 f"<strong>{tr('structure_issuer_label')}</strong> {terms.issuer}"
             ) if _exp_logo else f"<strong>{tr('structure_issuer_label')}</strong> {terms.issuer}"
             st.markdown(_exp_issuer_html, unsafe_allow_html=True)
+            # Issuer profile (description + credit ratings) — mirrors the PDF
+            # 'Issuer Information' section so it's visible in the app too.
+            _iss_desc = getattr(terms, "issuer_description", "") or ""
+            if _iss_desc:
+                st.caption(_iss_desc)
+            _iss_ratings = [
+                ("S&P",     getattr(terms, "issuer_rating_sp", "") or ""),
+                ("Moody's", getattr(terms, "issuer_rating_moody", "") or ""),
+                ("Fitch",   getattr(terms, "issuer_rating_fitch", "") or ""),
+            ]
+            _iss_ratings = [(a, v) for a, v in _iss_ratings if v.strip()]
+            if _iss_ratings:
+                _rcols = st.columns(len(_iss_ratings))
+                for _c, (_ag, _rv) in zip(_rcols, _iss_ratings):
+                    _c.metric(_ag, _rv)
 
         # Underlyings table with logos
         st.markdown(tr("underlyings_header"))
@@ -1665,7 +1709,7 @@ elif st.session_state["page"] == "dashboard":
                 st.session_state["_pdf_bt_figures"] = _bt_figs
 
             with bt_tab2:
-                st.checkbox(tr("pdf_include_toggle"), value=True, key="pdf_inc_bt_prices",
+                st.checkbox(tr("pdf_include_toggle"), value=False, key="pdf_inc_bt_prices",
                             help=tr("pdf_include_help"))
                 try:
                     # P4: this chart plots max-history daily closes (decades ×
@@ -1691,7 +1735,7 @@ elif st.session_state["page"] == "dashboard":
             # _all_prices / terms from the last full run (stable until rerun).
             @st.fragment
             def _bt_path_explorer():
-                st.checkbox(tr("pdf_include_toggle"), value=True, key="pdf_inc_bt_explorer",
+                st.checkbox(tr("pdf_include_toggle"), value=False, key="pdf_inc_bt_explorer",
                             help=tr("pdf_include_help"))
                 st.subheader(tr("bt_path_explorer_header"))
                 st.caption(tr("bt_path_explorer_caption"))

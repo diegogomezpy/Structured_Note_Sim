@@ -173,6 +173,10 @@ _LABELS: dict[str, dict[str, str]] = {
     "note_terms":            {"en": "Note Terms",                        "es": "Términos de la Nota"},
     "key_terms_col_characteristic": {"en": "Characteristic",              "es": "Característica"},
     "key_terms_col_description":    {"en": "Description",                 "es": "Descripción"},
+    "issuer_info":           {"en": "Issuer Information",                 "es": "Información del Emisor"},
+    "rating_sp":             {"en": "S&P",                               "es": "S&P"},
+    "rating_moody":          {"en": "Moody's",                           "es": "Moody's"},
+    "rating_fitch":          {"en": "Fitch",                             "es": "Fitch"},
     "obs_schedule":          {"en": "Observation Schedule",              "es": "Calendario de Observaciones"},
     "sim_summary":           {"en": "Monte Carlo Simulation",            "es": "Simulación Monte Carlo"},
     "model_box_title":       {"en": "Model & Methodology",               "es": "Modelo y Metodología"},
@@ -818,21 +822,41 @@ class _NotePDF(FPDF):
 
     def data_table(self, headers: list[str], rows: list[list[str]],
                    col_widths: list[float] | None = None,
-                   aligns: list[str] | None = None):
-        """Filled-header table with zebra rows and proper number alignment."""
+                   aligns: list[str] | None = None,
+                   rounded: bool = False):
+        """Filled-header table with zebra rows and proper number alignment.
+
+        rounded=True draws a rounded-rect card behind the whole table so the
+        outer corners round off; default False keeps plain rects (back-compat).
+        """
         n = len(headers)
         usable = self.w - self.l_margin - self.r_margin
         if col_widths is None:
             col_widths = [usable / n] * n
         if aligns is None:
             aligns = ["L"] + ["R"] * (n - 1)
+        tbl_w  = sum(col_widths)
+        _CR    = 3.0   # corner radius (mm)
+        # _use_round flips off when the table can't fully fit (multi-page) — a
+        # rounded card across a page break looks broken, so fall back to rects.
+        _use_round = [False]
 
-        def _header_row():
-            self.set_fill_color(*self.accent_color)
+        def _header_row(rounded_card: bool = False):
+            # Header strip: rounded-top green card (so the table's top corners
+            # round) with transparent text cells, else a plain green filled row.
+            if rounded_card:
+                self.set_fill_color(*self.primary_color)
+                try:
+                    self.rect(self.l_margin, self.get_y(), tbl_w, 9, style="F",
+                              round_corners=("TOP_LEFT", "TOP_RIGHT"), corner_radius=_CR)
+                except TypeError:
+                    self.rect(self.l_margin, self.get_y(), tbl_w, 9, style="F")
+            else:
+                self.set_fill_color(*self.primary_color)
             self.set_text_color(*_WHITE)
             self._sf(7.5, "semibold")
             for h, w, a in zip(headers, col_widths, aligns):
-                self.cell(w, 9, f" {h} ", border=0, fill=True, align=a)
+                self.cell(w, 9, f" {h} ", border=0, fill=not rounded_card, align=a)
             self.ln()
             self.set_text_color(*_TEXT)
             self._sf(8, "regular")
@@ -847,17 +871,52 @@ class _NotePDF(FPDF):
             self.add_page()
         elif self.get_y() > self.h - 55:
             self.add_page()
-        _header_row()
 
+        # Rounded card: a white rounded rect behind the whole table rounds the
+        # bottom corners; the header's rounded-top green strip rounds the top.
+        # Header text and white rows draw transparent over it; only alt zebra
+        # rows get an opaque fill (the last one rounded so it doesn't square the
+        # bottom). Only when the whole table fits the page; older fpdf2 → rects.
+        if rounded:
+            _ch = 9 + len(rows) * 8
+            _cy = self.get_y()
+            if _cy + _ch <= self.h - 28:
+                try:
+                    self.set_fill_color(*_WHITE)
+                    self.rect(self.l_margin, _cy, tbl_w, _ch, style="F",
+                              round_corners=True, corner_radius=_CR)
+                    _use_round[0] = True
+                except TypeError:
+                    _use_round[0] = False
+        _header_row(_use_round[0])
+
+        _last = len(rows) - 1
         for i, row in enumerate(rows):
             if self.get_y() > self.h - 30:
                 self.add_page()
-                _header_row()
-            fill_color = _ROW_ALT if i % 2 == 0 else _WHITE
-            self.set_fill_color(*fill_color)
-            for cell_val, w, a in zip(row, col_widths, aligns):
-                self.cell(w, 8, f" {cell_val} ", border=0, fill=True, align=a)
-            self.ln()
+                _header_row(False)   # continuation header is always a plain row
+            is_alt = (i % 2 == 0)
+            if _use_round[0]:
+                # Transparent cells over the white card; paint only alt rows.
+                if is_alt:
+                    self.set_fill_color(*_ROW_ALT)
+                    if i == _last:
+                        try:
+                            self.rect(self.l_margin, self.get_y(), tbl_w, 8, style="F",
+                                      round_corners=("BOTTOM_LEFT", "BOTTOM_RIGHT"),
+                                      corner_radius=_CR)
+                        except TypeError:
+                            self.rect(self.l_margin, self.get_y(), tbl_w, 8, style="F")
+                    else:
+                        self.rect(self.l_margin, self.get_y(), tbl_w, 8, style="F")
+                for cell_val, w, a in zip(row, col_widths, aligns):
+                    self.cell(w, 8, f" {cell_val} ", border=0, fill=False, align=a)
+                self.ln()
+            else:
+                self.set_fill_color(*(_ROW_ALT if is_alt else _WHITE))
+                for cell_val, w, a in zip(row, col_widths, aligns):
+                    self.cell(w, 8, f" {cell_val} ", border=0, fill=True, align=a)
+                self.ln()
 
     def logo_row_table(self, headers: list[str], rows: list[list[str]],
                        logos: dict, col_widths: list[float] | None = None,
@@ -875,7 +934,7 @@ class _NotePDF(FPDF):
         ROW_H = 10.0
 
         def _header_row():
-            self.set_fill_color(*self.accent_color)
+            self.set_fill_color(*self.primary_color)
             self.set_text_color(*_WHITE)
             self._sf(7.5, "semibold")
             for h, w, a in zip(headers, col_widths, aligns):
@@ -1022,6 +1081,81 @@ class _NotePDF(FPDF):
         self._sf(8, "regular")
         self.set_text_color(*_TEXT)
         self.multi_cell(w - 10, 4.3, text)
+        self.set_y(y0 + box_h + 4)
+
+    def issuer_info_block(self, name: str, logo_bytes: bytes | None,
+                          description: str, ratings: list[tuple[str, str]]):
+        """Factsheet-style issuer panel: logo + name (green), a blurb, and S&P/
+        Moody's/Fitch rating chips. Mirrors the reference 'Información del Emisor'.
+        `ratings` is a list of (label, value) with empty values already removed."""
+        x0 = self.l_margin
+        w  = self.w - self.l_margin - self.r_margin
+        pad = 6.0
+        inner_w = w - 2 * pad
+        name_h  = 9.0
+        # Measure the description so the panel sizes to its content.
+        self._sf(8, "regular")
+        desc_lines = (self.multi_cell(inner_w, 4.2, self._safe(description),
+                                      dry_run=True, output="LINES")
+                      if description else [])
+        desc_h  = len(desc_lines) * 4.2
+        chip_h  = 11.0
+        box_h = (pad + name_h
+                 + (2 + desc_h if description else 0)
+                 + (4 + chip_h if ratings else 0)
+                 + pad)
+        y0 = self.get_y()
+        if y0 + box_h > self.h - 28:
+            self.add_page()
+            y0 = self.get_y()
+        # Panel
+        self.set_fill_color(244, 246, 249)   # #F4F6F9
+        try:
+            self.rect(x0, y0, w, box_h, style="F", round_corners=True, corner_radius=2)
+        except TypeError:
+            self.rect(x0, y0, w, box_h, style="F")
+        # Logo + issuer name (green)
+        cy = y0 + pad
+        tx = x0 + pad
+        if logo_bytes:
+            try:
+                self.image(io.BytesIO(logo_bytes), x=x0 + pad, y=cy, w=8, h=8)
+                tx = x0 + pad + 11
+            except Exception:
+                pass
+        self.set_xy(tx, cy + 1.0)
+        self._sf(11, "semibold")
+        self.set_text_color(*self.primary_color)
+        self.cell(inner_w, 6, self._safe(name))
+        cy += name_h
+        # Description
+        if description:
+            self.set_xy(x0 + pad, cy + 2)
+            self._sf(8, "regular")
+            self.set_text_color(*_TEXT_SOFT)
+            self.multi_cell(inner_w, 4.2, self._safe(description))
+            cy = self.get_y()
+        # Rating chips (white rounded boxes, label over value)
+        if ratings:
+            cy += 2
+            chip_w, gap = 34.0, 4.0
+            cx = x0 + pad
+            for lbl, val in ratings:
+                self.set_fill_color(*_WHITE)
+                try:
+                    self.rect(cx, cy, chip_w, chip_h, style="F",
+                              round_corners=True, corner_radius=1.5)
+                except TypeError:
+                    self.rect(cx, cy, chip_w, chip_h, style="F")
+                self.set_xy(cx, cy + 1.5)
+                self._sf(7, "semibold")
+                self.set_text_color(*self.primary_color)
+                self.cell(chip_w, 3.5, self._safe(lbl), align="C")
+                self.set_xy(cx, cy + 6)
+                self._sf(8.5, "semibold")
+                self.set_text_color(*_TEXT)
+                self.cell(chip_w, 4, self._safe(val), align="C")
+                cx += chip_w + gap
         self.set_y(y0 + box_h + 4)
 
 
@@ -1892,6 +2026,8 @@ def _cover_page(
     _n_assets = len(asset_names or [])
     _any_fan  = any(inc(f"mc_fan_{i}") for i in range(_n_assets))
     toc = [_t("note_terms", lang)]
+    if getattr(terms, "issuer", ""):
+        toc.append(_t("issuer_info", lang))
     if inc("mc_metrics") or inc("mc_irr") or inc("mc_autocall"):
         toc.append(_t("mc_subtab_payoff", lang))
     if inc("mc_wof") or _any_fan:
@@ -2030,6 +2166,7 @@ def generate_pdf_report(
         [[k, v] for k, v in _term_data],
         col_widths=[usable * 0.40, usable * 0.60],
         aligns=["L", "L"],
+        rounded=True,
     )
 
     pdf.subsection(_t("obs_schedule", lang))
@@ -2045,9 +2182,24 @@ def generate_pdf_report(
         ac_rows,
         col_widths=[usable * 0.2, usable * 0.25, usable * 0.3, usable * 0.25],
         aligns=["L", "R", "R", "R"],
+        rounded=True,
     )
 
     pdf.callout(_t("model_box_title", lang), _t("model_box_body", lang))
+
+    # ── 2b. Issuer information (on by default whenever an issuer is set) ──────
+    # Not gated by include_sections — like Note Terms it always renders, so a
+    # fresh all-off report still carries the issuer profile.
+    if pdf.issuer:
+        _issuer_desc = getattr(terms, "issuer_description", "") or ""
+        _ratings = [
+            (_t("rating_sp", lang),    getattr(terms, "issuer_rating_sp", "") or ""),
+            (_t("rating_moody", lang), getattr(terms, "issuer_rating_moody", "") or ""),
+            (_t("rating_fitch", lang), getattr(terms, "issuer_rating_fitch", "") or ""),
+        ]
+        _ratings = [(l, v) for l, v in _ratings if v.strip()]
+        pdf.start_section(_t("issuer_info", lang), min_room=70.0)
+        pdf.issuer_info_block(pdf.issuer, issuer_logo_bytes, _issuer_desc, _ratings)
 
     # ── 3. Monte Carlo ─────────────────────────────────────────────────────
     # Low min_room: the metric band + first figure caption pack onto the Note
@@ -2108,6 +2260,7 @@ def generate_pdf_report(
             rows,
             col_widths=[usable * 0.2, usable * 0.25, usable * 0.3, usable * 0.25],
             aligns=["L", "R", "R", "R"],
+            rounded=True,
         )
 
     # 3b. Price Paths — worst-of fan + per-underlying simulated distributions
@@ -2334,7 +2487,7 @@ def generate_pdf_report(
             else:
                 obs_w = [usable / n_cols] * n_cols
             pdf.data_table(obs_headers, obs_data, col_widths=obs_w,
-                           aligns=["L"] * n_cols)
+                           aligns=["L"] * n_cols, rounded=True)
 
         if _inc("live_chart") and live_figure is not None:
             _sec()
