@@ -16,7 +16,7 @@ The project covers the full quantitative workflow:
 2. **Simulation** — simulate correlated multi-asset paths under the physical measure with Milstein discretisation, antithetic variates, and a Student-t copula
 3. **Pricing** — evaluate autocallable note payoffs across all simulated scenarios with full memory coupon, guaranteed coupon, and growth-autocall premium support
 4. **Backtesting** — replay the note on every historical issue date using realized prices
-5. **Dashboard** — interactive bilingual (EN/ES) Streamlit app with a setup page, full results dashboard, live "Current Performance" tracking, and a one-click PDF report
+5. **Dashboard** — interactive bilingual (EN/ES) Streamlit app that frames the note through three lenses (simulate → backtest → live), with a setup page, live "Current Performance" tracking, and a branded one-click PDF report
 
 ---
 
@@ -325,25 +325,34 @@ streamlit run app/app.py
 
 ### Setup Page
 
-On first load, a full-page setup form collects:
-- **Underlying selection** from ~50 predefined tickers (equity indices, US large caps, European stocks, commodity ETFs) or any custom yfinance symbol — one or more underlyings (single-asset notes are supported)
+On first load, a stepped full-page setup form collects:
+- **Underlying selection** from ~75 predefined tickers (equity indices, US large caps, European stocks, commodity ETFs) or any custom yfinance symbol — one or more underlyings (single-asset notes are supported)
 - **Note terms** — maturity, coupons, barriers, basket types, and issuer
 - **JSON upload** — drag and drop a config file to populate all fields including underlyings at once. Advanced fields without a UI widget (step-down barrier, growth-autocall premium) are carried through from the loaded config.
+- **Custom logos** — optionally upload your own company logos for the underlyings, used in the app cards and the PDF when a favicon is a poor fit
 - **Download** — export the current configuration as a JSON file
 
 ### Dashboard
 
-After confirming setup the dashboard shows:
+After confirming setup, the dashboard frames the note through three **analysis lenses** — the same note seen forward, backward, and live. Each tab opens with a consistent intro band stating the question it answers:
 
-- **Summary metrics** — expected IRR, total return, expected coupon, P(autocalled), P(knock-in), autocall breakdown by period
-- **IRR distribution** — histogram of annualised IRR split by autocalled vs maturity paths, with mean and coupon p.a. reference lines
-- **Price path fan charts** — worst-of basket + individual asset fan charts (5/25/50/75/95th percentiles) with observation markers
-- **Path explorer** — step through individual Monte Carlo paths; shows per-asset lines and worst-of line with observation markers
-- **Correlation diagnostics** — input vs realised correlation heatmaps, Heston parameter table
-- **Historical backtest** — outcome distribution bar chart, IRR scatter by issue date, historical path explorer (select any issue date to see the actual realized path with observation markers)
-- **Current Performance** — for notes with a past `issue_date`: live worst-of level vs. barriers, per-asset performance with logos, coupons paid to date
-- **PDF report** — one-click export (sidebar) covering the Monte Carlo, backtest, and current-performance sections, with embedded charts
-- **Bilingual** — full EN/ES interface
+**Monte Carlo — _"what could happen?"_**
+- Summary metrics — expected IRR, total return, expected coupon, P(autocalled), P(knock-in), and the autocall breakdown by period
+- IRR distribution — histogram of annualised IRR split by autocalled vs maturity paths, with mean and coupon p.a. reference lines
+- Price-path fan charts — worst-of basket + per-asset fans (5/25/50/75/95th percentiles) with observation markers
+- Path explorer — step through individual simulated paths (per-asset + worst-of lines)
+- Correlation diagnostics — input vs realised correlation heatmaps + the Heston parameter table
+
+**Historical Backtest — _"what would have happened?"_**
+- Replays the note on every valid historical issue date using realized prices: outcome-distribution bar chart, IRR scatter by issue date, and a path explorer (pick any issue date to see the actual realized path with observation markers)
+
+**Current Performance — _"what is happening now?"_** (notes with a past `issue_date`)
+- Live worst-of level vs. barriers, per-asset performance with logos, coupons paid to date, and progress through the note's life
+
+Across all three:
+
+- **PDF report** — a branded, bilingual one-click export (sidebar). A **build-report panel** picks exactly which sections and figures to include, and the report can be generated **without running the simulation first** (it still carries the Monte Carlo section). The PDF mirrors the three-lens structure with numbered part dividers and a grouped table of contents. Per-firm **branding** — colours, logo, report title, disclaimer — is driven by a `branding/branding_*.json` file (see `branding_example.json` for the full key set).
+- **Bilingual** — full EN/ES interface throughout the app and the report
 
 ---
 

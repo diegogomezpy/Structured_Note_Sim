@@ -808,13 +808,14 @@ class _NotePDF(FPDF):
         self.ln(band_h + 4)
         self.set_text_color(*_TEXT)
 
-    def section_divider(self, number: str, name: str, question: str):
+    def section_divider(self, name: str, question: str):
         """Part divider for one of the three analysis lenses (Monte Carlo →
         Backtest → Live). Always opens a fresh page so the three lenses are
-        clearly delineated, then draws a band: a large faint lens number, the
-        lens name in brand primary, and the question the lens answers. Section
-        content flows below it. The number/name/question are short labels, never
-        the long sub-section titles (those follow as section_title)."""
+        clearly delineated, then draws a band: the lens name in brand primary
+        (larger than a section title) above the question the lens answers, in
+        soft grey. Section content flows below it. Deliberately unnumbered — the
+        build-report panel can include any subset of lenses, so a fixed 01/02/03
+        would leave gaps (e.g. just '02', or '01' then '03')."""
         # A part break always starts a new page (unless we're already at the top
         # of a blank one), so each lens reads as a distinct chapter.
         if self.page_no() == 0:
@@ -824,22 +825,17 @@ class _NotePDF(FPDF):
         x0 = self.l_margin
         w  = self.w - self.l_margin - self.r_margin
         y0 = self.get_y() + 2
-        # Large, faint lens number on the left (e.g. "01").
-        self._sf(30, "bold")
-        self.set_text_color(*_blend(self.primary_color, _WHITE, 0.55))
+        # Lens name (primary) above the question (soft grey), at the left margin.
         self.set_xy(x0, y0)
-        self.cell(20, 13, self._safe(number))
-        # Lens name (primary) above the question (soft grey), to the right.
-        self.set_xy(x0 + 22, y0)
-        self._sf(15, "semibold")
+        self._sf(17, "semibold")
         self.set_text_color(*self.primary_color)
-        self.cell(w - 22, 7, self._safe(name), new_x="LMARGIN", new_y="NEXT")
-        self.set_xy(x0 + 22, y0 + 7.5)
+        self.cell(w, 9, self._safe(name), new_x="LMARGIN", new_y="NEXT")
+        self.set_xy(x0, y0 + 9)
         self._sf(10, "regular")
         self.set_text_color(*_TEXT_SOFT)
-        self.cell(w - 22, 5, self._safe(question))
+        self.cell(w, 5, self._safe(question))
         # Accent rule under the band — slightly bolder than a section rule.
-        ry = y0 + 15
+        ry = y0 + 16
         self.set_fill_color(*self.section_rule_color)
         self.rect(x0, ry, w, 0.9, style="F")
         self.set_y(ry + 1)
@@ -2159,18 +2155,18 @@ def _cover_page(
     pdf.line(pdf.l_margin, pdf.get_y() + 0.5, pdf.l_margin + main_w, pdf.get_y() + 0.5)
     pdf.ln(2)
     # The contents mirror the body's three-lens structure: a lens lists as a
-    # numbered group header (Monte Carlo / Backtest / Live) with its sub-sections
-    # indented beneath, so the map matches the part dividers in the body. A lens
-    # appears only when at least one of its items is included. The opening
-    # (Note Terms / Issuer) and closing (Glossary / Disclaimer) groups are flat.
+    # group header (Monte Carlo / Backtest / Live) with its sub-sections indented
+    # beneath, so the map matches the part dividers in the body. A lens appears
+    # only when at least one of its items is included. The opening (Note Terms /
+    # Issuer) and closing (Glossary / Disclaimer) groups are flat.
     _n_assets = len(asset_names or [])
     _any_fan  = any(inc(f"mc_fan_{i}") for i in range(_n_assets))
-    toc_groups = []  # (number|None, header|None, [leaf titles])
+    toc_groups = []  # (header|None, [leaf titles])
 
     _top = [_t("note_terms", lang)]
     if getattr(terms, "issuer", ""):
         _top.append(_t("issuer_info", lang))
-    toc_groups.append((None, None, _top))
+    toc_groups.append((None, _top))
 
     _mc = []
     if inc("mc_metrics") or inc("mc_irr") or inc("mc_autocall"):
@@ -2182,7 +2178,7 @@ def _cover_page(
     if results.get("params") and (inc("calib_table") or inc("calib_corr")):
         _mc.append(_t("calibration", lang))
     if _mc:
-        toc_groups.append(("01", _t("lens_mc", lang), _mc))
+        toc_groups.append((_t("lens_mc", lang), _mc))
 
     _bt = []
     if bt_summary and (inc("bt_metrics") or inc("bt_outcome") or inc("bt_pie") or inc("bt_irr")):
@@ -2190,7 +2186,7 @@ def _cover_page(
     if bt_summary and inc("bt_prices"):
         _bt.append(_t("bt_subtab_prices", lang))
     if _bt:
-        toc_groups.append(("02", _t("lens_bt", lang), _bt))
+        toc_groups.append((_t("lens_bt", lang), _bt))
 
     if live_data and (inc("live_metrics") or inc("live_asset_table")
                       or inc("live_obs_table") or inc("live_chart")):
@@ -2199,9 +2195,9 @@ def _cover_page(
             _live.append(_t("live_asset_perf", lang))
         if inc("live_obs_table"):
             _live.append(_t("live_obs_history", lang))
-        toc_groups.append(("03", _t("lens_live", lang), _live))
+        toc_groups.append((_t("lens_live", lang), _live))
 
-    toc_groups.append((None, None, [_t("glossary_title", lang), _t("disclaimer_title", lang)]))
+    toc_groups.append((None, [_t("glossary_title", lang), _t("disclaimer_title", lang)]))
 
     def _toc_leaf(text, indent=0.0):
         pdf.set_x(pdf.l_margin + indent)
@@ -2211,20 +2207,18 @@ def _cover_page(
         pdf.set_draw_color(*_RULE_LIGHT)
         pdf.line(pdf.l_margin, pdf.get_y(), pdf.l_margin + main_w, pdf.get_y())
 
-    def _toc_head(number, name):
+    def _toc_head(name):
         pdf.ln(1.2)
         pdf.set_x(pdf.l_margin)
         pdf._sf(8.5, "semibold")
-        pdf.set_text_color(*_blend(pdf.primary_color, _WHITE, 0.35))
-        pdf.cell(7, 5.5, number)
         pdf.set_text_color(*pdf.primary_color)
-        pdf.cell(main_w - 7, 5.5, name, new_x="LMARGIN", new_y="NEXT")
+        pdf.cell(main_w, 5.5, name, new_x="LMARGIN", new_y="NEXT")
         pdf.set_draw_color(*_RULE_LIGHT)
         pdf.line(pdf.l_margin, pdf.get_y(), pdf.l_margin + main_w, pdf.get_y())
 
-    for number, name, leaves in toc_groups:
+    for name, leaves in toc_groups:
         if name is not None:
-            _toc_head(number, name)
+            _toc_head(name)
             for leaf in leaves:
                 _toc_leaf(leaf, indent=7.0)
         else:
@@ -2418,13 +2412,13 @@ def generate_pdf_report(
                secondary_color=secondary_color)
     src_mc = f"{_t('src_mc', lang)}, {n_paths_val:,} {_t('paths_word', lang)}"
 
-    def _lazy_divider(number, name, question):
+    def _lazy_divider(name, question):
         """Emit a three-lens part divider at most once, when the lens's first
         included item is drawn — so a fully-toggled-off lens leaves no divider."""
         state = {"done": False}
         def ensure():
             if not state["done"]:
-                pdf.section_divider(number, name, question)
+                pdf.section_divider(name, question)
                 state["done"] = True
         return ensure
 
@@ -2445,7 +2439,7 @@ def generate_pdf_report(
 
     # Lens 1 of 3 — the forward-looking model. Drawn once, before whichever MC
     # sub-section renders first.
-    _mc_div = _lazy_divider("01", _t("lens_mc", lang), _t("lens_q_mc", lang))
+    _mc_div = _lazy_divider(_t("lens_mc", lang), _t("lens_q_mc", lang))
 
     # 3a. Payoff & Distribution — summary metrics, IRR distribution, autocall table.
     # Reserve enough room for the metric band + the IRR figure so the section
@@ -2632,7 +2626,7 @@ def generate_pdf_report(
     # ── 5. Historical backtest ─────────────────────────────────────────────
     bt_figures = bt_figures or {}
     # Lens 2 of 3 — the realised-history lens.
-    _bt_div = _lazy_divider("02", _t("lens_bt", lang), _t("lens_q_bt", lang))
+    _bt_div = _lazy_divider(_t("lens_bt", lang), _t("lens_q_bt", lang))
     # 5a. Outcomes & Summary — metrics, outcome bar, worst-asset pie, IRR scatter.
     # Same keep-together reserve as the MC payoff section (band + first chart).
     _sec = _lazy_section(_t("bt_subtab_outcomes", lang), min_room=150.0, before=_bt_div)
@@ -2677,7 +2671,7 @@ def generate_pdf_report(
     if live_data:
         # Lens 3 of 3 — the live, today lens. No section_title: the divider names
         # it; the metric band and the asset/observation sub-tables follow.
-        _live_div = _lazy_divider("03", _t("lens_live", lang), _t("lens_q_live", lang))
+        _live_div = _lazy_divider(_t("lens_live", lang), _t("lens_q_live", lang))
         if _inc("live_metrics"):
             _live_div()
             pdf.metric_band([
