@@ -84,6 +84,8 @@ _STRINGS: dict[str, tuple[str, str]] = {
 
     # ── MC tab — top-level ─────────────────────────────────────────────────
     "summary_stats_header":      ("Summary Statistics",                "Estadísticas Resumen"),
+    "summary_returns_label":     ("Expected return",                   "Retorno esperado"),
+    "summary_risk_label":        ("Risk & protection",                 "Riesgo y protección"),
     "expected_irr_pa":           ("Expected IRR p.a. (simple)",        "TIR Esperada p.a. (simple)"),
     "expected_total_return":     ("Expected Total Return",             "Rendimiento Total Esperado"),
     "expected_coupon_metric":    ("Expected Coupon",                   "Cupón Esperado"),
@@ -575,15 +577,39 @@ _STRINGS: dict[str, tuple[str, str]] = {
         "Si aún no se ha ejecutado una simulación, ejecuta una primero.",
     ),
     "report_panel_header":      ("Build report — sections",            "Construir informe — secciones"),
-    "report_inc_mc":            ("Monte Carlo",                        "Monte Carlo"),
-    "report_inc_bt":            ("Historical backtest",                "Backtest histórico"),
-    "report_inc_live":          ("Current performance",                "Rendimiento actual"),
     "report_panel_caption":     (
-        "All on by default — untick to leave a section out. Sections with no "
-        "data are skipped automatically.",
-        "Todo activado por defecto — desmarque para excluir una sección. Las "
+        "Everything is on by default. A category toggle selects/clears all of "
+        "its items; untick anything you don't want. Sections with no data are "
+        "skipped automatically.",
+        "Todo está activado por defecto. Un interruptor de categoría "
+        "selecciona/borra todos sus elementos; desmarque lo que no quiera. Las "
         "secciones sin datos se omiten automáticamente.",
     ),
+    # Build-report categories (master toggles)
+    "report_cat_mc":            ("Monte Carlo",                        "Monte Carlo"),
+    "report_cat_bt":            ("Historical backtest",                "Backtest histórico"),
+    "report_cat_live":          ("Current performance",                "Rendimiento actual"),
+    # Build-report sub-items — Monte Carlo
+    "rep_mc_summary":           ("Summary & metrics",                  "Resumen y métricas"),
+    "rep_mc_autocall":          ("Autocall by period",                "Autocall por período"),
+    "rep_mc_irr":               ("IRR distribution",                  "Distribución de TIR"),
+    "rep_mc_wof":               ("Worst-of fan chart",                "Abanico worst-of"),
+    "rep_mc_fans":              ("Per-underlying fans",               "Abanicos por subyacente"),
+    "rep_mc_explorer":          ("Path explorer",                     "Explorador de trayectorias"),
+    "rep_mc_corr":              ("Correlation diagnostics",           "Diagnóstico de correlaciones"),
+    "rep_mc_calib":             ("Calibration table",                "Tabla de calibración"),
+    # Build-report sub-items — Backtest
+    "rep_bt_summary":           ("Summary & outcomes",               "Resumen y resultados"),
+    "rep_bt_outcome":           ("Outcome distribution",             "Distribución de resultados"),
+    "rep_bt_pie":               ("Worst-asset breakdown",            "Desglose de peor activo"),
+    "rep_bt_irr":               ("IRR by issue date",               "TIR por fecha de emisión"),
+    "rep_bt_prices":            ("Historical prices",               "Precios históricos"),
+    "rep_bt_explorer":          ("Path explorer",                   "Explorador de trayectorias"),
+    # Build-report sub-items — Current performance
+    "rep_live_metrics":         ("Summary metrics",                 "Métricas de resumen"),
+    "rep_live_assets":          ("Per-asset table",                "Tabla por activo"),
+    "rep_live_obs":             ("Observation history",            "Historial de observaciones"),
+    "rep_live_chart":           ("Performance chart",              "Gráfico de rendimiento"),
     "sidebar_reconfigure":      ("Reconfigure Note",                   "Reconfigurar Nota"),
     "sidebar_download_pdf":     ("Download PDF",                       "Descargar PDF"),
     "building_pdf":             ("Building PDF report…",               "Construyendo informe PDF…"),

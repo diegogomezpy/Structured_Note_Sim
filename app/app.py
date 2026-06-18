@@ -200,30 +200,60 @@ lang_choice = st.sidebar.radio("Language / Idioma", ["English", "Español"],
 tr = Translator("es" if lang_choice == "Español" else "en")
 
 
-# Fine-grained PDF section keys, grouped by analysis. The Build-report panel
-# shows one checkbox per group; each expands to the keys generate_pdf_report
-# gates on via include_sections. mc_fan_{i} (one per underlying) is added
-# dynamically from the asset count.
-_REPORT_GROUPS = {
-    "mc":   ["mc_metrics", "mc_autocall", "mc_irr", "mc_wof",
-             "mc_single_price", "mc_single_wof", "calib_table", "calib_corr"],
-    "bt":   ["bt_metrics", "bt_outcome", "bt_pie", "bt_irr", "bt_prices", "bt_explorer"],
-    "live": ["live_metrics", "live_asset_table", "live_obs_table", "live_chart"],
+# Build-report panel tree: category -> (category label key, [sub-items]).
+# Each sub-item is (widget_id, label_key, [fine PDF keys it maps to]). The fine
+# keys are what generate_pdf_report gates on via include_sections; "__mc_fans__"
+# expands to one mc_fan_{i} per underlying. A category master toggle ticks/clears
+# all of its sub-items at once.
+_REPORT_TREE = {
+    "mc": ("report_cat_mc", [
+        ("mc_summary",  "rep_mc_summary",  ["mc_metrics"]),
+        ("mc_autocall", "rep_mc_autocall", ["mc_autocall"]),
+        ("mc_irr",      "rep_mc_irr",      ["mc_irr"]),
+        ("mc_wof",      "rep_mc_wof",      ["mc_wof"]),
+        ("mc_fans",     "rep_mc_fans",     ["__mc_fans__"]),
+        ("mc_explorer", "rep_mc_explorer", ["mc_single_price", "mc_single_wof"]),
+        ("mc_corr",     "rep_mc_corr",     ["calib_corr"]),
+        ("mc_calib",    "rep_mc_calib",    ["calib_table"]),
+    ]),
+    "bt": ("report_cat_bt", [
+        ("bt_summary",  "rep_bt_summary",  ["bt_metrics"]),
+        ("bt_outcome",  "rep_bt_outcome",  ["bt_outcome"]),
+        ("bt_pie",      "rep_bt_pie",      ["bt_pie"]),
+        ("bt_irr",      "rep_bt_irr",      ["bt_irr"]),
+        ("bt_prices",   "rep_bt_prices",   ["bt_prices"]),
+        ("bt_explorer", "rep_bt_explorer", ["bt_explorer"]),
+    ]),
+    "live": ("report_cat_live", [
+        ("live_metrics", "rep_live_metrics", ["live_metrics"]),
+        ("live_assets",  "rep_live_assets",  ["live_asset_table"]),
+        ("live_obs",     "rep_live_obs",     ["live_obs_table"]),
+        ("live_chart",   "rep_live_chart",   ["live_chart"]),
+    ]),
 }
 
 
+def _toggle_report_category(cat: str) -> None:
+    """Master-toggle callback: set every sub-item in a category to the master's
+    new value (ticking the master selects the whole category, unticking clears it)."""
+    val = st.session_state.get(f"rep_master_{cat}", True)
+    for sub_id, _lbl, _fine in _REPORT_TREE[cat][1]:
+        st.session_state[f"rep_sub_{sub_id}"] = val
+
+
 def _collect_pdf_sections(n_assets: int = 0, has_live: bool = True) -> set[str]:
-    """Expand the Build-report panel's group checkboxes into the fine-grained
-    include_sections keys the PDF gates on. Each group defaults to ON, so a
-    report includes everything available unless the user unticks a section."""
+    """Expand the Build-report panel's per-analysis checkboxes into the
+    fine-grained include_sections keys the PDF gates on. Each item defaults ON."""
     sel: set[str] = set()
-    if st.session_state.get("rep_inc_mc", True):
-        sel.update(_REPORT_GROUPS["mc"])
-        sel.update(f"mc_fan_{i}" for i in range(n_assets))
-    if st.session_state.get("rep_inc_bt", True):
-        sel.update(_REPORT_GROUPS["bt"])
-    if st.session_state.get("rep_inc_live", True) and has_live:
-        sel.update(_REPORT_GROUPS["live"])
+    for cat, (_cat_label, subs) in _REPORT_TREE.items():
+        for sub_id, _lbl, fine_keys in subs:
+            if not st.session_state.get(f"rep_sub_{sub_id}", True):
+                continue
+            for fk in fine_keys:
+                if fk == "__mc_fans__":
+                    sel.update(f"mc_fan_{i}" for i in range(n_assets))
+                else:
+                    sel.add(fk)
     return sel
 
 
@@ -1010,13 +1040,22 @@ elif st.session_state["page"] == "dashboard":
 
     # ── Build-report panel — choose what goes in the PDF in ONE place ─────
     # Replaces the ~20 'Include in PDF' checkboxes that used to sit next to every
-    # chart. Each group defaults ON, so the full report is produced without any
-    # clicking; untick a section to leave it out.
+    # chart. A master toggle per analysis selects/clears the whole category; each
+    # analysis also has its own sub-toggle. Everything defaults ON, so the full
+    # report is produced without any clicking; untick what you don't want.
     with st.sidebar.expander(tr("report_panel_header"), expanded=False):
-        st.checkbox(tr("report_inc_mc"),   value=True, key="rep_inc_mc")
-        st.checkbox(tr("report_inc_bt"),   value=True, key="rep_inc_bt")
-        st.checkbox(tr("report_inc_live"), value=True, key="rep_inc_live")
         st.caption(tr("report_panel_caption"))
+        for _cat, (_cat_label_key, _subs) in _REPORT_TREE.items():
+            st.session_state.setdefault(f"rep_master_{_cat}", True)
+            st.checkbox(
+                f"**{tr(_cat_label_key)}**", key=f"rep_master_{_cat}",
+                on_change=_toggle_report_category, args=(_cat,),
+            )
+            _sp, _body = st.columns([1, 14])
+            with _body:
+                for _sub_id, _sub_label_key, _fine in _subs:
+                    st.session_state.setdefault(f"rep_sub_{_sub_id}", True)
+                    st.checkbox(tr(_sub_label_key), key=f"rep_sub_{_sub_id}")
     # The button is always enabled: if the sim hasn't been run yet, clicking it
     # runs the sim first and then builds the report (see _run_for_pdf below).
     _pdf_btn = st.sidebar.button(
@@ -1353,8 +1392,6 @@ elif st.session_state["page"] == "dashboard":
             ])
 
             with mc_tab0:
-                # ── Summary metrics (two rows of 3) ──────────────────────
-                st.subheader(tr("summary_stats_header"))
                 # Knock-in (barrier breached at maturity), not capital loss: count
                 # the knock-in event itself and average the IRR over those paths.
                 _ki_mask = R.get("knock_in_mask")
@@ -1364,6 +1401,9 @@ elif st.session_state["page"] == "dashboard":
                 if _lgki is None and _ki_mask is not None and _ki_mask.any():
                     _lgki = float(R["annualized_returns"][_ki_mask].mean())
                 _lgki_str = f"{_lgki:.2%}" if _lgki is not None and _lgki == _lgki else "—"  # nan check
+
+                # ── Expected return ──────────────────────────────────────
+                st.markdown("**" + tr("summary_returns_label") + "**")
                 c1, c2, c3 = st.columns(3)
                 c1.metric(tr("expected_irr_pa"),        f"{R['expected_irr']:.2%}",
                           help=tr("mc_help_expected_irr"))
@@ -1371,6 +1411,9 @@ elif st.session_state["page"] == "dashboard":
                           help=tr("mc_help_expected_return"))
                 c3.metric(tr("expected_coupon_metric"), f"{R['expected_coupon']:.2%}",
                           help=tr("mc_help_expected_coupon"))
+
+                # ── Risk & protection ────────────────────────────────────
+                st.markdown("**" + tr("summary_risk_label") + "**")
                 c4, c5, c6 = st.columns(3)
                 c4.metric(tr("prob_autocalled"),        f"{R['prob_autocall']:.2%}",
                           help=tr("mc_help_prob_autocall"))
@@ -1385,9 +1428,10 @@ elif st.session_state["page"] == "dashboard":
                            rescued=R['prob_rescued'],
                            level=terms.one_star_level or 1.0)
                     )
-                # Autocall probability by period — folded into the summary (was a
-                # separate dropdown with its own PDF checkbox).
-                st.markdown("##### " + tr("autocall_by_period_expander"))
+
+                # ── Autocall probability by period (folded into the summary) ──
+                st.divider()
+                st.markdown("**" + tr("autocall_by_period_expander") + "**")
                 prob_by_period = R["prob_autocall_by_period"]
                 ac_df = pd.DataFrame({
                     tr("col_period"):    range(1, run_terms.n_obs + 1),
