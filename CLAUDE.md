@@ -86,10 +86,3 @@ Legacy configs that used `final_basket="best_of"` + `final_redemption_barrier` a
 ## Streamlit session state
 
 The app has two pages controlled by `st.session_state["page"]`: `"setup"` and `"dashboard"`. All heavy computation (calibration, simulation, backtest) is cached via `@st.cache_data`. Cache keys for the backtest use `tickers_tuple` (a `tuple` of `(sym, name)` pairs) and `terms.to_json()`. Simulation results are stored in `st.session_state["results"]` and are `None` until the user clicks "Run Simulation".
-
-## Known issues (from code review)
-
-- `build_wof_fan` and `build_path_wof_chart` in `charts.py` label the KI barrier line as "Floor / Call Strike" — it should say "Knock-in barrier" and also draw the autocall barrier line separately.
-- `_mat_ts` in the Current Performance tab uses calendar-day maturity (`365.25`) while `_mat_days` uses trading-day maturity (`252`), causing the displayed maturity date to drift from the observation offsets for longer notes.
-- `NoteTerms.from_dict` silently drops unknown keys — JSON typos go undetected.
-- `_mle_refine` in `calibrator.py` uses a Python loop over time steps; vectorizable for significant speedup.

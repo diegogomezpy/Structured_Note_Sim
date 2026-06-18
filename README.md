@@ -1,24 +1,8 @@
----
-title: Structured Note Simulator API
-emoji: 📈
-colorFrom: indigo
-colorTo: green
-sdk: docker
-app_port: 8000
-pinned: false
----
-
-<!-- The YAML header above lets this repo deploy as a Hugging Face Docker Space:
-     HF builds the root Dockerfile and serves the FastAPI app (api/) on port 8000.
-     Set ALLOWED_ORIGINS in the Space's Settings → Variables to your frontend
-     origin (e.g. https://diegogomezpy.github.io). The Space URL
-     (https://<user>-<space>.hf.space) goes in web/config.js. -->
-
 # Multi-Asset Heston Simulator & Structured Note Engine
 
-A Python framework for calibrating, simulating, and pricing a **multi-asset Heston stochastic volatility model** against real market data, with a full structured product engine for **autocallable notes** — Phoenix Memory, Reverse Convertible, and Growth/Classic (step-down) autocalls — on any basket of equity underlyings (single-asset notes supported).
+A Python framework for calibrating, simulating, and pricing a **multi-asset Heston stochastic volatility model** against real market data, with a full structured product engine for **autocallable and structured notes** — Phoenix Memory, Reverse Convertible, Growth/Classic (step-down) autocalls, Bonus Certificates, and Capital-Protected notes, with an optional One Star best-of overlay — on any basket of equity underlyings (single-asset notes supported).
 
-Built as an internal tool and deployed as an interactive dashboard.
+Built as an internal tool and deployed as an interactive dashboard with a branded, bilingual PDF report.
 
 **▶️ Live app: [structurednotesim.streamlit.app](https://structurednotesim.streamlit.app/)**
 
@@ -54,22 +38,26 @@ The project covers the full quantitative workflow:
 ├── app/
 │   ├── app.py                 # Streamlit dashboard (setup page + results dashboard)
 │   ├── charts.py              # All Plotly figure builders as pure functions
-│   ├── pdf_report.py          # PDF report generator (fpdf2 + kaleido)
+│   ├── pdf_report.py          # Branded PDF report generator (fpdf2 + kaleido)
 │   ├── translations.py        # Bilingual string registry (EN/ES)
+│   ├── underlyings.py         # Selectable ticker universe + logo maps
+│   ├── style.css              # Streamlit theme (matches the PDF)
 │   └── __init__.py
 │
-├── note_configs/             # Ready-to-use JSON term sheets (upload in the app)
-│   ├── hsbc_xs3376563584.json   # HSBC   — 24M monthly Phoenix Memory
-│   ├── bbva_xs3378405743.json   # BBVA   — 18M quarterly Phoenix (best-of rescue)
-│   ├── citi_xs3096699163.json   # Citi   — 2Y growth autocall (step-down barrier)
-│   ├── santander_xs3242406752.json  # Santander — 2Y quarterly Phoenix Memory
-│   ├── santander_xs3242417106.json  # Santander — 2Y quarterly Phoenix Memory
-│   ├── hsbc_xs3287776739.json   # HSBC   — 18M Phoenix on a single underlying (AMD)
-│   └── barclays_xs3305367727.json   # Barclays — 1Y monthly Reverse Convertible
+├── note_configs/             # 12 ready-to-use JSON term sheets (upload in the app)
+│                             #   HSBC ×2, BBVA, Citi, Santander ×2, Barclays,
+│                             #   BNP Paribas, Julius Baer, PUENTE ×3
+├── branding/                 # Firm branding JSON + bundled ticker logos
+│   ├── branding_example.json #   documented template (all keys)
+│   └── ticker_logos/         #   optional local PNG logos
+├── fonts/                    # IBM Plex Sans + Inter (embedded in the PDF)
+├── scripts/
+│   └── verify_pdf.py         # Standalone PDF-render harness (needs PyMuPDF)
 │
 ├── .streamlit/
-│   └── config.toml            # Light theme + green palette
+│   └── config.toml           # Light theme + navy/blue palette
 │
+├── packages.txt              # apt packages for Streamlit Cloud (chromium → PDF export)
 ├── requirements.txt
 └── README.md
 ```
@@ -161,6 +149,9 @@ The `NoteTerms` dataclass captures the full specification of an autocallable not
 - **Phoenix Memory** — periodic coupon paid when the basket clears `coupon_barrier`, missed coupons accumulate (`memory=True`).
 - **Reverse Convertible** — guaranteed coupon: set `coupon_barrier=0.0` so it pays every period regardless of level.
 - **Growth / Classic (step-down) Autocall** — no periodic coupon; an accrued premium is paid only at autocall, and the autocall barrier steps down over time (`autocall_step_down`, `autocall_floor`, `coupon_at_autocall_only`).
+- **Bonus Certificate** — full upside participation with a guaranteed floor return when the KI is not breached (`min_return`); 1:1 downside if it is.
+- **Capital Protected** — a standalone payoff that skips the entire autocall/coupon/KI waterfall: redemption is `clip(worst-of, capital_guarantee, 1 + upside_cap)`.
+- **One Star overlay** — orthogonal to the above: a single underlying at or above `one_star_level` satisfies the coupon, autocall, **and** final-redemption conditions on its own (BNP-style; also models the BBVA "Barrier and Knock-in" rescue).
 
 | Parameter | Description | Default |
 |-----------|-------------|---------|
@@ -175,16 +166,21 @@ The `NoteTerms` dataclass captures the full specification of an autocallable not
 | `memory` | Accumulate missed coupons (Phoenix mechanic) | True |
 | `coupon_basket` | `worst_of` / `best_of` / `average` | `worst_of` |
 | `autocall_basket` | `worst_of` / `best_of` / `average` | `worst_of` |
-| `final_basket` | `worst_of` / `best_of` / `average` for final redemption check | `worst_of` |
-| `final_redemption_barrier` | Best-of rescue level — par returned if `final_basket ≥` this | 1.00 |
+| `one_star_level` | Best-of OR-overlay level — one underlying ≥ this satisfies coupon / autocall / redemption; `null` = off | `None` |
 | `autocall_step_down` | Per-period decrement of the autocall barrier (0 = constant) | 0.0 |
 | `autocall_floor` | Minimum autocall barrier under step-down | `None` |
 | `coupon_at_autocall_only` | No periodic coupon; accrued premium paid as a lump at autocall | False |
+| `min_return` | Bonus Certificate floor return when KI not breached (e.g. `0.29` = +29%) | 0.0 |
+| `capital_guarantee` | Capital-Protected guaranteed redemption (e.g. `1.00`); activates the standalone CP payoff | `None` |
+| `upside_cap` | Maximum redemption above par under CP (e.g. `0.15` = 1.15 cap) | `None` |
 | `issuer` | Issuing bank, display only (e.g. `"BBVA"`) — shows a logo in the app | `""` |
+| `issuer_description` / `issuer_rating_sp` / `_moody` / `_fitch` | Optional issuer profile for the PDF "Issuer Information" section | `""` |
 | `tickers` | `{yf_symbol: display_name}` — stored in JSON config | `{}` |
 | `issue_date` | `"YYYY-MM-DD"` — enables Current Performance tab when set | `None` |
 
 > **Derived fields** (never stored, always computed): `n_obs = maturity × periods_per_year`, `coupon_rate = coupon_pa / periods_per_year`.
+>
+> **Legacy fields** `final_basket` + `final_redemption_barrier` are auto-migrated to `one_star_level` by `NoteTerms.from_dict` (best-of → the barrier level; otherwise off).
 
 ### Payoff Logic
 
@@ -197,27 +193,35 @@ The `NoteTerms` dataclass captures the full specification of an autocallable not
 
 **At maturity (if not autocalled):**
 
-- **Rescue check:** if `final_basket ≥ final_redemption_barrier` → redeem at `principal_protection` (par) regardless of the KI
+- **One Star rescue:** if `one_star_level` is set and the best performer ≥ `one_star_level` → redeem at `principal_protection` (par) regardless of the KI
 - **Capital loss:** if `worst_of_final < knock_in_barrier` AND not rescued → cash-equivalent physical delivery: payout = worst-of final performance
+- **Bonus floor:** if KI not breached and `min_return > 0` → redeem at `max(worst_of_final, 1 + min_return)`
 - **Par redemption:** otherwise → `principal_protection`
+
+**Capital-Protected note** (`capital_guarantee` set): a standalone branch that bypasses the waterfall entirely — redemption is `clip(worst_of_final, capital_guarantee, 1 + upside_cap)`, no autocall, coupons, or KI.
 
 **IRR:** simple annualisation — `total_return / t_held` — consistent with how structured note coupons are quoted.
 
 ### Reference Term Sheets
 
-Seven real term sheets are included as ready-to-use JSON configs (upload any of them on the setup page):
+Twelve real term sheets are included as ready-to-use JSON configs (upload any of them on the setup page):
 
 | File | Issuer | Type | Underlyings | Tenor | Coupon | KI |
 |------|--------|------|-------------|-------|--------|-----|
 | `hsbc_xs3376563584.json` | HSBC | Phoenix Memory | GS / JPM / MS | 24M monthly | 10% p.a. | 55% European |
-| `bbva_xs3378405743.json` | BBVA | Phoenix (best-of rescue) | NVDA / PLTR / TSLA | 18M quarterly | 15% p.a. | 50% European |
+| `bbva_xs3378405743.json` | BBVA | Phoenix (One Star rescue) | NVDA / PLTR / TSLA | 18M quarterly | 15% p.a. | 50% European |
 | `citi_xs3096699163.json` | Citi | Growth autocall (step-down) | GOOGL / AMZN / AAPL | 2Y quarterly | 12% p.a. premium | 53.7% European |
 | `santander_xs3242406752.json` | Santander | Phoenix Memory | C / GLE.PA / MS | 2Y quarterly | 10.6% p.a. | 50% European |
 | `santander_xs3242417106.json` | Santander | Phoenix Memory | C / GLE.PA / MS | 2Y quarterly | 10.6% p.a. | 50% European |
 | `hsbc_xs3287776739.json` | HSBC | Phoenix (single asset) | AMD | 18M quarterly | 18% p.a. | 55.5% European |
 | `barclays_xs3305367727.json` | Barclays | Reverse Convertible | ORCL / ADBE | 1Y monthly | 15.25% p.a. guaranteed | 50% European |
+| `bnp_paribas_pr00529720.json` | BNP Paribas | Phoenix One Star | DELL / IBM / MSFT | 1Y quarterly | 16% p.a. | 50% European |
+| `julius_baer_pr00529635.json` | Julius Baer | Phoenix Memory | DELL / IBM / MSFT | 1Y quarterly | 28% p.a. | 50% European |
+| `puente_mayo_bonus_meli_orcl_meta.json` | PUENTE | Bonus Certificate | MELI / ORCL / META | 1Y | +29% floor | 60% European |
+| `puente_junio_..._optionA.json` | PUENTE | Capital Protected | NU / MELI | 18M | 100% floor, 15% cap | — |
+| `puente_junio_..._optionB.json` | PUENTE | Capital Protected | NU / MELI | 18M | 95% floor, 30% cap | — |
 
-The Citi note demonstrates the step-down barrier (100% declining 3%/period from obs 3, floored at 88%) with a 12% p.a. premium paid only at autocall. The Barclays note pays a guaranteed coupon every month (`coupon_barrier = 0.0`).
+The Citi note demonstrates the step-down barrier (100% declining 3%/period from obs 3, floored at 88%) with a 12% p.a. premium paid only at autocall. The Barclays note pays a guaranteed coupon every month (`coupon_barrier = 0.0`). The BNP One Star note redeems at par if any single underlying ≥ 100% at maturity even when the worst-of breached the KI. The PUENTE Bonus and Capital-Protected configs exercise the `min_return` and `capital_guarantee` payoff branches.
 
 ---
 
