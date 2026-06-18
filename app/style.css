@@ -171,6 +171,7 @@ h3 { font-size: 1.12rem; }
     min-height: 6.5rem;          /* keep every card in a row the same height */
     height: 100%;
     box-sizing: border-box;
+    overflow: hidden;            /* never spill into the neighbouring card */
 }
 .snsim-metric-card .smc-label {
     display: flex; align-items: center; gap: 0.4rem;
@@ -179,7 +180,10 @@ h3 { font-size: 1.12rem; }
     font-weight: 600;
     text-transform: uppercase;
     letter-spacing: 0.04em;
+    min-width: 0;
+    overflow-wrap: anywhere;     /* wrap long asset names instead of overflowing */
 }
+.snsim-metric-card .smc-label > span { min-width: 0; }
 .snsim-metric-card .smc-help {
     display: inline-flex; align-items: center; justify-content: center;
     width: 14px; height: 14px; border-radius: 50%;
@@ -195,8 +199,16 @@ h3 { font-size: 1.12rem; }
     color: var(--navy); font-weight: 700;
     font-size: 1.9rem; line-height: 1.1;
     font-variant-numeric: tabular-nums;
+    min-width: 0;
 }
+.snsim-metric-card .smc-value > span { min-width: 0; overflow-wrap: anywhere; }
 .snsim-metric-card .smc-value .smc-logo { width: 28px; height: 28px; }
+/* Free-text value (e.g. a worst-asset name): smaller and wrapping so a long
+   name stays inside the card instead of running over the next one. */
+.snsim-metric-card .smc-value--text {
+    font-size: 1.15rem; line-height: 1.2; font-weight: 600;
+    align-items: flex-start;
+}
 .snsim-metric-card .smc-delta {
     align-self: flex-start; font-size: 0.78rem;
     padding: 0.08rem 0.45rem; border-radius: 6px;

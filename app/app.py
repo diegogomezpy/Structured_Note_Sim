@@ -124,11 +124,14 @@ def _logo_src(sym: str | None) -> str:
 
 def _live_card(label: str, value: str, *, delta: str | None = None,
                delta_kind: str = "neutral", help_text: str | None = None,
-               logo: str | None = None, logo_with_value: bool = False) -> str:
+               logo: str | None = None, logo_with_value: bool = False,
+               value_text: bool = False) -> str:
     """Build one '.snsim-metric-card' (a metric card that can carry a logo).
     Used for every live-tab card so a row stays uniform height with logos inside
     the box. `logo_with_value=True` puts the logo beside the value (name cards);
-    otherwise it sits in the label (per-asset cards). delta_kind: neg/pos/neutral."""
+    otherwise it sits in the label (per-asset cards). `value_text=True` marks the
+    value as free text (e.g. an asset name) so it wraps at a smaller size instead
+    of the big numeric style that overflows. delta_kind: neg/pos/neutral."""
     import html as _html
     logo_img = (f"<img src='{logo}' class='smc-logo' onerror=\"this.style.display='none'\"/>"
                 if logo else "")
@@ -137,10 +140,11 @@ def _live_card(label: str, value: str, *, delta: str | None = None,
     help_html = (f"<span class='smc-help' title=\"{_html.escape(str(help_text), quote=True)}\">?</span>"
                  if help_text else "")
     delta_html = f"<div class='smc-delta {delta_kind}'>{delta}</div>" if delta else ""
+    value_cls = "smc-value smc-value--text" if value_text else "smc-value"
     return (
         "<div class='snsim-metric-card'>"
         f"<div class='smc-label'>{label_logo}<span>{label}</span>{help_html}</div>"
-        f"<div class='smc-value'>{value_logo}<span>{value}</span></div>"
+        f"<div class='{value_cls}'>{value_logo}<span>{value}</span></div>"
         f"{delta_html}</div>"
     )
 
@@ -2066,7 +2070,7 @@ elif st.session_state["page"] == "dashboard":
                     _t2.markdown(_live_card(
                         tr("live_metric_worst_asset"), _worst_asset_today,
                         logo=_logo_src(_live_disp_to_sym.get(_worst_asset_today, "")),
-                        logo_with_value=True,
+                        logo_with_value=True, value_text=True,
                         help_text=tr("live_help_worst_asset")), unsafe_allow_html=True)
 
                     st.markdown("**" + tr("live_group_barriers") + "**")
