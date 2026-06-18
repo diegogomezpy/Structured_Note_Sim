@@ -758,15 +758,15 @@ class _NotePDF(FPDF):
     # ------------------------------------------------------------------
     # Building blocks
     # ------------------------------------------------------------------
-    def start_section(self, text: str, min_room: float = 110.0):
+    def start_section(self, text: str, min_room: float = 146.0):
         """Begin a major section, breaking to a new page only when needed.
 
-        Sections used to each call an unconditional ``add_page()``, which left
-        big voids whenever a section had little content (a 1-row observation
-        table dropped onto an otherwise-blank page). Instead we keep flowing on
-        the current page and only break when fewer than ``min_room`` mm remain
-        below the cursor — enough for the title plus a meaningful chunk of the
-        section. The result fills pages naturally without orphan sections.
+        ``min_room`` is the space the section title PLUS its first block need; we
+        break to a fresh page when fewer than that many mm remain, so a title is
+        never left stranded at the foot of a page with its chart/table overleaf.
+        The default (150) covers a title + a full-width chart (~120mm); sections
+        whose first block is short (issuer panel, glossary, disclaimer) pass a
+        smaller value so they don't leave a big void.
         """
         if self.page_no() == 0:
             self.add_page()
@@ -796,9 +796,12 @@ class _NotePDF(FPDF):
         self.ln(band_h + 4)
         self.set_text_color(*_TEXT)
 
-    def subsection(self, text: str):
-        """SemiBold 9pt sub-header with rule below."""
-        if self.get_y() > self.h - 55:
+    def subsection(self, text: str, min_room: float = 27.0):
+        """SemiBold 9pt sub-header. ``min_room`` is the space the header plus the
+        block that follows need; break first so the header isn't orphaned above a
+        table/figure that flows to the next page. Callers preceding a table pass
+        the table's height (see _table_room)."""
+        if self.get_y() > self.h - self.b_margin - min_room:
             self.add_page()
         self.ln(2)
         self._sf(9, "semibold")
@@ -2158,6 +2161,13 @@ def _cover_page(
 # Public API
 # ──────────────────────────────────────────────────────────────────────────────
 
+def _table_room(n_rows: int, row_h: float = 8.0, head_h: float = 9.0) -> float:
+    """Approx mm a filled-header table occupies. Capped so a long (multi-page)
+    table doesn't make its sub-header demand a whole empty page — the header plus
+    the start of the table is enough to keep them together; the rest flows."""
+    return min(head_h + n_rows * row_h + 6.0, 130.0)
+
+
 def generate_pdf_report(
     terms,
     results: dict,
@@ -2274,7 +2284,7 @@ def generate_pdf_report(
         rounded=True,
     )
 
-    pdf.subsection(_t("obs_schedule", lang))
+    pdf.subsection(_t("obs_schedule", lang), min_room=14 + _table_room(terms.n_obs))
     obs_times = terms.obs_times()
     sched     = terms.autocall_barrier_schedule()
     ac_rows = []
@@ -2319,7 +2329,7 @@ def generate_pdf_report(
                secondary_color=secondary_color)
     src_mc = f"{_t('src_mc', lang)}, {n_paths_val:,} {_t('paths_word', lang)}"
 
-    def _lazy_section(title, min_room=110.0):
+    def _lazy_section(title, min_room=146.0):
         """Emit a section header at most once, only when its first included item
         is actually drawn — so a section with everything toggled off leaves no
         empty header behind."""
@@ -2356,7 +2366,8 @@ def generate_pdf_report(
     prob_by_period = results.get("prob_autocall_by_period", [])
     if _inc("mc_autocall") and prob_by_period:
         _sec()
-        pdf.subsection(_t("autocall_by_period", lang))
+        pdf.subsection(_t("autocall_by_period", lang),
+                       min_room=14 + _table_room(len(prob_by_period)))
         rows = []
         for i, (t_obs, p_ac) in enumerate(zip(obs_times, prob_by_period)):
             eligible = _t("yes", lang) if (i + 1) >= terms.autocall_start_period else _t("no", lang)
@@ -2567,7 +2578,8 @@ def generate_pdf_report(
         perf_today = live_data.get("perf_today", {})
         if perf_today and _inc("live_asset_table"):
             _sec()
-            pdf.subsection(_t("live_asset_perf", lang))
+            pdf.subsection(_t("live_asset_perf", lang),
+                           min_room=14 + _table_room(len(perf_today), row_h=10.0))
             _perf_logos = {
                 nm: (_logo_ovr.get(nm)
                      or _load_ticker_logo(nm, (logo_urls or {}).get(nm, ""),
@@ -2585,7 +2597,8 @@ def generate_pdf_report(
         obs_rows = live_data.get("obs_rows", [])
         if obs_rows and _inc("live_obs_table"):
             _sec()
-            pdf.subsection(_t("live_obs_history", lang))
+            pdf.subsection(_t("live_obs_history", lang),
+                           min_room=14 + _table_room(len(obs_rows)))
             obs_headers = list(obs_rows[0].keys())
             obs_data    = [[str(r.get(h, "")) for h in obs_headers] for r in obs_rows]
             n_cols = len(obs_headers)
