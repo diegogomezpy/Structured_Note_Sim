@@ -30,6 +30,7 @@ keys warn; malformed hex falls back to the default with a warning):
     "accent_color":          "#00A0DC",           # rules, hero data series, median
     "chart_secondary_color": "#C69426",           # 2nd chart category (default: gold)
     "section_rule_color":    "#00A0DC",           # rule under section titles (default: accent)
+    "panel_color":           "#EAF1F8",           # cover sidebar + card fill (default: light primary tint)
     "logo_file":             "branding/acme.png", # local path, repo-root relative (preferred)
     "logo_base64":           "",                  # OR a base64 / data: URI
     "logo_url":              "https://...",        # OR a remote URL (last resort)
@@ -94,9 +95,11 @@ _KNOWN_BRANDING_KEYS = {
     "logo_file", "logo_base64", "logo_url",
     "report_title", "website", "contact", "footer_note",
     "section_rule_color",   # NEW — color of the rule drawn under section titles
+    "panel_color",          # NEW — fill of the cover sidebar + figure/callout/issuer cards
     "disclaimer_body",      # NEW — overrides the full disclaimer body text
 }
-_HEX_KEYS = ("primary_color", "accent_color", "chart_secondary_color", "section_rule_color")
+_HEX_KEYS = ("primary_color", "accent_color", "chart_secondary_color",
+             "section_rule_color", "panel_color")
 
 
 def _hex_to_rgb(hex_str: str) -> tuple[int, int, int]:
@@ -541,7 +544,8 @@ class _NotePDF(FPDF):
                  report_title: str | None = None,
                  website: str = "", contact: str = "",
                  footer_note: str | None = None,
-                 section_rule_color: tuple = _DEFAULT_ACCENT):
+                 section_rule_color: tuple = _DEFAULT_ACCENT,
+                 panel_color: tuple | None = None):
         super().__init__(orientation="P", unit="mm", format="A4")
         self.lang          = lang
         self.issuer        = issuer
@@ -549,12 +553,15 @@ class _NotePDF(FPDF):
         self.primary_color = primary_color
         self.accent_color  = accent_color
         self.section_rule_color = section_rule_color
-        # Panel fill (cover sidebar, figure/callout/issuer cards): a very light
-        # tint of the brand PRIMARY so every panel echoes the firm palette
-        # instead of a hardcoded colour. Derived from primary (not accent) so a
-        # bold accent — e.g. a red — never produces a pink card; for the default
-        # navy this resolves to a neutral cool-grey, unchanged from before.
-        self.panel_color = _blend(primary_color, _WHITE, 0.93)
+        # Panel fill (cover sidebar, figure/callout/issuer cards). A brand may set
+        # it explicitly via the `panel_color` key; otherwise it's a very light
+        # tint of the brand PRIMARY so every panel echoes the firm palette. The
+        # auto tint is derived from primary (not accent) so a bold accent — e.g. a
+        # red — never produces a pink card; for the default navy it resolves to a
+        # neutral cool-grey. An explicit value gives the firm exact control (e.g.
+        # CADIEM pins its mint green that a 7% teal tint would wash out).
+        self.panel_color = (panel_color if panel_color is not None
+                            else _blend(primary_color, _WHITE, 0.93))
         self.firm_name     = firm_name
         self.firm_logo_bytes = firm_logo_bytes
         # Optional branding content (B5). report_title overrides the default
@@ -2147,6 +2154,8 @@ def generate_pdf_report(
     # ── Resolve + validate branding ───────────────────────────────────
     _validate_branding(branding)
     primary_color, accent_color, secondary_color, section_rule_color, firm_name = _resolve_palette(branding)
+    # Panel fill: explicit branding `panel_color` wins; else a light primary tint.
+    panel_color = _branding_color(branding, "panel_color", _blend(primary_color, _WHITE, 0.93))
     # Local-file-first: logo_file -> logo_base64 -> logo_url
     brand_logo_bytes = _load_logo(branding)
     # Optional content keys (B5)
@@ -2178,6 +2187,7 @@ def generate_pdf_report(
         contact         = contact,
         footer_note     = footer_note,
         section_rule_color = section_rule_color,   # NEW
+        panel_color     = panel_color,             # NEW
     )
 
     # ── 1. Cover ───────────────────────────────────────────────────────────
