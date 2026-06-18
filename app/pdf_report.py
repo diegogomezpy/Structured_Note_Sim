@@ -1122,10 +1122,24 @@ class _NotePDF(FPDF):
             self.set_text_color(*_TEXT_SOFT)
             self.cell(w - 2, 3.5, lbl)
 
-            self.set_xy(x, y0 + 8.5)
-            self._sf(13, "bold")
+            # Value. Numbers fit at the big 13pt size, but a long free-text value
+            # (e.g. a worst-asset name) would otherwise overflow into the next
+            # metric — cell() neither wraps nor clips. Shrink it to the column and,
+            # if it still doesn't fit, wrap it onto two lines within the column.
             self.set_text_color(*self.primary_color)
-            self.cell(w - 2, 7, value)
+            val   = self._safe(str(value))
+            vsize = 13.0
+            self._sf(vsize, "bold")
+            while self.get_string_width(val) > (w - 2) and vsize > 9.0:
+                vsize -= 0.3
+                self._sf(vsize, "bold")
+            if self.get_string_width(val) > (w - 2):
+                self.set_xy(x, y0 + 7)
+                self.multi_cell(w - 2, vsize * 0.42, val,
+                                align="L", new_x="LMARGIN", new_y="TOP")
+            else:
+                self.set_xy(x, y0 + 8.5)
+                self.cell(w - 2, 7, val)
             x += w
 
         self.set_y(y0 + 18)
