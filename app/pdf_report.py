@@ -26,16 +26,18 @@ keys warn; malformed hex falls back to the default with a warning):
 
   {
     "firm_name":             "Acme Capital",      # cover + running header
-    "primary_color":         "#003366",           # headers, bands, table fills
+    "primary_color":         "#003366",           # headers, table fills, panel tint
     "accent_color":          "#00A0DC",           # rules, hero data series, median
     "chart_secondary_color": "#C69426",           # 2nd chart category (default: gold)
+    "section_rule_color":    "#00A0DC",           # rule under section titles (default: accent)
     "logo_file":             "branding/acme.png", # local path, repo-root relative (preferred)
     "logo_base64":           "",                  # OR a base64 / data: URI
     "logo_url":              "https://...",        # OR a remote URL (last resort)
     "report_title":          "Structured Note Analytics",  # cover eyebrow + subtitle
     "website":               "www.acme.com",      # cover identity line
     "contact":               "research@acme.com", # cover identity line
-    "footer_note":           "..."                # overrides the default footer disclaimer line
+    "footer_note":           "...",               # overrides the default footer disclaimer line
+    "disclaimer_body":       "..."                # overrides the full "Important Information" body
   }
 
 Branding affects the PDF only; the Streamlit UI theme is set separately in
@@ -79,7 +81,6 @@ _TEXT             = (43,  61, 79)   # dark navy-slate #2B3D4F  (was near-black #
 _TEXT_SOFT        = (107, 114, 128) # warm grey  #6b7280
 _HAIRLINE         = (203, 213, 225) # cool grey  #cbd5e1
 _RULE_LIGHT       = (226, 232, 240) # slate-100  #e2e8f0
-_PANEL            = (231, 245, 232) # light green tint #E7F5E8  (was slate-100 #f1f5f9)
 _ROW_ALT          = (245, 246, 250) # slate-50   #F5F6FA — zebra rows
 _WHITE            = (255, 255, 255)
 _COVER_BAND_H     = 38              # mm — height of the top cover band
@@ -548,6 +549,12 @@ class _NotePDF(FPDF):
         self.primary_color = primary_color
         self.accent_color  = accent_color
         self.section_rule_color = section_rule_color
+        # Panel fill (cover sidebar, figure/callout/issuer cards): a very light
+        # tint of the brand PRIMARY so every panel echoes the firm palette
+        # instead of a hardcoded colour. Derived from primary (not accent) so a
+        # bold accent — e.g. a red — never produces a pink card; for the default
+        # navy this resolves to a neutral cool-grey, unchanged from before.
+        self.panel_color = _blend(primary_color, _WHITE, 0.93)
         self.firm_name     = firm_name
         self.firm_logo_bytes = firm_logo_bytes
         # Optional branding content (B5). report_title overrides the default
@@ -756,9 +763,9 @@ class _NotePDF(FPDF):
         self.section_title(text)
 
     def section_title(self, text: str):
-        """Green section title text + thin chartreuse filled-rect band below (CADIEM style).
+        """Section title in the brand primary colour + a thin filled-rect band below.
 
-        The band is a thin filled rectangle in section_rule_color, ~0.75mm tall,
+        The band is a thin filled rectangle in section_rule_color, ~0.6mm tall,
         spanning the full usable width. No drawn lines anywhere.
         """
         if self.get_y() > self.h - 60:
@@ -767,8 +774,8 @@ class _NotePDF(FPDF):
         self._sf(13, "semibold")           # slightly larger than the old 11pt — factsheet titles are ~13pt
         self.set_text_color(*self.primary_color)
         self.cell(0, 8, text, new_x="LMARGIN", new_y="NEXT")
-        # Thin chartreuse band in section_rule_color, full width.
-        band_h = 0.6   # mm — thin chartreuse rule
+        # Thin band in section_rule_color, full width.
+        band_h = 0.6   # mm — thin section rule
         band_w = self.w - self.l_margin - self.r_margin
         self.set_fill_color(*self.section_rule_color)
         self.rect(self.l_margin, self.get_y(), band_w, band_h, style="F")
@@ -989,7 +996,7 @@ class _NotePDF(FPDF):
         self.ln(4)
 
     def metric_band(self, metrics: list[tuple[str, str]]):
-        """Horizontal band of key metrics. No top rule — the section's chartreuse
+        """Horizontal band of key metrics. No top rule — the section's rule
         band already separates it (avoids a 'double bar' under the header)."""
         n = len(metrics)
         usable = self.w - self.l_margin - self.r_margin
@@ -1049,7 +1056,7 @@ class _NotePDF(FPDF):
         # Faint rounded panel behind the chart, matching the text/issuer panels.
         self.ln(_fpad)
         _img_y = self.get_y()
-        self.set_fill_color(244, 246, 249)   # #F4F6F9
+        self.set_fill_color(*self.panel_color)   # brand-tinted panel
         try:
             self.rect(x - _fpad, _img_y - _fpad, w + 2 * _fpad, h + 2 * _fpad,
                       style="F", round_corners=True, corner_radius=2)
@@ -1075,7 +1082,7 @@ class _NotePDF(FPDF):
         if y0 + box_h > self.h - 28:
             self.add_page()
             y0 = self.get_y()
-        self.set_fill_color(244, 246, 249)   # #F4F6F9 — reference blurb panel color
+        self.set_fill_color(*self.panel_color)   # brand-tinted blurb panel
         try:
             self.rect(x0, y0, w, box_h, style="F", round_corners=True, corner_radius=2)
         except TypeError:
@@ -1092,7 +1099,7 @@ class _NotePDF(FPDF):
 
     def issuer_info_block(self, name: str, logo_bytes: bytes | None,
                           description: str, ratings: list[tuple[str, str]]):
-        """Factsheet-style issuer panel: logo + name (green), a blurb, and S&P/
+        """Factsheet-style issuer panel: logo + name (brand primary), a blurb, and S&P/
         Moody's/Fitch rating chips. Mirrors the reference 'Información del Emisor'.
         `ratings` is a list of (label, value) with empty values already removed."""
         x0 = self.l_margin
@@ -1116,12 +1123,12 @@ class _NotePDF(FPDF):
             self.add_page()
             y0 = self.get_y()
         # Panel
-        self.set_fill_color(244, 246, 249)   # #F4F6F9
+        self.set_fill_color(*self.panel_color)   # brand-tinted panel
         try:
             self.rect(x0, y0, w, box_h, style="F", round_corners=True, corner_radius=2)
         except TypeError:
             self.rect(x0, y0, w, box_h, style="F")
-        # Logo + issuer name (green)
+        # Logo + issuer name (brand primary)
         cy = y0 + pad
         tx = x0 + pad
         if logo_bytes:
@@ -1437,8 +1444,8 @@ def _build_color_remap(primary: tuple, accent: tuple, secondary: tuple) -> dict:
 
 
 def _build_scale_remap(primary: tuple, accent: tuple) -> dict:
-    """Colour-scale map (heatmaps): keep the intensity ramp on-brand (green),
-    never gold — the navy/blue endpoints map to the brand, red stays red."""
+    """Colour-scale map (heatmaps): keep the intensity ramp on-brand (primary/
+    accent), never gold — the navy/blue endpoints map to the brand, red stays red."""
     return {_SRC_NAVY: primary, _SRC_BLUE: accent}
 
 
@@ -1818,7 +1825,7 @@ def _cover_page(
         pdf.set_text_color(*pdf.primary_color)
         pdf.cell(140, 8, _safe(pdf.firm_name))
 
-    # Thin accent rule at the base of the header — chartreuse (in line with the
+    # Thin rule at the base of the header — section_rule_color (in line with the
     # section bands), full width, 0.6mm.
     pdf.set_draw_color(*pdf.section_rule_color)
     pdf.set_line_width(0.6)
@@ -1829,7 +1836,7 @@ def _cover_page(
     sb_y_top   = band_h + 4
     sb_h       = 170
 
-    pdf.set_fill_color(*_PANEL)
+    pdf.set_fill_color(*pdf.panel_color)
     try:
         pdf.rect(sb_x, sb_y_top, sb_w, sb_h, style="F",
                  round_corners=True, corner_radius=3)
