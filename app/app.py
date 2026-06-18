@@ -108,6 +108,19 @@ from underlyings import (  # shared ticker universe + logo maps + label helper
     _TICKER_TO_LABEL, _label_to_name,
 )
 
+
+def _logo_src(sym: str | None) -> str:
+    """<img src> for a ticker logo: a user-uploaded custom logo (as a base64
+    data URI) when one exists for this symbol, else the favicon/CDN URL. Returns
+    '' when there is no symbol, so callers can guard on truthiness."""
+    if not sym:
+        return ""
+    custom = st.session_state.get("custom_logos", {}).get(sym)
+    if custom:
+        import base64
+        return "data:image/png;base64," + base64.b64encode(custom).decode("ascii")
+    return TICKER_LOGOS.get(sym) or _LOGO_BASE.format(sym=sym)
+
 # ==========================================================================
 # Session state defaults
 # ==========================================================================
@@ -126,7 +139,7 @@ _DEFAULTS = {
     "calib_years":      5.0,     # years of recent data used for Heston calibration
     "branding":         None,    # parsed branding JSON dict (firm_name, colors, logo_url)
     "issuer_logo_bytes": None,   # user-uploaded custom issuer logo (overrides favicon)
-    "pdf_selected":     set(),   # persisted set of checked "Include in PDF" items
+    "custom_logos":     {},      # {yf_symbol: bytes} — uploaded underlying logos (override favicons)
 }
 for k, v in _DEFAULTS.items():
     if k not in st.session_state:
@@ -187,29 +200,31 @@ lang_choice = st.sidebar.radio("Language / Idioma", ["English", "Español"],
 tr = Translator("es" if lang_choice == "Español" else "en")
 
 
-def _pdf_toggle(item_key: str, label: str | None = None):
-    """Render a compact 'include in PDF' checkbox for one report item (a single
-    chart, table or metric block). Default off, so a fresh report starts empty
-    and the user opts each piece in.
-
-    The selection is mirrored into the non-widget set session_state['pdf_selected']
-    so it SURVIVES navigation: Streamlit garbage-collects widget-keyed state
-    (pdf_inc_*) when the widget isn't rendered (e.g. while on the setup page), but
-    a plain session_state set persists. The checkbox re-initialises from it."""
-    sel = st.session_state.setdefault("pdf_selected", set())
-    checked = st.checkbox(label or tr("pdf_include_toggle"),
-                          value=(item_key in sel),
-                          key=f"pdf_inc_{item_key}", help=tr("pdf_include_help"))
-    if checked:
-        sel.add(item_key)
-    else:
-        sel.discard(item_key)
-    return checked
+# Fine-grained PDF section keys, grouped by analysis. The Build-report panel
+# shows one checkbox per group; each expands to the keys generate_pdf_report
+# gates on via include_sections. mc_fan_{i} (one per underlying) is added
+# dynamically from the asset count.
+_REPORT_GROUPS = {
+    "mc":   ["mc_metrics", "mc_autocall", "mc_irr", "mc_wof",
+             "mc_single_price", "mc_single_wof", "calib_table", "calib_corr"],
+    "bt":   ["bt_metrics", "bt_outcome", "bt_pie", "bt_irr", "bt_prices", "bt_explorer"],
+    "live": ["live_metrics", "live_asset_table", "live_obs_table", "live_chart"],
+}
 
 
-def _collect_pdf_sections() -> set[str]:
-    """The persisted set of checked per-item PDF toggles (see _pdf_toggle)."""
-    return set(st.session_state.get("pdf_selected", set()))
+def _collect_pdf_sections(n_assets: int = 0, has_live: bool = True) -> set[str]:
+    """Expand the Build-report panel's group checkboxes into the fine-grained
+    include_sections keys the PDF gates on. Each group defaults to ON, so a
+    report includes everything available unless the user unticks a section."""
+    sel: set[str] = set()
+    if st.session_state.get("rep_inc_mc", True):
+        sel.update(_REPORT_GROUPS["mc"])
+        sel.update(f"mc_fan_{i}" for i in range(n_assets))
+    if st.session_state.get("rep_inc_bt", True):
+        sel.update(_REPORT_GROUPS["bt"])
+    if st.session_state.get("rep_inc_live", True) and has_live:
+        sel.update(_REPORT_GROUPS["live"])
+    return sel
 
 
 def _safe_load_prices(tickers_tuple, **kw):
@@ -377,7 +392,7 @@ if st.session_state["page"] == "setup":
         logo_cols = st.columns(min(len(selected_labels), 5))
         for _i, _lbl in enumerate(selected_labels[:5]):
             _sym = _lbl_to_sym.get(_lbl)
-            _logo_url = (TICKER_LOGOS.get(_sym) or _LOGO_BASE.format(sym=_sym)) if _sym else None
+            _logo_url = _logo_src(_sym) or None
             _short = _label_to_name(_lbl)
             with logo_cols[_i]:
                 if _logo_url:
@@ -389,6 +404,33 @@ if st.session_state["page"] == "setup":
                         unsafe_allow_html=True,
                     )
                 st.caption(_short)
+
+        # ── Custom logos (override the favicon/CDN logo per underlying) ────
+        with st.expander(tr("setup_custom_logos_header")):
+            st.caption(tr("setup_custom_logos_caption"))
+            _cl = dict(st.session_state.get("custom_logos", {}))
+            for _lbl in selected_labels[:5]:
+                _sym = _lbl_to_sym.get(_lbl)
+                if not _sym:
+                    continue
+                _ulc1, _ulc2 = st.columns([4, 1])
+                with _ulc1:
+                    _up = st.file_uploader(
+                        _label_to_name(_lbl),
+                        type=["png", "jpg", "jpeg", "gif", "webp"],
+                        key=f"custom_logo_up_{_sym}",
+                    )
+                    if _up is not None:
+                        _cl[_sym] = _up.getvalue()
+                with _ulc2:
+                    if _cl.get(_sym):
+                        st.image(_cl[_sym], width=40)
+                        if st.button(tr("setup_custom_logo_clear"),
+                                     key=f"custom_logo_clear_{_sym}"):
+                            _cl.pop(_sym, None)
+                            st.session_state["custom_logos"] = _cl
+                            st.rerun()
+            st.session_state["custom_logos"] = _cl
 
     st.divider()
 
@@ -966,9 +1008,19 @@ elif st.session_state["page"] == "dashboard":
             st.session_state["branding"] = None
             st.rerun()
 
+    # ── Build-report panel — choose what goes in the PDF in ONE place ─────
+    # Replaces the ~20 'Include in PDF' checkboxes that used to sit next to every
+    # chart. Each group defaults ON, so the full report is produced without any
+    # clicking; untick a section to leave it out.
+    with st.sidebar.expander(tr("report_panel_header"), expanded=False):
+        st.checkbox(tr("report_inc_mc"),   value=True, key="rep_inc_mc")
+        st.checkbox(tr("report_inc_bt"),   value=True, key="rep_inc_bt")
+        st.checkbox(tr("report_inc_live"), value=True, key="rep_inc_live")
+        st.caption(tr("report_panel_caption"))
+    # The button is always enabled: if the sim hasn't been run yet, clicking it
+    # runs the sim first and then builds the report (see _run_for_pdf below).
     _pdf_btn = st.sidebar.button(
         tr("sidebar_generate_pdf"),
-        disabled=not bool(st.session_state.get("results")),
         help=tr("sidebar_generate_pdf_help"),
     )
     # Placeholder so the generated download button appears right here, directly
@@ -1044,7 +1096,7 @@ elif st.session_state["page"] == "dashboard":
             "<tr>"
             "<td style='padding:4px 8px;vertical-align:middle;'>"
             + (
-                f"<img src='{TICKER_LOGOS.get(sym) or _LOGO_BASE.format(sym=sym)}' "
+                f"<img src='{_logo_src(sym)}' "
                 f"width='24' height='24' "
                 f"style='border-radius:4px;vertical-align:middle;' "
                 f"onerror=\"this.style.display='none'\"/>"
@@ -1100,7 +1152,11 @@ elif st.session_state["page"] == "dashboard":
     ) if _R_pre is not None else list(selected_tickers.values())
 
     # ── Run simulation (triggered by sidebar button) ──────────────────────
-    if run_button:
+    # Generate-report also runs the sim when none exists yet, so a PDF can be
+    # produced without first clicking Run Simulation. A pending flag survives the
+    # rerun so the report is built once results + figures are available.
+    _run_for_pdf = _pdf_btn and st.session_state.get("results") is None
+    if run_button or _run_for_pdf:
         with st.spinner(tr("mc_run_spinner")):
             _hist_years = st.session_state.get("history_years", None)
             # Calibrate drift/vol/correlations on ADJUSTED closes (total-return
@@ -1201,6 +1257,10 @@ elif st.session_state["page"] == "dashboard":
             }
             st.session_state["last_asset_names"] = list(selected_tickers.values())
             st.session_state["path_num"] = 0
+            # If this run was triggered by Generate-report, remember to build the
+            # PDF after the rerun (once the tabs have rendered + cached figures).
+            if _run_for_pdf:
+                st.session_state["_pending_pdf"] = True
             st.rerun()
 
     # ── Tab structure (always rendered) ──────────────────────────────────
@@ -1285,41 +1345,49 @@ elif st.session_state["page"] == "dashboard":
                 "wof_fan":  _fig_wof,
                 "corr":     _fig_corr_input,
             }
-            # ── Summary metrics (two rows of 3) ──────────────────────
-            st.header(tr("summary_stats_header"))
-            # Knock-in (barrier breached at maturity), not capital loss: count the
-            # knock-in event itself and average the IRR over those paths.
-            _ki_mask = R.get("knock_in_mask")
-            if _ki_mask is None:
-                _ki_mask = R.get("knock_in_triggered")
-            _lgki = R.get("loss_given_knock_in")
-            if _lgki is None and _ki_mask is not None and _ki_mask.any():
-                _lgki = float(R["annualized_returns"][_ki_mask].mean())
-            _lgki_str = f"{_lgki:.2%}" if _lgki is not None and _lgki == _lgki else "—"  # nan check
-            c1, c2, c3 = st.columns(3)
-            c1.metric(tr("expected_irr_pa"),        f"{R['expected_irr']:.2%}",
-                      help=tr("mc_help_expected_irr"))
-            c2.metric(tr("expected_total_return"),  f"{R['expected_total_return']:.2%}",
-                      help=tr("mc_help_expected_return"))
-            c3.metric(tr("expected_coupon_metric"), f"{R['expected_coupon']:.2%}",
-                      help=tr("mc_help_expected_coupon"))
-            c4, c5, c6 = st.columns(3)
-            c4.metric(tr("prob_autocalled"),        f"{R['prob_autocall']:.2%}",
-                      help=tr("mc_help_prob_autocall"))
-            c5.metric(tr("prob_knock_in_metric"),   f"{R['prob_knock_in_total']:.2%}",
-                      help=tr("mc_help_prob_knock_in"))
-            c6.metric(tr("loss_given_ki_metric"),   _lgki_str,
-                      help=tr("mc_help_loss_given_ki"))
-            if R.get("prob_rescued", 0) > 0:
-                st.caption(
-                    tr("barrier_rescued_caption",
-                       barrier=R['prob_barrier_event'],
-                       rescued=R['prob_rescued'],
-                       level=terms.one_star_level or 1.0)
-                )
-            _pdf_toggle("mc_metrics")
+            # Summary is now its own subtab (mirrors the Backtest tab) instead of
+            # a floating metrics block + a separate autocall dropdown.
+            mc_tab0, mc_tab1, mc_tab2, mc_tab3, mc_tab4 = st.tabs([
+                tr("mc_subtab_summary"), tr("mc_subtab_payoff"), tr("mc_subtab_paths"),
+                tr("mc_subtab_explorer"), tr("mc_subtab_corr"),
+            ])
 
-            with st.expander(tr("autocall_by_period_expander"), expanded=False):
+            with mc_tab0:
+                # ── Summary metrics (two rows of 3) ──────────────────────
+                st.subheader(tr("summary_stats_header"))
+                # Knock-in (barrier breached at maturity), not capital loss: count
+                # the knock-in event itself and average the IRR over those paths.
+                _ki_mask = R.get("knock_in_mask")
+                if _ki_mask is None:
+                    _ki_mask = R.get("knock_in_triggered")
+                _lgki = R.get("loss_given_knock_in")
+                if _lgki is None and _ki_mask is not None and _ki_mask.any():
+                    _lgki = float(R["annualized_returns"][_ki_mask].mean())
+                _lgki_str = f"{_lgki:.2%}" if _lgki is not None and _lgki == _lgki else "—"  # nan check
+                c1, c2, c3 = st.columns(3)
+                c1.metric(tr("expected_irr_pa"),        f"{R['expected_irr']:.2%}",
+                          help=tr("mc_help_expected_irr"))
+                c2.metric(tr("expected_total_return"),  f"{R['expected_total_return']:.2%}",
+                          help=tr("mc_help_expected_return"))
+                c3.metric(tr("expected_coupon_metric"), f"{R['expected_coupon']:.2%}",
+                          help=tr("mc_help_expected_coupon"))
+                c4, c5, c6 = st.columns(3)
+                c4.metric(tr("prob_autocalled"),        f"{R['prob_autocall']:.2%}",
+                          help=tr("mc_help_prob_autocall"))
+                c5.metric(tr("prob_knock_in_metric"),   f"{R['prob_knock_in_total']:.2%}",
+                          help=tr("mc_help_prob_knock_in"))
+                c6.metric(tr("loss_given_ki_metric"),   _lgki_str,
+                          help=tr("mc_help_loss_given_ki"))
+                if R.get("prob_rescued", 0) > 0:
+                    st.caption(
+                        tr("barrier_rescued_caption",
+                           barrier=R['prob_barrier_event'],
+                           rescued=R['prob_rescued'],
+                           level=terms.one_star_level or 1.0)
+                    )
+                # Autocall probability by period — folded into the summary (was a
+                # separate dropdown with its own PDF checkbox).
+                st.markdown("##### " + tr("autocall_by_period_expander"))
                 prob_by_period = R["prob_autocall_by_period"]
                 ac_df = pd.DataFrame({
                     tr("col_period"):    range(1, run_terms.n_obs + 1),
@@ -1329,19 +1397,10 @@ elif st.session_state["page"] == "dashboard":
                                      for i in range(run_terms.n_obs)],
                 })
                 st.dataframe(ac_df, use_container_width=True, hide_index=True)
-                _pdf_toggle("mc_autocall")
-
-            st.markdown("---")
-
-            mc_tab1, mc_tab2, mc_tab3, mc_tab4 = st.tabs([
-                tr("mc_subtab_payoff"), tr("mc_subtab_paths"),
-                tr("mc_subtab_explorer"), tr("mc_subtab_corr"),
-            ])
 
             with mc_tab1:
                 st.subheader(tr("irr_dist_subheader"))
                 st.plotly_chart(_fig_irr, use_container_width=True)
-                _pdf_toggle("mc_irr")
                 if R["prob_knock_in_total"] > 0:
                     st.info(tr("knock_in_info", pct=R["prob_knock_in_total"],
                                barrier=run_terms.knock_in_barrier))
@@ -1350,14 +1409,12 @@ elif st.session_state["page"] == "dashboard":
                 st.subheader(tr("price_paths_subheader"))
                 st.markdown(tr("wof_basket_md"))
                 st.plotly_chart(_fig_wof, use_container_width=True)
-                _pdf_toggle("mc_wof")
                 st.markdown(tr("individual_paths_md"))
                 _individual_figs = []
                 for i, name in enumerate(asset_names):
                     _ind_fig = build_fan_chart(sim_prices[:, :, i], name, t_grid, obs_pairs, tr)
                     _individual_figs.append((name, _ind_fig))
                     st.plotly_chart(_ind_fig, use_container_width=True)
-                    _pdf_toggle(f"mc_fan_{i}")   # one toggle per underlying fan
                 # Cache per-underlying fans for the PDF (Price Paths analysis).
                 st.session_state["_pdf_mc_figures"]["individual"] = _individual_figs
 
@@ -1386,7 +1443,6 @@ elif st.session_state["page"] == "dashboard":
                 )
                 _sp_price_fig = build_path_price_chart(path_df, pn, obs_steps_i, obs_labels, tr)
                 st.plotly_chart(_sp_price_fig, use_container_width=True)
-                _pdf_toggle("mc_single_price")
                 autocall_q    = int(R["autocall_events"][pn])
                 s0_arr        = np.array(R.get("s0_values") or [p.S0 for p in R["params"]])
                 asset_perf_pn = sim_prices[pn] / s0_arr[np.newaxis, :]
@@ -1409,7 +1465,6 @@ elif st.session_state["page"] == "dashboard":
                     coupon_flags=coupon_flags,
                 )
                 st.plotly_chart(_sp_wof_fig, use_container_width=True)
-                _pdf_toggle("mc_single_wof")
                 # Cache the viewed path's figures for the PDF (Path Explorer).
                 if "_pdf_mc_figures" in st.session_state:
                     st.session_state["_pdf_mc_figures"].update({
@@ -1445,7 +1500,7 @@ elif st.session_state["page"] == "dashboard":
                 _pe_cols = st.columns(len(asset_names))
                 for _pe_i, (_pe_name, _pe_col) in enumerate(zip(asset_names, _pe_cols)):
                     _pe_sym = _disp_to_sym_pe.get(_pe_name, "")
-                    _pe_logo = (TICKER_LOGOS.get(_pe_sym) or _LOGO_BASE.format(sym=_pe_sym)) if _pe_sym else ""
+                    _pe_logo = _logo_src(_pe_sym)
                     _pe_logo_html = (
                         f"<img src='{_pe_logo}' width='24' height='24' "
                         f"style='border-radius:4px;vertical-align:middle;margin-right:4px;' "
@@ -1500,7 +1555,6 @@ elif st.session_state["page"] == "dashboard":
                             (effective_corr - corr_SS) - np.diag(np.diag(effective_corr - corr_SS)))))
                         ec2.metric(tr("corr_effective_gap"), f"{_eff_gap:+.3f}")
                         ec2.caption(tr("corr_effective_caption"))
-                _pdf_toggle("calib_corr")
                 st.markdown("---")
                 st.subheader(tr("calib_heston_subheader"))
                 _disp_to_sym = {disp: sym for sym, disp in selected_tickers.items()}
@@ -1508,7 +1562,7 @@ elif st.session_state["page"] == "dashboard":
                 for p in R["params"]:
                     ok, _ = p.feller_condition()
                     _sym = _disp_to_sym.get(p.name, "")
-                    _logo_url = (TICKER_LOGOS.get(_sym) or _LOGO_BASE.format(sym=_sym)) if _sym else ""
+                    _logo_url = _logo_src(_sym)
                     _logo_html = (
                         f"<img src='{_logo_url}' width='24' height='24' "
                         f"style='border-radius:4px;vertical-align:middle;margin-right:6px;' "
@@ -1544,7 +1598,6 @@ elif st.session_state["page"] == "dashboard":
                 )
                 st.caption(tr("heston_column_guide"))
                 st.info(tr("t_copula_dof", v=R.get('t_dof', 'N/A')))
-                _pdf_toggle("calib_table")
 
 
     # ══════════════════════════════════════════════════════════════════
@@ -1732,7 +1785,6 @@ elif st.session_state["page"] == "dashboard":
                           help=tr("bt_help_autocalled_pct"))
                 b6.metric(tr("loss_given_ki_metric"),     _bt_lgki_str,
                           help=tr("bt_help_loss_given_ki"))
-                _pdf_toggle("bt_metrics")
 
                 _bt_outcome_fig = build_backtest_outcome_bar(bt, color_map, tr)
                 _bt_irr_fig     = build_backtest_irr_scatter(bt, color_map, tr)
@@ -1740,12 +1792,9 @@ elif st.session_state["page"] == "dashboard":
                 col1, col2 = st.columns(2)
                 with col1:
                     st.plotly_chart(_bt_outcome_fig, use_container_width=True)
-                    _pdf_toggle("bt_outcome")
                 with col2:
                     st.plotly_chart(_bt_pie_fig, use_container_width=True)
-                    _pdf_toggle("bt_pie")
                 st.plotly_chart(_bt_irr_fig, use_container_width=True)
-                _pdf_toggle("bt_irr")
                 # Cache for PDF — augment bt_summary with loss-given-KI
                 _pdf_bt_summary = dict(bt_summary)
                 if not _bt_ki_rows.empty:
@@ -1758,7 +1807,6 @@ elif st.session_state["page"] == "dashboard":
                 st.session_state["_pdf_bt_figures"] = _bt_figs
 
             with bt_tab2:
-                _pdf_toggle("bt_prices")
                 try:
                     # P4: this chart plots max-history daily closes (decades ×
                     # n_assets points) and re-serialises to the browser every rerun.
@@ -1783,7 +1831,6 @@ elif st.session_state["page"] == "dashboard":
             # _all_prices / terms from the last full run (stable until rerun).
             @st.fragment
             def _bt_path_explorer():
-                _pdf_toggle("bt_explorer")
                 st.subheader(tr("bt_path_explorer_header"))
                 st.caption(tr("bt_path_explorer_caption"))
 
@@ -1951,7 +1998,7 @@ elif st.session_state["page"] == "dashboard":
                     for _i, (_aname, _acol) in enumerate(zip(asset_names, _asset_cols)):
                         _ap = float(_perf_today[_i])
                         _live_sym = _live_disp_to_sym.get(_aname, "")
-                        _live_logo = (TICKER_LOGOS.get(_live_sym) or _LOGO_BASE.format(sym=_live_sym)) if _live_sym else None
+                        _live_logo = _logo_src(_live_sym) or None
                         if _live_logo:
                             _acol.markdown(
                                 f"<img src='{_live_logo}' width='24' height='24' "
@@ -1963,7 +2010,6 @@ elif st.session_state["page"] == "dashboard":
                             _acol.metric("", f"{_ap:.1%}", tr("live_metric_vs_strike", v=_ap - 1.0))
                         else:
                             _acol.metric(_aname, f"{_ap:.1%}", tr("live_metric_vs_strike", v=_ap - 1.0))
-                    _pdf_toggle("live_asset_table")
 
                     # ── Coupon status replay (shared engine logic) ────────
                     # All payoff semantics (memory, step-down autocall
@@ -2045,7 +2091,6 @@ elif st.session_state["page"] == "dashboard":
 
                     _obs_df = pd.DataFrame(_obs_rows)
                     st.dataframe(_obs_df, use_container_width=True, hide_index=True)
-                    _pdf_toggle("live_obs_table")
 
                     _pending_coupons    = _replay["pending_coupons"]
                     _total_coupons_paid = _replay["total_coupons"]
@@ -2067,7 +2112,6 @@ elif st.session_state["page"] == "dashboard":
                     _irr_to_date = _total_coupons_paid / max(_elapsed_years, 1/252)
                     st.metric(tr("live_coupon_irr_metric"), f"{_irr_to_date:.2%}",
                               help=tr("live_help_coupon_irr"))
-                    _pdf_toggle("live_metrics")
 
                     # ── Live performance chart ────────────────────────
                     # Future observation reference lines (calendar dates),
@@ -2097,7 +2141,6 @@ elif st.session_state["page"] == "dashboard":
                         autocall_schedule  = _live_sched,
                     )
                     st.plotly_chart(_live_fig, use_container_width=True)
-                    _pdf_toggle("live_chart")
                     # Cache for PDF
                     st.session_state["_pdf_live_data"] = {
                         "wof_today":    _wof_today,
@@ -2115,7 +2158,10 @@ elif st.session_state["page"] == "dashboard":
     # ══════════════════════════════════════════════════════════════════
     # PDF GENERATION (sidebar button — runs after all tab content)
     # ══════════════════════════════════════════════════════════════════
-    if _pdf_btn and _has_sim:
+    # Triggered either by a direct click (when results already exist) or by the
+    # pending flag set when Generate-report had to run the sim first.
+    _do_pdf = _pdf_btn or st.session_state.pop("_pending_pdf", False)
+    if _do_pdf and _has_sim:
         with st.spinner(tr("building_pdf")):
             from pdf_report import generate_pdf_report
             # Build logo URL maps from the already-populated TICKER_LOGOS dict
@@ -2126,10 +2172,18 @@ elif st.session_state["page"] == "dashboard":
             # display name -> ticker symbol, so the PDF can look for a local
             # branding/ticker_logos/{SYMBOL}.png before fetching a URL.
             _pdf_logo_tickers = {name: sym for sym, name in run_terms.tickers.items()}
+            # User-uploaded custom underlying logos, keyed by display name so the
+            # PDF can override the favicon/CDN logo for that asset.
+            _custom_logos = st.session_state.get("custom_logos", {})
+            _pdf_logo_overrides = {
+                name: _custom_logos[sym]
+                for sym, name in run_terms.tickers.items()
+                if _custom_logos.get(sym)
+            }
             _pdf_issuer_logo_url = get_issuer_logo_url(getattr(run_terms, "issuer", "") or "")
-            # Per-item include flags from every "Include in PDF" checkbox placed
-            # next to a chart/table/metric block across the dashboard.
-            _pdf_sections = _collect_pdf_sections()
+            # Section selection from the single Build-report panel (sidebar),
+            # expanded to the fine-grained include keys the PDF gates on.
+            _pdf_sections = _collect_pdf_sections(len(asset_names), _has_live)
             _pdf_bytes = generate_pdf_report(
                 terms            = run_terms,
                 results          = R,
@@ -2146,6 +2200,7 @@ elif st.session_state["page"] == "dashboard":
                 branding         = st.session_state.get("branding"),
                 logo_tickers     = _pdf_logo_tickers,
                 include_sections = _pdf_sections,
+                logo_overrides   = _pdf_logo_overrides,
             )
         _pdf_slot.download_button(
             tr("sidebar_download_pdf"),

@@ -31,6 +31,7 @@ keys warn; malformed hex falls back to the default with a warning):
     "chart_secondary_color": "#C69426",           # 2nd chart category (default: gold)
     "section_rule_color":    "#00A0DC",           # rule under section titles (default: accent)
     "panel_color":           "#EAF1F8",           # cover sidebar + card fill (default: light primary tint)
+    "sidebar_bar_color":     "#00A0DC",           # solid bar atop the cover sidebar (default: accent)
     "logo_file":             "branding/acme.png", # local path, repo-root relative (preferred)
     "logo_base64":           "",                  # OR a base64 / data: URI
     "logo_url":              "https://...",        # OR a remote URL (last resort)
@@ -96,10 +97,11 @@ _KNOWN_BRANDING_KEYS = {
     "report_title", "website", "contact", "footer_note",
     "section_rule_color",   # NEW — color of the rule drawn under section titles
     "panel_color",          # NEW — fill of the cover sidebar + figure/callout/issuer cards
+    "sidebar_bar_color",    # NEW — solid bar across the top of the cover sidebar
     "disclaimer_body",      # NEW — overrides the full disclaimer body text
 }
 _HEX_KEYS = ("primary_color", "accent_color", "chart_secondary_color",
-             "section_rule_color", "panel_color")
+             "section_rule_color", "panel_color", "sidebar_bar_color")
 
 
 def _hex_to_rgb(hex_str: str) -> tuple[int, int, int]:
@@ -545,7 +547,8 @@ class _NotePDF(FPDF):
                  website: str = "", contact: str = "",
                  footer_note: str | None = None,
                  section_rule_color: tuple = _DEFAULT_ACCENT,
-                 panel_color: tuple | None = None):
+                 panel_color: tuple | None = None,
+                 sidebar_bar_color: tuple | None = None):
         super().__init__(orientation="P", unit="mm", format="A4")
         self.lang          = lang
         self.issuer        = issuer
@@ -553,6 +556,9 @@ class _NotePDF(FPDF):
         self.primary_color = primary_color
         self.accent_color  = accent_color
         self.section_rule_color = section_rule_color
+        # Solid bar across the top of the cover sidebar panel. Defaults to the
+        # accent colour; a brand may pin it via `sidebar_bar_color`.
+        self.sidebar_bar_color = sidebar_bar_color if sidebar_bar_color is not None else accent_color
         # Panel fill (cover sidebar, figure/callout/issuer cards). A brand may set
         # it explicitly via the `panel_color` key; otherwise it's a very light
         # tint of the brand PRIMARY so every panel echoes the firm palette. The
@@ -838,11 +844,11 @@ class _NotePDF(FPDF):
     def data_table(self, headers: list[str], rows: list[list[str]],
                    col_widths: list[float] | None = None,
                    aligns: list[str] | None = None,
-                   rounded: bool = False):
+                   rounded: bool = True):
         """Filled-header table with zebra rows and proper number alignment.
 
-        rounded=True draws a rounded-rect card behind the whole table so the
-        outer corners round off; default False keeps plain rects (back-compat).
+        rounded=True (default) draws a rounded-rect card behind the whole table
+        so the outer corners round off; pass rounded=False for plain rects.
         """
         n = len(headers)
         usable = self.w - self.l_margin - self.r_margin
@@ -938,7 +944,7 @@ class _NotePDF(FPDF):
                        aligns: list[str] | None = None):
         """Like data_table but draws a small inline ticker logo to the left of the
         first-column name. `rows[i][0]` is the asset name and `logos[name]` its
-        PNG bytes (or None). Mirrors the calibration table's inline-logo style."""
+        PNG bytes (or None). Rounded outer corners match data_table."""
         n = len(headers)
         usable = self.w - self.l_margin - self.r_margin
         if col_widths is None:
@@ -946,39 +952,84 @@ class _NotePDF(FPDF):
         if aligns is None:
             aligns = ["L"] + ["R"] * (n - 1)
         LW = LH = 6.0
-        ROW_H = 10.0
+        ROW_H  = 10.0
+        HEAD_H = 9.0
+        tbl_w  = sum(col_widths)
+        _CR    = 3.0
+        # Rounded card disables on a multi-page split (a rounded card across a
+        # page break looks broken) — same fallback as data_table.
+        _use_round = [False]
 
-        def _header_row():
-            self.set_fill_color(*self.primary_color)
+        def _header_row(rounded_card: bool = False):
+            if rounded_card:
+                self.set_fill_color(*self.primary_color)
+                try:
+                    self.rect(self.l_margin, self.get_y(), tbl_w, HEAD_H, style="F",
+                              round_corners=("TOP_LEFT", "TOP_RIGHT"), corner_radius=_CR)
+                except TypeError:
+                    self.rect(self.l_margin, self.get_y(), tbl_w, HEAD_H, style="F")
+            else:
+                self.set_fill_color(*self.primary_color)
             self.set_text_color(*_WHITE)
             self._sf(7.5, "semibold")
             for h, w, a in zip(headers, col_widths, aligns):
-                self.cell(w, 9, f" {h} ", border=0, fill=True, align=a)
+                self.cell(w, HEAD_H, f" {h} ", border=0, fill=not rounded_card, align=a)
             self.ln()
             self.set_text_color(*_TEXT)
             self._sf(8, "regular")
 
         # Keep the whole table together when it fits on one page (see data_table).
-        _needed   = 9 + len(rows) * ROW_H + 6
+        _needed   = HEAD_H + len(rows) * ROW_H + 6
         _avail    = self.h - 30 - self.get_y()
         _page_cap = self.h - 30 - 21
         if _needed > _avail and _needed <= _page_cap:
             self.add_page()
         elif self.get_y() > self.h - 55:
             self.add_page()
-        _header_row()
 
+        # White rounded card behind the whole table rounds the bottom corners;
+        # the header's rounded-top strip rounds the top. Only when it fits the
+        # page; older fpdf2 (no round_corners kwarg) → plain rects.
+        _ch = HEAD_H + len(rows) * ROW_H
+        _cy = self.get_y()
+        if _cy + _ch <= self.h - 28:
+            try:
+                self.set_fill_color(*_WHITE)
+                self.rect(self.l_margin, _cy, tbl_w, _ch, style="F",
+                          round_corners=True, corner_radius=_CR)
+                _use_round[0] = True
+            except TypeError:
+                _use_round[0] = False
+        _header_row(_use_round[0])
+
+        _last = len(rows) - 1
         for i, row in enumerate(rows):
             if self.get_y() > self.h - 30:
                 self.add_page()
-                _header_row()
-            name = str(row[0])
-            fill = _ROW_ALT if i % 2 == 0 else _WHITE
+                _header_row(False)   # continuation header is a plain row
+            name  = str(row[0])
+            is_alt = (i % 2 == 0)
             row_y = self.get_y()
-            # First column: zebra fill, inline logo, then name
-            self.set_fill_color(*fill)
-            self.rect(self.l_margin, row_y, col_widths[0], ROW_H, style="F")
-            ldata = (logos or {}).get(name)
+            # Full-width row background: alt rows get a zebra fill (the last one
+            # rounded at the bottom so the card's corners stay round); white rows
+            # are transparent over the white card.
+            if _use_round[0]:
+                if is_alt:
+                    self.set_fill_color(*_ROW_ALT)
+                    if i == _last:
+                        try:
+                            self.rect(self.l_margin, row_y, tbl_w, ROW_H, style="F",
+                                      round_corners=("BOTTOM_LEFT", "BOTTOM_RIGHT"),
+                                      corner_radius=_CR)
+                        except TypeError:
+                            self.rect(self.l_margin, row_y, tbl_w, ROW_H, style="F")
+                    else:
+                        self.rect(self.l_margin, row_y, tbl_w, ROW_H, style="F")
+            else:
+                self.set_fill_color(*(_ROW_ALT if is_alt else _WHITE))
+                self.rect(self.l_margin, row_y, tbl_w, ROW_H, style="F")
+            # First column: inline logo, then name
+            ldata  = (logos or {}).get(name)
             text_x = self.l_margin + 2
             if ldata:
                 try:
@@ -992,12 +1043,12 @@ class _NotePDF(FPDF):
             self._fit_font(name, _name_w, 8, "semibold")
             self.set_text_color(*_TEXT)
             self.cell(_name_w, 4, self._safe(name))
-            # Remaining columns
+            # Remaining columns — transparent text over the row background
             self._sf(8, "regular")
+            self.set_text_color(*_TEXT)
             self.set_xy(self.l_margin + col_widths[0], row_y)
             for cell_val, w, a in zip(row[1:], col_widths[1:], aligns[1:]):
-                self.set_fill_color(*fill)
-                self.cell(w, ROW_H, f" {cell_val} ", border=0, fill=True, align=a)
+                self.cell(w, ROW_H, f" {cell_val} ", border=0, fill=False, align=a)
             self.set_y(row_y + ROW_H)
 
         self.ln(4)
@@ -1752,6 +1803,7 @@ def _cover_page(
     issuer_logo_bytes: bytes | None,
     logo_tickers: dict[str, str] | None = None,
     inc=None,
+    logo_overrides: dict[str, bytes] | None = None,
 ):
     # inc(section_key) -> bool: which optional sections are included, so the
     # cover "In this report" list matches the body. Defaults to all-on.
@@ -1850,8 +1902,8 @@ def _cover_page(
     except TypeError:
         pdf.rect(sb_x, sb_y_top, sb_w, sb_h, style="F")
 
-    # Accent top stripe (rounded top corners to match the panel)
-    pdf.set_fill_color(*pdf.accent_color)
+    # Solid top stripe (rounded top corners to match the panel)
+    pdf.set_fill_color(*pdf.sidebar_bar_color)
     try:
         pdf.rect(sb_x, sb_y_top, sb_w, 3.0, style="F",
                  round_corners=("TOP_LEFT", "TOP_RIGHT"), corner_radius=3)
@@ -1889,7 +1941,7 @@ def _cover_page(
     for nm in asset_names:
         logo_url  = (logo_urls or {}).get(nm, "")
         sym       = (logo_tickers or {}).get(nm)
-        logo_data = _load_ticker_logo(nm, logo_url, sym)
+        logo_data = (logo_overrides or {}).get(nm) or _load_ticker_logo(nm, logo_url, sym)
         row_y  = y + 1.0
         text_x = sb_x + 4
         if logo_data:
@@ -2121,11 +2173,16 @@ def generate_pdf_report(
     branding: dict | None = None,
     logo_tickers: dict[str, str] | None = None,
     include_sections: set[str] | None = None,
+    logo_overrides: dict[str, bytes] | None = None,
 ) -> bytes:
     """
     Build the full institutional-style PDF report.
 
     logo_urls       — {display_name: url} for underlying ticker logos.
+    logo_overrides  — {display_name: raw image bytes} for user-uploaded custom
+                      ticker logos; when present they win over logo_urls and the
+                      local branding/ticker_logos/ files (cover, calibration and
+                      performance tables all honour them).
     issuer_logo_url — favicon / logo URL for the issuer (shown on cover).
     branding        — optional dict; see the module docstring for the full schema
                       (firm_name, primary/accent/chart_secondary colours, a
@@ -2156,6 +2213,12 @@ def generate_pdf_report(
     primary_color, accent_color, secondary_color, section_rule_color, firm_name = _resolve_palette(branding)
     # Panel fill: explicit branding `panel_color` wins; else a light primary tint.
     panel_color = _branding_color(branding, "panel_color", _blend(primary_color, _WHITE, 0.93))
+    # Cover sidebar top bar: explicit `sidebar_bar_color` wins; else the accent.
+    sidebar_bar_color = _branding_color(branding, "sidebar_bar_color", accent_color)
+    # User-uploaded custom ticker logos: normalise to embeddable PNG once, drop
+    # any that fail to decode. {display_name: png_bytes}; win over URLs/local files.
+    _logo_ovr = {nm: png for nm, b in (logo_overrides or {}).items()
+                 if b and (png := _to_embeddable_png(b))}
     # Local-file-first: logo_file -> logo_base64 -> logo_url
     brand_logo_bytes = _load_logo(branding)
     # Optional content keys (B5)
@@ -2188,11 +2251,13 @@ def generate_pdf_report(
         footer_note     = footer_note,
         section_rule_color = section_rule_color,   # NEW
         panel_color     = panel_color,             # NEW
+        sidebar_bar_color = sidebar_bar_color,     # NEW
     )
 
     # ── 1. Cover ───────────────────────────────────────────────────────────
     _cover_page(pdf, terms, results, asset_names, bt_summary, live_data, lang,
-                logo_urls, issuer_logo_bytes, logo_tickers, inc=_inc)
+                logo_urls, issuer_logo_bytes, logo_tickers, inc=_inc,
+                logo_overrides=_logo_ovr)
 
     # ── 2. Note terms ──────────────────────────────────────────────────────
     # First content section — always on a fresh page after the cover.
@@ -2356,7 +2421,7 @@ def generate_pdf_report(
             nm  = str(p.name)
             url = (logo_urls or {}).get(nm, "")
             sym = (logo_tickers or {}).get(nm)
-            logo_cache[nm] = _load_ticker_logo(nm, url, sym)
+            logo_cache[nm] = _logo_ovr.get(nm) or _load_ticker_logo(nm, url, sym)
 
         # ── Draw filled header row ──
         if pdf.get_y() > pdf.h - 55:
@@ -2503,8 +2568,9 @@ def generate_pdf_report(
             _sec()
             pdf.subsection(_t("live_asset_perf", lang))
             _perf_logos = {
-                nm: _load_ticker_logo(nm, (logo_urls or {}).get(nm, ""),
-                                      (logo_tickers or {}).get(nm))
+                nm: (_logo_ovr.get(nm)
+                     or _load_ticker_logo(nm, (logo_urls or {}).get(nm, ""),
+                                          (logo_tickers or {}).get(nm)))
                 for nm in perf_today
             }
             pdf.logo_row_table(

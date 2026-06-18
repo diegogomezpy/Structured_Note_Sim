@@ -101,6 +101,7 @@ _STRINGS: dict[str, tuple[str, str]] = {
     "col_p_autocall":            ("P(autocall)",                       "P(autocall)"),
 
     # ── MC sub-tabs ────────────────────────────────────────────────────────
+    "mc_subtab_summary":         ("Summary",                        "Resumen"),
     "mc_subtab_payoff":          ("Payoff & Distribution",          "Payoff y Distribución"),
     "mc_subtab_paths":           ("Price Paths",                    "Trayectorias de Precio"),
     "mc_subtab_explorer":        ("Path Explorer",                  "Explorador de Trayectorias"),
@@ -327,6 +328,15 @@ _STRINGS: dict[str, tuple[str, str]] = {
                                  "Agregar un ticker personalizado (que no esté en la lista anterior)"),
     "setup_custom_caption":     ("Enter any valid yfinance symbol, e.g. UBER, 2222.SR, BTC-USD",
                                  "Ingrese cualquier símbolo válido de yfinance, ej. UBER, 2222.SR, BTC-USD"),
+    "setup_custom_logos_header": ("Custom underlying logos (optional)",
+                                  "Logos personalizados de subyacentes (opcional)"),
+    "setup_custom_logos_caption":(
+        "Upload your own logo for any underlying to override the automatic "
+        "favicon/CDN logo — used in the app and the PDF report.",
+        "Suba su propio logo para cualquier subyacente y reemplace el logo "
+        "automático (favicon/CDN) — se usa en la app y en el informe PDF.",
+    ),
+    "setup_custom_logo_clear":  ("Reset",                              "Restablecer"),
     "setup_custom_symbol":      ("yfinance symbol",                    "Símbolo yfinance"),
     "setup_display_name":       ("Display name",                       "Nombre"),
     "setup_add_btn":            ("Add",                                "Agregar"),
@@ -560,9 +570,19 @@ _STRINGS: dict[str, tuple[str, str]] = {
     "sidebar_generate_pdf":     ("Generate PDF Report",                "Generar Informe PDF"),
     "sidebar_generate_pdf_help":(
         "Builds the report, then a download button appears below. "
-        "Run a simulation first to enable it.",
+        "If no simulation has run yet, it runs one first.",
         "Construye el informe, luego aparece un botón de descarga abajo. "
-        "Ejecute una simulación primero para habilitarlo.",
+        "Si aún no se ha ejecutado una simulación, ejecuta una primero.",
+    ),
+    "report_panel_header":      ("Build report — sections",            "Construir informe — secciones"),
+    "report_inc_mc":            ("Monte Carlo",                        "Monte Carlo"),
+    "report_inc_bt":            ("Historical backtest",                "Backtest histórico"),
+    "report_inc_live":          ("Current performance",                "Rendimiento actual"),
+    "report_panel_caption":     (
+        "All on by default — untick to leave a section out. Sections with no "
+        "data are skipped automatically.",
+        "Todo activado por defecto — desmarque para excluir una sección. Las "
+        "secciones sin datos se omiten automáticamente.",
     ),
     "sidebar_reconfigure":      ("Reconfigure Note",                   "Reconfigurar Nota"),
     "sidebar_download_pdf":     ("Download PDF",                       "Descargar PDF"),
