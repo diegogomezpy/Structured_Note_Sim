@@ -3,9 +3,8 @@ app/underlyings.py
 ------------------
 The selectable underlying universe, ticker-logo URLs, and label helpers.
 
-Pure data + helpers — NO Streamlit/Plotly imports — so both the Streamlit
-front-end (app.py) and the FastAPI backend (api/) can share one source of
-truth for the ticker list and logos without dragging in the UI framework.
+Pure data + helpers — NO Streamlit/Plotly imports — so the ticker list and
+logos live in one source of truth without dragging in the UI framework.
 """
 from __future__ import annotations
 
