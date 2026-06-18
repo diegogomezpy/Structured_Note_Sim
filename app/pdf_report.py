@@ -257,19 +257,31 @@ _LABELS: dict[str, dict[str, str]] = {
                               "es": "TIR anual simple realizada por fecha de emisión histórica"},
     "fig_live":              {"en": "Underlying performance since issue date with observation outcomes",
                               "es": "Rendimiento de los subyacentes desde emisión con resultados de observación"},
-    # Section titles for the per-subtab analyses (mirror the dashboard tabs)
-    "mc_subtab_payoff":      {"en": "Monte Carlo — Payoff & Distribution",
-                              "es": "Monte Carlo — Payoff y Distribución"},
-    "mc_subtab_paths":       {"en": "Monte Carlo — Price Paths",
-                              "es": "Monte Carlo — Trayectorias de Precio"},
-    "mc_subtab_explorer":    {"en": "Monte Carlo — Path Explorer",
-                              "es": "Monte Carlo — Explorador de Trayectorias"},
-    "bt_subtab_outcomes":    {"en": "Historical Backtest — Outcomes & Summary",
-                              "es": "Backtest Histórico — Resultados y Resumen"},
-    "bt_subtab_prices":      {"en": "Historical Backtest — Price History",
-                              "es": "Backtest Histórico — Histórico de Precios"},
-    "bt_subtab_explorer":    {"en": "Historical Backtest — Path Explorer",
-                              "es": "Backtest Histórico — Explorador de Trayectorias"},
+    # Three-lens part dividers — the report is one note seen through three
+    # lenses (forward-looking model → realised history → live today). Each lens
+    # opens with a part divider carrying its number, name and the question it
+    # answers; the sub-section titles below drop the lens prefix to avoid echoing
+    # the divider (the grouped table of contents re-attaches the lens).
+    "lens_mc":               {"en": "Monte Carlo",                  "es": "Monte Carlo"},
+    "lens_bt":               {"en": "Historical Backtest",          "es": "Backtest Histórico"},
+    "lens_live":             {"en": "Current Performance",          "es": "Rendimiento Actual"},
+    "lens_q_mc":             {"en": "What could happen?",           "es": "¿Qué podría pasar?"},
+    "lens_q_bt":             {"en": "What would have happened?",    "es": "¿Qué habría pasado?"},
+    "lens_q_live":           {"en": "What is happening now?",       "es": "¿Qué está pasando ahora?"},
+    # Section titles for the per-subtab analyses (mirror the dashboard tabs).
+    # Prefix-free: they sit under their lens divider, which names the lens.
+    "mc_subtab_payoff":      {"en": "Payoff & Distribution",
+                              "es": "Payoff y Distribución"},
+    "mc_subtab_paths":       {"en": "Price Paths",
+                              "es": "Trayectorias de Precio"},
+    "mc_subtab_explorer":    {"en": "Path Explorer",
+                              "es": "Explorador de Trayectorias"},
+    "bt_subtab_outcomes":    {"en": "Outcomes & Summary",
+                              "es": "Resultados y Resumen"},
+    "bt_subtab_prices":      {"en": "Price History",
+                              "es": "Histórico de Precios"},
+    "bt_subtab_explorer":    {"en": "Path Explorer",
+                              "es": "Explorador de Trayectorias"},
     # Captions for the newly-includable figures
     "fig_individual":        {"en": "Simulated price distribution — {name}",
                               "es": "Distribución simulada de precios — {name}"},
@@ -794,6 +806,43 @@ class _NotePDF(FPDF):
         self.set_fill_color(*self.section_rule_color)
         self.rect(self.l_margin, self.get_y(), band_w, band_h, style="F")
         self.ln(band_h + 4)
+        self.set_text_color(*_TEXT)
+
+    def section_divider(self, number: str, name: str, question: str):
+        """Part divider for one of the three analysis lenses (Monte Carlo →
+        Backtest → Live). Always opens a fresh page so the three lenses are
+        clearly delineated, then draws a band: a large faint lens number, the
+        lens name in brand primary, and the question the lens answers. Section
+        content flows below it. The number/name/question are short labels, never
+        the long sub-section titles (those follow as section_title)."""
+        # A part break always starts a new page (unless we're already at the top
+        # of a blank one), so each lens reads as a distinct chapter.
+        if self.page_no() == 0:
+            self.add_page()
+        elif self.get_y() > self.t_margin + 2:
+            self.add_page()
+        x0 = self.l_margin
+        w  = self.w - self.l_margin - self.r_margin
+        y0 = self.get_y() + 2
+        # Large, faint lens number on the left (e.g. "01").
+        self._sf(30, "bold")
+        self.set_text_color(*_blend(self.primary_color, _WHITE, 0.55))
+        self.set_xy(x0, y0)
+        self.cell(20, 13, self._safe(number))
+        # Lens name (primary) above the question (soft grey), to the right.
+        self.set_xy(x0 + 22, y0)
+        self._sf(15, "semibold")
+        self.set_text_color(*self.primary_color)
+        self.cell(w - 22, 7, self._safe(name), new_x="LMARGIN", new_y="NEXT")
+        self.set_xy(x0 + 22, y0 + 7.5)
+        self._sf(10, "regular")
+        self.set_text_color(*_TEXT_SOFT)
+        self.cell(w - 22, 5, self._safe(question))
+        # Accent rule under the band — slightly bolder than a section rule.
+        ry = y0 + 15
+        self.set_fill_color(*self.section_rule_color)
+        self.rect(x0, ry, w, 0.9, style="F")
+        self.set_y(ry + 1)
         self.set_text_color(*_TEXT)
 
     def subsection(self, text: str, min_room: float = 27.0):
@@ -2109,38 +2158,78 @@ def _cover_page(
     pdf.set_line_width(0.2)
     pdf.line(pdf.l_margin, pdf.get_y() + 0.5, pdf.l_margin + main_w, pdf.get_y() + 0.5)
     pdf.ln(2)
-    # A section lists in the TOC if ANY of its per-chart items is included.
+    # The contents mirror the body's three-lens structure: a lens lists as a
+    # numbered group header (Monte Carlo / Backtest / Live) with its sub-sections
+    # indented beneath, so the map matches the part dividers in the body. A lens
+    # appears only when at least one of its items is included. The opening
+    # (Note Terms / Issuer) and closing (Glossary / Disclaimer) groups are flat.
     _n_assets = len(asset_names or [])
     _any_fan  = any(inc(f"mc_fan_{i}") for i in range(_n_assets))
-    toc = [_t("note_terms", lang)]
+    toc_groups = []  # (number|None, header|None, [leaf titles])
+
+    _top = [_t("note_terms", lang)]
     if getattr(terms, "issuer", ""):
-        toc.append(_t("issuer_info", lang))
+        _top.append(_t("issuer_info", lang))
+    toc_groups.append((None, None, _top))
+
+    _mc = []
     if inc("mc_metrics") or inc("mc_irr") or inc("mc_autocall"):
-        toc.append(_t("mc_subtab_payoff", lang))
+        _mc.append(_t("mc_subtab_payoff", lang))
     if inc("mc_wof") or _any_fan:
-        toc.append(_t("mc_subtab_paths", lang))
+        _mc.append(_t("mc_subtab_paths", lang))
     if inc("mc_single_price") or inc("mc_single_wof"):
-        toc.append(_t("mc_subtab_explorer", lang))
+        _mc.append(_t("mc_subtab_explorer", lang))
     if results.get("params") and (inc("calib_table") or inc("calib_corr")):
-        toc.append(_t("calibration", lang))
+        _mc.append(_t("calibration", lang))
+    if _mc:
+        toc_groups.append(("01", _t("lens_mc", lang), _mc))
+
+    _bt = []
     if bt_summary and (inc("bt_metrics") or inc("bt_outcome") or inc("bt_pie") or inc("bt_irr")):
-        toc.append(_t("bt_subtab_outcomes", lang))
+        _bt.append(_t("bt_subtab_outcomes", lang))
     if bt_summary and inc("bt_prices"):
-        toc.append(_t("bt_subtab_prices", lang))
-    if bt_summary and inc("bt_explorer"):
-        toc.append(_t("bt_subtab_explorer", lang))
+        _bt.append(_t("bt_subtab_prices", lang))
+    if _bt:
+        toc_groups.append(("02", _t("lens_bt", lang), _bt))
+
     if live_data and (inc("live_metrics") or inc("live_asset_table")
                       or inc("live_obs_table") or inc("live_chart")):
-        toc.append(_t("live", lang))
-    toc.append(_t("glossary_title", lang))
-    toc.append(_t("disclaimer_title", lang))
-    for item in toc:
-        pdf.set_x(pdf.l_margin)
+        _live = []
+        if inc("live_asset_table"):
+            _live.append(_t("live_asset_perf", lang))
+        if inc("live_obs_table"):
+            _live.append(_t("live_obs_history", lang))
+        toc_groups.append(("03", _t("lens_live", lang), _live))
+
+    toc_groups.append((None, None, [_t("glossary_title", lang), _t("disclaimer_title", lang)]))
+
+    def _toc_leaf(text, indent=0.0):
+        pdf.set_x(pdf.l_margin + indent)
         pdf._sf(8.5, "regular")
         pdf.set_text_color(*_TEXT)
-        pdf.cell(main_w, 5.5, item, new_x="LMARGIN", new_y="NEXT")
+        pdf.cell(main_w - indent, 5.5, text, new_x="LMARGIN", new_y="NEXT")
         pdf.set_draw_color(*_RULE_LIGHT)
         pdf.line(pdf.l_margin, pdf.get_y(), pdf.l_margin + main_w, pdf.get_y())
+
+    def _toc_head(number, name):
+        pdf.ln(1.2)
+        pdf.set_x(pdf.l_margin)
+        pdf._sf(8.5, "semibold")
+        pdf.set_text_color(*_blend(pdf.primary_color, _WHITE, 0.35))
+        pdf.cell(7, 5.5, number)
+        pdf.set_text_color(*pdf.primary_color)
+        pdf.cell(main_w - 7, 5.5, name, new_x="LMARGIN", new_y="NEXT")
+        pdf.set_draw_color(*_RULE_LIGHT)
+        pdf.line(pdf.l_margin, pdf.get_y(), pdf.l_margin + main_w, pdf.get_y())
+
+    for number, name, leaves in toc_groups:
+        if name is not None:
+            _toc_head(number, name)
+            for leaf in leaves:
+                _toc_leaf(leaf, indent=7.0)
+        else:
+            for leaf in leaves:
+                _toc_leaf(leaf)
 
     # Micro-disclaimer at very bottom of cover
     pdf.set_xy(pdf.l_margin, pdf.h - 22)
@@ -2205,7 +2294,7 @@ def generate_pdf_report(
                       "mc_autocall", "mc_wof", "mc_fan_0", "mc_fan_1", ...,
                       "mc_single_price", "mc_single_wof", "calib_table",
                       "calib_corr", "bt_metrics", "bt_outcome", "bt_pie",
-                      "bt_irr", "bt_prices", "bt_explorer", "live_metrics",
+                      "bt_irr", "bt_prices", "live_metrics",
                       "live_asset_table", "live_obs_table", "live_chart"}.
                       None (default) includes every item for which data is
                       available, so existing callers are unaffected. The cover,
@@ -2329,21 +2418,39 @@ def generate_pdf_report(
                secondary_color=secondary_color)
     src_mc = f"{_t('src_mc', lang)}, {n_paths_val:,} {_t('paths_word', lang)}"
 
-    def _lazy_section(title, min_room=146.0):
-        """Emit a section header at most once, only when its first included item
-        is actually drawn — so a section with everything toggled off leaves no
-        empty header behind."""
+    def _lazy_divider(number, name, question):
+        """Emit a three-lens part divider at most once, when the lens's first
+        included item is drawn — so a fully-toggled-off lens leaves no divider."""
         state = {"done": False}
         def ensure():
+            if not state["done"]:
+                pdf.section_divider(number, name, question)
+                state["done"] = True
+        return ensure
+
+    def _lazy_section(title, min_room=146.0, before=None):
+        """Emit a section header at most once, only when its first included item
+        is actually drawn — so a section with everything toggled off leaves no
+        empty header behind. ``before`` is a lazy part divider fired first (it is
+        idempotent), so whichever sub-section of a lens renders first also draws
+        that lens's divider."""
+        state = {"done": False}
+        def ensure():
+            if before is not None:
+                before()
             if not state["done"]:
                 pdf.start_section(title, min_room=min_room)
                 state["done"] = True
         return ensure
 
+    # Lens 1 of 3 — the forward-looking model. Drawn once, before whichever MC
+    # sub-section renders first.
+    _mc_div = _lazy_divider("01", _t("lens_mc", lang), _t("lens_q_mc", lang))
+
     # 3a. Payoff & Distribution — summary metrics, IRR distribution, autocall table.
     # Reserve enough room for the metric band + the IRR figure so the section
     # doesn't start a band at the bottom of a page and orphan its chart overleaf.
-    _sec = _lazy_section(_t("mc_subtab_payoff", lang), min_room=150.0)
+    _sec = _lazy_section(_t("mc_subtab_payoff", lang), min_room=150.0, before=_mc_div)
     if _inc("mc_metrics"):
         _sec()
         # Knock-in metrics: probability of a capital-costing knock-in (barrier
@@ -2381,7 +2488,7 @@ def generate_pdf_report(
         )
 
     # 3b. Price Paths — worst-of fan + per-underlying simulated distributions
-    _sec = _lazy_section(_t("mc_subtab_paths", lang))
+    _sec = _lazy_section(_t("mc_subtab_paths", lang), before=_mc_div)
     if _inc("mc_wof"):
         _sec()
         pdf.figure(_fig_to_png(figures.get("wof_fan"), **_kw), _t("fig_wof", lang), src_mc)
@@ -2392,7 +2499,7 @@ def generate_pdf_report(
                        _t("fig_individual", lang).format(name=nm), src_mc)
 
     # 3c. Path Explorer — the single simulated path the user last viewed
-    _sec = _lazy_section(_t("mc_subtab_explorer", lang))
+    _sec = _lazy_section(_t("mc_subtab_explorer", lang), before=_mc_div)
     _pn = figures.get("single_path_num", 0)
     if _inc("mc_single_price") and figures.get("single_path_price") is not None:
         _sec()
@@ -2404,8 +2511,10 @@ def generate_pdf_report(
                    _t("fig_single_wof", lang).format(n=_pn), src_mc)
 
     # ── 4. Calibration ─────────────────────────────────────────────────────
+    # Still part of the Monte Carlo lens (the model behind the simulation), so it
+    # carries the same "01" divider rather than opening a new part.
     params = results.get("params", [])
-    _sec = _lazy_section(_t("calibration", lang))
+    _sec = _lazy_section(_t("calibration", lang), before=_mc_div)
     if params and _inc("calib_table"):
         _sec()
         # Build the calibration table.  The "Asset" column uses an inline logo +
@@ -2522,9 +2631,11 @@ def generate_pdf_report(
 
     # ── 5. Historical backtest ─────────────────────────────────────────────
     bt_figures = bt_figures or {}
+    # Lens 2 of 3 — the realised-history lens.
+    _bt_div = _lazy_divider("02", _t("lens_bt", lang), _t("lens_q_bt", lang))
     # 5a. Outcomes & Summary — metrics, outcome bar, worst-asset pie, IRR scatter.
     # Same keep-together reserve as the MC payoff section (band + first chart).
-    _sec = _lazy_section(_t("bt_subtab_outcomes", lang), min_room=150.0)
+    _sec = _lazy_section(_t("bt_subtab_outcomes", lang), min_room=150.0, before=_bt_div)
     if bt_summary and _inc("bt_metrics"):
         _sec()
         _bt_lgki = bt_summary.get("loss_given_ki")
@@ -2552,22 +2663,23 @@ def generate_pdf_report(
 
     # 5b. Price History — normalised underlying price paths over the window
     if bt_summary and bt_figures.get("prices") is not None and _inc("bt_prices"):
+        _bt_div()
         pdf.start_section(_t("bt_subtab_prices", lang))
         pdf.figure(_fig_to_png(bt_figures.get("prices"), **_kw),
                    _t("fig_bt_prices", lang), _t("src_hist", lang))
 
-    # 5c. Path Explorer — the historical worst-of path the user last viewed
-    if bt_summary and bt_figures.get("path") is not None and _inc("bt_explorer"):
-        pdf.start_section(_t("bt_subtab_explorer", lang))
-        pdf.figure(_fig_to_png(bt_figures.get("path"), **_kw),
-                   _t("fig_bt_path", lang).format(issue=bt_figures.get("path_issue", "")),
-                   _t("src_hist", lang))
+    # NOTE: the historical Path Explorer (a single illustrative worst-of path)
+    # is intentionally NOT in the PDF. It earns its place in the interactive app,
+    # where the user scrubs through issue dates — but on a static page it is one
+    # arbitrary path with no interaction, the weakest item in the report.
 
     # ── 6. Current performance ─────────────────────────────────────────────
     if live_data:
-        _sec = _lazy_section(_t("live", lang), min_room=140.0)
+        # Lens 3 of 3 — the live, today lens. No section_title: the divider names
+        # it; the metric band and the asset/observation sub-tables follow.
+        _live_div = _lazy_divider("03", _t("lens_live", lang), _t("lens_q_live", lang))
         if _inc("live_metrics"):
-            _sec()
+            _live_div()
             pdf.metric_band([
                 (_t("live_wof_today",   lang), f"{live_data.get('wof_today', 0):.1%}"),
                 (_t("live_worst_asset", lang), str(live_data.get("worst_asset", ""))),
@@ -2577,7 +2689,7 @@ def generate_pdf_report(
 
         perf_today = live_data.get("perf_today", {})
         if perf_today and _inc("live_asset_table"):
-            _sec()
+            _live_div()
             pdf.subsection(_t("live_asset_perf", lang),
                            min_room=14 + _table_room(len(perf_today), row_h=10.0))
             _perf_logos = {
@@ -2596,7 +2708,7 @@ def generate_pdf_report(
 
         obs_rows = live_data.get("obs_rows", [])
         if obs_rows and _inc("live_obs_table"):
-            _sec()
+            _live_div()
             pdf.subsection(_t("live_obs_history", lang),
                            min_room=14 + _table_room(len(obs_rows)))
             obs_headers = list(obs_rows[0].keys())
@@ -2610,7 +2722,7 @@ def generate_pdf_report(
                            aligns=["L"] * n_cols, rounded=True)
 
         if _inc("live_chart") and live_figure is not None:
-            _sec()
+            _live_div()
             pdf.figure(_fig_to_png(live_figure, **_kw), _t("fig_live", lang), _t("src_hist", lang))
 
     # ── 7. Glossary ────────────────────────────────────────────────────────

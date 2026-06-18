@@ -653,6 +653,16 @@ _STRINGS: dict[str, tuple[str, str]] = {
     "tab_historical_backtest":  ("Historical Backtest",                "Backtest Histórico"),
     "tab_current_performance":  ("Current Performance",                "Rendimiento Actual"),
 
+    # ── Tab intro bands — the three analysis lenses (future → past → present).
+    # Each tab opens with the same band: a tense eyebrow + the question the lens
+    # answers, so the three tabs read as one narrative arc.
+    "tab_intro_mc_eyebrow":     ("Forward-looking · model-based",      "Prospectivo · basado en modelo"),
+    "tab_intro_mc_q":           ("What could happen?",                 "¿Qué podría pasar?"),
+    "tab_intro_bt_eyebrow":     ("Realised history",                   "Historia realizada"),
+    "tab_intro_bt_q":           ("What would have happened?",          "¿Qué habría pasado?"),
+    "tab_intro_live_eyebrow":   ("Live · today",                       "En vivo · hoy"),
+    "tab_intro_live_q":         ("What is happening now?",             "¿Qué está pasando ahora?"),
+
     # ── MC summary metric tooltips ─────────────────────────────────────────
     "mc_help_expected_irr":     (
         "Average of per-path annualized returns: mean(return ÷ holding time). "

@@ -168,6 +168,22 @@ def _setup_header(num: int, title: str) -> None:
         unsafe_allow_html=True,
     )
 
+
+def _tab_intro(kind: str, number: str, eyebrow: str, question: str) -> None:
+    """Render a top-level tab's intro band — the shared opener for the three
+    analysis lenses. `kind` ('mc' | 'bt' | 'live') selects the badge accent so
+    each lens is distinct but structurally identical (number badge + tense
+    eyebrow + the question the lens answers). Mirrors the PDF part dividers."""
+    import html as _html
+    st.markdown(
+        f"<div class='snsim-tab-intro {kind}'>"
+        f"<span class='sti-num'>{_html.escape(str(number))}</span>"
+        f"<span class='sti-text'>"
+        f"<span class='sti-eyebrow'>{_html.escape(str(eyebrow))}</span>"
+        f"<span class='sti-q'>{_html.escape(str(question))}</span></span></div>",
+        unsafe_allow_html=True,
+    )
+
 # ==========================================================================
 # Session state defaults
 # ==========================================================================
@@ -269,7 +285,6 @@ _REPORT_TREE = {
         ("bt_pie",      "rep_bt_pie",      ["bt_pie"]),
         ("bt_irr",      "rep_bt_irr",      ["bt_irr"]),
         ("bt_prices",   "rep_bt_prices",   ["bt_prices"]),
-        ("bt_explorer", "rep_bt_explorer", ["bt_explorer"]),
     ]),
     "live": ("report_cat_live", [
         ("live_metrics", "rep_live_metrics", ["live_metrics"]),
@@ -1372,6 +1387,7 @@ elif st.session_state["page"] == "dashboard":
     # TAB 1 — MONTE CARLO
     # ══════════════════════════════════════════════════════════════════
     with tab_mc:
+        _tab_intro("mc", "01", tr("tab_intro_mc_eyebrow"), tr("tab_intro_mc_q"))
         if not _has_sim:
             st.info(tr("mc_click_run_info"))
             with st.spinner(tr("mc_prefetch_spinner", tickers=', '.join(selected_tickers.values()))):
@@ -1381,7 +1397,6 @@ elif st.session_state["page"] == "dashboard":
                 except Exception as e:
                     st.error(tr("mc_fetch_failed", e=e))
         else:
-            st.success(tr("sim_complete"))
             # Build the three headline MC figures ONCE per rerun and reuse the
             # same objects for both the on-screen tabs and the PDF cache. Each
             # of these runs np.percentile over the full (2·n_paths × N) array,
@@ -1664,8 +1679,8 @@ elif st.session_state["page"] == "dashboard":
     # TAB 2 — HISTORICAL BACKTEST
     # ══════════════════════════════════════════════════════════════════
     with tab_bt:
-        # The tab label already says "Historical Backtest"; a one-line caption
-        # keeps it consistent with the other tabs (no redundant page header).
+        _tab_intro("bt", "02", tr("tab_intro_bt_eyebrow"), tr("tab_intro_bt_q"))
+        # Supplementary one-liner on the backtest method, under the intro band.
         st.caption(tr("bt_tab_intro"))
 
         # ── Load full price history for backtest path explorer ────────────
@@ -1961,10 +1976,8 @@ elif st.session_state["page"] == "dashboard":
                                 coupon_flags      = _pe_flags,
                             )
                             st.plotly_chart(_bt_path_fig, use_container_width=True)
-                            # Cache the viewed issue's path for the PDF.
-                            _bt_figs = st.session_state.setdefault("_pdf_bt_figures", {})
-                            _bt_figs["path"] = _bt_path_fig
-                            _bt_figs["path_issue"] = pd.Timestamp(selected_issue).date().isoformat()
+                            # On-screen only: the single illustrative path is no
+                            # longer carried into the static PDF (see pdf_report).
                     except Exception as e:
                         st.error(tr("bt_could_not_build_path", e=e))
 
@@ -1977,6 +1990,7 @@ elif st.session_state["page"] == "dashboard":
     # ══════════════════════════════════════════════════════════════════
     if tab_live is not None:
         with tab_live:
+            _tab_intro("live", "03", tr("tab_intro_live_eyebrow"), tr("tab_intro_live_q"))
             import datetime as _dt
             _issue_ts  = pd.Timestamp(run_terms.issue_date)
             _today_ts  = pd.Timestamp(_dt.date.today())
