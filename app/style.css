@@ -156,6 +156,85 @@ h3 { font-size: 1.12rem; }
 }
 [data-testid="stMetricDelta"] { font-variant-numeric: tabular-nums; }
 
+/* ---- Custom metric card (carries a logo; used for all live-tab cards) ----
+   A self-contained card so a whole row stays uniform height with logos inside
+   the box — st.metric can't hold an image. */
+.snsim-metric-card {
+    background: #ffffff;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 0.85rem 1rem;
+    box-shadow: 0 1px 2px rgba(16,24,40,0.05);
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+    min-height: 6.5rem;          /* keep every card in a row the same height */
+    height: 100%;
+    box-sizing: border-box;
+}
+.snsim-metric-card .smc-label {
+    display: flex; align-items: center; gap: 0.4rem;
+    color: var(--grey);
+    font-size: 0.78rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+.snsim-metric-card .smc-help {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 14px; height: 14px; border-radius: 50%;
+    border: 1px solid var(--border); color: var(--grey);
+    font-size: 0.62rem; flex: 0 0 auto; cursor: help;
+}
+.snsim-metric-card .smc-logo {
+    width: 22px; height: 22px;
+    object-fit: contain; border-radius: 4px; flex: 0 0 auto;
+}
+.snsim-metric-card .smc-value {
+    display: flex; align-items: center; gap: 0.45rem;
+    color: var(--navy); font-weight: 700;
+    font-size: 1.9rem; line-height: 1.1;
+    font-variant-numeric: tabular-nums;
+}
+.snsim-metric-card .smc-value .smc-logo { width: 28px; height: 28px; }
+.snsim-metric-card .smc-delta {
+    align-self: flex-start; font-size: 0.78rem;
+    padding: 0.08rem 0.45rem; border-radius: 6px;
+    font-variant-numeric: tabular-nums; margin-top: 0.15rem;
+}
+.snsim-metric-card .smc-delta.neg     { color: #b42318; background: #fef3f2; }
+.snsim-metric-card .smc-delta.pos     { color: #067647; background: #ecfdf3; }
+.snsim-metric-card .smc-delta.neutral { color: var(--grey); background: #f2f4f7; }
+
+/* ---- Asset chip (underlyings list: logo + name + ticker) ---- */
+.snsim-asset-chip {
+    background: #ffffff; border: 1px solid var(--border); border-radius: 8px;
+    padding: 0.65rem 0.8rem; box-shadow: 0 1px 2px rgba(16,24,40,0.05);
+    display: flex; align-items: center; gap: 0.6rem; box-sizing: border-box;
+}
+.snsim-asset-chip .ac-logo {
+    width: 30px; height: 30px; object-fit: contain; border-radius: 5px; flex: 0 0 auto;
+}
+.snsim-asset-chip .ac-text { display: flex; flex-direction: column; min-width: 0; }
+.snsim-asset-chip .ac-name {
+    font-weight: 600; color: var(--navy); line-height: 1.15;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.snsim-asset-chip .ac-sym {
+    font-size: 0.72rem; color: var(--grey);
+    font-family: 'IBM Plex Mono', monospace; letter-spacing: 0.02em;
+}
+
+/* ---- Numbered setup section header ---- */
+.setup-h { display: flex; align-items: center; gap: 0.65rem; margin: 0.4rem 0 0.5rem; }
+.setup-h-num {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 28px; height: 28px; border-radius: 50%;
+    background: var(--blue); color: #fff;
+    font-weight: 700; font-size: 0.9rem; flex: 0 0 auto;
+}
+.setup-h-title { font-size: 1.4rem; font-weight: 700; color: var(--navy); line-height: 1.1; }
+
 /* ---- Sidebar ---- */
 [data-testid="stSidebar"] {
     background: var(--slate2);

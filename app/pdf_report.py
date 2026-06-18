@@ -31,7 +31,7 @@ keys warn; malformed hex falls back to the default with a warning):
     "chart_secondary_color": "#C69426",           # 2nd chart category (default: gold)
     "section_rule_color":    "#00A0DC",           # rule under section titles (default: accent)
     "panel_color":           "#EAF1F8",           # cover sidebar + card fill (default: light primary tint)
-    "sidebar_bar_color":     "#00A0DC",           # solid bar atop the cover sidebar (default: accent)
+    "sidebar_bar_color":     "#003366",           # solid bar atop the cover sidebar (default: primary, = table headers)
     "logo_file":             "branding/acme.png", # local path, repo-root relative (preferred)
     "logo_base64":           "",                  # OR a base64 / data: URI
     "logo_url":              "https://...",        # OR a remote URL (last resort)
@@ -557,8 +557,9 @@ class _NotePDF(FPDF):
         self.accent_color  = accent_color
         self.section_rule_color = section_rule_color
         # Solid bar across the top of the cover sidebar panel. Defaults to the
-        # accent colour; a brand may pin it via `sidebar_bar_color`.
-        self.sidebar_bar_color = sidebar_bar_color if sidebar_bar_color is not None else accent_color
+        # PRIMARY colour so it matches the table headers (one brand colour across
+        # the whole report); a brand may still pin it via `sidebar_bar_color`.
+        self.sidebar_bar_color = sidebar_bar_color if sidebar_bar_color is not None else primary_color
         # Panel fill (cover sidebar, figure/callout/issuer cards). A brand may set
         # it explicitly via the `panel_color` key; otherwise it's a very light
         # tint of the brand PRIMARY so every panel echoes the firm palette. The
@@ -2214,7 +2215,7 @@ def generate_pdf_report(
     # Panel fill: explicit branding `panel_color` wins; else a light primary tint.
     panel_color = _branding_color(branding, "panel_color", _blend(primary_color, _WHITE, 0.93))
     # Cover sidebar top bar: explicit `sidebar_bar_color` wins; else the accent.
-    sidebar_bar_color = _branding_color(branding, "sidebar_bar_color", accent_color)
+    sidebar_bar_color = _branding_color(branding, "sidebar_bar_color", primary_color)
     # User-uploaded custom ticker logos: normalise to embeddable PNG once, drop
     # any that fail to decode. {display_name: png_bytes}; win over URLs/local files.
     _logo_ovr = {nm: png for nm, b in (logo_overrides or {}).items()

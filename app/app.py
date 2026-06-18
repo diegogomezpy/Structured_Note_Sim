@@ -121,6 +121,53 @@ def _logo_src(sym: str | None) -> str:
         return "data:image/png;base64," + base64.b64encode(custom).decode("ascii")
     return TICKER_LOGOS.get(sym) or _LOGO_BASE.format(sym=sym)
 
+
+def _live_card(label: str, value: str, *, delta: str | None = None,
+               delta_kind: str = "neutral", help_text: str | None = None,
+               logo: str | None = None, logo_with_value: bool = False) -> str:
+    """Build one '.snsim-metric-card' (a metric card that can carry a logo).
+    Used for every live-tab card so a row stays uniform height with logos inside
+    the box. `logo_with_value=True` puts the logo beside the value (name cards);
+    otherwise it sits in the label (per-asset cards). delta_kind: neg/pos/neutral."""
+    import html as _html
+    logo_img = (f"<img src='{logo}' class='smc-logo' onerror=\"this.style.display='none'\"/>"
+                if logo else "")
+    label_logo = logo_img if (logo and not logo_with_value) else ""
+    value_logo = logo_img if (logo and logo_with_value) else ""
+    help_html = (f"<span class='smc-help' title=\"{_html.escape(str(help_text), quote=True)}\">?</span>"
+                 if help_text else "")
+    delta_html = f"<div class='smc-delta {delta_kind}'>{delta}</div>" if delta else ""
+    return (
+        "<div class='snsim-metric-card'>"
+        f"<div class='smc-label'>{label_logo}<span>{label}</span>{help_html}</div>"
+        f"<div class='smc-value'>{value_logo}<span>{value}</span></div>"
+        f"{delta_html}</div>"
+    )
+
+
+def _asset_chip(name: str, sym: str) -> str:
+    """A compact underlying chip: logo + display name + ticker symbol."""
+    import html as _html
+    logo = _logo_src(sym)
+    logo_img = (f"<img src='{logo}' class='ac-logo' onerror=\"this.style.display='none'\"/>"
+                if logo else "")
+    return (
+        "<div class='snsim-asset-chip'>"
+        f"{logo_img}"
+        f"<span class='ac-text'><span class='ac-name'>{_html.escape(str(name))}</span>"
+        f"<span class='ac-sym'>{_html.escape(str(sym))}</span></span></div>"
+    )
+
+
+def _setup_header(num: int, title: str) -> None:
+    """Render a numbered setup-section header (a step badge + title)."""
+    import html as _html
+    st.markdown(
+        f"<div class='setup-h'><span class='setup-h-num'>{num}</span>"
+        f"<span class='setup-h-title'>{_html.escape(str(title))}</span></div>",
+        unsafe_allow_html=True,
+    )
+
 # ==========================================================================
 # Session state defaults
 # ==========================================================================
@@ -363,7 +410,7 @@ if st.session_state["page"] == "setup":
     st.divider()
 
     # ── Underlyings ───────────────────────────────────────────────────────
-    st.subheader(tr("setup_underlyings_header"))
+    _setup_header(1, tr("setup_underlyings_header"))
 
     # Build full option list including any custom tickers from session state
     custom_tickers = st.session_state.get("custom_tickers", {})
@@ -419,21 +466,12 @@ if st.session_state["page"] == "setup":
             f"{disp} — {sym} (custom)": sym
             for sym, disp in custom_tickers.items()
         })
+        # Selected underlyings shown as chips (matches the dashboard).
         logo_cols = st.columns(min(len(selected_labels), 5))
         for _i, _lbl in enumerate(selected_labels[:5]):
-            _sym = _lbl_to_sym.get(_lbl)
-            _logo_url = _logo_src(_sym) or None
-            _short = _label_to_name(_lbl)
-            with logo_cols[_i]:
-                if _logo_url:
-                    # onerror hides the element if the URL fails instead of showing a broken icon
-                    st.markdown(
-                        f'<img src="{_logo_url}" width="48" height="48" '
-                        f'style="object-fit:contain;border-radius:4px;" '
-                        f'onerror="this.style.display=\'none\'">',
-                        unsafe_allow_html=True,
-                    )
-                st.caption(_short)
+            _sym = _lbl_to_sym.get(_lbl) or ""
+            logo_cols[_i].markdown(
+                _asset_chip(_label_to_name(_lbl), _sym), unsafe_allow_html=True)
 
         # ── Custom logos (override the favicon/CDN logo per underlying) ────
         with st.expander(tr("setup_custom_logos_header")):
@@ -465,7 +503,7 @@ if st.session_state["page"] == "setup":
     st.divider()
 
     # ── Note type ─────────────────────────────────────────────────────────
-    st.subheader(tr("setup_note_type_header"))
+    _setup_header(2, tr("setup_note_type_header"))
     _nt_opts = ["phoenix", "reverse_conv", "growth_autocall",
                 "bonus_cert", "capital_protected", "custom"]
     _nt_label = {
@@ -569,7 +607,7 @@ if st.session_state["page"] == "setup":
         min_return_pct = 0.0; capital_guarantee = None; upside_cap = None
 
     # ── Schedule & Maturity ───────────────────────────────────────────────
-    st.subheader(tr("setup_schedule_header"))
+    _setup_header(3, tr("setup_schedule_header"))
     maturity_opts = [0.5, 1.0, 1.5, 2.0, 3.0, 5.0]
     # Keep a loaded config's maturity selectable instead of silently snapping
     # it to the nearest preset (e.g. a 9M note must not become 1Y).
@@ -602,7 +640,7 @@ if st.session_state["page"] == "setup":
 
     # ── Coupon ────────────────────────────────────────────────────────────
     if _show_coupon:
-        st.subheader(tr("setup_coupon_header"))
+        _setup_header(4, tr("setup_coupon_header"))
         cp_a, cp_b = st.columns(2)
         with cp_a:
             # Growth autocall: coupon_pa carries the premium accrual rate.
@@ -640,7 +678,7 @@ if st.session_state["page"] == "setup":
 
     # ── Protection / Barriers ─────────────────────────────────────────────
     if _show_ki or _show_min_return or _show_capprot or _show_one_star:
-        st.subheader(tr("setup_barriers_header"))
+        _setup_header(5, tr("setup_barriers_header"))
         st.caption(tr("setup_barriers_caption"))
         if _show_ki:
             ki_bar_pct = st.number_input(
@@ -713,7 +751,7 @@ if st.session_state["page"] == "setup":
 
     # ── Autocall ──────────────────────────────────────────────────────────
     if _show_autocall:
-        st.subheader(tr("setup_autocall_header"))
+        _setup_header(6, tr("setup_autocall_header"))
         au_a, au_b, au_c = st.columns(3)
         with au_a:
             # Bound at 300% and clamp the default so a Bonus/CP config (200%
@@ -1131,44 +1169,28 @@ elif st.session_state["page"] == "dashboard":
 
         # Underlyings table with logos
         st.markdown(tr("underlyings_header"))
-        _ul_rows_html = "".join(
-            "<tr>"
-            "<td style='padding:4px 8px;vertical-align:middle;'>"
-            + (
-                f"<img src='{_logo_src(sym)}' "
-                f"width='24' height='24' "
-                f"style='border-radius:4px;vertical-align:middle;' "
-                f"onerror=\"this.style.display='none'\"/>"
-            )
-            + f"</td>"
-            f"<td style='padding:4px 8px;vertical-align:middle;'>{disp}</td>"
-            f"<td style='padding:4px 8px;vertical-align:middle;font-family:monospace;'>{sym}</td>"
-            "</tr>"
-            for sym, disp in selected_tickers.items()
-        )
-        st.markdown(
-            "<table style='border-collapse:collapse;width:100%'>"
-            "<thead><tr>"
-            "<th style='padding:4px 8px;text-align:left;border-bottom:1px solid #ddd;width:36px;'></th>"
-            f"<th style='padding:4px 8px;text-align:left;border-bottom:1px solid #ddd;'>{tr('col_display_name')}</th>"
-            f"<th style='padding:4px 8px;text-align:left;border-bottom:1px solid #ddd;'>{tr('col_yf_symbol')}</th>"
-            "</tr></thead>"
-            f"<tbody>{_ul_rows_html}</tbody>"
-            "</table>",
-            unsafe_allow_html=True,
-        )
+        _ul_items = list(selected_tickers.items())
+        _ul_cols  = st.columns(len(_ul_items))
+        for _col, (_sym, _disp) in zip(_ul_cols, _ul_items):
+            _col.markdown(_asset_chip(_disp, _sym), unsafe_allow_html=True)
 
         st.divider()
-        c1, c2, c3 = st.columns(3)
-        c1.metric(tr("metric_maturity"), f"{terms.maturity}Y")
-        c1.metric(tr("metric_observations"), f"{terms.n_obs}")
-        c1.metric(tr("metric_frequency"), terms.payment_freq.capitalize())
-        c2.metric(tr("metric_coupon_pa"), f"{terms.coupon_pa*100:.2g}%")
-        c2.metric(tr("metric_coupon_period"), f"{terms.coupon_rate*100:.4f}%")
-        c2.metric(tr("metric_memory"), tr("yes") if terms.memory else tr("no_str"))
-        c3.metric(tr("metric_coupon_barrier"), f"{terms.coupon_barrier:.0%}")
-        c3.metric(tr("metric_autocall_barrier"), f"{terms.autocall_barrier:.0%}")
-        c3.metric(tr("metric_ki_barrier"), f"{terms.knock_in_barrier:.0%}")
+        # Terms grouped (Schedule / Coupon / Barriers), mirroring the summary tabs.
+        st.markdown("**" + tr("structure_group_schedule") + "**")
+        s1, s2, s3 = st.columns(3)
+        s1.metric(tr("metric_maturity"), f"{terms.maturity}Y")
+        s2.metric(tr("metric_observations"), f"{terms.n_obs}")
+        s3.metric(tr("metric_frequency"), terms.payment_freq.capitalize())
+        st.markdown("**" + tr("structure_group_coupon") + "**")
+        p1, p2, p3 = st.columns(3)
+        p1.metric(tr("metric_coupon_pa"), f"{terms.coupon_pa*100:.2g}%")
+        p2.metric(tr("metric_coupon_period"), f"{terms.coupon_rate*100:.4f}%")
+        p3.metric(tr("metric_memory"), tr("yes") if terms.memory else tr("no_str"))
+        st.markdown("**" + tr("structure_group_barriers") + "**")
+        k1, k2, k3 = st.columns(3)
+        k1.metric(tr("metric_coupon_barrier"), f"{terms.coupon_barrier:.0%}")
+        k2.metric(tr("metric_autocall_barrier"), f"{terms.autocall_barrier:.0%}")
+        k3.metric(tr("metric_ki_barrier"), f"{terms.knock_in_barrier:.0%}")
         if terms.one_star_level is not None:
             st.info(tr("one_star_info", barrier=terms.one_star_level))
         obs_df = pd.DataFrame({
@@ -1539,24 +1561,18 @@ elif st.session_state["page"] == "dashboard":
                 mc3.metric(tr("metric_irr_pa"),    f"{irr:.2%}",
                            help=tr("mc_help_irr_pa"))
 
-                # Per-asset final performance with logos
+                # Per-asset final performance with logos (logo inside the card)
                 _disp_to_sym_pe = {disp: sym for sym, disp in selected_tickers.items()}
                 _pe_cols = st.columns(len(asset_names))
                 for _pe_i, (_pe_name, _pe_col) in enumerate(zip(asset_names, _pe_cols)):
-                    _pe_sym = _disp_to_sym_pe.get(_pe_name, "")
-                    _pe_logo = _logo_src(_pe_sym)
-                    _pe_logo_html = (
-                        f"<img src='{_pe_logo}' width='24' height='24' "
-                        f"style='border-radius:4px;vertical-align:middle;margin-right:4px;' "
-                        f"onerror=\"this.style.display='none'\"/>"
-                        if _pe_logo else ""
-                    )
                     _pe_final = float(asset_perf_pn[-1, _pe_i])
-                    _pe_col.markdown(
-                        f"{_pe_logo_html}<b style='vertical-align:middle;'>{_pe_name}</b>",
-                        unsafe_allow_html=True,
-                    )
-                    _pe_col.metric(tr("mc_final_perf"), f"{_pe_final:.1%}")
+                    _pe_d = _pe_final - 1.0
+                    _pe_col.markdown(_live_card(
+                        _pe_name, f"{_pe_final:.1%}",
+                        delta=f"{'↓' if _pe_d < 0 else '↑'} {tr('live_metric_vs_strike', v=_pe_d)}",
+                        delta_kind=("neg" if _pe_d < 0 else "pos"),
+                        logo=_logo_src(_disp_to_sym_pe.get(_pe_name, ""))),
+                        unsafe_allow_html=True)
 
             with mc_tab3:
                 _mc_path_explorer()
@@ -1599,7 +1615,7 @@ elif st.session_state["page"] == "dashboard":
                             (effective_corr - corr_SS) - np.diag(np.diag(effective_corr - corr_SS)))))
                         ec2.metric(tr("corr_effective_gap"), f"{_eff_gap:+.3f}")
                         ec2.caption(tr("corr_effective_caption"))
-                st.markdown("---")
+                st.divider()
                 st.subheader(tr("calib_heston_subheader"))
                 _disp_to_sym = {disp: sym for sym, disp in selected_tickers.items()}
                 rows = []
@@ -1648,8 +1664,9 @@ elif st.session_state["page"] == "dashboard":
     # TAB 2 — HISTORICAL BACKTEST
     # ══════════════════════════════════════════════════════════════════
     with tab_bt:
-        st.header(tr("bt_tab_header"))
-        st.markdown(tr("bt_tab_intro"))
+        # The tab label already says "Historical Backtest"; a one-line caption
+        # keeps it consistent with the other tabs (no redundant page header).
+        st.caption(tr("bt_tab_intro"))
 
         # ── Load full price history for backtest path explorer ────────────
         # Use the same history_years that the user selected — avoids pulling
@@ -1815,13 +1832,16 @@ elif st.session_state["page"] == "dashboard":
             ])
 
             with bt_tab1:
-                b1, b2, b3 = st.columns(3)
-                b1.metric(tr("bt_metric_issue_dates"),    str(bt_summary.get("n_issues", 0)),
-                          help=tr("bt_help_issue_dates"))
-                b2.metric(tr("bt_metric_mean_irr"),       f"{bt_summary.get('mean_irr', 0):.2%}",
+                # Grouped like the Monte Carlo summary (returns vs risk), with the
+                # sample size as a one-line caption above.
+                st.caption(tr("bt_sample_caption", n=bt_summary.get("n_issues", 0)))
+                st.markdown("**" + tr("bt_returns_label") + "**")
+                b1, b2 = st.columns(2)
+                b1.metric(tr("bt_metric_mean_irr"),       f"{bt_summary.get('mean_irr', 0):.2%}",
                           help=tr("bt_help_mean_irr"))
-                b3.metric(tr("bt_metric_median_irr"),     f"{bt_summary.get('median_irr', 0):.2%}",
+                b2.metric(tr("bt_metric_median_irr"),     f"{bt_summary.get('median_irr', 0):.2%}",
                           help=tr("bt_help_median_irr"))
+                st.markdown("**" + tr("summary_risk_label") + "**")
                 b4, b5, b6 = st.columns(3)
                 b4.metric(tr("bt_metric_knock_in_pct"),   f"{bt_summary.get('prob_knock_in', 0):.1%}",
                           help=tr("bt_help_knock_in_pct"))
@@ -2004,16 +2024,10 @@ elif st.session_state["page"] == "dashboard":
                     _obs_cal     = run_terms.obs_calendar_dates(_anchor_live)
                     _ac_sched_lv = run_terms.autocall_barrier_schedule()
 
-                    # ── Live summary metrics ──────────────────────────
-                    _lc1, _lc2, _lc3, _lc4 = st.columns(4)
-                    _lc1.metric(tr("live_metric_wof_today"),  f"{_wof_today:.1%}",
-                                delta=tr("live_metric_vs_strike", v=_wof_today - 1.0),
-                                help=tr("live_help_wof_today"))
-                    _lc2.metric(tr("live_metric_worst_asset"), _worst_asset_today,
-                                help=tr("live_help_worst_asset"))
-                    # Autocall buffer uses the barrier for the next upcoming
-                    # observation period, not the flat initial barrier — for
-                    # step-down notes these differ after the first callable period.
+                    # ── Live summary metrics (grouped: Today / Barriers) ──
+                    _live_disp_to_sym = {disp: sym for sym, disp in selected_tickers.items()}
+                    # Buffers use the barrier for the next upcoming observation
+                    # (step-down notes differ after the first callable period).
                     _next_obs_idx = next(
                         (i for i, d in enumerate(_obs_cal)
                          if pd.Timestamp(d) > _today_ts),
@@ -2022,38 +2036,51 @@ elif st.session_state["page"] == "dashboard":
                     _next_ac_barrier = float(_ac_sched_lv[_next_obs_idx])
                     _ki_buf  = _wof_today - run_terms.knock_in_barrier
                     _ac_buf  = _wof_today - _next_ac_barrier
-                    _lc3.metric(tr("live_metric_ki_buffer"),
-                                f"{_ki_buf:+.1%}",
-                                delta=tr("live_delta_barrier_ref",
-                                         barrier=run_terms.knock_in_barrier),
-                                delta_color="off",
-                                help=tr("live_help_ki_buffer", barrier=run_terms.knock_in_barrier))
-                    _lc4.metric(tr("live_metric_ac_buffer"),
-                                f"{_ac_buf:+.1%}",
-                                delta=tr("live_delta_autocall_ref",
-                                         barrier=_next_ac_barrier),
-                                delta_color="off",
-                                help=tr("live_help_ac_buffer", barrier=_next_ac_barrier))
+
+                    def _vs_strike(perf):
+                        d = perf - 1.0
+                        return (f"{'↓' if d < 0 else '↑'} {tr('live_metric_vs_strike', v=d)}",
+                                "neg" if d < 0 else "pos")
+
+                    st.markdown("**" + tr("live_group_today") + "**")
+                    _t1, _t2 = st.columns(2)
+                    _wof_delta, _wof_kind = _vs_strike(_wof_today)
+                    _t1.markdown(_live_card(
+                        tr("live_metric_wof_today"), f"{_wof_today:.1%}",
+                        delta=_wof_delta, delta_kind=_wof_kind,
+                        help_text=tr("live_help_wof_today")), unsafe_allow_html=True)
+                    _t2.markdown(_live_card(
+                        tr("live_metric_worst_asset"), _worst_asset_today,
+                        logo=_logo_src(_live_disp_to_sym.get(_worst_asset_today, "")),
+                        logo_with_value=True,
+                        help_text=tr("live_help_worst_asset")), unsafe_allow_html=True)
+
+                    st.markdown("**" + tr("live_group_barriers") + "**")
+                    _b1, _b2 = st.columns(2)
+                    _b1.markdown(_live_card(
+                        tr("live_metric_ki_buffer"), f"{_ki_buf:+.1%}",
+                        delta=tr("live_delta_barrier_ref", barrier=run_terms.knock_in_barrier),
+                        delta_kind="neutral",
+                        help_text=tr("live_help_ki_buffer", barrier=run_terms.knock_in_barrier)),
+                        unsafe_allow_html=True)
+                    _b2.markdown(_live_card(
+                        tr("live_metric_ac_buffer"), f"{_ac_buf:+.1%}",
+                        delta=tr("live_delta_autocall_ref", barrier=_next_ac_barrier),
+                        delta_kind="neutral",
+                        help_text=tr("live_help_ac_buffer", barrier=_next_ac_barrier)),
+                        unsafe_allow_html=True)
 
                     # ── Per-asset current performance ─────────────────
                     st.markdown(tr("live_asset_perf_header"))
-                    _live_disp_to_sym = {disp: sym for sym, disp in selected_tickers.items()}
                     _asset_cols = st.columns(len(asset_names))
                     for _i, (_aname, _acol) in enumerate(zip(asset_names, _asset_cols)):
                         _ap = float(_perf_today[_i])
-                        _live_sym = _live_disp_to_sym.get(_aname, "")
-                        _live_logo = _logo_src(_live_sym) or None
-                        if _live_logo:
-                            _acol.markdown(
-                                f"<img src='{_live_logo}' width='24' height='24' "
-                                f"style='border-radius:4px;vertical-align:middle;margin-right:4px;' "
-                                f"onerror=\"this.style.display='none'\"/>"
-                                f"<b style='vertical-align:middle;'>{_aname}</b>",
-                                unsafe_allow_html=True,
-                            )
-                            _acol.metric("", f"{_ap:.1%}", tr("live_metric_vs_strike", v=_ap - 1.0))
-                        else:
-                            _acol.metric(_aname, f"{_ap:.1%}", tr("live_metric_vs_strike", v=_ap - 1.0))
+                        _ap_delta, _ap_kind = _vs_strike(_ap)
+                        _acol.markdown(_live_card(
+                            _aname, f"{_ap:.1%}",
+                            delta=_ap_delta, delta_kind=_ap_kind,
+                            logo=_logo_src(_live_disp_to_sym.get(_aname, ""))),
+                            unsafe_allow_html=True)
 
                     # ── Coupon status replay (shared engine logic) ────────
                     # All payoff semantics (memory, step-down autocall
