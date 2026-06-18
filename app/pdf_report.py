@@ -2199,20 +2199,37 @@ def _cover_page(
 
     toc_groups.append((None, [_t("glossary_title", lang), _t("disclaimer_title", lang)]))
 
+    # The contents must fit between here and the fixed micro-disclaimer near the
+    # page foot. A full report (all three lenses + every sub-section) is ~15 rows
+    # and overflows at the default 5.5 mm row height, so compress rows to fit the
+    # available band when needed. Common (partial) reports stay at full height.
+    _toc_top    = pdf.get_y()
+    _toc_bottom = pdf.h - 22 - 4.0          # keep clear of the micro-disclaimer
+    _toc_avail  = _toc_bottom - _toc_top
+    _gap        = 1.2                        # extra space before each lens header
+    _n_heads    = sum(1 for nm, _ in toc_groups if nm is not None)
+    _n_rows     = sum(len(lv) for _, lv in toc_groups) + _n_heads
+    _row_h      = 5.5
+    if _n_rows > 0 and (_n_rows * _row_h + _n_heads * _gap) > _toc_avail:
+        _scale = max(0.0, _toc_avail - _n_heads * _gap) / (_n_rows * _row_h)
+        _scale = min(1.0, _scale)
+        _row_h = max(3.9, _row_h * _scale)
+        _gap   = _gap * _scale
+
     def _toc_leaf(text, indent=0.0):
         pdf.set_x(pdf.l_margin + indent)
         pdf._sf(8.5, "regular")
         pdf.set_text_color(*_TEXT)
-        pdf.cell(main_w - indent, 5.5, text, new_x="LMARGIN", new_y="NEXT")
+        pdf.cell(main_w - indent, _row_h, text, new_x="LMARGIN", new_y="NEXT")
         pdf.set_draw_color(*_RULE_LIGHT)
         pdf.line(pdf.l_margin, pdf.get_y(), pdf.l_margin + main_w, pdf.get_y())
 
     def _toc_head(name):
-        pdf.ln(1.2)
+        pdf.ln(_gap)
         pdf.set_x(pdf.l_margin)
         pdf._sf(8.5, "semibold")
         pdf.set_text_color(*pdf.primary_color)
-        pdf.cell(main_w, 5.5, name, new_x="LMARGIN", new_y="NEXT")
+        pdf.cell(main_w, _row_h, name, new_x="LMARGIN", new_y="NEXT")
         pdf.set_draw_color(*_RULE_LIGHT)
         pdf.line(pdf.l_margin, pdf.get_y(), pdf.l_margin + main_w, pdf.get_y())
 
