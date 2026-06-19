@@ -2711,8 +2711,15 @@ def _build_pdf_report(
                 aligns=["L", "R", "R", "R"],
                 rounded=True,
             )
-        pdf.ln(8)   # breathing room before the model box
-        pdf.callout(_t("model_box_title", lang), _t("model_box_body", lang))
+        # The Model & Methodology callout describes the Heston Monte Carlo engine,
+        # so it is included only when the report actually carries MC output. A
+        # Note-details / backtest / live-only report (sim skipped) omits it.
+        _mc_keys = {"mc_metrics", "mc_irr", "mc_autocall", "mc_wof",
+                    "mc_single_price", "mc_single_wof", "calib_table", "calib_corr"}
+        _mc_keys |= {f"mc_fan_{i}" for i in range(len(asset_names or []))}
+        if any(_inc(k) for k in _mc_keys):
+            pdf.ln(8)   # breathing room before the model box
+            pdf.callout(_t("model_box_title", lang), _t("model_box_body", lang))
 
     # ── 2b. Issuer information (toggleable; shown whenever an issuer is set) ──
     if pdf.issuer and _inc("issuer_info"):

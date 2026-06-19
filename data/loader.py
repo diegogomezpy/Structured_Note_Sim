@@ -535,21 +535,60 @@ def resolve_issuer_summary(name: str, ssl_verify: bool = True) -> str | None:
         import yfinance as yf
     except ImportError:
         return None
-    queries = [name.strip()]
-    stripped = name.replace("Bank ", "").replace("Banco ", "").strip()
-    if stripped and stripped != name.strip():
-        queries.append(stripped)
-    for q in queries:
+    import re
+
+    raw = name.strip()
+    # Build query candidates from most specific to least. Note issuers are very
+    # often financing subsidiaries ("Morgan Stanley B.V.", "Morgan Stanley
+    # Finance LLC", "BNP Paribas Issuance B.V.", "Goldman Sachs Finance Corp")
+    # that Yahoo can't resolve to the listed parent — the search returns either
+    # nothing or the structured notes themselves (MUTUALFUND rows), never the
+    # parent equity. So progressively strip corporate-form / descriptor suffixes
+    # and finally fall back to the leading 1-2 brand words.
+    cands: list[str] = []
+    def _add(q: str) -> None:
+        q = re.sub(r"\s+", " ", q).strip(" ,.&-")
+        if q and q.lower() not in {c.lower() for c in cands}:
+            cands.append(q)
+
+    _add(raw)
+    _add(re.sub(r"\b(Bank|Banco)\b", "", raw))
+    # Iteratively strip trailing corporate-form / descriptor tokens.
+    _suffix = re.compile(
+        r"[\s,]*\b("
+        r"B\.?V\.?|N\.?V\.?|S\.?A\.?S\.?|S\.?A\.?|S\.?p\.?A\.?|"
+        r"LLC|L\.?P\.?|Ltd\.?|Limited|PLC|AG|GmbH|Inc\.?|Corp\.?|"
+        r"Co\.?|Company|Issuance|Finance|Financial|Funding|Capital|"
+        r"International|Group|Holdings?|Securities|Services"
+        r")\.?$", re.IGNORECASE)
+    core = raw
+    for _ in range(6):
+        nxt = _suffix.sub("", core).strip(" ,.&-")
+        if nxt == core or not nxt:
+            break
+        core = nxt
+        _add(core)
+    # Brand fallback: leading two words, then the leading word.
+    toks = [t for t in re.split(r"[\s&,]+", raw) if t]
+    if len(toks) >= 2:
+        _add(" ".join(toks[:2]))
+    if toks:
+        _add(toks[0])
+
+    for q in cands:
         try:
-            quotes = yf.Search(q, max_results=5).quotes or []
-            eq   = [x for x in quotes if x.get("quoteType") == "EQUITY"]
-            cand = (eq[0]["symbol"] if eq else
-                    (quotes[0].get("symbol") if quotes else None))
-            if not cand:
-                continue
-            summ = (yf.Ticker(cand).info or {}).get("longBusinessSummary")
-            if summ:
-                return summ
+            quotes = yf.Search(q, max_results=8).quotes or []
+            # Accept EQUITY only — MUTUALFUND/MONEY_MARKET rows are the notes and
+            # funds themselves and carry no parent business summary. Probe the
+            # first few equities in case the top listing lacks a summary.
+            eq = [x for x in quotes if x.get("quoteType") == "EQUITY"]
+            for x in eq[:3]:
+                sym = x.get("symbol")
+                if not sym:
+                    continue
+                summ = (yf.Ticker(sym).info or {}).get("longBusinessSummary")
+                if summ:
+                    return summ
         except Exception:
             continue
     return None

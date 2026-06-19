@@ -328,14 +328,28 @@ def _load_underlying_metrics_cached(tickers_tuple):
         print(f"[app] underlying metrics failed: {e}")
         return {}
 
-@st.cache_data(ttl=24 * 3600, show_spinner=False)
+# Issuer-summary cache keyed on name. Only SUCCESSFUL resolutions are cached;
+# a None (transient Yahoo blip, or a subsidiary name that didn't resolve) is NOT,
+# so a single failure doesn't pin "no description" for the rest of the session —
+# same bug class as the logo / translation caches. Not st.cache_data (which would
+# cache the None for 24h).
+_ISSUER_SUMMARY_CACHE: dict[str, str] = {}
+
+
 def _resolve_issuer_summary_cached(name):
     """Issuer business summary resolved from its name via Yahoo search (for the
-    issuer-description prefill). Cached 24h; None when it can't be resolved."""
-    try:
-        return resolve_issuer_summary(name)
-    except Exception:
+    issuer-description prefill). Caches only real summaries; retries after a miss."""
+    if not name:
         return None
+    if name in _ISSUER_SUMMARY_CACHE:
+        return _ISSUER_SUMMARY_CACHE[name]
+    try:
+        out = resolve_issuer_summary(name)
+    except Exception:
+        out = None
+    if out:
+        _ISSUER_SUMMARY_CACHE[name] = out
+    return out
 
 # Translation cache keyed on (text, target). Only SUCCESSFUL translations are
 # cached; a failure (returns the input unchanged) is NOT, so a transient blip —
