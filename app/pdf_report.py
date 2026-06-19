@@ -1311,50 +1311,102 @@ class _NotePDF(FPDF):
                          subtitle: str, metrics: list[tuple[str, str]],
                          description: str, chart_png: bytes | None,
                          chart_caption: str):
-        """One underlying's breakdown card: logo + name + a type/sector subtitle,
-        a metric band (market cap / 3M IV / last price / RSI), an optional company
-        description, and a trailing-12-month price chart. Breaks to a new page if
-        the header + metric band would not fit, so a card never starts stranded at
-        the foot of a page."""
+        """Self-contained per-underlying card — a tinted rounded panel, like the
+        issuer block: logo + name + a type·sector line, the key figures as white
+        chips (market cap / 3M IV / last price / RSI), the company description, and
+        the trailing-1Y price chart (transparent, so the panel tint shows through).
+        The whole card is measured up front and moved to a fresh page if it would
+        not fit, so it never splits across a page break."""
         x0 = self.l_margin
         w  = self.w - self.l_margin - self.r_margin
-        if self.get_y() > self.h - self.b_margin - 60:
-            self.add_page()
+        pad     = 6.0
+        inner_w = w - 2 * pad
+        gap     = 4.0
+        n_chips = max(1, len(metrics))
+        header_h, chip_h = 13.0, 13.0
+        chart_w = inner_w
+        chart_h = (chart_w * 0.40) if chart_png else 0.0   # PNG aspect = 900x360
+        cap_h   = 5.5 if chart_png else 0.0
+        # Measure the (wrapped) description so the panel sizes to its content.
+        self._sf(8.5, "regular")
+        desc_lines = (self.multi_cell(inner_w, 4.3, self._safe(description),
+                                      dry_run=True, output="LINES") if description else [])
+        desc_h = len(desc_lines) * 4.3
+        box_h = (pad + header_h + chip_h
+                 + (3 + desc_h if description else 0)
+                 + (4 + cap_h + chart_h if chart_png else 0)
+                 + pad)
         y0 = self.get_y()
-        # Header — logo + long name (brand primary) with a soft type·sector line.
-        tx = x0
+        # Keep the whole card together — break before it rather than split it.
+        if y0 + box_h > self.h - 28:
+            self.add_page()
+            y0 = self.get_y()
+        # Panel.
+        self.set_fill_color(*self.panel_color)
+        try:
+            self.rect(x0, y0, w, box_h, style="F", round_corners=True, corner_radius=2)
+        except TypeError:
+            self.rect(x0, y0, w, box_h, style="F")
+        # Header: logo + name (brand primary) + soft type·sector line.
+        cy = y0 + pad
+        tx = x0 + pad
         if logo_bytes:
             try:
-                self.image(io.BytesIO(logo_bytes), x=x0, y=y0 + 0.5, w=9, h=9)
-                tx = x0 + 12
+                self.image(io.BytesIO(logo_bytes), x=x0 + pad, y=cy, w=9, h=9)
+                tx = x0 + pad + 12
             except Exception:
                 pass
-        self.set_xy(tx, y0)
-        self._sf(12, "semibold")
+        self.set_xy(tx, cy + 0.4)
+        self._sf(11.5, "semibold")
         self.set_text_color(*self.primary_color)
-        self.cell(w - (tx - x0), 6, self._safe(long_name), new_x="LMARGIN", new_y="NEXT")
+        self.cell(x0 + pad + inner_w - tx, 5.5, self._safe(long_name))
         if subtitle:
-            self.set_xy(tx, y0 + 6.2)
+            self.set_xy(tx, cy + 6.2)
             self._sf(8, "regular")
             self.set_text_color(*_TEXT_SOFT)
-            self.cell(w - (tx - x0), 4, self._safe(subtitle))
-        self.set_y(y0 + 11.5)
-        # Thin brand rule under the header.
-        self.set_fill_color(*self.section_rule_color)
-        self.rect(x0, self.get_y(), w, 0.5, style="F")
-        self.ln(3.5)
-        # Metric band: market cap / 3M IV / last price / RSI.
-        self.metric_band(metrics)
+            self.cell(x0 + pad + inner_w - tx, 4, self._safe(subtitle))
+        cy += header_h
+        # Metric chips — white rounded boxes, label over value (like rating chips).
+        chip_w = (inner_w - (n_chips - 1) * gap) / n_chips
+        cx = x0 + pad
+        for lbl, val in metrics:
+            self.set_fill_color(*_WHITE)
+            try:
+                self.rect(cx, cy, chip_w, chip_h, style="F", round_corners=True, corner_radius=1.5)
+            except TypeError:
+                self.rect(cx, cy, chip_w, chip_h, style="F")
+            # Label (auto-shrunk to the chip width).
+            self.set_text_color(*_TEXT_SOFT)
+            self._fit_font(lbl.upper(), chip_w - 2, 6.5, "semibold", min_size=5.0)
+            self.set_xy(cx, cy + 1.8)
+            self.cell(chip_w, 3, self._safe(lbl.upper()), align="C")
+            # Value (brand primary, auto-shrunk).
+            self.set_text_color(*self.primary_color)
+            self._fit_font(str(val), chip_w - 3, 11.0, "bold", min_size=7.0)
+            self.set_xy(cx, cy + 6.0)
+            self.cell(chip_w, 5, self._safe(str(val)), align="C")
+            cx += chip_w + gap
+        cy += chip_h
         # Company description (optional — blank hides it, like the issuer blurb).
         if description:
+            self.set_xy(x0 + pad, cy + 3)
             self._sf(8.5, "regular")
             self.set_text_color(*_TEXT_SOFT)
-            self.multi_cell(0, 4.3, self._safe(description))
-            self.ln(1.5)
-        # Trailing-12-month price chart (tinted panel + caption, via figure()).
+            self.multi_cell(inner_w, 4.3, self._safe(description))
+            cy = self.get_y()
+        # Trailing-1Y chart: caption + the transparent PNG directly on the panel.
         if chart_png:
-            self.figure(chart_png, chart_caption, "", w=150, h=58)
-        self.ln(2)
+            cy += 4
+            self.set_xy(x0 + pad, cy)
+            self._sf(8.5, "semibold")
+            self.set_text_color(*self.primary_color)
+            self.cell(inner_w, cap_h, self._safe(chart_caption), align="C")
+            cy += cap_h
+            try:
+                self.image(io.BytesIO(chart_png), x=x0 + pad, y=cy, w=chart_w, h=chart_h)
+            except Exception:
+                pass
+        self.set_y(y0 + box_h + 5)
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -2340,10 +2392,15 @@ def _cover_page(
     _any_fan  = any(inc(f"mc_fan_{i}") for i in range(_n_assets))
     toc_groups = []  # (header|None, [leaf titles])
 
-    _top = [_t("note_terms", lang)]
-    if getattr(terms, "issuer", ""):
+    _top = []
+    if inc("note_terms"):
+        _top.append(_t("note_terms", lang))
+    if getattr(terms, "issuer", "") and inc("issuer_info"):
         _top.append(_t("issuer_info", lang))
-    toc_groups.append((None, _top))
+    if inc("underlying_breakdown"):
+        _top.append(_t("underlying_breakdown", lang))
+    if _top:
+        toc_groups.append((None, _top))
 
     _mc = []
     if inc("mc_metrics") or inc("mc_irr") or inc("mc_autocall"):
@@ -2565,43 +2622,51 @@ def _build_pdf_report(
                 logo_urls, issuer_logo_bytes, logo_tickers, inc=_inc,
                 logo_overrides=_logo_ovr)
 
-    # ── 2. Note terms ──────────────────────────────────────────────────────
-    # First content section — always on a fresh page after the cover.
-    pdf.add_page()
-    pdf.section_title(_t("note_terms", lang))
-    _term_data = _term_rows(terms, lang)
-    usable = pdf.w - pdf.l_margin - pdf.r_margin
-    pdf.data_table(
-        [_t("key_terms_col_characteristic", lang), _t("key_terms_col_description", lang)],
-        [[k, v] for k, v in _term_data],
-        col_widths=[usable * 0.40, usable * 0.60],
-        aligns=["L", "L"],
-        rounded=True,
-    )
+    # ── 2. Note terms + observation schedule (each toggleable) ──────────────
+    # The first content page. Note Terms, the Observation Schedule, the Issuer
+    # block and the Underlying Breakdown are all toggleable from the Build-report
+    # panel's "Note details" category; with include_sections=None (programmatic
+    # callers) every one renders, so existing callers are unaffected.
+    _show_terms = _inc("note_terms")
+    _show_obs   = _inc("obs_schedule")
+    if _show_terms or _show_obs:
+        pdf.add_page()
+        usable = pdf.w - pdf.l_margin - pdf.r_margin
+        if _show_terms:
+            pdf.section_title(_t("note_terms", lang))
+            _term_data = _term_rows(terms, lang)
+            pdf.data_table(
+                [_t("key_terms_col_characteristic", lang), _t("key_terms_col_description", lang)],
+                [[k, v] for k, v in _term_data],
+                col_widths=[usable * 0.40, usable * 0.60],
+                aligns=["L", "L"],
+                rounded=True,
+            )
+        if _show_obs:
+            # A sub-header under Note Terms, or its own section title when Note
+            # Terms is toggled off so the schedule isn't left unlabelled.
+            if _show_terms:
+                pdf.subsection(_t("obs_schedule", lang), min_room=14 + _table_room(terms.n_obs))
+            else:
+                pdf.section_title(_t("obs_schedule", lang))
+            obs_times = terms.obs_times()
+            sched     = terms.autocall_barrier_schedule()
+            ac_rows = []
+            for i, t_obs in enumerate(obs_times):
+                eligible = _t("yes", lang) if (i + 1) >= terms.autocall_start_period else _t("no", lang)
+                ac_rows.append([f"P{i+1}", f"{t_obs:.3g}", f"{sched[i]:.0%}", eligible])
+            pdf.data_table(
+                [_t("period", lang), _t("time_y", lang), _t("ac_level", lang), _t("eligible", lang)],
+                ac_rows,
+                col_widths=[usable * 0.2, usable * 0.25, usable * 0.3, usable * 0.25],
+                aligns=["L", "R", "R", "R"],
+                rounded=True,
+            )
+        pdf.ln(8)   # breathing room before the model box
+        pdf.callout(_t("model_box_title", lang), _t("model_box_body", lang))
 
-    pdf.subsection(_t("obs_schedule", lang), min_room=14 + _table_room(terms.n_obs))
-    obs_times = terms.obs_times()
-    sched     = terms.autocall_barrier_schedule()
-    ac_rows = []
-    for i, t_obs in enumerate(obs_times):
-        eligible = _t("yes", lang) if (i + 1) >= terms.autocall_start_period else _t("no", lang)
-        ac_rows.append([f"P{i+1}", f"{t_obs:.3g}", f"{sched[i]:.0%}", eligible])
-    usable = pdf.w - pdf.l_margin - pdf.r_margin
-    pdf.data_table(
-        [_t("period", lang), _t("time_y", lang), _t("ac_level", lang), _t("eligible", lang)],
-        ac_rows,
-        col_widths=[usable * 0.2, usable * 0.25, usable * 0.3, usable * 0.25],
-        aligns=["L", "R", "R", "R"],
-        rounded=True,
-    )
-
-    pdf.ln(8)   # breathing room between the observation table and the model box
-    pdf.callout(_t("model_box_title", lang), _t("model_box_body", lang))
-
-    # ── 2b. Issuer information (on by default whenever an issuer is set) ──────
-    # Not gated by include_sections — like Note Terms it always renders, so a
-    # fresh all-off report still carries the issuer profile.
-    if pdf.issuer:
+    # ── 2b. Issuer information (toggleable; shown whenever an issuer is set) ──
+    if pdf.issuer and _inc("issuer_info"):
         _issuer_desc = getattr(terms, "issuer_description", "") or ""
         _ratings = [
             (_t("rating_sp", lang),    getattr(terms, "issuer_rating_sp", "") or ""),
@@ -2613,13 +2678,14 @@ def _build_pdf_report(
         pdf.issuer_info_block(pdf.issuer, issuer_logo_bytes, _issuer_desc, _ratings)
 
     # ── 2c. Underlying Breakdown (per-underlying summary + 1Y price chart) ───
-    # Renders whenever underlying metrics were supplied. Like the issuer block it
-    # is always on (not gated by include_sections), mirroring the app's note-info
-    # expander. Metric values come from the live pull; a per-field JSON override
-    # in terms.underlyings wins, and 'description' is the curated company blurb.
-    if underlying_metrics:
+    # Toggleable; renders when underlying metrics were supplied. Metric values
+    # come from the live pull; a per-field JSON override in terms.underlyings
+    # wins, and 'description' is the curated company blurb.
+    if underlying_metrics and _inc("underlying_breakdown"):
         _uls = getattr(terms, "underlyings", {}) or {}
-        pdf.start_section(_t("underlying_breakdown", lang), min_room=70.0)
+        # Higher min_room so the section title isn't stranded above a card that
+        # then breaks to the next page (each card is atomic — see underlying_block).
+        pdf.start_section(_t("underlying_breakdown", lang), min_room=130.0)
         for _nm in asset_names:
             _m  = underlying_metrics.get(_nm, {}) or {}
             _ov = _uls.get(_nm, {}) or {}

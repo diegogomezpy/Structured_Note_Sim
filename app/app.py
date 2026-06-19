@@ -33,7 +33,7 @@ from core.calibrator import HestonCalibrator
 from core.simulator  import HestonMultiSimulator
 from core.backtest   import run_backtest, snapped_obs_dates
 from data.loader     import (load_prices, load_dividends, build_dividend_schedule,
-                             load_underlying_metrics)
+                             load_underlying_metrics, resolve_issuer_summary)
 
 from translations import Translator
 from charts import (
@@ -225,7 +225,6 @@ def _render_underlying_card(name, sym, metrics, override, prices_1y, tr) -> None
             st.plotly_chart(fig, use_container_width=True, key=f"ulchart_{sym}")
         except Exception:
             pass
-    st.divider()
 
 
 def _setup_header(num: int, title: str) -> None:
@@ -328,6 +327,15 @@ def _load_underlying_metrics_cached(tickers_tuple):
         print(f"[app] underlying metrics failed: {e}")
         return {}
 
+@st.cache_data(ttl=24 * 3600, show_spinner=False)
+def _resolve_issuer_summary_cached(name):
+    """Issuer business summary resolved from its name via Yahoo search (for the
+    issuer-description prefill). Cached 24h; None when it can't be resolved."""
+    try:
+        return resolve_issuer_summary(name)
+    except Exception:
+        return None
+
 @st.cache_data(ttl=3600)
 def _run_backtest_cached(tickers_tuple, terms_json,
                          bt_start_str=None, bt_end_str=None,
@@ -355,6 +363,12 @@ tr = Translator("es" if lang_choice == "Español" else "en")
 # expands to one mc_fan_{i} per underlying. A category master toggle ticks/clears
 # all of its sub-items at once.
 _REPORT_TREE = {
+    "note": ("report_cat_note", [
+        ("note_terms",  "rep_note_terms",  ["note_terms"]),
+        ("note_obs",    "rep_note_obs",    ["obs_schedule"]),
+        ("note_issuer", "rep_note_issuer", ["issuer_info"]),
+        ("note_uls",    "rep_note_uls",    ["underlying_breakdown"]),
+    ]),
     "mc": ("report_cat_mc", [
         ("mc_summary",  "rep_mc_summary",  ["mc_metrics"]),
         ("mc_autocall", "rep_mc_autocall", ["mc_autocall"]),
@@ -978,12 +992,27 @@ if st.session_state["page"] == "setup":
 
         # Issuer profile — powers the PDF "Issuer Information" section (on by
         # default). All optional; blanks are simply hidden in the PDF.
-        issuer_description = st.text_area(
-            tr("setup_issuer_description"),
-            value=getattr(base, "issuer_description", "") or "",
-            height=80,
-            help=tr("setup_issuer_description_help"),
-        )
+        # Keyed + 'prefill from Yahoo' button (resolves the issuer name to a
+        # ticker and drops in its business summary), like the underlying ones.
+        if "setup_issuer_desc" not in st.session_state:
+            st.session_state["setup_issuer_desc"] = getattr(base, "issuer_description", "") or ""
+        _idc1, _idc2 = st.columns([5, 1])
+        with _idc2:
+            if st.button(tr("setup_ul_prefill"), key="issuer_desc_prefill",
+                         help=tr("setup_ul_prefill_help"), disabled=not issuer_input):
+                _isumm = _resolve_issuer_summary_cached(issuer_input.strip()) if issuer_input else None
+                if _isumm:
+                    st.session_state["setup_issuer_desc"] = _isumm
+                    st.rerun()
+                else:
+                    st.toast(tr("ul_metrics_failed"))
+        with _idc1:
+            issuer_description = st.text_area(
+                tr("setup_issuer_description"),
+                key="setup_issuer_desc",
+                height=80,
+                help=tr("setup_issuer_description_help"),
+            )
         _rt_a, _rt_b, _rt_c = st.columns(3)
         with _rt_a:
             issuer_rating_sp = st.text_input(
@@ -1324,8 +1353,9 @@ elif st.session_state["page"] == "dashboard":
         if not _ul_metrics:
             st.caption(tr("ul_metrics_failed"))
         for _sym, _disp in selected_tickers.items():
-            _render_underlying_card(_disp, _sym, _ul_metrics.get(_disp, {}),
-                                    _ul_overrides.get(_disp, {}), _ul_prices_1y, tr)
+            with st.container(border=True):
+                _render_underlying_card(_disp, _sym, _ul_metrics.get(_disp, {}),
+                                        _ul_overrides.get(_disp, {}), _ul_prices_1y, tr)
 
         st.divider()
         # Terms grouped (Schedule / Coupon / Barriers), mirroring the summary tabs.

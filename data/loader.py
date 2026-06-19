@@ -455,6 +455,41 @@ def load_underlying_metrics(
     return out
 
 
+def resolve_issuer_summary(name: str, ssl_verify: bool = True) -> str | None:
+    """Best-effort: resolve an issuer NAME (e.g. 'BBVA', 'Bank Julius Baer') to a
+    listed ticker via Yahoo search, then return that company's business summary —
+    used to prefill the issuer description. Tries the name and a 'Bank/Banco'-
+    stripped variant and takes the first EQUITY match. None if nothing resolves.
+
+    Note: Yahoo exposes no issuer CREDIT rating (S&P/Moody's/Fitch are proprietary;
+    only an analyst buy/hold/sell `averageAnalystRating` is available), so credit
+    ratings remain a manual field — there is no free programmatic source."""
+    if not name or not name.strip():
+        return None
+    try:
+        import yfinance as yf
+    except ImportError:
+        return None
+    queries = [name.strip()]
+    stripped = name.replace("Bank ", "").replace("Banco ", "").strip()
+    if stripped and stripped != name.strip():
+        queries.append(stripped)
+    for q in queries:
+        try:
+            quotes = yf.Search(q, max_results=5).quotes or []
+            eq   = [x for x in quotes if x.get("quoteType") == "EQUITY"]
+            cand = (eq[0]["symbol"] if eq else
+                    (quotes[0].get("symbol") if quotes else None))
+            if not cand:
+                continue
+            summ = (yf.Ticker(cand).info or {}).get("longBusinessSummary")
+            if summ:
+                return summ
+        except Exception:
+            continue
+    return None
+
+
 def build_dividend_schedule(
     div_history: list[pd.Series],
     spot_prices: list[float],

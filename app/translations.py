@@ -610,9 +610,15 @@ _STRINGS: dict[str, tuple[str, str]] = {
         "secciones sin datos se omiten automáticamente.",
     ),
     # Build-report categories (master toggles)
+    "report_cat_note":          ("Note details",                       "Detalles de la nota"),
     "report_cat_mc":            ("Monte Carlo",                        "Monte Carlo"),
     "report_cat_bt":            ("Historical backtest",                "Backtest histórico"),
     "report_cat_live":          ("Current performance",                "Rendimiento actual"),
+    # Build-report sub-items — Note details
+    "rep_note_terms":           ("Note terms",                         "Términos de la nota"),
+    "rep_note_obs":             ("Observation schedule",               "Calendario de observaciones"),
+    "rep_note_issuer":          ("Issuer information",                 "Información del emisor"),
+    "rep_note_uls":             ("Underlying breakdown",               "Análisis por subyacente"),
     # Build-report sub-items — Monte Carlo
     "rep_mc_summary":           ("Summary & metrics",                  "Resumen y métricas"),
     "rep_mc_autocall":          ("Autocall by period",                "Autocall por período"),
