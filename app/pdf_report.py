@@ -780,11 +780,8 @@ class _NotePDF(FPDF):
         self.line(self.l_margin, self.h - 22, self.w - self.r_margin, self.h - 22)
 
         # ── Disclaimer line (branding may override with footer_note) ───
-        # Regular weight (not Light): the 6pt Light face rendered thin/ambiguous
-        # in some PDF viewers — e.g. "no es" read as "nos" and "inv" as "miv" —
-        # even though the underlying text is correct. Regular renders cleanly.
         self.set_y(-20)
-        self._sf(6.2, "regular")
+        self._sf(6, "light")
         self.set_text_color(*_TEXT_SOFT)
         self.multi_cell(0, 2.9, self.footer_note or _t("footer_line", self.lang), align="L")
 
