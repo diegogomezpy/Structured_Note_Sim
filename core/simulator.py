@@ -376,12 +376,20 @@ class HestonMultiSimulator:
         print(f"  [Scheme] Milstein (variance) + log-Euler (price)")
         print(f"  [VR]     Antithetic variates — {n_base:,} base paths → {n_total:,} total")
 
-        # Pre-allocate for both original and antithetic paths
-        S = [np.empty((n_total, self.N + 1)) for _ in range(n)]
-        V = [np.empty((n_total, self.N + 1)) for _ in range(n)]
+        # Pre-allocate for both original and antithetic paths.
+        #
+        # Stored TIME-FIRST (N+1, n_total) during the loop so each step writes a
+        # contiguous row S[i][t+1], not a strided column S[i][:, t+1]. A column
+        # write into a C-contiguous (n_paths, N+1) array touches a separate cache
+        # line per path (stride = (N+1)*8 bytes), so the hot loop was dominated by
+        # cache misses — measured ~16x slower than the row-write layout. The
+        # arrays are transposed back to the public (n_total, N+1) contract after
+        # the loop (a single cheap copy), so every downstream consumer is unchanged.
+        S = [np.empty((self.N + 1, n_total)) for _ in range(n)]
+        V = [np.empty((self.N + 1, n_total)) for _ in range(n)]
         for i, p in enumerate(self.params):
-            S[i][:, 0] = p.S0
-            V[i][:, 0] = p.V0
+            S[i][0, :] = p.S0
+            V[i][0, :] = p.V0
 
         # Main simulation loop
         for t in range(self.N):
@@ -415,7 +423,7 @@ class HestonMultiSimulator:
                 dW_S = W[:, i]     * sdt
                 dW_V = W[:, n + i] * sdt
 
-                V_t   = V[i][:, t]
+                V_t   = V[i][t]          # contiguous row (time-first layout)
                 V_pos = np.maximum(V_t, 0.0)
                 sqV   = np.sqrt(V_pos)
 
@@ -428,10 +436,10 @@ class HestonMultiSimulator:
                     + p.xi * sqV * dW_V
                     + 0.5 * p.xi ** 2 * (dW_V ** 2 - dt)
                 )
-                V[i][:, t + 1] = np.maximum(V_next, 0.0)   # full truncation
+                V[i][t + 1] = np.maximum(V_next, 0.0)   # full truncation
 
                 # --- Log-Euler price step (exact for GBM) ---
-                S[i][:, t + 1] = S[i][:, t] * np.exp(
+                S[i][t + 1] = S[i][t] * np.exp(
                     p.mu * dt - 0.5 * V_pos * dt + sqV * dW_S
                 )
 
@@ -441,7 +449,14 @@ class HestonMultiSimulator:
                 # deterministic ex-date deduction reproduces the predictable
                 # price decline the note's barriers actually observe.
                 if self.div_schedule is not None and self.div_schedule[i, t] > 0.0:
-                    S[i][:, t + 1] *= (1.0 - self.div_schedule[i, t])
+                    S[i][t + 1] *= (1.0 - self.div_schedule[i, t])
+
+        # Transpose back to the public (n_total, N+1) contract. ascontiguousarray
+        # so every downstream consumer (price_note, charts, the realized-corr
+        # block below) keeps fast row-over-paths access. This single copy is
+        # negligible next to the loop time it saves.
+        S = [np.ascontiguousarray(s.T) for s in S]
+        V = [np.ascontiguousarray(v.T) for v in V]
 
         self.S_paths = S
         self.V_paths = V

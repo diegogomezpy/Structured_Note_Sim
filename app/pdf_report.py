@@ -1743,6 +1743,37 @@ def _ensure_chrome() -> None:
         print(f"[PDF figure] Chrome fetch unavailable: {exc}")
 
 
+# Persistent Kaleido server. Plotly's pio.to_image boots a fresh headless
+# Chrome on EVERY call (~3s of startup each); a full report exports ~13 figures,
+# so cold-booting per figure is ~40s of pure overhead. Starting Kaleido's sync
+# server once keeps a single Chrome alive for the whole build — pio.to_image
+# auto-detects the running server, so _fig_to_png itself needs no change — and
+# the export collapses to one ~2.7s boot plus ~0.2s per figure (~5s total).
+# generate_pdf_report starts it before rendering and tears it down in a finally,
+# so the Chrome subprocess never lingers past a build. Best-effort: if the
+# server can't start (no Chrome on a headless host), exports fall back to the
+# per-call path in _fig_to_png unchanged.
+def _start_kaleido_server() -> bool:
+    """Start Kaleido's persistent sync server. Returns True on success."""
+    try:
+        import kaleido
+        kaleido.start_sync_server()
+        return True
+    except Exception as exc:
+        print(f"[PDF figure] persistent Kaleido server unavailable "
+              f"({type(exc).__name__}: {exc}); exporting per figure")
+        return False
+
+
+def _stop_kaleido_server() -> None:
+    """Tear down the persistent Kaleido server (and its Chrome subprocess)."""
+    try:
+        import kaleido
+        kaleido.stop_sync_server()
+    except Exception:
+        pass
+
+
 def _fig_to_png(fig, width: int = 900, height: int = 500,
                 primary_color: tuple = _DEFAULT_PRIMARY,
                 accent_color: tuple = _DEFAULT_ACCENT,
@@ -1762,17 +1793,22 @@ def _fig_to_png(fig, width: int = 900, height: int = 500,
     fig = go.Figure(fig)
     fig.update_layout(title=None, margin=dict(t=24, b=40))
     _theme_figure(fig, primary_color, accent_color, secondary_color)
-    try:
-        return pio.to_image(fig, format="png", width=width, height=height, scale=3)
-    except Exception as exc:
-        print(f"[PDF figure] to_image failed ({type(exc).__name__}: {exc}); "
-              "retrying after Chrome fetch")
-        _ensure_chrome()
+    # When the persistent server is running, plotly warns once per figure that
+    # "kopts is ignored if using a server" — harmless (width/height/scale are
+    # respected via the figure layout) but it floods the logs. Mute just that.
+    with warnings.catch_warnings():
+        warnings.filterwarnings("ignore", message=".*kopts.*", category=UserWarning)
         try:
             return pio.to_image(fig, format="png", width=width, height=height, scale=3)
-        except Exception as exc2:
-            print(f"[PDF figure] to_image failed again: {type(exc2).__name__}: {exc2}")
-            return None
+        except Exception as exc:
+            print(f"[PDF figure] to_image failed ({type(exc).__name__}: {exc}); "
+                  "retrying after Chrome fetch")
+            _ensure_chrome()
+            try:
+                return pio.to_image(fig, format="png", width=width, height=height, scale=3)
+            except Exception as exc2:
+                print(f"[PDF figure] to_image failed again: {type(exc2).__name__}: {exc2}")
+                return None
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -2282,7 +2318,23 @@ def _table_room(n_rows: int, row_h: float = 8.0, head_h: float = 9.0) -> float:
     return min(head_h + n_rows * row_h + 6.0, 130.0)
 
 
-def generate_pdf_report(
+def generate_pdf_report(*args, **kwargs) -> bytes:
+    """Public entry point — see _build_pdf_report for the full signature/docs.
+
+    Wraps the build in a single persistent Kaleido server so every Plotly figure
+    export shares one Chrome instead of cold-booting one per figure (~40s → ~5s
+    of export for a full report), and tears the Chrome subprocess down in a
+    finally so it never outlives the build. The server is best-effort: if it
+    can't start, figure export silently falls back to the per-call path."""
+    _server = _start_kaleido_server()
+    try:
+        return _build_pdf_report(*args, **kwargs)
+    finally:
+        if _server:
+            _stop_kaleido_server()
+
+
+def _build_pdf_report(
     terms,
     results: dict,
     asset_names: list[str],
