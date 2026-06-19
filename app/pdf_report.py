@@ -2067,16 +2067,20 @@ def _term_rows(terms, lang: str) -> list[tuple[str, str]]:
 
 def _exec_bullets(terms, results, bt_summary, live_data, lang: str) -> list[str]:
     b = []
+    # Monte Carlo bullets only when the sim actually ran (a report of just
+    # Note-details / backtest / live sections skips it, so there are no paths).
+    _has_mc = len(results.get("annualized_returns", [])) > 0
     if lang == "es":
-        b.append(
-            f"La simulación Monte Carlo (modelo Heston multi-activo, "
-            f"{len(results.get('annualized_returns', [])):,} caminos) estima una TIR anual simple "
-            f"esperada de {results.get('expected_irr', 0):.1%} y un retorno total esperado de "
-            f"{results.get('expected_total_return', 0):.1%} a vencimiento ({terms.maturity:g} años).")
-        b.append(
-            f"La probabilidad de autocall anticipado es {results.get('prob_autocall', 0):.0%}; "
-            f"la probabilidad de pérdida de capital a vencimiento (knock-in sin rescate) es "
-            f"{results.get('prob_knock_in_total', 0):.1%} con barrera al {terms.knock_in_barrier:.1%}.")
+        if _has_mc:
+            b.append(
+                f"La simulación Monte Carlo (modelo Heston multi-activo, "
+                f"{len(results.get('annualized_returns', [])):,} caminos) estima una TIR anual simple "
+                f"esperada de {results.get('expected_irr', 0):.1%} y un retorno total esperado de "
+                f"{results.get('expected_total_return', 0):.1%} a vencimiento ({terms.maturity:g} años).")
+            b.append(
+                f"La probabilidad de autocall anticipado es {results.get('prob_autocall', 0):.0%}; "
+                f"la probabilidad de pérdida de capital a vencimiento (knock-in sin rescate) es "
+                f"{results.get('prob_knock_in_total', 0):.1%} con barrera al {terms.knock_in_barrier:.1%}.")
         if bt_summary:
             b.append(
                 f"En el backtest histórico ({bt_summary.get('n_issues', 0)} fechas de emisión), la TIR media "
@@ -2089,15 +2093,16 @@ def _exec_bullets(terms, results, bt_summary, live_data, lang: str) -> list[str]
                 f"({live_data.get('worst_asset', '')} es el peor activo); la TIR de cupones a fecha es "
                 f"{live_data.get('irr_to_date', 0):.1%} anualizada.")
     else:
-        b.append(
-            f"Monte Carlo simulation (multi-asset Heston model, "
-            f"{len(results.get('annualized_returns', [])):,} paths) estimates an expected simple "
-            f"annualised IRR of {results.get('expected_irr', 0):.1%} and an expected total return of "
-            f"{results.get('expected_total_return', 0):.1%} over the {terms.maturity:g}-year tenor.")
-        b.append(
-            f"The probability of early redemption (autocall) is {results.get('prob_autocall', 0):.0%}; "
-            f"the probability of capital loss at maturity (knock-in without rescue) is "
-            f"{results.get('prob_knock_in_total', 0):.1%} against a {terms.knock_in_barrier:.1%} barrier.")
+        if _has_mc:
+            b.append(
+                f"Monte Carlo simulation (multi-asset Heston model, "
+                f"{len(results.get('annualized_returns', [])):,} paths) estimates an expected simple "
+                f"annualised IRR of {results.get('expected_irr', 0):.1%} and an expected total return of "
+                f"{results.get('expected_total_return', 0):.1%} over the {terms.maturity:g}-year tenor.")
+            b.append(
+                f"The probability of early redemption (autocall) is {results.get('prob_autocall', 0):.0%}; "
+                f"the probability of capital loss at maturity (knock-in without rescue) is "
+                f"{results.get('prob_knock_in_total', 0):.1%} against a {terms.knock_in_barrier:.1%} barrier.")
         if bt_summary:
             b.append(
                 f"Across {bt_summary.get('n_issues', 0)} historical issue dates, the realised mean IRR was "
@@ -2604,6 +2609,10 @@ def _build_pdf_report(
                       of their items is included.
     All optional parameters default to None; existing callers are unaffected.
     """
+    # results may be None/empty when the report needs no Monte Carlo output (the
+    # sim was skipped). Every read is via .get with a default, so {} is safe and
+    # the MC lens simply renders nothing (its items are gated off).
+    results = results or {}
     # None = include everything; otherwise only the listed sections. The cover,
     # Note Terms and disclaimer ignore this gate (always present).
     def _inc(key: str) -> bool:

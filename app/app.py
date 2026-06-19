@@ -444,6 +444,14 @@ def _collect_pdf_sections(n_assets: int = 0, has_live: bool = True) -> set[str]:
     return sel
 
 
+def _pdf_needs_mc() -> bool:
+    """True if any selected report section is sourced from the Monte Carlo sim.
+    Used to skip the (slow) simulation entirely when the requested PDF only
+    contains Note-details / backtest / live sections — none of which need it."""
+    return any(st.session_state.get(f"rep_sub_{sub_id}", True)
+               for sub_id, _lbl, _fine in _REPORT_TREE["mc"][1])
+
+
 def _safe_load_prices(tickers_tuple, **kw):
     """Wrap _load_prices so a Yahoo outage shows a clean message and halts the
     run, instead of surfacing a raw traceback to the user. The underlying
@@ -1433,7 +1441,11 @@ elif st.session_state["page"] == "dashboard":
     # Generate-report also runs the sim when none exists yet, so a PDF can be
     # produced without first clicking Run Simulation. A pending flag survives the
     # rerun so the report is built once results + figures are available.
-    _run_for_pdf = _pdf_btn and st.session_state.get("results") is None
+    # ...but ONLY when the requested report actually contains a Monte Carlo
+    # section. A PDF of just Note-details / backtest / live sections is built
+    # straight away without running the (slow) simulation at all.
+    _needs_mc    = _pdf_needs_mc()
+    _run_for_pdf = _pdf_btn and st.session_state.get("results") is None and _needs_mc
     if run_button or _run_for_pdf:
         with st.spinner(tr("mc_run_spinner")):
             _hist_years = st.session_state.get("history_years", None)
@@ -2448,7 +2460,10 @@ elif st.session_state["page"] == "dashboard":
     # Triggered either by a direct click (when results already exist) or by the
     # pending flag set when Generate-report had to run the sim first.
     _do_pdf = _pdf_btn or st.session_state.pop("_pending_pdf", False)
-    if _do_pdf and _has_sim:
+    # Build when results exist, OR when the report needs no Monte Carlo output at
+    # all (Note-details / backtest / live only) — in that case the sim was
+    # deliberately skipped and there is simply nothing to wait for.
+    if _do_pdf and (_has_sim or not _needs_mc):
         with st.spinner(tr("building_pdf")):
             from pdf_report import generate_pdf_report
             # Build logo URL maps from the already-populated TICKER_LOGOS dict
@@ -2485,7 +2500,7 @@ elif st.session_state["page"] == "dashboard":
                 print(f"[app] underlying price charts for PDF failed: {_e}")
             _pdf_bytes = generate_pdf_report(
                 terms            = run_terms,
-                results          = R,
+                results          = R or {},
                 asset_names      = asset_names,
                 figures          = st.session_state.get("_pdf_mc_figures", {}),
                 lang             = "es" if lang_choice == "Español" else "en",
