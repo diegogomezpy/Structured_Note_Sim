@@ -32,7 +32,8 @@ from core            import NoteTerms, price_note, replay_note
 from core.calibrator import HestonCalibrator
 from core.simulator  import HestonMultiSimulator
 from core.backtest   import run_backtest, snapped_obs_dates
-from data.loader     import load_prices, load_dividends, build_dividend_schedule
+from data.loader     import (load_prices, load_dividends, build_dividend_schedule,
+                             load_underlying_metrics)
 
 from translations import Translator
 from charts import (
@@ -41,6 +42,7 @@ from charts import (
     build_backtest_outcome_bar, build_worst_asset_pie,
     build_backtest_irr_scatter, build_historical_prices,
     build_historical_wof_path, build_live_performance_chart,
+    build_underlying_price_chart,
 )
 
 # ==========================================================================
@@ -163,6 +165,69 @@ def _asset_chip(name: str, sym: str) -> str:
     )
 
 
+def _fmt_market_cap(v) -> str:
+    """Compact currency market cap (—, $1.2T, $265.0B, $980.0M)."""
+    if v in (None, ""):
+        return "—"
+    try:
+        v = float(v)
+    except (TypeError, ValueError):
+        return "—"
+    for unit, div in (("T", 1e12), ("B", 1e9), ("M", 1e6)):
+        if v >= div:
+            return f"${v/div:.1f}{unit}"
+    return f"${v:,.0f}"
+
+
+def _render_underlying_card(name, sym, metrics, override, prices_1y, tr) -> None:
+    """One underlying's breakdown for the note-structure expander: logo + long
+    name + type/sector, a metric row (market cap / 3M IV / last price / RSI), the
+    company description, and a trailing-12-month price chart. `metrics` is the
+    live data pull; `override` are per-field JSON values from terms.underlyings
+    (a present override wins over the live value)."""
+    import html as _html
+    metrics  = metrics or {}
+    override = override or {}
+
+    def _f(key):
+        ov = override.get(key)
+        return ov if ov not in (None, "") else metrics.get(key)
+
+    long_name = _f("long_name") or name
+    sub = " · ".join(s for s in (_f("type"), _f("sector")) if s) or "—"
+    logo = _logo_src(sym)
+    logo_img = (f"<img src='{logo}' style='height:26px;border-radius:5px;"
+                f"vertical-align:middle;margin-right:8px' "
+                f"onerror=\"this.style.display='none'\"/>" if logo else "")
+    st.markdown(
+        f"<div style='margin-top:8px'>{logo_img}"
+        f"<span style='font-weight:600;font-size:1.02rem;vertical-align:middle'>"
+        f"{_html.escape(str(long_name))}</span>&nbsp;"
+        f"<span style='color:#6b7280;font-size:0.85rem'>{_html.escape(sub)}</span></div>",
+        unsafe_allow_html=True,
+    )
+    m1, m2, m3, m4 = st.columns(4)
+    iv, lp, rsi = _f("iv_3m"), _f("last_price"), _f("rsi_14")
+    m1.metric(tr("ul_market_cap"), _fmt_market_cap(_f("market_cap")))
+    m2.metric(tr("ul_iv_3m"),  f"{float(iv)*100:.1f}%" if iv  not in (None, "") else "—")
+    m3.metric(tr("ul_last_price"), f"{float(lp):,.2f}" if lp not in (None, "") else "—")
+    m4.metric(tr("ul_rsi"),    f"{float(rsi):.0f}"     if rsi not in (None, "") else "—")
+
+    desc = override.get("description") or metrics.get("business_summary") or ""
+    if desc:
+        st.caption(desc)
+
+    cols = getattr(prices_1y, "columns", [])
+    if prices_1y is not None and name in cols:
+        try:
+            fig = build_underlying_price_chart(prices_1y[name], name, tr)
+            fig.update_layout(height=200, margin=dict(l=44, r=12, t=6, b=24))
+            st.plotly_chart(fig, use_container_width=True, key=f"ulchart_{sym}")
+        except Exception:
+            pass
+    st.divider()
+
+
 def _setup_header(num: int, title: str) -> None:
     """Render a numbered setup-section header (a step badge + title)."""
     import html as _html
@@ -245,6 +310,23 @@ def _load_prices(tickers_tuple, years=5.0, field="close"):
 @st.cache_data(ttl=24 * 3600)
 def _load_dividends_cached(tickers_tuple):
     return load_dividends(dict(tickers_tuple))
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def _load_underlying_metrics_cached(tickers_tuple):
+    """Per-underlying summary metrics for the Underlying Breakdown (market cap,
+    sector, type, last price, RSI, 3M IV, business summary). Cached 1h; reuses
+    the 1Y close series for RSI / last price so it costs one info + options call
+    per ticker. Returns {} on a hard failure so the dashboard degrades cleanly."""
+    try:
+        prices = _load_prices(tickers_tuple, years=1.0)
+        closes = {name: prices[name] for name in prices.columns}
+    except Exception:
+        closes = None
+    try:
+        return load_underlying_metrics(dict(tickers_tuple), closes=closes)
+    except Exception as e:
+        print(f"[app] underlying metrics failed: {e}")
+        return {}
 
 @st.cache_data(ttl=3600)
 def _run_backtest_cached(tickers_tuple, terms_json,
@@ -518,6 +600,37 @@ if st.session_state["page"] == "setup":
                             st.session_state["custom_logos"] = _cl
                             st.rerun()
             st.session_state["custom_logos"] = _cl
+
+        # ── Per-underlying company descriptions ──────────────────────────────
+        # JSON-preloaded (terms.underlyings), editable here, each with a one-click
+        # 'prefill from Yahoo' that drops in the business summary. The text is
+        # shown in the dashboard Underlying Breakdown and the PDF (blank = hidden).
+        with st.expander(tr("setup_ul_descriptions")):
+            _base_uls = getattr(base, "underlyings", {}) or {}
+            for _lbl in selected_labels[:5]:
+                _sym = _lbl_to_sym.get(_lbl)
+                if not _sym:
+                    continue
+                _nm  = _label_to_name(_lbl)
+                _key = f"ul_desc_{_sym}"
+                if _key not in st.session_state:
+                    st.session_state[_key] = (_base_uls.get(_nm, {}) or {}).get("description", "") or ""
+                _dc1, _dc2 = st.columns([5, 1])
+                with _dc2:
+                    if st.button(tr("setup_ul_prefill"), key=f"ul_prefill_{_sym}",
+                                 help=tr("setup_ul_prefill_help")):
+                        try:
+                            _m = _load_underlying_metrics_cached(((_sym, _nm),))
+                            _summ = (_m.get(_nm, {}) or {}).get("business_summary") or ""
+                        except Exception:
+                            _summ = ""
+                        if _summ:
+                            st.session_state[_key] = _summ
+                            st.rerun()
+                        else:
+                            st.toast(tr("ul_metrics_failed"))
+                with _dc1:
+                    st.text_area(_nm, key=_key, height=80, help=tr("setup_ul_desc_help"))
 
     st.divider()
 
@@ -986,6 +1099,17 @@ if st.session_state["page"] == "setup":
                 disp = _label_to_name(lbl)
                 if sym:
                     selected_tickers[sym] = disp
+            # Per-underlying company descriptions from the setup editors, keyed by
+            # display name. Any non-description override from the loaded config
+            # (e.g. a hand-set sector for an index) is carried through.
+            _base_uls = getattr(base, "underlyings", {}) or {}
+            _uls_dict: dict = {}
+            for sym, disp in selected_tickers.items():
+                _d     = (st.session_state.get(f"ul_desc_{sym}", "") or "").strip()
+                _extra = {k: v for k, v in (_base_uls.get(disp, {}) or {}).items()
+                          if k != "description"}
+                if _d or _extra:
+                    _uls_dict[disp] = ({"description": _d} if _d else {}) | _extra
             terms = NoteTerms(
                 name                  = note_name.strip() or "Custom Note",
                 issuer                = issuer_input.strip(),
@@ -1017,6 +1141,7 @@ if st.session_state["page"] == "setup":
                 capital_guarantee       = capital_guarantee,
                 upside_cap              = upside_cap,
                 tickers               = selected_tickers,
+                underlyings           = _uls_dict,
                 # Keep the issue date even when it is in the future, so a
                 # config round-trip through the setup form doesn't drop it;
                 # the dashboard only shows the live tab once it is <= today.
@@ -1186,12 +1311,21 @@ elif st.session_state["page"] == "dashboard":
                 for _c, (_ag, _rv) in zip(_rcols, _iss_ratings):
                     _c.metric(_ag, _rv)
 
-        # Underlyings table with logos
-        st.markdown(tr("underlyings_header"))
-        _ul_items = list(selected_tickers.items())
-        _ul_cols  = st.columns(len(_ul_items))
-        for _col, (_sym, _disp) in zip(_ul_cols, _ul_items):
-            _col.markdown(_asset_chip(_disp, _sym), unsafe_allow_html=True)
+        # Underlyings — full per-underlying breakdown (metrics pulled live +
+        # description + 1Y price chart), mirroring the PDF "Underlying Breakdown".
+        st.markdown(tr("ul_breakdown_header"))
+        _ul_overrides = getattr(terms, "underlyings", {}) or {}
+        with st.spinner(tr("ul_loading")):
+            _ul_metrics = _load_underlying_metrics_cached(tickers_tuple)
+            try:
+                _ul_prices_1y = _load_prices(tickers_tuple, years=1.0)
+            except Exception:
+                _ul_prices_1y = None
+        if not _ul_metrics:
+            st.caption(tr("ul_metrics_failed"))
+        for _sym, _disp in selected_tickers.items():
+            _render_underlying_card(_disp, _sym, _ul_metrics.get(_disp, {}),
+                                    _ul_overrides.get(_disp, {}), _ul_prices_1y, tr)
 
         st.divider()
         # Terms grouped (Schedule / Coupon / Barriers), mirroring the summary tabs.
@@ -2273,6 +2407,18 @@ elif st.session_state["page"] == "dashboard":
             # Section selection from the single Build-report panel (sidebar),
             # expanded to the fine-grained include keys the PDF gates on.
             _pdf_sections = _collect_pdf_sections(len(asset_names), _has_live)
+            # Underlying Breakdown inputs: live metrics + a trailing-1Y price
+            # chart per underlying (same data as the dashboard note-info card).
+            _ul_tt = tuple(run_terms.tickers.items())
+            _pdf_ul_metrics = _load_underlying_metrics_cached(_ul_tt)
+            _pdf_ul_figs: dict = {}
+            try:
+                _ul_px = _load_prices(_ul_tt, years=1.0)
+                for _n in asset_names:
+                    if _n in _ul_px.columns:
+                        _pdf_ul_figs[_n] = build_underlying_price_chart(_ul_px[_n], _n, tr)
+            except Exception as _e:
+                print(f"[app] underlying price charts for PDF failed: {_e}")
             _pdf_bytes = generate_pdf_report(
                 terms            = run_terms,
                 results          = R,
@@ -2290,6 +2436,8 @@ elif st.session_state["page"] == "dashboard":
                 logo_tickers     = _pdf_logo_tickers,
                 include_sections = _pdf_sections,
                 logo_overrides   = _pdf_logo_overrides,
+                underlying_metrics    = _pdf_ul_metrics,
+                underlying_price_figs = _pdf_ul_figs,
             )
         _pdf_slot.download_button(
             tr("sidebar_download_pdf"),

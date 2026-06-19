@@ -641,6 +641,36 @@ def build_historical_prices(
     return _apply_theme(fig)
 
 
+def build_underlying_price_chart(
+    prices: pd.Series,
+    name:   str,
+    tr:     Translator,
+) -> go.Figure:
+    """Compact trailing-window price line for one underlying (Underlying
+    Breakdown card). ``prices`` is a date-indexed close series, already sliced to
+    the desired window. A single _BLUE line + faint fill (the report rebrand maps
+    _BLUE → the firm accent, so it tracks the brand); no legend — one series."""
+    s = prices.dropna()
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(
+        x=s.index, y=s.values, mode="lines", name=name, showlegend=False,
+        line=dict(color=_BLUE, width=1.8),
+        fill="tozeroy", fillcolor="rgba(37,99,235,0.08)",
+    ))
+    fig.update_layout(
+        title="", showlegend=False, hovermode="x",
+        xaxis=dict(title=None),
+        yaxis=dict(title=tr("price_label")),
+        margin=dict(l=52, r=18, t=14, b=34),
+    )
+    # Tight y-range (don't anchor at 0 despite the fill) so detail is visible.
+    if len(s):
+        lo, hi = float(s.min()), float(s.max())
+        pad = (hi - lo) * 0.08 or (hi * 0.05 or 1.0)
+        fig.update_yaxes(range=[lo - pad, hi + pad])
+    return _apply_theme(fig)
+
+
 # ---------------------------------------------------------------------------
 # Backtest — historical worst-of performance path for a specific issue date
 # ---------------------------------------------------------------------------

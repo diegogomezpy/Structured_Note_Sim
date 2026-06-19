@@ -269,10 +269,18 @@ class NoteTerms:
     issuer_rating_fitch:    str         = ""      # Fitch credit rating, e.g. "AA-"
     tickers:                dict | None  = None
     issue_date:             str  | None = None   # "YYYY-MM-DD" — enables Current Performance tab
+    # ── Per-underlying display info (powers the PDF "Underlying Breakdown") ──
+    # Keyed by DISPLAY NAME: {"Microsoft": {"description": "...", "sector": "..."}}.
+    # 'description' mirrors issuer_description — JSON-preloaded, editable in the UI.
+    # Any metric key present (sector, type, market_cap, iv_3m, last_price, …)
+    # OVERRIDES the live data pull; everything else is fetched programmatically.
+    underlyings:            dict | None = None
 
     def __post_init__(self):
         if self.tickers is None:
             object.__setattr__(self, "tickers", {})
+        if self.underlyings is None:
+            object.__setattr__(self, "underlyings", {})
         if self.payment_freq not in _FREQ_TO_PERIODS:
             raise ValueError(
                 f"payment_freq must be one of {list(_FREQ_TO_PERIODS)}; got '{self.payment_freq}'"
@@ -376,6 +384,7 @@ class NoteTerms:
             "issuer_rating_fitch":    self.issuer_rating_fitch,
             "tickers":                self.tickers,
             "issue_date":             self.issue_date,
+            "underlyings":            self.underlyings,
         }
 
     @classmethod

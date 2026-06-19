@@ -309,6 +309,152 @@ def load_dividends(
     return out
 
 
+# ---------------------------------------------------------------------------
+# Per-underlying summary metrics (powers the report's Underlying Breakdown)
+# ---------------------------------------------------------------------------
+
+# Index → volatility-index symbol, used for a 3-month-ish implied vol when the
+# underlying is an INDEX (an index level has no option chain on Yahoo, so we read
+# the matching vol index's level, which is already an annualised IV in %).
+# ^VIX3M is the true 3-month SPX IV; the others are 30-day proxies — close enough
+# for a headline figure, and only ever used for index underlyings (every current
+# note config is single stocks, which get a real 3M IV from their option chain).
+_VOL_INDEX: dict[str, str] = {
+    "^GSPC": "^VIX3M", "^SPX": "^VIX3M",
+    "^NDX":  "^VXN",   "^IXIC": "^VXN",
+    "^DJI":  "^VXD",   "^RUT":  "^RVX",
+}
+
+
+def _wilder_rsi(closes, period: int = 14):
+    """Wilder's 14-day RSI from a close-price array. None if too few points."""
+    import numpy as np
+    c = np.asarray(closes, dtype=float)
+    c = c[~np.isnan(c)]
+    if c.size < period + 1:
+        return None
+    d  = np.diff(c)
+    up = pd.Series(np.where(d > 0,  d, 0.0))
+    dn = pd.Series(np.where(d < 0, -d, 0.0))
+    au = up.ewm(alpha=1.0 / period, adjust=False).mean().iloc[-1]
+    ad = dn.ewm(alpha=1.0 / period, adjust=False).mean().iloc[-1]
+    if ad == 0:
+        return 100.0
+    return float(100.0 - 100.0 / (1.0 + au / ad))
+
+
+def _atm_iv(calls: pd.DataFrame, puts: pd.DataFrame, spot: float):
+    """Average of the ATM call and put implied vols (nearest strike to spot)."""
+    import numpy as np
+    ivs = []
+    for chain in (calls, puts):
+        try:
+            if chain is None or len(chain) == 0 or not spot:
+                continue
+            row = chain.iloc[(chain["strike"] - spot).abs().argmin()]
+            iv  = float(row["impliedVolatility"])
+            if np.isfinite(iv) and iv > 0:
+                ivs.append(iv)
+        except Exception:
+            continue
+    return float(np.mean(ivs)) if ivs else None
+
+
+def _iv_3m(ticker, sym: str, quote_type: str | None, spot):
+    """3-month implied vol. Equities: ATM IV at the expiry nearest +90 days.
+    Indices: the matching vol-index level. None when neither is available."""
+    try:
+        exps = ticker.options
+    except Exception:
+        exps = ()
+    if exps:
+        target = pd.Timestamp.today() + pd.Timedelta(days=90)
+        best   = min(exps, key=lambda e: abs((pd.Timestamp(e) - target).days))
+        try:
+            oc = ticker.option_chain(best)
+            iv = _atm_iv(oc.calls, oc.puts, spot)
+            if iv is not None:
+                return iv
+        except Exception:
+            pass
+    vsym = _VOL_INDEX.get(sym) or _VOL_INDEX.get("^" + sym.lstrip("^"))
+    if vsym:
+        try:
+            import yfinance as yf
+            h = yf.Ticker(vsym).history(period="5d")["Close"].dropna()
+            if len(h):
+                return float(h.iloc[-1]) / 100.0
+        except Exception:
+            pass
+    return None
+
+
+def load_underlying_metrics(
+    tickers: dict[str, str],
+    closes:  dict[str, pd.Series] | None = None,
+    ssl_verify: bool = True,
+) -> dict[str, dict]:
+    """
+    Pull a per-underlying summary for the report's Underlying Breakdown.
+
+    For each display name returns a dict with keys (any unavailable field = None):
+        long_name, type, sector, industry, market_cap, currency,
+        last_price, rsi_14, iv_3m, business_summary
+
+    One ``yf.Ticker(sym).info`` call per ticker, plus an options lookup for the
+    3-month implied vol, plus a Wilder RSI computed from ``closes`` when supplied
+    (the app already holds the price history — pass it to avoid a second pull).
+    A single ticker raising never aborts the others; that name just gets Nones.
+    """
+    try:
+        import yfinance as yf
+    except ImportError:
+        raise ImportError("yfinance is not installed. Run: pip install yfinance")
+
+    out: dict[str, dict] = {}
+    for sym, name in tickers.items():
+        rec = {k: None for k in (
+            "long_name", "type", "sector", "industry", "market_cap", "currency",
+            "last_price", "rsi_14", "iv_3m", "business_summary")}
+        try:
+            t = yf.Ticker(sym)
+            try:
+                info = t.info or {}
+            except Exception as e:
+                info = {}
+                print(f"[loader] WARNING: info() failed for {sym}: {e}")
+
+            rec["long_name"]        = info.get("longName") or info.get("shortName") or name
+            rec["type"]             = info.get("typeDisp") or info.get("quoteType")
+            rec["sector"]           = info.get("sector")
+            rec["industry"]         = info.get("industry")
+            rec["market_cap"]       = info.get("marketCap")
+            rec["currency"]         = info.get("currency")
+            rec["business_summary"] = info.get("longBusinessSummary") or None
+
+            # Last price: prefer the (reused) loaded close series, else Yahoo.
+            ser = (closes or {}).get(name)
+            if ser is not None and len(ser):
+                rec["last_price"] = float(ser.dropna().iloc[-1])
+                rec["rsi_14"]     = _wilder_rsi(ser.dropna().values)
+            else:
+                rec["last_price"] = (info.get("currentPrice")
+                                     or info.get("regularMarketPrice"))
+                try:
+                    h = t.history(period="6mo")["Close"]
+                    if len(h):
+                        rec["last_price"] = rec["last_price"] or float(h.iloc[-1])
+                        rec["rsi_14"]     = _wilder_rsi(h.values)
+                except Exception:
+                    pass
+
+            rec["iv_3m"] = _iv_3m(t, sym, rec["type"], rec["last_price"])
+        except Exception as e:
+            print(f"[loader] WARNING: could not load metrics for {sym}: {e}")
+        out[name] = rec
+    return out
+
+
 def build_dividend_schedule(
     div_history: list[pd.Series],
     spot_prices: list[float],

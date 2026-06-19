@@ -314,6 +314,16 @@ _LABELS: dict[str, dict[str, str]] = {
     "live_asset_perf":       {"en": "Current Asset Performance",         "es": "Rendimiento Actual por Activo"},
     "live_obs_history":      {"en": "Observation History",               "es": "Historial de Observaciones"},
     "performance":           {"en": "Performance",                       "es": "Rendimiento"},
+    # ── Underlying Breakdown section ──
+    "underlying_breakdown":  {"en": "Underlying Breakdown",              "es": "Análisis por Subyacente"},
+    "u_market_cap":          {"en": "Market cap",                        "es": "Capitalización"},
+    "u_iv_3m":               {"en": "3M implied vol",                    "es": "Vol. implícita 3M"},
+    "u_last_price":          {"en": "Last price",                        "es": "Último precio"},
+    "u_rsi":                 {"en": "RSI (14)",                          "es": "RSI (14)"},
+    "u_sector":              {"en": "Sector",                            "es": "Sector"},
+    "u_type":                {"en": "Type",                              "es": "Tipo"},
+    "fig_u_price":           {"en": "Trailing 12-month price — {name}",
+                              "es": "Precio últimos 12 meses — {name}"},
     # Inline fragments that get interpolated into f-strings — kept here so the
     # whole report (not just the standalone labels) translates.
     "page_of":               {"en": "Page",                              "es": "Página"},
@@ -1297,6 +1307,55 @@ class _NotePDF(FPDF):
                 cx += chip_w + gap
         self.set_y(y0 + box_h + 4)
 
+    def underlying_block(self, long_name: str, logo_bytes: bytes | None,
+                         subtitle: str, metrics: list[tuple[str, str]],
+                         description: str, chart_png: bytes | None,
+                         chart_caption: str):
+        """One underlying's breakdown card: logo + name + a type/sector subtitle,
+        a metric band (market cap / 3M IV / last price / RSI), an optional company
+        description, and a trailing-12-month price chart. Breaks to a new page if
+        the header + metric band would not fit, so a card never starts stranded at
+        the foot of a page."""
+        x0 = self.l_margin
+        w  = self.w - self.l_margin - self.r_margin
+        if self.get_y() > self.h - self.b_margin - 60:
+            self.add_page()
+        y0 = self.get_y()
+        # Header — logo + long name (brand primary) with a soft type·sector line.
+        tx = x0
+        if logo_bytes:
+            try:
+                self.image(io.BytesIO(logo_bytes), x=x0, y=y0 + 0.5, w=9, h=9)
+                tx = x0 + 12
+            except Exception:
+                pass
+        self.set_xy(tx, y0)
+        self._sf(12, "semibold")
+        self.set_text_color(*self.primary_color)
+        self.cell(w - (tx - x0), 6, self._safe(long_name), new_x="LMARGIN", new_y="NEXT")
+        if subtitle:
+            self.set_xy(tx, y0 + 6.2)
+            self._sf(8, "regular")
+            self.set_text_color(*_TEXT_SOFT)
+            self.cell(w - (tx - x0), 4, self._safe(subtitle))
+        self.set_y(y0 + 11.5)
+        # Thin brand rule under the header.
+        self.set_fill_color(*self.section_rule_color)
+        self.rect(x0, self.get_y(), w, 0.5, style="F")
+        self.ln(3.5)
+        # Metric band: market cap / 3M IV / last price / RSI.
+        self.metric_band(metrics)
+        # Company description (optional — blank hides it, like the issuer blurb).
+        if description:
+            self._sf(8.5, "regular")
+            self.set_text_color(*_TEXT_SOFT)
+            self.multi_cell(0, 4.3, self._safe(description))
+            self.ln(1.5)
+        # Trailing-12-month price chart (tinted panel + caption, via figure()).
+        if chart_png:
+            self.figure(chart_png, chart_caption, "", w=150, h=58)
+        self.ln(2)
+
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Logo fetching
@@ -1711,24 +1770,28 @@ def _theme_figure(fig, primary_color: tuple, accent_color: tuple,
             paper_bgcolor="rgba(0,0,0,0)",
             plot_bgcolor="rgba(0,0,0,0)",
             font=dict(family="IBM Plex Sans, Arial, sans-serif", size=10, color="#1a1a2e"),
-            # Clean, understated legend: a single horizontal strip along the
-            # bottom (clears the P1/P2.. observation labels pinned to the top of
-            # the path/fan charts), no "variable" group title, muted slate text at
-            # a readable-but-not-shouty size, no box. Replaces the heavy 13pt bold
-            # navy legend that read as clutter.
-            legend=dict(
-                orientation="h",
-                yanchor="top", y=-0.18, xanchor="center", x=0.5,
-                title=dict(text=""),
-                font=dict(family="IBM Plex Sans, Arial, sans-serif",
-                          size=11, color="#5b6675"),
-                bgcolor="rgba(0,0,0,0)", borderwidth=0,
-                itemsizing="constant",
-            ),
-            # Room for the bottom legend strip without clipping the x-axis title.
-            margin=dict(b=78),
             modebar_remove=["logo", "toImage", "sendDataToCloud"],
         )
+        # Clean, understated legend: a single horizontal strip along the bottom
+        # (clears the P1/P2.. observation labels pinned to the top of the path/fan
+        # charts), no "variable" group title, muted slate text at a readable-but-
+        # not-shouty size, no box. Replaces the heavy 13pt bold navy legend.
+        # Only for charts that actually show a legend — a legend-less chart (the
+        # correlation heatmap, the per-underlying price line) keeps its own tight
+        # margins instead of reserving 78mm of empty space at the bottom.
+        if getattr(fig.layout, "showlegend", None) is not False:
+            fig.update_layout(
+                legend=dict(
+                    orientation="h",
+                    yanchor="top", y=-0.18, xanchor="center", x=0.5,
+                    title=dict(text=""),
+                    font=dict(family="IBM Plex Sans, Arial, sans-serif",
+                              size=11, color="#5b6675"),
+                    bgcolor="rgba(0,0,0,0)", borderwidth=0,
+                    itemsizing="constant",
+                ),
+                margin=dict(b=78),
+            )
         # Axes: cool-grey, semi-transparent so gridlines stay legible on the
         # tinted card now that the opaque white plot background is gone (a near-
         # white grid would vanish against the panel). Per-axis ranges/tickformats
@@ -1843,6 +1906,41 @@ def _fig_to_png(fig, width: int = 900, height: int = 500,
 # ──────────────────────────────────────────────────────────────────────────────
 # Page builders
 # ──────────────────────────────────────────────────────────────────────────────
+
+def _fmt_mcap(v) -> str:
+    """Compact currency market cap (—, $1.2T, $265.0B, $980.0M)."""
+    if v in (None, ""):
+        return "—"
+    try:
+        v = float(v)
+    except (TypeError, ValueError):
+        return "—"
+    for unit, div in (("T", 1e12), ("B", 1e9), ("M", 1e6)):
+        if v >= div:
+            return f"${v/div:.1f}{unit}"
+    return f"${v:,.0f}"
+
+
+def _fmt_pct(v) -> str:
+    try:
+        return f"{float(v) * 100:.1f}%" if v not in (None, "") else "—"
+    except (TypeError, ValueError):
+        return "—"
+
+
+def _fmt_num(v) -> str:
+    try:
+        return f"{float(v):,.2f}" if v not in (None, "") else "—"
+    except (TypeError, ValueError):
+        return "—"
+
+
+def _fmt_rsi(v) -> str:
+    try:
+        return f"{float(v):.0f}" if v not in (None, "") else "—"
+    except (TypeError, ValueError):
+        return "—"
+
 
 def _term_rows(terms, lang: str) -> list[tuple[str, str]]:
     rows = [
@@ -2380,6 +2478,8 @@ def _build_pdf_report(
     logo_tickers: dict[str, str] | None = None,
     include_sections: set[str] | None = None,
     logo_overrides: dict[str, bytes] | None = None,
+    underlying_metrics: dict | None = None,
+    underlying_price_figs: dict | None = None,
 ) -> bytes:
     """
     Build the full institutional-style PDF report.
@@ -2511,6 +2611,42 @@ def _build_pdf_report(
         _ratings = [(l, v) for l, v in _ratings if v.strip()]
         pdf.start_section(_t("issuer_info", lang), min_room=70.0)
         pdf.issuer_info_block(pdf.issuer, issuer_logo_bytes, _issuer_desc, _ratings)
+
+    # ── 2c. Underlying Breakdown (per-underlying summary + 1Y price chart) ───
+    # Renders whenever underlying metrics were supplied. Like the issuer block it
+    # is always on (not gated by include_sections), mirroring the app's note-info
+    # expander. Metric values come from the live pull; a per-field JSON override
+    # in terms.underlyings wins, and 'description' is the curated company blurb.
+    if underlying_metrics:
+        _uls = getattr(terms, "underlyings", {}) or {}
+        pdf.start_section(_t("underlying_breakdown", lang), min_room=70.0)
+        for _nm in asset_names:
+            _m  = underlying_metrics.get(_nm, {}) or {}
+            _ov = _uls.get(_nm, {}) or {}
+
+            def _g(k, _m=_m, _ov=_ov):
+                v = _ov.get(k)
+                return v if v not in (None, "") else _m.get(k)
+
+            _long = _g("long_name") or _nm
+            _sub  = " · ".join(s for s in (_g("type"), _g("sector")) if s)
+            _band = [
+                (_t("u_market_cap", lang), _fmt_mcap(_g("market_cap"))),
+                (_t("u_iv_3m",      lang), _fmt_pct(_g("iv_3m"))),
+                (_t("u_last_price", lang), _fmt_num(_g("last_price"))),
+                (_t("u_rsi",        lang), _fmt_rsi(_g("rsi_14"))),
+            ]
+            _desc = _ov.get("description") or ""
+            _fig  = (underlying_price_figs or {}).get(_nm)
+            _png  = (_fig_to_png(_fig, width=900, height=360,
+                                 primary_color=primary_color, accent_color=accent_color,
+                                 secondary_color=secondary_color)
+                     if _fig is not None else None)
+            _logo = (_logo_ovr.get(_nm)
+                     or _load_ticker_logo(_nm, (logo_urls or {}).get(_nm, ""),
+                                          (logo_tickers or {}).get(_nm)))
+            _cap  = _t("fig_u_price", lang).format(name=_long)
+            pdf.underlying_block(_long, _logo, _sub, _band, _desc, _png, _cap)
 
     # ── 3. Monte Carlo ─────────────────────────────────────────────────────
     # Low min_room: the metric band + first figure caption pack onto the Note
