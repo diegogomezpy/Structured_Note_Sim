@@ -6,4 +6,5 @@ textColor = "#1a2e4a"
 font = "sans serif"
 
 [server]
-headless = true
+# false → Streamlit opens the browser automatically on `streamlit run`.
+headless = false
