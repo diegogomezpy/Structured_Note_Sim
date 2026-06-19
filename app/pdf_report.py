@@ -1168,9 +1168,13 @@ class _NotePDF(FPDF):
         needed = h + 18 + 2 * _fpad
         if self.get_y() + needed > self.h - 28:
             self.add_page()
-        # Caption above figure — SemiBold 8.5pt in accent color
+        # Caption above figure — SemiBold 8.5pt in the brand primary colour
+        # (matches the section titles). Deliberately NOT the accent: the accent
+        # now drives the chart series palette, and a caption that tracks the chart
+        # lines looked off — the caption is chrome, so it stays on the brand head
+        # colour like every other heading.
         self._sf(8.5, "semibold")
-        self.set_text_color(*self.accent_color)
+        self.set_text_color(*self.primary_color)
         self.multi_cell(0, 4.5, f"{_t('figure_word', self.lang)} {self._fig_no}: {caption}", align="C")
         self.ln(1)
         x = (self.w - w) / 2
@@ -1707,10 +1711,22 @@ def _theme_figure(fig, primary_color: tuple, accent_color: tuple,
             paper_bgcolor="rgba(0,0,0,0)",
             plot_bgcolor="rgba(0,0,0,0)",
             font=dict(family="IBM Plex Sans, Arial, sans-serif", size=10, color="#1a1a2e"),
-            # Bigger + bold legend text so the series are easy to read at print
-            # size (merged into any per-chart legend position set in charts.py).
-            legend=dict(font=dict(family="IBM Plex Sans, Arial, sans-serif",
-                                  size=13, weight="bold", color="#1a1a2e")),
+            # Clean, understated legend: a single horizontal strip along the
+            # bottom (clears the P1/P2.. observation labels pinned to the top of
+            # the path/fan charts), no "variable" group title, muted slate text at
+            # a readable-but-not-shouty size, no box. Replaces the heavy 13pt bold
+            # navy legend that read as clutter.
+            legend=dict(
+                orientation="h",
+                yanchor="top", y=-0.18, xanchor="center", x=0.5,
+                title=dict(text=""),
+                font=dict(family="IBM Plex Sans, Arial, sans-serif",
+                          size=11, color="#5b6675"),
+                bgcolor="rgba(0,0,0,0)", borderwidth=0,
+                itemsizing="constant",
+            ),
+            # Room for the bottom legend strip without clipping the x-axis title.
+            margin=dict(b=78),
             modebar_remove=["logo", "toImage", "sendDataToCloud"],
         )
         # Axes: cool-grey, semi-transparent so gridlines stay legible on the
@@ -2622,11 +2638,7 @@ def _build_pdf_report(
                        "kappa", "xi", "rho", _t("feller", lang)]
         aligns      = ["L"] + ["R"] * 8
 
-        # Prefetch all logos so we know row height before drawing
-        _LOGO_INLINE_W = 6.0
-        _LOGO_INLINE_H = 6.0
-        _ROW_H_CALIB   = 8.0   # slightly taller than the default 6 to fit logos
-
+        # Prefetch each asset's logo so the table can place it inline.
         logo_cache: dict[str, bytes | None] = {}
         for p in params:
             nm  = str(p.name)
@@ -2634,86 +2646,26 @@ def _build_pdf_report(
             sym = (logo_tickers or {}).get(nm)
             logo_cache[nm] = _logo_ovr.get(nm) or _load_ticker_logo(nm, url, sym)
 
-        # ── Draw filled header row ──
-        if pdf.get_y() > pdf.h - 55:
-            pdf.add_page()
-        pdf.set_fill_color(*pdf.primary_color)
-        pdf.set_text_color(*_WHITE)
-        pdf._sf(7.5, "semibold")
-        for h, w, a in zip(headers, col_widths, aligns):
-            pdf.cell(w, 7, f" {h} ", border=0, fill=True, align=a)
-        pdf.ln()
-        pdf.set_draw_color(*pdf.accent_color)
-        pdf.set_line_width(0.25)
-        pdf.line(pdf.l_margin, pdf.get_y(),
-                 pdf.l_margin + sum(col_widths), pdf.get_y())
-        pdf.set_text_color(*_TEXT)
-        pdf._sf(8, "regular")
-
-        for i, p in enumerate(params):
-            if pdf.get_y() > pdf.h - 30:
-                pdf.add_page()
-                # Repeat header
-                pdf.set_fill_color(*pdf.primary_color)
-                pdf.set_text_color(*_WHITE)
-                pdf._sf(7.5, "semibold")
-                for h, w, a in zip(headers, col_widths, aligns):
-                    pdf.cell(w, 7, f" {h} ", border=0, fill=True, align=a)
-                pdf.ln()
-                pdf.set_text_color(*_TEXT)
-                pdf._sf(8, "regular")
-
-            nm = str(p.name)
+        # Render via the shared rounded logo table (rounded card + rounded-top
+        # header + zebra rows + inline ticker logos) so the calibration table
+        # matches the Note Terms / observation tables. (It used to be a
+        # hand-rolled square table — the only one in the report without rounded
+        # corners.)
+        calib_rows = []
+        for p in params:
             try:
                 ok, _ = p.feller_condition()
             except Exception:
                 ok = False
-            data_cells = [
+            calib_rows.append([
+                str(p.name),
                 f"{p.S0:,.2f}", f"{p.mu * 100:.1f}%",
                 f"{np.sqrt(p.V0) * 100:.1f}%", f"{np.sqrt(p.theta) * 100:.1f}%",
                 f"{p.kappa:.2f}", f"{p.xi:.2f}", f"{p.rho:.2f}",
                 "OK" if ok else "!",
-            ]
-            fill_color = _ROW_ALT if i % 2 == 0 else _WHITE
-            pdf.set_fill_color(*fill_color)
-
-            row_y = pdf.get_y()
-
-            # ── Asset cell with inline logo ──
-            pdf.set_fill_color(*fill_color)
-            pdf.rect(pdf.l_margin, row_y, col_w_asset, _ROW_H_CALIB, style="F")
-            ldata = logo_cache.get(nm)
-            text_x = pdf.l_margin + 2
-            if ldata:
-                try:
-                    logo_y = row_y + (_ROW_H_CALIB - _LOGO_INLINE_H) / 2
-                    pdf.image(io.BytesIO(ldata),
-                              x=pdf.l_margin + 1, y=logo_y,
-                              w=_LOGO_INLINE_W, h=_LOGO_INLINE_H)
-                    text_x = pdf.l_margin + _LOGO_INLINE_W + 3
-                except Exception:
-                    pass  # logo failed; just print the name
-            pdf.set_xy(text_x, row_y + (_ROW_H_CALIB - 4) / 2)
-            avail_w = col_w_asset - (text_x - pdf.l_margin) - 1
-            pdf._fit_font(nm, avail_w, 8, "semibold")
-            pdf.set_text_color(*_TEXT)
-            pdf.cell(avail_w, 4, pdf._safe(nm))
-
-            # ── Remaining data cells ──
-            pdf._sf(8, "regular")
-            for cell_val, w, a in zip(data_cells, col_widths[1:], aligns[1:]):
-                pdf.set_xy(pdf.get_x(), row_y)
-                pdf.set_fill_color(*fill_color)
-                pdf.cell(w, _ROW_H_CALIB, f" {cell_val} ", border=0, fill=True, align=a)
-            pdf.ln(_ROW_H_CALIB - (pdf.get_y() - row_y))
-            pdf.set_y(row_y + _ROW_H_CALIB)
-
-        # Bottom rule
-        pdf.set_draw_color(*_HAIRLINE)
-        pdf.set_line_width(0.2)
-        pdf.line(pdf.l_margin, pdf.get_y(),
-                 pdf.l_margin + sum(col_widths), pdf.get_y())
-        pdf.ln(4)
+            ])
+        pdf.logo_row_table(headers, calib_rows, logos=logo_cache,
+                           col_widths=col_widths, aligns=aligns)
     if _inc("calib_corr") and figures.get("corr") is not None:
         _sec()
         pdf.figure(_fig_to_png(figures.get("corr"), width=560, height=460, **_kw),
