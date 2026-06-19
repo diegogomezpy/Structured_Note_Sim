@@ -552,6 +552,7 @@ def price_note(
             "knock_in_triggered":   np.zeros(n_paths, dtype=bool),
             "knock_in_mask":        np.zeros(n_paths, dtype=bool),
             "annualized_returns":   irr_cp,
+            "total_returns":        total_return_cp,
             # Legacy alias
             "autocall_events":      zeros.astype(int),
             # Scalars
@@ -836,6 +837,7 @@ def price_note(
         "knock_in_triggered":   ki_total,
         "knock_in_mask":        ki_total,   # breached AND not rescued (a real knock-in)
         "annualized_returns":   annualized_irr,
+        "total_returns":        total_return,
 
         # Legacy alias (app.py uses this key)
         "autocall_events":      autocall_period,

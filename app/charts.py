@@ -26,6 +26,7 @@ import numpy as np
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
+from plotly.subplots import make_subplots
 
 from translations import Translator
 
@@ -146,6 +147,7 @@ def _add_coupon_barrier(fig: go.Figure, coupon_barrier: float,
 
 def _build_irr_discrete(
     irr_all:         np.ndarray,
+    total_all:       np.ndarray | None,
     autocall_events: np.ndarray,
     tr:              Translator,
 ) -> go.Figure:
@@ -153,57 +155,97 @@ def _build_irr_discrete(
     distribution (see ``build_irr_distribution``). When a note autocalls with
     very high probability almost every path lands on one IRR, so a continuous
     histogram collapses to a single spike in an empty grid that reads as a
-    rendering glitch. Instead show one labelled bar per economic outcome
-    (autocalled / held to maturity / capital loss): height = probability, each
-    annotated with its share and mean IRR. Legible and intentional-looking."""
+    rendering glitch. Instead show one bar per economic outcome (autocalled /
+    held to maturity / capital loss).
+
+    Two panels: (1) the PROBABILITY of each outcome, and (2) the mean TOTAL
+    RETURN and mean IRR p.a. within each outcome — so the reader sees both how
+    likely each scenario is and how much it pays. The second panel is omitted
+    when per-path total returns aren't supplied."""
     n = len(irr_all)
     loss_mask   = irr_all < 0
     called_mask = (autocall_events > 0) & ~loss_mask
     mat_mask    = ~called_mask & ~loss_mask
-    pa = tr("chart_pa_suffix")
 
     specs = [
         (tr("chart_irr_bucket_autocall"), called_mask, _BLUE_LIGHT),
         (tr("chart_irr_bucket_maturity"), mat_mask,    _NAVY),
         (tr("chart_irr_bucket_loss"),     loss_mask,   _RED),
     ]
-    labels, shares, texts, colors = [], [], [], []
+    labels, shares, colors, masks = [], [], [], []
     for lbl, mask, col in specs:
         cnt = int(np.count_nonzero(mask))
         if cnt == 0:                       # drop empty outcomes — no zero bars
             continue
-        share    = cnt / n
-        mean_irr = float(np.mean(irr_all[mask]))
         labels.append(lbl)
-        shares.append(share)
-        texts.append(f"<b>{share:.1%}</b><br>{mean_irr:+.1%} {pa}")
+        shares.append(cnt / n)
         colors.append(col)
+        masks.append(mask)
 
-    fig = go.Figure(go.Bar(
-        x=labels, y=shares, text=texts,
-        # "auto": a near-100% dominant bar gets its label INSIDE (Plotly
-        # auto-contrasts the text colour), so it never spills above the plot
-        # into the header; the small bars, with no room inside, get it outside.
-        textposition="auto", insidetextanchor="end",
-        marker_color=colors, width=0.5, cliponaxis=False,
-        textfont=dict(size=13),
-    ))
-    # No chart title: the app renders an "IRR distribution" subheader directly
-    # above this figure and the PDF strips chart titles, so a title here only
-    # duplicates that header (and is what the tall bar's label collided with).
-    y_max = max(shares) if shares else 1.0
-    fig.update_layout(
-        xaxis=dict(title="", type="category"),
-        yaxis=dict(title=tr("chart_irr_yaxis"), tickformat=".0%",
-                   range=[0, min(1.0, max(y_max + 0.12, 0.5))]),
-        showlegend=False,
-        bargap=0.5,
-    )
-    return _apply_theme(fig)
+    have_returns = total_all is not None and len(total_all) == n
+    n_cols = 2 if have_returns else 1
+    titles = [tr("chart_disc_prob_panel")]
+    if have_returns:
+        titles.append(tr("chart_disc_return_panel"))
+    fig = make_subplots(rows=1, cols=n_cols, subplot_titles=titles,
+                        horizontal_spacing=0.16)
+
+    # ── Panel 1 — probability of each outcome ──────────────────────────────
+    # Force the dominant (near-100%) bar's label INSIDE: with "auto" the static
+    # PDF renderer (kaleido) places it outside and it gets clipped at the top.
+    pos = ["inside" if s >= 0.55 else "outside" for s in shares]
+    fig.add_trace(go.Bar(
+        x=labels, y=shares, text=[f"{s:.1%}" for s in shares],
+        textposition=pos, insidetextanchor="end",
+        marker_color=colors, width=0.55, cliponaxis=False,
+        textfont=dict(size=13), showlegend=False,
+    ), row=1, col=1)
+    fig.update_yaxes(tickformat=".0%", range=[0, 1.0], row=1, col=1)
+    fig.update_xaxes(type="category", row=1, col=1)
+
+    # ── Panel 2 — mean total return & mean IRR p.a. within each outcome ─────
+    if have_returns:
+        mean_tr  = [float(np.mean(total_all[m])) for m in masks]
+        mean_irr = [float(np.mean(irr_all[m]))   for m in masks]
+        fig.add_trace(go.Bar(
+            x=labels, y=mean_tr, name=tr("chart_disc_total_return"),
+            text=[f"{v:+.1%}" for v in mean_tr], textposition="outside",
+            marker_color=_NAVY, cliponaxis=False, textfont=dict(size=11),
+        ), row=1, col=2)
+        fig.add_trace(go.Bar(
+            x=labels, y=mean_irr, name=tr("chart_disc_irr_pa"),
+            text=[f"{v:+.1%}" for v in mean_irr], textposition="outside",
+            marker_color=_BLUE, cliponaxis=False, textfont=dict(size=11),
+        ), row=1, col=2)
+        _vals = mean_tr + mean_irr
+        lo, hi = min(0.0, min(_vals)), max(0.0, max(_vals))
+        span = (hi - lo) or 0.1
+        fig.add_hline(y=0, line_color=_GREY, line_width=1, row=1, col=2)
+        fig.update_yaxes(tickformat=".0%",
+                         range=[lo - span * 0.28, hi + span * 0.28], row=1, col=2)
+        fig.update_xaxes(type="category", row=1, col=2)
+
+    # No chart title: the app renders an "IRR distribution" subheader above this
+    # figure and the PDF strips chart titles, so a title here only duplicates it.
+    fig.update_layout(showlegend=have_returns, barmode="group",
+                      bargap=0.45, bargroupgap=0.1)
+    for ann in fig.layout.annotations:          # subplot titles
+        ann.font.size = 12
+    fig = _apply_theme(fig)
+    # Override post-theme: a horizontal legend centred below the panels (for the
+    # two return series), with extra bottom room so it clears the x-tick labels.
+    if have_returns:
+        fig.update_layout(
+            margin=dict(l=45, r=25, t=46, b=72),
+            legend=dict(orientation="h", x=0.5, xanchor="center",
+                        y=-0.22, yanchor="top"),
+        )
+    return fig
 
 
 def build_irr_distribution(
     annualized_returns: np.ndarray,
+    total_returns:      np.ndarray | None,
     autocall_events:    np.ndarray,
     expected_irr:       float,
     coupon_rate_pa:     float,      # p.a. coupon for reference line
@@ -229,7 +271,7 @@ def build_irr_distribution(
         top_share = float(_counts.max()) / n_total
         spread    = float(np.percentile(irr_all, 99) - np.percentile(irr_all, 1))
         if top_share >= 0.80 or spread < 0.005:
-            return _build_irr_discrete(irr_all, autocall_events, tr)
+            return _build_irr_discrete(irr_all, total_returns, autocall_events, tr)
 
     # ── Adaptive bin edges + zoom window ───────────────────────────────
     # The distribution can be extremely narrow and concentrated (e.g. a note

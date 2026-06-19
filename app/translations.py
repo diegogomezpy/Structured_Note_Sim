@@ -201,9 +201,12 @@ _STRINGS: dict[str, tuple[str, str]] = {
     "bt_metric_issue_dates":     ("Issue Dates",                       "Fechas de Emisión"),
     "bt_metric_mean_irr":        ("Mean IRR",                          "TIR Promedio"),
     "bt_metric_median_irr":      ("Median IRR",                        "TIR Mediana"),
+    "bt_metric_total_return":    ("Total Return",                      "Retorno Total"),
+    "bt_metric_coupon":          ("Coupon Income",                     "Cupón"),
     "bt_returns_label":          ("Realised return",                   "Retorno realizado"),
     "bt_sample_caption":         ("Backtested across {n} historical issue dates.",
                                   "Backtest sobre {n} fechas de emisión históricas."),
+    "bt_median_caption":         ("median IRR {v}",                    "TIR mediana {v}"),
     "bt_metric_knock_in_pct":    ("Knock-in %",                        "% Knock-in"),
     "bt_metric_autocalled_pct":  ("Autocalled %",                      "% Autocall"),
     "bt_path_explorer_header": ("Historical Path Explorer",       "Explorador de Trayectorias Históricas"),
@@ -268,6 +271,21 @@ _STRINGS: dict[str, tuple[str, str]] = {
         "históricas. Menos sensible que la media al sesgo introducido por "
         "autocancelaciones muy tempranas; una mejor estimación de tendencia central "
         "para la mayoría de las estructuras.",
+    ),
+    "bt_help_total_return":      (
+        "Average total return at redemption across all historical issue dates: "
+        "mean(payout − 1), i.e. coupons plus principal repayment over par. NOT "
+        "annualised — over the realised holding period of each note.",
+        "Retorno total medio al rescate entre todas las fechas de emisión históricas: "
+        "media(pago − 1), es decir cupones más devolución de principal sobre la par. "
+        "NO anualizado — sobre el período de tenencia real de cada nota.",
+    ),
+    "bt_help_coupon":            (
+        "Average coupon income collected per note across all historical issue "
+        "dates, as a fraction of par. Early autocalls collect fewer coupons.",
+        "Ingreso medio por cupones cobrado por nota entre todas las fechas de emisión "
+        "históricas, como fracción de la par. Las autocancelaciones tempranas cobran "
+        "menos cupones.",
     ),
     "bt_help_knock_in_pct":      (
         "Fraction of historical issue dates where the knock-in barrier was "
@@ -997,6 +1015,11 @@ _STRINGS: dict[str, tuple[str, str]] = {
     "chart_irr_bucket_maturity": ("Held to maturity",                  "A vencimiento"),
     "chart_irr_bucket_loss":     ("Capital loss",                      "Pérdida de capital"),
     "chart_pa_suffix":           ("p.a.",                              "anual"),
+    # Two-panel discrete breakdown: probability + mean return per outcome.
+    "chart_disc_prob_panel":     ("Probability",                       "Probabilidad"),
+    "chart_disc_return_panel":   ("Mean return by outcome",            "Retorno medio por escenario"),
+    "chart_disc_total_return":   ("Total return",                      "Retorno total"),
+    "chart_disc_irr_pa":         ("IRR p.a.",                          "TIR anual"),
     "chart_irr_flat_note":       ("Constant {v} p.a. across all {n} issue windows",
                                   "Constante {v} anual en las {n} ventanas de emisión"),
 

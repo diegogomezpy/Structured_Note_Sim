@@ -427,7 +427,8 @@ _GLOSSARY: dict[str, list[tuple[str, str]]] = {
         ("Phoenix", "An autocallable paying conditional (often memory) coupons above a coupon barrier, with capital at risk below a knock-in barrier."),
         ("One Star", "A clause whereby a single underlying at or above a set level satisfies the coupon, autocall and par-redemption conditions on its own, even when the worst performer breached its barrier."),
         ("Strike / initial fixing", "The reference price of each underlying at issue, set to 100%; all performance levels are measured against it."),
-        ("IRR (simple, p.a.)", "Annualised return on a path, computed as total return divided by time held — the convention used to quote note coupons."),
+        ("Total return", "The note's overall return at redemption as a fraction of par: all coupons received plus principal repaid, minus 1. Measured over the realised holding period and NOT annualised."),
+        ("IRR (simple, p.a.)", "Annualised return on a path, computed as total return divided by time held — the convention used to quote note coupons. Differs from total return whenever the note is held for other than exactly one year (e.g. an early autocall annualises a small total return up to a larger figure)."),
         ("Heston model", "A stochastic-volatility model in which variance itself follows a mean-reverting random process; used here to simulate the underlyings."),
         ("Student-t copula", "A dependence structure linking the assets' shocks with fatter joint tails than a Gaussian copula, capturing co-movement in stress."),
         ("Volatility (σ)", "The annualised standard deviation of an asset's returns — a measure of how much its price fluctuates. Higher volatility widens the outcome distribution and raises the chance of breaching a barrier."),
@@ -451,7 +452,8 @@ _GLOSSARY: dict[str, list[tuple[str, str]]] = {
         ("Phoenix", "Autocancelable que paga cupones condicionales (a menudo con memoria) sobre una barrera de cupón, con capital en riesgo bajo el knock-in."),
         ("Redención final / rescate best-of", "Cláusula que rescata la nota a la par si el mejor subyacente termina en o sobre un nivel dado, incluso si se tocó el knock-in."),
         ("Strike / fijación inicial", "Precio de referencia de cada subyacente en la emisión, fijado al 100%; todos los niveles de rendimiento se miden contra él."),
-        ("TIR (simple, anual)", "Retorno anualizado de una trayectoria, calculado como retorno total dividido por el tiempo mantenido — convención usada para cotizar cupones."),
+        ("Retorno total", "El rendimiento global de la nota al rescate como fracción de la par: todos los cupones recibidos más el principal devuelto, menos 1. Medido sobre el período de tenencia real y NO anualizado."),
+        ("TIR (simple, anual)", "Retorno anualizado de una trayectoria, calculado como retorno total dividido por el tiempo mantenido — convención usada para cotizar cupones. Difiere del retorno total siempre que la nota se mantenga un plazo distinto de exactamente un año (p. ej. un autocall temprano anualiza un retorno total pequeño hasta una cifra mayor)."),
         ("Modelo de Heston", "Modelo de volatilidad estocástica en el que la varianza sigue un proceso aleatorio con reversión a la media; usado para simular los subyacentes."),
         ("Cópula t-Student", "Estructura de dependencia que une los choques de los activos con colas conjuntas más gruesas que una cópula gaussiana, capturando el co-movimiento en estrés."),
         ("Volatilidad (σ)", "Desviación estándar anualizada de los retornos de un activo — cuánto fluctúa su precio. Mayor volatilidad amplía la distribución de resultados y eleva la probabilidad de tocar una barrera."),
@@ -2957,15 +2959,22 @@ def _build_pdf_report(
     _sec = _lazy_section(_t("bt_subtab_outcomes", lang), min_room=150.0, before=_bt_div)
     if bt_summary and _inc("bt_metrics"):
         _sec()
+        # Mirror the Monte Carlo metric band (same measures, same order) so the
+        # two lenses read in parallel: IRR, total return, P(autocall), P(knock-in),
+        # loss-given-knock-in, sample size. Median IRR (a backtest extra) is in
+        # the executive summary rather than the band.
         _bt_lgki = bt_summary.get("loss_given_ki")
-        _bt_lgki_pdf = f"{_bt_lgki:.2%}" if _bt_lgki is not None else "—"
+        if _bt_lgki is None:
+            _bt_lgki = bt_summary.get("loss_given_knock_in")
+        _bt_lgki_pdf = (f"{_bt_lgki:.2%}"
+                        if _bt_lgki is not None and _bt_lgki == _bt_lgki else "—")  # nan-safe
         pdf.metric_band([
-            (_t("bt_n_issues",       lang), str(bt_summary.get("n_issues", 0))),
-            (_t("bt_mean_irr",       lang), f"{bt_summary.get('mean_irr', 0):.2%}"),
-            (_t("bt_median_irr",     lang), f"{bt_summary.get('median_irr', 0):.2%}"),
-            (_t("bt_autocalled_pct", lang), f"{bt_summary.get('prob_called', 0):.1%}"),
-            (_t("bt_knock_in_pct",   lang), f"{bt_summary.get('prob_knock_in', 0):.1%}"),
-            (_t("bt_loss_given_ki",  lang), _bt_lgki_pdf),
+            (_t("bt_mean_irr",        lang), f"{bt_summary.get('mean_irr', 0):.2%}"),
+            (_t("total_return_short", lang), f"{bt_summary.get('expected_total_return', 0):.2%}"),
+            (_t("bt_autocalled_pct",  lang), f"{bt_summary.get('prob_called', 0):.1%}"),
+            (_t("bt_knock_in_pct",    lang), f"{bt_summary.get('prob_knock_in', 0):.1%}"),
+            (_t("bt_loss_given_ki",   lang), _bt_lgki_pdf),
+            (_t("bt_n_issues",        lang), str(bt_summary.get("n_issues", 0))),
         ])
     if bt_summary and _inc("bt_outcome") and bt_figures.get("outcome") is not None:
         _sec()
@@ -3047,7 +3056,9 @@ def _build_pdf_report(
     # ── 7. Glossary ────────────────────────────────────────────────────────
     # Reference list of the financial terms used throughout the report. Always
     # included (like the disclaimer). Each entry flows as a bold term followed
-    # by its definition, wrapping naturally.
+    # by its definition, wrapping naturally. Starts on its own fresh page so the
+    # reference block is never stranded a few lines below an unrelated chart.
+    pdf.add_page()
     pdf.start_section(_t("glossary_title", lang), min_room=70.0)
     for _term, _defn in _GLOSSARY.get(lang, _GLOSSARY["en"]):
         if pdf.get_y() > pdf.h - 34:

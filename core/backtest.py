@@ -144,6 +144,11 @@ def run_backtest(
 
     knock_in_mask = bt["Knock-in"]
 
+    # Mirror the full Monte Carlo metric set so the backtest reports the SAME
+    # measures (app + PDF). `res` already holds them, computed by the shared
+    # price_note engine over exactly these historical issue windows — so e.g.
+    # res["expected_irr"] == mean_irr by construction. loss_given_knock_in is
+    # the mean IRR over real (unrescued) knock-in paths; NaN when there are none.
     summary = {
         "n_issues":      len(bt),
         "mean_irr":      float(bt["IRR"].mean()),
@@ -151,6 +156,12 @@ def run_backtest(
         "prob_called":   float((bt["Call Quarter"] > 0).mean()),
         "prob_knock_in": float(knock_in_mask.mean()),
         "prob_maturity": float((bt["Call Quarter"] == 0).mean()),
+        # Same metrics as the Monte Carlo summary, over the historical windows.
+        "expected_total_return": float(res["expected_total_return"]),
+        "expected_coupon":       float(res["expected_coupon"]),
+        "expected_nominal_payout": float(res["expected_nominal_payout"]),
+        "loss_given_knock_in":   float(res["loss_given_knock_in"]),
+        "prob_knock_in_total":   float(res["prob_knock_in_total"]),
     }
 
     return bt, summary

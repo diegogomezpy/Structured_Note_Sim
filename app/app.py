@@ -1638,7 +1638,7 @@ elif st.session_state["page"] == "dashboard":
             # before rasterising, so sharing the object with st.plotly_chart is
             # safe. (Language change → full script rerun → figures rebuilt.)
             _fig_irr = build_irr_distribution(
-                R["annualized_returns"], R["autocall_events"],
+                R["annualized_returns"], R.get("total_returns"), R["autocall_events"],
                 R["expected_irr"], run_terms.coupon_pa, tr,
             )
             _fig_wof = build_wof_fan(
@@ -2081,19 +2081,27 @@ elif st.session_state["page"] == "dashboard":
             with bt_tab1:
                 # Grouped like the Monte Carlo summary (returns vs risk), with the
                 # sample size as a one-line caption above.
-                st.caption(tr("bt_sample_caption", n=bt_summary.get("n_issues", 0)))
+                # Same metric set + layout as the Monte Carlo summary (returns
+                # row of three, then risk row of three), so the two tabs read in
+                # parallel. Median IRR — a backtest-specific extra — sits in the
+                # caption rather than as a card.
+                st.caption(tr("bt_sample_caption", n=bt_summary.get("n_issues", 0))
+                           + " · " + tr("bt_median_caption",
+                                        v=f"{bt_summary.get('median_irr', 0):.2%}"))
                 st.markdown("**" + tr("bt_returns_label") + "**")
-                b1, b2 = st.columns(2)
+                b1, b2, b3 = st.columns(3)
                 b1.metric(tr("bt_metric_mean_irr"),       f"{bt_summary.get('mean_irr', 0):.2%}",
                           help=tr("bt_help_mean_irr"))
-                b2.metric(tr("bt_metric_median_irr"),     f"{bt_summary.get('median_irr', 0):.2%}",
-                          help=tr("bt_help_median_irr"))
+                b2.metric(tr("bt_metric_total_return"),   f"{bt_summary.get('expected_total_return', 0):.2%}",
+                          help=tr("bt_help_total_return"))
+                b3.metric(tr("bt_metric_coupon"),         f"{bt_summary.get('expected_coupon', 0):.2%}",
+                          help=tr("bt_help_coupon"))
                 st.markdown("**" + tr("summary_risk_label") + "**")
                 b4, b5, b6 = st.columns(3)
-                b4.metric(tr("bt_metric_knock_in_pct"),   f"{bt_summary.get('prob_knock_in', 0):.1%}",
-                          help=tr("bt_help_knock_in_pct"))
-                b5.metric(tr("bt_metric_autocalled_pct"), f"{bt_summary.get('prob_called', 0):.1%}",
+                b4.metric(tr("bt_metric_autocalled_pct"), f"{bt_summary.get('prob_called', 0):.1%}",
                           help=tr("bt_help_autocalled_pct"))
+                b5.metric(tr("bt_metric_knock_in_pct"),   f"{bt_summary.get('prob_knock_in', 0):.1%}",
+                          help=tr("bt_help_knock_in_pct"))
                 b6.metric(tr("loss_given_ki_metric"),     _bt_lgki_str,
                           help=tr("bt_help_loss_given_ki"))
 
