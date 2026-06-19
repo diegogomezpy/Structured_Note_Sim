@@ -663,8 +663,28 @@ def build_underlying_price_chart(
         yaxis=dict(title=tr("price_label")),
         margin=dict(l=52, r=18, t=14, b=34),
     )
-    # Tight y-range (don't anchor at 0 despite the fill) so detail is visible.
+    # Explicit, locale-independent month ticks. Relying on plotly/kaleido's auto
+    # date axis rendered the month names in the host machine's locale (Arabic
+    # glyphs appeared on some setups) and placed the year on the wrong tick.
+    # Building the labels here as literal strings — not date-formatted by the
+    # renderer — guarantees correct, on-language "Mon YYYY" labels everywhere.
+    _MON = {"es": ["", "Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago",
+                   "Sep", "Oct", "Nov", "Dic"]}.get(
+        getattr(tr, "lang", "en"),
+        ["", "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep",
+         "Oct", "Nov", "Dec"])
     if len(s):
+        idx = pd.DatetimeIndex(s.index)
+        months = pd.period_range(idx.min(), idx.max(), freq="M")
+        step = 2 if len(months) > 7 else 1
+        tickvals, ticktext = [], []
+        for per in months[::step]:
+            after = idx[idx >= per.to_timestamp()]
+            if len(after):
+                tickvals.append(after[0])
+                ticktext.append(f"{_MON[per.month]} {per.year}")
+        fig.update_xaxes(tickmode="array", tickvals=tickvals, ticktext=ticktext)
+        # Tight y-range (don't anchor at 0 despite the fill) so detail is visible.
         lo, hi = float(s.min()), float(s.max())
         pad = (hi - lo) * 0.08 or (hi * 0.05 or 1.0)
         fig.update_yaxes(range=[lo - pad, hi + pad])
