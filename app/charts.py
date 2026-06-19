@@ -681,7 +681,11 @@ def build_underlying_price_chart(
         for per in months[::step]:
             after = idx[idx >= per.to_timestamp()]
             if len(after):
-                tickvals.append(after[0])
+                # ISO string, not a pandas Timestamp: kaleido serialises the
+                # figure to JSON to render the PDF and a raw Timestamp tickval
+                # raises "Type is not JSON serializable" (the chart then silently
+                # dropped from the PDF, though it rendered fine in the browser).
+                tickvals.append(after[0].isoformat())
                 ticktext.append(f"{_MON[per.month]} {per.year}")
         fig.update_xaxes(tickmode="array", tickvals=tickvals, ticktext=ticktext)
         # Tight y-range (don't anchor at 0 despite the fill) so detail is visible.

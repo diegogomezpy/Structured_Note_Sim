@@ -337,15 +337,29 @@ def _resolve_issuer_summary_cached(name):
     except Exception:
         return None
 
-@st.cache_data(ttl=24 * 3600, show_spinner=False)
+# Translation cache keyed on (text, target). Only SUCCESSFUL translations are
+# cached; a failure (returns the input unchanged) is NOT, so a transient blip —
+# or a click made before deep-translator was installed — doesn't pin the English
+# fallback for the rest of the session (same bug class as the logo cache). Not
+# st.cache_data, which would cache the failed result too.
+_TRANSLATION_CACHE: dict[tuple, str] = {}
+
+
 def _translate_cached(text, target_lang):
     """Best-effort translation of a (Yahoo) description into the UI language for
-    the prefill buttons. Cached so re-clicking is instant; falls back to the
-    original text on any failure."""
-    try:
-        return translate_text(text, target_lang)
-    except Exception:
+    the prefill buttons. Caches only real translations; retries after a failure."""
+    if not text or target_lang in (None, "", "en"):
         return text
+    key = (text, target_lang)
+    if key in _TRANSLATION_CACHE:
+        return _TRANSLATION_CACHE[key]
+    try:
+        out = translate_text(text, target_lang)
+    except Exception:
+        out = text
+    if out and out != text:          # a genuine translation — cache it
+        _TRANSLATION_CACHE[key] = out
+    return out
 
 @st.cache_data(ttl=3600)
 def _run_backtest_cached(tickers_tuple, terms_json,

@@ -461,21 +461,53 @@ def translate_text(text: str | None, target_lang: str,
     business summaries when prefilling a description in a non-English UI.
 
     Returns the original text unchanged when target is English/empty, when the
-    text is blank, or on ANY failure (incl. the optional `deep-translator`
-    dependency or the network being unavailable). Never raises. Translates
-    paragraph-by-paragraph to respect the engine's length limit and keep the
-    blank-line breaks."""
+    text is blank, or on ANY failure. Never raises. Tries Google first (best
+    quality, no length limit) and falls back to MyMemory if Google is blocked or
+    rate-limited (common on corporate networks) — MyMemory has a ~500-char
+    per-request limit, so each paragraph is chunked by sentence. Paragraph breaks
+    are preserved throughout."""
     if not text or not text.strip() or target_lang in (None, "", "en"):
         return text
+    paras = text.split("\n\n")
+
+    def _by_para(translate_one) -> str:
+        return "\n\n".join(translate_one(p) if p.strip() else p for p in paras)
+
+    # 1) Google Translate — preferred.
     try:
         from deep_translator import GoogleTranslator
-        gt = GoogleTranslator(source=source_lang, target=target_lang)
-        return "\n\n".join(gt.translate(p) if p.strip() else p
-                           for p in text.split("\n\n"))
+        gt  = GoogleTranslator(source=source_lang, target=target_lang)
+        res = _by_para(lambda p: gt.translate(p))
+        if res and res.strip():
+            return res
     except Exception as e:
-        print(f"[loader] translate_text failed ({type(e).__name__}: {e}); "
-              "keeping original text.")
-        return text
+        print(f"[loader] Google translate failed ({type(e).__name__}: {e}); trying MyMemory.")
+
+    # 2) MyMemory — more tolerant of locked-down networks; chunk to its char limit.
+    try:
+        import re
+        from deep_translator import MyMemoryTranslator
+        mm = MyMemoryTranslator(source="en-GB",
+                                target="es-ES" if target_lang == "es" else target_lang)
+
+        def _mm(p: str) -> str:
+            chunks, cur = [], ""
+            for sent in re.split(r"(?<=[.!?])\s+", p):
+                if cur and len(cur) + len(sent) + 1 > 480:
+                    chunks.append(cur)
+                    cur = ""
+                cur = (cur + " " + sent).strip()
+            if cur:
+                chunks.append(cur)
+            return " ".join(mm.translate(c) for c in chunks if c.strip())
+
+        res = _by_para(_mm)
+        if res and res.strip():
+            return res
+    except Exception as e:
+        print(f"[loader] MyMemory translate failed ({type(e).__name__}: {e}); keeping original.")
+
+    return text
 
 
 def resolve_issuer_summary(name: str, ssl_verify: bool = True) -> str | None:
