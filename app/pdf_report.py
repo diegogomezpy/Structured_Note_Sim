@@ -1700,16 +1700,29 @@ def _theme_figure(fig, primary_color: tuple, accent_color: tuple,
         pass
     try:
         fig.update_layout(
-            paper_bgcolor="white",
-            plot_bgcolor="white",
+            # Transparent so the chart blends into its brand-tinted figure card
+            # instead of stamping an opaque white rectangle that clashes with the
+            # panel. fpdf2 composites the PNG's alpha over the card fill, so the
+            # panel colour shows through the plot area and margins.
+            paper_bgcolor="rgba(0,0,0,0)",
+            plot_bgcolor="rgba(0,0,0,0)",
             font=dict(family="IBM Plex Sans, Arial, sans-serif", size=10, color="#1a1a2e"),
+            # Bigger + bold legend text so the series are easy to read at print
+            # size (merged into any per-chart legend position set in charts.py).
+            legend=dict(font=dict(family="IBM Plex Sans, Arial, sans-serif",
+                                  size=13, weight="bold", color="#1a1a2e")),
             modebar_remove=["logo", "toImage", "sendDataToCloud"],
         )
-        # Style axes without disturbing any explicit per-axis ranges/tickformats
-        fig.update_xaxes(linecolor="#e5e7eb", gridcolor="#f3f4f6",
-                         zerolinecolor="#e5e7eb")
-        fig.update_yaxes(linecolor="#e5e7eb", gridcolor="#f3f4f6",
-                         zerolinecolor="#e5e7eb")
+        # Axes: cool-grey, semi-transparent so gridlines stay legible on the
+        # tinted card now that the opaque white plot background is gone (a near-
+        # white grid would vanish against the panel). Per-axis ranges/tickformats
+        # set in charts.py are untouched.
+        fig.update_xaxes(linecolor="rgba(71,85,105,0.35)",
+                         gridcolor="rgba(71,85,105,0.14)",
+                         zerolinecolor="rgba(71,85,105,0.35)")
+        fig.update_yaxes(linecolor="rgba(71,85,105,0.35)",
+                         gridcolor="rgba(71,85,105,0.14)",
+                         zerolinecolor="rgba(71,85,105,0.35)")
     except Exception:
         pass
 
