@@ -77,6 +77,8 @@ _STRINGS: dict[str, tuple[str, str]] = {
     "setup_ul_prefill":      ("Prefill from Yahoo",                "Rellenar desde Yahoo"),
     "setup_ul_prefill_help": ("Fetch the company business summary from Yahoo Finance into the box above.",
                               "Obtener el resumen de la empresa de Yahoo Finance en el cuadro de arriba."),
+    "ul_translate_unavailable": ("Couldn't translate to Spanish — kept the English text. (Is deep-translator installed?)",
+                                 "No se pudo traducir al español — se mantuvo el texto en inglés. (¿Está instalado deep-translator?)"),
     "col_yf_symbol":             ("yfinance Symbol",                   "Símbolo yfinance"),
     "metric_maturity":           ("Maturity",                          "Vencimiento"),
     "metric_observations":       ("Observations",                      "Observaciones"),

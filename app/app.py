@@ -665,8 +665,11 @@ if st.session_state["page"] == "setup":
                             _summ = ""
                         if _summ:
                             # Localise the English summary to the UI language.
-                            st.session_state[_key] = _translate_cached(
-                                _summ, "es" if lang_choice == "Español" else "en")
+                            _tgt = "es" if lang_choice == "Español" else "en"
+                            _out = _translate_cached(_summ, _tgt)
+                            st.session_state[_key] = _out
+                            if _tgt == "es" and _out.strip() == _summ.strip():
+                                st.toast(tr("ul_translate_unavailable"), icon="⚠️")
                             st.rerun()
                         else:
                             st.toast(tr("ul_metrics_failed"))
@@ -1029,8 +1032,11 @@ if st.session_state["page"] == "setup":
                          help=tr("setup_ul_prefill_help"), disabled=not issuer_input):
                 _isumm = _resolve_issuer_summary_cached(issuer_input.strip()) if issuer_input else None
                 if _isumm:
-                    st.session_state["setup_issuer_desc"] = _translate_cached(
-                        _isumm, "es" if lang_choice == "Español" else "en")
+                    _itgt = "es" if lang_choice == "Español" else "en"
+                    _iout = _translate_cached(_isumm, _itgt)
+                    st.session_state["setup_issuer_desc"] = _iout
+                    if _itgt == "es" and _iout.strip() == _isumm.strip():
+                        st.toast(tr("ul_translate_unavailable"), icon="⚠️")
                     st.rerun()
                 else:
                     st.toast(tr("ul_metrics_failed"))

@@ -473,17 +473,26 @@ def translate_text(text: str | None, target_lang: str,
     def _by_para(translate_one) -> str:
         return "\n\n".join(translate_one(p) if p.strip() else p for p in paras)
 
-    # 1) Google Translate — preferred.
+    # An engine "succeeds" only if it actually CHANGED the text. Google's scraper
+    # can return the input unchanged when its IP hits bot-detection (no exception
+    # raised) — treat that as a failure so we fall through to the next engine
+    # instead of silently handing back English. (en->es always changes the text.)
+    def _ok(res) -> bool:
+        return bool(res and res.strip()) and res.strip() != text.strip()
+
+    # 1) Google Translate — preferred (best quality).
     try:
         from deep_translator import GoogleTranslator
         gt  = GoogleTranslator(source=source_lang, target=target_lang)
         res = _by_para(lambda p: gt.translate(p))
-        if res and res.strip():
+        if _ok(res):
             return res
+        print("[loader] Google returned untranslated text; trying MyMemory.")
     except Exception as e:
         print(f"[loader] Google translate failed ({type(e).__name__}: {e}); trying MyMemory.")
 
-    # 2) MyMemory — more tolerant of locked-down networks; chunk to its char limit.
+    # 2) MyMemory — a real API (not a scraper), so it works where Google's
+    #    bot-detection blocks the host. ~500-char/request limit -> chunk by sentence.
     try:
         import re
         from deep_translator import MyMemoryTranslator
@@ -502,8 +511,9 @@ def translate_text(text: str | None, target_lang: str,
             return " ".join(mm.translate(c) for c in chunks if c.strip())
 
         res = _by_para(_mm)
-        if res and res.strip():
+        if _ok(res):
             return res
+        print("[loader] MyMemory returned untranslated text; keeping original.")
     except Exception as e:
         print(f"[loader] MyMemory translate failed ({type(e).__name__}: {e}); keeping original.")
 
