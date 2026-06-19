@@ -430,6 +430,12 @@ _GLOSSARY: dict[str, list[tuple[str, str]]] = {
         ("IRR (simple, p.a.)", "Annualised return on a path, computed as total return divided by time held — the convention used to quote note coupons."),
         ("Heston model", "A stochastic-volatility model in which variance itself follows a mean-reverting random process; used here to simulate the underlyings."),
         ("Student-t copula", "A dependence structure linking the assets' shocks with fatter joint tails than a Gaussian copula, capturing co-movement in stress."),
+        ("Volatility (σ)", "The annualised standard deviation of an asset's returns — a measure of how much its price fluctuates. Higher volatility widens the outcome distribution and raises the chance of breaching a barrier."),
+        ("Implied volatility (ATM, 3M)", "Forward-looking volatility backed out from option prices — the market's expectation of future movement. 'ATM' uses the strike nearest spot (~100% moneyness, call and put averaged) at the expiry nearest three months."),
+        ("Realized volatility", "Backward-looking volatility: the annualised standard deviation of recent daily log-returns (~3 months here). Shown in place of implied vol when an underlying has no listed options on the data source."),
+        ("Moneyness / at-the-money (ATM)", "An option's strike relative to spot. At-the-money is a strike at ~100% of spot, and is the reference point for quoting a single headline implied volatility."),
+        ("Monte Carlo simulation", "Estimating the note's outcomes by generating many random price paths under the model, pricing the payoff on each, and summarising across all paths."),
+        ("Backtest", "Re-running the note's payoff over historical price windows — one per past issue date — to see how it would have performed in realised market history, as opposed to simulated paths."),
     ],
     "es": [
         ("Nota autocancelable", "Nota estructurada que se rescata anticipadamente ('autocancela') si los subyacentes están en o sobre la barrera de autocall en una fecha de observación."),
@@ -448,6 +454,12 @@ _GLOSSARY: dict[str, list[tuple[str, str]]] = {
         ("TIR (simple, anual)", "Retorno anualizado de una trayectoria, calculado como retorno total dividido por el tiempo mantenido — convención usada para cotizar cupones."),
         ("Modelo de Heston", "Modelo de volatilidad estocástica en el que la varianza sigue un proceso aleatorio con reversión a la media; usado para simular los subyacentes."),
         ("Cópula t-Student", "Estructura de dependencia que une los choques de los activos con colas conjuntas más gruesas que una cópula gaussiana, capturando el co-movimiento en estrés."),
+        ("Volatilidad (σ)", "Desviación estándar anualizada de los retornos de un activo — cuánto fluctúa su precio. Mayor volatilidad amplía la distribución de resultados y eleva la probabilidad de tocar una barrera."),
+        ("Volatilidad implícita (ATM, 3M)", "Volatilidad prospectiva derivada de los precios de las opciones — la expectativa del mercado sobre el movimiento futuro. 'ATM' usa el strike más cercano al spot (~100% de moneyness, promedio de call y put) en el vencimiento más próximo a tres meses."),
+        ("Volatilidad realizada", "Volatilidad retrospectiva: desviación estándar anualizada de los log-retornos diarios recientes (~3 meses aquí). Se muestra en lugar de la implícita cuando un subyacente no tiene opciones listadas en la fuente de datos."),
+        ("Moneyness / at-the-money (ATM)", "El strike de una opción respecto al spot. At-the-money es un strike al ~100% del spot, y es la referencia para cotizar una única volatilidad implícita de referencia."),
+        ("Simulación de Monte Carlo", "Estimación de los resultados de la nota generando muchas trayectorias de precio aleatorias bajo el modelo, valorando el pago en cada una y resumiendo sobre todas las trayectorias."),
+        ("Backtest", "Re-ejecución del pago de la nota sobre ventanas históricas de precios — una por cada fecha de emisión pasada — para ver cómo habría rendido en el mercado real, frente a las trayectorias simuladas."),
     ],
 }
 

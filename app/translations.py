@@ -990,6 +990,16 @@ _STRINGS: dict[str, tuple[str, str]] = {
     "chart_legend_maturity":     ("Maturity ({pct})",                  "Vencimiento ({pct})"),
     "chart_mean":                ("Mean {v}",                          "Media {v}"),
     "chart_coupon_pa":           ("Coupon {v} p.a.",                   "Cupón {v} anual"),
+    # Discrete outcome breakdown — shown instead of the histogram when the IRR
+    # distribution is near-degenerate (a near-certain single outcome).
+    "chart_irr_disc_title":      ("Outcome Breakdown — All Simulated Paths",
+                                  "Desglose de Resultados — Todas las Trayectorias Simuladas"),
+    "chart_irr_bucket_autocall": ("Autocalled",                        "Rescatada"),
+    "chart_irr_bucket_maturity": ("Held to maturity",                  "A vencimiento"),
+    "chart_irr_bucket_loss":     ("Capital loss",                      "Pérdida de capital"),
+    "chart_pa_suffix":           ("p.a.",                              "anual"),
+    "chart_irr_flat_note":       ("Constant {v} p.a. across all {n} issue windows",
+                                  "Constante {v} anual en las {n} ventanas de emisión"),
 
     # Backtest scatter/bar — px uses DataFrame column names as axis/legend
     # titles, so map them to translated display labels via labels=.

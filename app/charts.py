@@ -144,6 +144,58 @@ def _add_coupon_barrier(fig: go.Figure, coupon_barrier: float,
 # Tab 1 — IRR distribution
 # ---------------------------------------------------------------------------
 
+def _build_irr_discrete(
+    irr_all:         np.ndarray,
+    autocall_events: np.ndarray,
+    tr:              Translator,
+) -> go.Figure:
+    """Discrete outcome breakdown — the clean fallback for a near-degenerate IRR
+    distribution (see ``build_irr_distribution``). When a note autocalls with
+    very high probability almost every path lands on one IRR, so a continuous
+    histogram collapses to a single spike in an empty grid that reads as a
+    rendering glitch. Instead show one labelled bar per economic outcome
+    (autocalled / held to maturity / capital loss): height = probability, each
+    annotated with its share and mean IRR. Legible and intentional-looking."""
+    n = len(irr_all)
+    loss_mask   = irr_all < 0
+    called_mask = (autocall_events > 0) & ~loss_mask
+    mat_mask    = ~called_mask & ~loss_mask
+    pa = tr("chart_pa_suffix")
+
+    specs = [
+        (tr("chart_irr_bucket_autocall"), called_mask, _BLUE_LIGHT),
+        (tr("chart_irr_bucket_maturity"), mat_mask,    _NAVY),
+        (tr("chart_irr_bucket_loss"),     loss_mask,   _RED),
+    ]
+    labels, shares, texts, colors = [], [], [], []
+    for lbl, mask, col in specs:
+        cnt = int(np.count_nonzero(mask))
+        if cnt == 0:                       # drop empty outcomes — no zero bars
+            continue
+        share    = cnt / n
+        mean_irr = float(np.mean(irr_all[mask]))
+        labels.append(lbl)
+        shares.append(share)
+        texts.append(f"<b>{share:.1%}</b><br>{mean_irr:+.1%} {pa}")
+        colors.append(col)
+
+    fig = go.Figure(go.Bar(
+        x=labels, y=shares, text=texts, textposition="outside",
+        marker_color=colors, width=0.5, cliponaxis=False,
+        textfont=dict(size=13),
+    ))
+    y_max = max(shares) if shares else 1.0
+    fig.update_layout(
+        title=tr("chart_irr_disc_title"),
+        xaxis=dict(title="", type="category"),
+        yaxis=dict(title=tr("chart_irr_yaxis"), tickformat=".0%",
+                   range=[0, min(1.0, y_max * 1.22)]),
+        showlegend=False,
+        bargap=0.5,
+    )
+    return _apply_theme(fig)
+
+
 def build_irr_distribution(
     annualized_returns: np.ndarray,
     autocall_events:    np.ndarray,
@@ -155,11 +207,23 @@ def build_irr_distribution(
     Histogram of annualised IRR across all paths.
     Both traces share the same bin edges and are normalised over the TOTAL
     path count so bar heights are comparable (i.e. they add up to 100%).
+
+    Degenerate guard: when the outcome is near-certain (a single IRR node holds
+    ≥80% of paths, or the 1st–99th percentile spread is below 0.5% p.a.), the
+    histogram would be one unreadable spike — fall back to a discrete outcome
+    breakdown via ``_build_irr_discrete`` instead.
     """
     irr_all      = annualized_returns
     irr_called   = irr_all[autocall_events > 0]
     irr_maturity = irr_all[autocall_events == 0]
     n_total      = len(irr_all)
+
+    if n_total:
+        _counts   = np.unique(np.round(irr_all, 4), return_counts=True)[1]
+        top_share = float(_counts.max()) / n_total
+        spread    = float(np.percentile(irr_all, 99) - np.percentile(irr_all, 1))
+        if top_share >= 0.80 or spread < 0.005:
+            return _build_irr_discrete(irr_all, autocall_events, tr)
 
     # ── Adaptive bin edges + zoom window ───────────────────────────────
     # The distribution can be extremely narrow and concentrated (e.g. a note
@@ -599,12 +663,36 @@ def build_backtest_irr_scatter(
             "Worst Final Perf":tr("chart_worst_final_perf_axis"),
         },
     )
-    fig.add_hline(
-        y=0, line_dash="dash", line_color=_GREY,
-        annotation_text=tr("break_even"),
-        annotation_position="right",
-    )
-    fig.update_layout(yaxis=dict(tickformat=".1%"))
+
+    # Degenerate guard: when every issue window produced (essentially) the same
+    # IRR — a note that always autocalled at the same coupon — the points form a
+    # flat line floating in a huge empty grid that looks like a render error.
+    # Tighten the y-axis to a sensible band around the constant level and label
+    # it, so the chart reads as the deliberate "constant N% across all windows".
+    _irr = pd.to_numeric(bt["IRR"], errors="coerce").dropna()
+    _flat = len(_irr) > 0 and float(_irr.max() - _irr.min()) < 0.005
+    if _flat:
+        c   = float(_irr.mean())
+        pad = max(0.012, abs(c) * 0.6)
+        y0, y1 = c - pad, c + pad
+        fig.update_layout(yaxis=dict(tickformat=".1%", range=[y0, y1]))
+        fig.add_annotation(
+            xref="paper", x=0.5, y=c, yref="y", yshift=16,
+            text=tr("chart_irr_flat_note", v=f"{c:+.1%}", n=len(_irr)),
+            showarrow=False, font=dict(size=12, color=_GREY),
+            bgcolor="rgba(255,255,255,0.65)",
+        )
+        if y0 <= 0 <= y1:               # only draw break-even if it's in view
+            fig.add_hline(y=0, line_dash="dash", line_color=_GREY,
+                          annotation_text=tr("break_even"),
+                          annotation_position="right")
+    else:
+        fig.add_hline(
+            y=0, line_dash="dash", line_color=_GREY,
+            annotation_text=tr("break_even"),
+            annotation_position="right",
+        )
+        fig.update_layout(yaxis=dict(tickformat=".1%"))
     return _apply_theme(fig)
 
 
