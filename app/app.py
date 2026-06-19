@@ -209,8 +209,12 @@ def _render_underlying_card(name, sym, metrics, override, prices_1y, tr) -> None
     )
     m1, m2, m3, m4 = st.columns(4)
     iv, lp, rsi = _f("iv_3m"), _f("last_price"), _f("rsi_14")
+    _realized = _f("iv_source") == "realized"
+    _iv_lbl  = tr("ul_vol_3m_realized") if _realized else tr("ul_iv_3m")
+    _iv_help = tr("ul_vol_3m_realized_help") if _realized else tr("ul_iv_3m_help")
     m1.metric(tr("ul_market_cap"), _fmt_market_cap(_f("market_cap")))
-    m2.metric(tr("ul_iv_3m"),  f"{float(iv)*100:.1f}%" if iv  not in (None, "") else "—")
+    m2.metric(_iv_lbl, f"{float(iv)*100:.1f}%" if iv not in (None, "") else "—",
+              help=_iv_help)
     m3.metric(tr("ul_last_price"), f"{float(lp):,.2f}" if lp not in (None, "") else "—")
     m4.metric(tr("ul_rsi"),    f"{float(rsi):.0f}"     if rsi not in (None, "") else "—")
 

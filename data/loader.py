@@ -344,7 +344,8 @@ def _wilder_rsi(closes, period: int = 14):
 
 
 def _atm_iv(calls: pd.DataFrame, puts: pd.DataFrame, spot: float):
-    """Average of the ATM call and put implied vols (nearest strike to spot)."""
+    """ATM implied vol: the strike NEAREST to spot (~100% moneyness), averaging
+    the call and put at that strike. Returns None if no usable quote is found."""
     import numpy as np
     ivs = []
     for chain in (calls, puts):
@@ -360,9 +361,31 @@ def _atm_iv(calls: pd.DataFrame, puts: pd.DataFrame, spot: float):
     return float(np.mean(ivs)) if ivs else None
 
 
-def _iv_3m(ticker, sym: str, quote_type: str | None, spot):
-    """3-month implied vol. Equities: ATM IV at the expiry nearest +90 days.
-    Indices: the matching vol-index level. None when neither is available."""
+def _realized_vol(closes, window: int = 63):
+    """Annualised ~3-month realized vol: stdev of daily log-returns over the last
+    ``window`` (~63 trading-day) observations, scaled by √252. None if too few
+    points. Used as a fallback when an underlying has no listed options on Yahoo
+    (e.g. single European stocks), so it never gets a real implied figure."""
+    import numpy as np
+    c = np.asarray(closes, dtype=float)
+    c = c[np.isfinite(c) & (c > 0)]
+    if c.size < 21:
+        return None
+    r = np.diff(np.log(c[-(window + 1):]))
+    if r.size < 15:
+        return None
+    sd = float(np.std(r, ddof=1))
+    return sd * float(np.sqrt(252.0)) if np.isfinite(sd) and sd > 0 else None
+
+
+def _iv_3m(ticker, sym: str, quote_type: str | None, spot, closes=None):
+    """3-month vol, returned as ``(value, source)`` where source is "implied",
+    "realized", or None. Equities: ATM implied vol at the expiry nearest +90 days
+    (strike nearest spot, call/put averaged). Indices: the matching vol-index
+    level (also an implied figure). When neither is available — e.g. a single
+    European stock with no Yahoo option chain — falls back to a ~3M realized vol
+    computed from ``closes`` so the figure is still populated and honestly
+    labelled. ``(None, None)`` only when there is no price history either."""
     try:
         exps = ticker.options
     except Exception:
@@ -374,7 +397,7 @@ def _iv_3m(ticker, sym: str, quote_type: str | None, spot):
             oc = ticker.option_chain(best)
             iv = _atm_iv(oc.calls, oc.puts, spot)
             if iv is not None:
-                return iv
+                return iv, "implied"
         except Exception:
             pass
     vsym = _VOL_INDEX.get(sym) or _VOL_INDEX.get("^" + sym.lstrip("^"))
@@ -383,10 +406,13 @@ def _iv_3m(ticker, sym: str, quote_type: str | None, spot):
             import yfinance as yf
             h = yf.Ticker(vsym).history(period="5d")["Close"].dropna()
             if len(h):
-                return float(h.iloc[-1]) / 100.0
+                return float(h.iloc[-1]) / 100.0, "implied"
         except Exception:
             pass
-    return None
+    rv = _realized_vol(closes) if closes is not None else None
+    if rv is not None:
+        return rv, "realized"
+    return None, None
 
 
 def load_underlying_metrics(
@@ -415,7 +441,7 @@ def load_underlying_metrics(
     for sym, name in tickers.items():
         rec = {k: None for k in (
             "long_name", "type", "sector", "industry", "market_cap", "currency",
-            "last_price", "rsi_14", "iv_3m", "business_summary")}
+            "last_price", "rsi_14", "iv_3m", "iv_source", "business_summary")}
         try:
             t = yf.Ticker(sym)
             try:
@@ -433,22 +459,29 @@ def load_underlying_metrics(
             rec["business_summary"] = info.get("longBusinessSummary") or None
 
             # Last price: prefer the (reused) loaded close series, else Yahoo.
+            # Keep the close history around — it also feeds the realized-vol
+            # fallback for underlyings with no listed options (see _iv_3m).
+            _hist = None
             ser = (closes or {}).get(name)
             if ser is not None and len(ser):
-                rec["last_price"] = float(ser.dropna().iloc[-1])
-                rec["rsi_14"]     = _wilder_rsi(ser.dropna().values)
+                _ps = ser.dropna()
+                rec["last_price"] = float(_ps.iloc[-1])
+                rec["rsi_14"]     = _wilder_rsi(_ps.values)
+                _hist = _ps.values
             else:
                 rec["last_price"] = (info.get("currentPrice")
                                      or info.get("regularMarketPrice"))
                 try:
-                    h = t.history(period="6mo")["Close"]
+                    h = t.history(period="6mo")["Close"].dropna()
                     if len(h):
                         rec["last_price"] = rec["last_price"] or float(h.iloc[-1])
                         rec["rsi_14"]     = _wilder_rsi(h.values)
+                        _hist = h.values
                 except Exception:
                     pass
 
-            rec["iv_3m"] = _iv_3m(t, sym, rec["type"], rec["last_price"])
+            rec["iv_3m"], rec["iv_source"] = _iv_3m(
+                t, sym, rec["type"], rec["last_price"], _hist)
         except Exception as e:
             print(f"[loader] WARNING: could not load metrics for {sym}: {e}")
         out[name] = rec

@@ -62,7 +62,16 @@ _STRINGS: dict[str, tuple[str, str]] = {
     # ── Underlying breakdown (note structure expander + setup) ─────────────
     "ul_breakdown_header":   ("**Underlying Breakdown**",          "**Análisis por Subyacente**"),
     "ul_market_cap":         ("Market cap",                        "Capitalización"),
-    "ul_iv_3m":              ("3M implied vol",                    "Vol. implícita 3M"),
+    "ul_iv_3m":              ("3M ATM implied vol",                "Vol. implícita ATM 3M"),
+    "ul_vol_3m_realized":    ("3M realized vol",                   "Vol. realizada 3M"),
+    "ul_iv_3m_help":         ("At-the-money implied volatility — strike nearest spot "
+                              "(~100% moneyness), call & put averaged, expiry nearest +90 days.",
+                              "Volatilidad implícita at-the-money — strike más cercano al spot "
+                              "(~100% de moneyness), promedio de call y put, vencimiento más próximo a +90 días."),
+    "ul_vol_3m_realized_help": ("No listed options on Yahoo — annualised standard deviation of "
+                              "daily log-returns over the last ~63 trading days (≈3M).",
+                              "Sin opciones listadas en Yahoo — desviación estándar anualizada de los "
+                              "log-retornos diarios de los últimos ~63 días hábiles (≈3M)."),
     "ul_last_price":         ("Last price",                        "Último precio"),
     "ul_rsi":                ("RSI (14)",                          "RSI (14)"),
     "ul_sector":             ("Sector",                            "Sector"),

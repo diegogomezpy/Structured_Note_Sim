@@ -336,7 +336,8 @@ _LABELS: dict[str, dict[str, str]] = {
     # ── Underlying Breakdown section ──
     "underlying_breakdown":  {"en": "Underlying Breakdown",              "es": "Análisis por Subyacente"},
     "u_market_cap":          {"en": "Market cap",                        "es": "Capitalización"},
-    "u_iv_3m":               {"en": "3M implied vol",                    "es": "Vol. implícita 3M"},
+    "u_iv_3m":               {"en": "3M ATM implied vol",                "es": "Vol. implícita ATM 3M"},
+    "u_vol_3m_realized":     {"en": "3M realized vol",                   "es": "Vol. realizada 3M"},
     "u_last_price":          {"en": "Last price",                        "es": "Último precio"},
     "u_rsi":                 {"en": "RSI (14)",                          "es": "RSI (14)"},
     "u_sector":              {"en": "Sector",                            "es": "Sector"},
@@ -2753,9 +2754,11 @@ def _build_pdf_report(
 
             _long = _g("long_name") or _nm
             _sub  = " · ".join(s for s in (_g("type"), _g("sector")) if s)
+            _iv_key = ("u_vol_3m_realized" if _g("iv_source") == "realized"
+                       else "u_iv_3m")
             _band = [
                 (_t("u_market_cap", lang), _fmt_mcap(_g("market_cap"))),
-                (_t("u_iv_3m",      lang), _fmt_pct(_g("iv_3m"))),
+                (_t(_iv_key,        lang), _fmt_pct(_g("iv_3m"))),
                 (_t("u_last_price", lang), _fmt_num(_g("last_price"))),
                 (_t("u_rsi",        lang), _fmt_rsi(_g("rsi_14"))),
             ]
