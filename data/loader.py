@@ -455,6 +455,29 @@ def load_underlying_metrics(
     return out
 
 
+def translate_text(text: str | None, target_lang: str,
+                   source_lang: str = "auto") -> str | None:
+    """Best-effort machine translation — used to localise the English Yahoo
+    business summaries when prefilling a description in a non-English UI.
+
+    Returns the original text unchanged when target is English/empty, when the
+    text is blank, or on ANY failure (incl. the optional `deep-translator`
+    dependency or the network being unavailable). Never raises. Translates
+    paragraph-by-paragraph to respect the engine's length limit and keep the
+    blank-line breaks."""
+    if not text or not text.strip() or target_lang in (None, "", "en"):
+        return text
+    try:
+        from deep_translator import GoogleTranslator
+        gt = GoogleTranslator(source=source_lang, target=target_lang)
+        return "\n\n".join(gt.translate(p) if p.strip() else p
+                           for p in text.split("\n\n"))
+    except Exception as e:
+        print(f"[loader] translate_text failed ({type(e).__name__}: {e}); "
+              "keeping original text.")
+        return text
+
+
 def resolve_issuer_summary(name: str, ssl_verify: bool = True) -> str | None:
     """Best-effort: resolve an issuer NAME (e.g. 'BBVA', 'Bank Julius Baer') to a
     listed ticker via Yahoo search, then return that company's business summary —

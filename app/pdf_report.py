@@ -42,6 +42,13 @@ keys warn; malformed hex falls back to the default with a warning):
     "disclaimer_body":       "..."                # overrides the full "Important Information" body
   }
 
+The text content fields (report_title, footer_note, disclaimer_body) may be EITHER
+a plain string (one language, used as-is) OR a per-language dict, e.g.
+  "footer_note": {"en": "For information only…", "es": "Solo a título…"}
+in which case the report renders the field in its own language and falls back to
+the built-in translated default when the requested language is absent (so a
+Spanish-only firm disclaimer no longer bleeds into an English report).
+
 Branding affects the PDF only; the Streamlit UI theme is set separately in
 app/style.css + .streamlit/config.toml. Logo resolution order is local file →
 base64 → URL (see _load_logo). Chart colours are remapped from the fixed
@@ -56,7 +63,6 @@ import re
 import base64
 import colorsys
 import datetime
-import functools
 import urllib.request
 import warnings
 import numpy as np
@@ -127,6 +133,19 @@ def _validate_branding(branding: dict | None) -> None:
             f"Known keys: {sorted(_KNOWN_BRANDING_KEYS)}.",
             stacklevel=2,
         )
+
+
+def _brand_text(value, lang: str):
+    """Resolve a branding text field that may be a plain string (single language,
+    used as-is) OR a per-language dict like {"en": "...", "es": "..."}. For a dict,
+    returns the requested language; if that language is absent it returns None so
+    the caller falls back to the built-in translated default — this is what lets a
+    Spanish-only firm disclaimer NOT bleed into an English report. None/empty in,
+    None out."""
+    if isinstance(value, dict):
+        v = value.get(lang)
+        return v or None
+    return value or None
 
 
 def _branding_color(branding: dict | None, key: str,
@@ -1310,13 +1329,17 @@ class _NotePDF(FPDF):
     def underlying_block(self, long_name: str, logo_bytes: bytes | None,
                          subtitle: str, metrics: list[tuple[str, str]],
                          description: str, chart_png: bytes | None,
-                         chart_caption: str):
+                         chart_caption: str, section_title: str | None = None):
         """Self-contained per-underlying card — a tinted rounded panel, like the
         issuer block: logo + name + a type·sector line, the key figures as white
         chips (market cap / 3M IV / last price / RSI), the company description, and
         the trailing-1Y price chart (transparent, so the panel tint shows through).
         The whole card is measured up front and moved to a fresh page if it would
-        not fit, so it never splits across a page break."""
+        not fit, so it never splits across a page break.
+
+        ``section_title`` (passed only for the FIRST card) draws the section header
+        as part of the same atomic unit, so the title is never stranded on the
+        previous page above a card that breaks over."""
         x0 = self.l_margin
         w  = self.w - self.l_margin - self.r_margin
         pad     = 6.0
@@ -1336,10 +1359,15 @@ class _NotePDF(FPDF):
                  + (3 + desc_h if description else 0)
                  + (4 + cap_h + chart_h if chart_png else 0)
                  + pad)
+        title_h = 18.0 if section_title else 0.0
         y0 = self.get_y()
-        # Keep the whole card together — break before it rather than split it.
-        if y0 + box_h > self.h - 28:
+        # Keep the (optional) section title + the whole card together — break
+        # before the unit rather than split it.
+        if y0 + title_h + box_h > self.h - 28:
             self.add_page()
+            y0 = self.get_y()
+        if section_title:
+            self.section_title(section_title)
             y0 = self.get_y()
         # Panel.
         self.set_fill_color(*self.panel_color)
@@ -1593,22 +1621,37 @@ def _find_ticker_logo_file(ticker: str) -> Path | None:
     return None
 
 
-@functools.lru_cache(maxsize=256)
+# Successful logo loads are memoised; FAILURES (None) are deliberately NOT cached.
+# The old @lru_cache cached None too, so a single transient favicon/CDN fetch
+# failure at report-build time (timeout, proxy, egress blip) left that logo —
+# e.g. the BBVA issuer favicon — missing for the rest of a long-running app
+# session, with no retry until restart. Caching only non-None results means the
+# next report build re-attempts the fetch.
+_TICKER_LOGO_CACHE: dict[tuple, bytes] = {}
+
+
 def _load_ticker_logo(display_name: str, url: str | None,
                       symbol: str | None = None) -> bytes | None:
+    """Cached wrapper around _load_ticker_logo_uncached. Caches only successful
+    (non-None) loads so a transient fetch failure is retried, not stuck."""
+    key = (display_name, url, symbol)
+    cached = _TICKER_LOGO_CACHE.get(key)
+    if cached is not None:
+        return cached
+    data = _load_ticker_logo_uncached(display_name, url, symbol)
+    if data:
+        _TICKER_LOGO_CACHE[key] = data
+    return data
+
+
+def _load_ticker_logo_uncached(display_name: str, url: str | None,
+                               symbol: str | None = None) -> bytes | None:
     """Resolve a single underlying/ticker logo, local-folder-first.
 
     Looks for branding/ticker_logos/{STEM}.{png,jpg,...} where STEM is tried as
     the ticker symbol first, then the display name. Falls back to the supplied
-    URL. Never raises; returns None if nothing yields usable bytes.
-
-    Memoised (P5): the same ticker is resolved for the cover, the calibration
-    table and the performance table — without the cache each call re-did the
-    local-file probe and, when no file exists, a fresh ≤8s network fetch per
-    call. Keyed on (display_name, url, symbol), all hashable; None results are
-    cached too so a missing logo isn't re-fetched three times. The set of ticker
-    logos is independent of branding, so sharing the cache across reports in a
-    long-running session is safe and beneficial.
+    URL. Never raises; returns None if nothing yields usable bytes. Successful
+    results are memoised by the _load_ticker_logo wrapper (failures are retried).
     """
     for stem in (symbol, display_name):
         if not stem:
@@ -2586,10 +2629,13 @@ def _build_pdf_report(
     brand_logo_bytes = _load_logo(branding)
     # Optional content keys (B5)
     _b = branding or {}
-    report_title = _b.get("report_title") or None
+    # report_title / footer_note may be a plain string or an {en, es} dict, so a
+    # branded report renders these in the report's own language instead of the
+    # firm's single configured language.
+    report_title = _brand_text(_b.get("report_title"), lang)
     website      = _b.get("website", "") or ""
     contact      = _b.get("contact", "") or ""
-    footer_note  = _b.get("footer_note") or None
+    footer_note  = _brand_text(_b.get("footer_note"), lang)
 
     issuer  = getattr(terms, "issuer", "") or ""
     # Issuer logo: a user-uploaded image wins (normalised to an embeddable PNG);
@@ -2683,9 +2729,10 @@ def _build_pdf_report(
     # wins, and 'description' is the curated company blurb.
     if underlying_metrics and _inc("underlying_breakdown"):
         _uls = getattr(terms, "underlyings", {}) or {}
-        # Higher min_room so the section title isn't stranded above a card that
-        # then breaks to the next page (each card is atomic — see underlying_block).
-        pdf.start_section(_t("underlying_breakdown", lang), min_room=130.0)
+        # The section title is drawn by the FIRST card (section_title=...) so it
+        # stays glued to that card instead of being stranded above one that breaks
+        # to the next page. Each card is atomic — see underlying_block.
+        _ul_first = True
         for _nm in asset_names:
             _m  = underlying_metrics.get(_nm, {}) or {}
             _ov = _uls.get(_nm, {}) or {}
@@ -2712,7 +2759,10 @@ def _build_pdf_report(
                      or _load_ticker_logo(_nm, (logo_urls or {}).get(_nm, ""),
                                           (logo_tickers or {}).get(_nm)))
             _cap  = _t("fig_u_price", lang).format(name=_long)
-            pdf.underlying_block(_long, _logo, _sub, _band, _desc, _png, _cap)
+            pdf.underlying_block(
+                _long, _logo, _sub, _band, _desc, _png, _cap,
+                section_title=(_t("underlying_breakdown", lang) if _ul_first else None))
+            _ul_first = False
 
     # ── 3. Monte Carlo ─────────────────────────────────────────────────────
     # Low min_room: the metric band + first figure caption pack onto the Note
@@ -2992,7 +3042,8 @@ def _build_pdf_report(
     # page before the disclaimer.
     pdf.start_section(_t("disclaimer_title", lang), min_room=90.0)
     pdf.set_text_color(*_TEXT_SOFT)
-    _disclaimer_text = (_b.get("disclaimer_body") or _t("disclaimer_body", lang))
+    _disclaimer_text = (_brand_text(_b.get("disclaimer_body"), lang)
+                        or _t("disclaimer_body", lang))
     _disclaimer_paras = _disclaimer_text.split("\n\n")
     for idx, para in enumerate(_disclaimer_paras):
         is_last = (idx == len(_disclaimer_paras) - 1)

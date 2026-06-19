@@ -18,6 +18,11 @@ plotly>=6.8,<7
 # Market data
 yfinance>=1.4,<2
 
+# Optional: machine-translate pulled Yahoo descriptions into the UI language
+# (the issuer / underlying "prefill from Yahoo" buttons). Best-effort — the app
+# keeps the original English text if this is missing or the network is down.
+deep-translator>=1.11,<2
+
 # Dashboard
 streamlit>=1.58,<2
 

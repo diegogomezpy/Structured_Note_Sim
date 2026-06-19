@@ -33,7 +33,8 @@ from core.calibrator import HestonCalibrator
 from core.simulator  import HestonMultiSimulator
 from core.backtest   import run_backtest, snapped_obs_dates
 from data.loader     import (load_prices, load_dividends, build_dividend_schedule,
-                             load_underlying_metrics, resolve_issuer_summary)
+                             load_underlying_metrics, resolve_issuer_summary,
+                             translate_text)
 
 from translations import Translator
 from charts import (
@@ -335,6 +336,16 @@ def _resolve_issuer_summary_cached(name):
         return resolve_issuer_summary(name)
     except Exception:
         return None
+
+@st.cache_data(ttl=24 * 3600, show_spinner=False)
+def _translate_cached(text, target_lang):
+    """Best-effort translation of a (Yahoo) description into the UI language for
+    the prefill buttons. Cached so re-clicking is instant; falls back to the
+    original text on any failure."""
+    try:
+        return translate_text(text, target_lang)
+    except Exception:
+        return text
 
 @st.cache_data(ttl=3600)
 def _run_backtest_cached(tickers_tuple, terms_json,
@@ -639,7 +650,9 @@ if st.session_state["page"] == "setup":
                         except Exception:
                             _summ = ""
                         if _summ:
-                            st.session_state[_key] = _summ
+                            # Localise the English summary to the UI language.
+                            st.session_state[_key] = _translate_cached(
+                                _summ, "es" if lang_choice == "Español" else "en")
                             st.rerun()
                         else:
                             st.toast(tr("ul_metrics_failed"))
@@ -1002,7 +1015,8 @@ if st.session_state["page"] == "setup":
                          help=tr("setup_ul_prefill_help"), disabled=not issuer_input):
                 _isumm = _resolve_issuer_summary_cached(issuer_input.strip()) if issuer_input else None
                 if _isumm:
-                    st.session_state["setup_issuer_desc"] = _isumm
+                    st.session_state["setup_issuer_desc"] = _translate_cached(
+                        _isumm, "es" if lang_choice == "Español" else "en")
                     st.rerun()
                 else:
                     st.toast(tr("ul_metrics_failed"))
