@@ -180,16 +180,22 @@ def _build_irr_discrete(
         colors.append(col)
 
     fig = go.Figure(go.Bar(
-        x=labels, y=shares, text=texts, textposition="outside",
+        x=labels, y=shares, text=texts,
+        # "auto": a near-100% dominant bar gets its label INSIDE (Plotly
+        # auto-contrasts the text colour), so it never spills above the plot
+        # into the header; the small bars, with no room inside, get it outside.
+        textposition="auto", insidetextanchor="end",
         marker_color=colors, width=0.5, cliponaxis=False,
         textfont=dict(size=13),
     ))
+    # No chart title: the app renders an "IRR distribution" subheader directly
+    # above this figure and the PDF strips chart titles, so a title here only
+    # duplicates that header (and is what the tall bar's label collided with).
     y_max = max(shares) if shares else 1.0
     fig.update_layout(
-        title=tr("chart_irr_disc_title"),
         xaxis=dict(title="", type="category"),
         yaxis=dict(title=tr("chart_irr_yaxis"), tickformat=".0%",
-                   range=[0, min(1.0, y_max * 1.22)]),
+                   range=[0, min(1.0, max(y_max + 0.12, 0.5))]),
         showlegend=False,
         bargap=0.5,
     )
