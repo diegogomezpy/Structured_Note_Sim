@@ -554,8 +554,8 @@ def build_path_wof_chart(
     the periods that never happened. Each marker's legend entry spells out what
     occurred (coupon paid / missed, autocall, and at maturity the knock-in /
     par-redemption outcome) so the path reads on its own. Pass ``asset_paths`` to
-    overlay the individual underlyings; the Monte Carlo explorer omits them to
-    keep the focus on the worst-of. ``title`` overrides the default header."""
+    overlay the individual underlyings behind the worst-of (dashed). ``title``
+    overrides the default header."""
     asset_colors = [_BLUE, _BLUE_LIGHT, _NAVY, "#f39c12", "#9b59b6"]
     fig = go.Figure()
 

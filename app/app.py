@@ -34,8 +34,7 @@ from core.simulator  import HestonMultiSimulator
 from core.backtest   import run_backtest, snapped_obs_dates
 from data.loader     import (load_prices, load_dividends, build_dividend_schedule,
                              load_underlying_metrics, resolve_issuer_summary,
-                             fetch_business_summary, summarize_business_summary,
-                             translate_text)
+                             fetch_business_summary, translate_text)
 
 from translations import Translator
 from charts import (
@@ -219,18 +218,11 @@ def _render_underlying_card(name, sym, metrics, override, prices_1y, tr) -> None
     m3.metric(tr("ul_last_price"), f"{float(lp):,.2f}" if lp not in (None, "") else "—")
     m4.metric(tr("ul_rsi"),    f"{float(rsi):.0f}"     if rsi not in (None, "") else "—")
 
-    # A user-entered description wins as-is; the raw Yahoo summary fallback is
-    # condensed so the card shows a one-liner, not a paragraph of boilerplate.
-    # The full Yahoo text stays available behind a toggle.
-    _full_desc = metrics.get("business_summary")
-    desc = override.get("description")
-    if not desc:
-        desc = summarize_business_summary(_full_desc) or ""
+    # A user-entered description wins as-is; otherwise show the full Yahoo
+    # business summary.
+    desc = override.get("description") or metrics.get("business_summary") or ""
     if desc:
         st.caption(desc)
-    if _full_desc and _full_desc.strip() and _full_desc.strip() != (desc or "").strip():
-        with st.expander(tr("ul_show_full_desc")):
-            st.caption(_full_desc)
 
     cols = getattr(prices_1y, "columns", [])
     if prices_1y is not None and name in cols:
@@ -772,8 +764,6 @@ if st.session_state["page"] == "setup":
                                 _summ = _fetch_ul_summary_cached(_sym) or ""
                             except Exception:
                                 _summ = ""
-                        # Drop in a short blurb, not the full Yahoo boilerplate.
-                        _summ = summarize_business_summary(_summ) or ""
                         if _summ:
                             # Localise the English summary to the UI language.
                             _tgt = "es" if lang_choice == "Español" else "en"
@@ -1143,7 +1133,6 @@ if st.session_state["page"] == "setup":
                          help=tr("setup_ul_prefill_help"), disabled=not issuer_input):
                 with st.spinner(tr("setup_ul_prefill_spinner")):
                     _isumm = _resolve_issuer_summary_cached(issuer_input.strip()) if issuer_input else None
-                _isumm = summarize_business_summary(_isumm)
                 if _isumm:
                     _itgt = "es" if lang_choice == "Español" else "en"
                     _iout = _translate_cached(_isumm, _itgt)
@@ -1926,11 +1915,13 @@ elif st.session_state["page"] == "dashboard":
                         (_cpn_rows[i]["coupon_amount"] > 0) if i < len(_cpn_rows) else False
                         for i in range(len(obs_steps_i))
                     ]
-                    # Monte Carlo explorer shows ONLY the worst-of line (no per-
-                    # asset paths); the chart truncates the note's life at the call.
+                    # Worst-of line with the underlying asset performances behind
+                    # it (dashed, like the historical explorer); the separate raw-
+                    # price chart is dropped from screen. Truncates at the call.
                     _sp_wof_fig = build_path_wof_chart(
                         wof_paths[pn], autocall_q, obs_steps_i, obs_labels,
                         run_terms.knock_in_barrier, pn, tr,
+                        asset_paths=asset_perf_pn, asset_names=asset_names,
                         autocall_barrier=run_terms.autocall_barrier,
                         autocall_schedule=_ac_sched_st,
                         coupon_flags=coupon_flags, knock_in=_ki,

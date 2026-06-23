@@ -57,7 +57,6 @@ _STRINGS: dict[str, tuple[str, str]] = {
     "leg_no_knock_in":          ("no knock-in · redeemed at par",   "sin knock-in · reembolso a la par"),
     "explorer_panel_name":      ("Panel name (chart title)",        "Nombre del panel (título)"),
     "explorer_panel_name_ph":   ("e.g. Best autocall scenario",     "p. ej. Mejor escenario de autocall"),
-    "ul_show_full_desc":        ("Show full description",           "Ver descripción completa"),
 
     # ── Tab 4 — Correlation ────────────────────────────────────────────────
     "asset":                    ("Asset",                            "Activo"),
