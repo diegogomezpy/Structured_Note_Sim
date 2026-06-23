@@ -53,31 +53,31 @@ through from a Streamlit toggle to the cached `sim.run(...)` call.
 
 ## Status
 
-**Validated.** It matches the numpy engine within Monte-Carlo error (terminal
-moments, correlation, and priced-note stats all Δ < 0.002 at 16k paths) and is
-already **~1.26× faster even SERIAL** — measured on a host with no OpenMP, so the
-`omp` pragmas were ignored and it ran single-threaded scalar against single-
-threaded numpy. With OpenMP across cores and the SIMD work below, that grows
-substantially.
+**Validated and SIMD-optimized.** Matches the numpy engine within Monte-Carlo
+error (terminal moments, correlation, priced-note stats all Δ < 0.004 at 50k
+paths) and runs **~2.24× faster SINGLE-THREADED** at 50k paths (`-march=native
+-fopenmp-simd -fveclib=Accelerate`). That was measured on a host *without* OpenMP,
+so it is the SIMD win alone — the multicore factor stacks on top wherever libomp
+is present (Linux CI wheels, or `brew install libomp` locally). The inner per-step
+update is vectorised across a contiguous block of paths; the vector libm runs
+`sqrt`/`exp` on whole SIMD registers.
 
 ## Optimization roadmap
 
-The inner per-asset update is still **scalar**. Serial, that already edges out
-numpy (no interpreter, `-O3`); with OpenMP it gets the multicore factor on top.
-The decisive win — beating numpy's vectorized SIMD `exp` — is the next iteration:
+Done: **block-SIMD restructure** (paths contiguous in the inner loop) and
+**vectorized `sqrt`/`exp`** (via `-fveclib`) — the 1.26× scalar kernel → 2.24×.
+OpenMP across path-blocks is wired (`#pragma omp parallel for`) and multiplies by
+core count wherever the runtime is linked. Remaining levers:
 
-1. **SIMD over a block of paths.** Restructure the inner loop to update a
-   contiguous *block* of paths per step (paths in the inner dimension) so `-O3
-   -march=native` auto-vectorises it (4–8 paths per AVX instruction). This is the
-   single biggest change and the reason a naive scalar kernel (CPU or numba) does
-   *not* beat numpy at scale.
-2. **Vectorized `exp`.** Swap scalar `std::exp` for a vector-math library
-   (SLEEF, libmvec, or Eigen `array().exp()`) over the path block.
-3. **Faster RNG.** Replace `std::mt19937_64` + `std::normal_distribution` with a
-   SIMD PCG or Intel MKL VSL `vdRngGaussian` (itself vectorized).
-4. **Memory at scale.** For ≫100k paths, store only the observation columns
-   on the C++ side (the payoff needs ~K columns, not all N) — the same trick the
-   backtest uses — so 1M paths fits in RAM.
+1. **Faster RNG** — now the single-thread bottleneck (the exp is vectorised, so
+   scalar `std::mt19937_64` + `std::normal_distribution` dominates). Swap for a
+   SIMD PCG / xoshiro with a vectorised Box–Muller, or Intel MKL VSL
+   `vdRngGaussian`. Biggest remaining single-thread win.
+2. **Memory at scale.** For ≫100k paths, store only the observation columns on the
+   C++ side (the payoff needs ~K columns, not all N) — the trick the backtest uses
+   — so 1M paths fits in RAM. (This engine keeps full paths because the app's fans
+   and explorer need them; a pricing-only mode would drop them.)
+3. **Tune `BLK`** (currently 64) per target ISA.
 
-Expected after (1)–(3): ~5–20× over numpy. Phase 2 (GPU / CUDA) is the higher
-ceiling (~50–300×) but needs GPU hardware; see `docs/architecture_review.md`.
+Phase 2 (GPU / CUDA) is the higher ceiling (~50–300×) but needs GPU hardware; see
+`docs/architecture_review.md`.
