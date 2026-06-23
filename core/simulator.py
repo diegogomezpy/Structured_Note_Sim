@@ -350,13 +350,22 @@ class HestonMultiSimulator:
     # Core simulation
     # ------------------------------------------------------------------
 
-    def run(self, keep_steps: Optional[list] = None) -> dict:
+    def run(self, keep_steps: Optional[list] = None,
+            engine: str = "numpy") -> dict:
         """
         Simulate all paths using:
           - Milstein scheme for the variance process
           - Antithetic variates (output has 2*n_paths paths)
           - Student-t copula if t_dof is set, else Gaussian
           - Vectorized realized correlation (no path loop)
+
+        engine : "numpy" (default) | "numba"
+            "numpy" is the reference implementation (bit-identical to the original
+            and to prior versions). "numba" is an OPTIONAL JIT engine that runs the
+            same model parallelised across cores; it keeps full daily paths and is
+            validated against the numpy engine by CONVERGENCE of statistics, not
+            bit-equality (different RNG stream + fastmath). It ignores keep_steps
+            (always full storage) and requires `pip install numba`.
 
         Storage modes
         -------------
@@ -424,6 +433,9 @@ class HestonMultiSimulator:
         # unchanged and the per-element arithmetic is the same formula, so results
         # are bit-identical to the per-asset version (verified against the prior
         # implementation), just faster.
+        if engine not in ("numpy", "numba"):
+            raise ValueError(f"engine must be 'numpy' or 'numba', got {engine!r}")
+
         kappa = np.array([p.kappa for p in self.params])
         theta = np.array([p.theta for p in self.params])
         xi    = np.array([p.xi    for p in self.params])
@@ -446,6 +458,18 @@ class HestonMultiSimulator:
         for _c, _t in enumerate(kept):
             col_for[_t] = _c
 
+        # ── Numba engine ─────────────────────────────────────────────────────
+        # Hands the time loop to the JIT kernel (parallel across base paths), then
+        # rejoins the shared tail below (terminal values + realized-corr) on the
+        # full daily arrays it returns. Always full storage; keep_steps ignored.
+        if engine == "numba":
+            from core.simulator_numba import simulate_full
+            S, V = simulate_full(
+                S0v, V0v, kappa, theta, xi, mu, self.L, dt_arr, sdt_arr,
+                self.div_schedule, self.t_dof, self.seed, n_base, n, self.N)
+            return self._finalize(S, V, n, n_base, feller_results, full=True)
+
+        # ── numpy engine (reference) ─────────────────────────────────────────
         # Stored TIME-FIRST as (K, n_total, n): each retained step writes the
         # contiguous block [col] (paths × assets) rather than a strided per-path
         # column (a column write into a (n_paths, N+1) array touches a separate
@@ -520,7 +544,12 @@ class HestonMultiSimulator:
         S = [np.ascontiguousarray(out_S[:, :, i].T) for i in range(n)]
         V = ([np.ascontiguousarray(out_V[:, :, i].T) for i in range(n)]
              if full else None)
+        return self._finalize(S, V, n, n_base, feller_results, full=full)
 
+    def _finalize(self, S, V, n, n_base, feller_results, full):
+        """Shared post-loop tail for both engines: store the paths, compute
+        terminal values, and (full-storage only) the realized/effective
+        correlation diagnostics. Returns the public results dict."""
         self.S_paths = S
         self.V_paths = V
 

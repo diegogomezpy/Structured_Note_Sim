@@ -34,3 +34,9 @@ Pillow>=12,<13
 # PyMuPDF (fitz) is NOT a runtime dep — it's only used by scripts/verify_pdf.py
 # to rasterise PDFs for eyeballing. Install it ad hoc for verification:
 #   pip install "PyMuPDF>=1.27,<2"
+
+# numba is OPTIONAL — only for HestonMultiSimulator.run(engine="numba"), a
+# parallel JIT engine validated against the default numpy engine (see
+# scripts/compare_engines.py). The deployed app uses engine="numpy" and never
+# imports numba, so it is kept out of the default install:
+#   pip install "numba>=0.60"
