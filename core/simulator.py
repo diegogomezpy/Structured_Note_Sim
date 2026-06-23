@@ -54,6 +54,13 @@ from dataclasses import dataclass, field
 from typing import Optional
 
 
+# Paths used for the realized/effective correlation DIAGNOSTIC (not the payoff).
+# A 3×3 correlation over this many paths × (N-1) steps is already converged, so
+# capping it keeps the post-sim tail cheap at large path counts. Full paths are
+# still kept for the fans and the path explorer.
+_CORR_DIAG_PATHS = 8000
+
+
 # ---------------------------------------------------------------------------
 # Parameter container
 # ---------------------------------------------------------------------------
@@ -510,18 +517,28 @@ class HestonMultiSimulator:
         # per-asset arrays, with no 3-D allocation at all: measured ~3x faster and
         # lower peak memory, matching the old einsum to machine epsilon.
 
+        # This is a DIAGNOSTIC (the realized-vs-input correlation heatmap), not a
+        # payoff input, so a representative subsample of the base paths is plenty:
+        # a 3×3 correlation over n_diag×(N-1) samples is converged far below n_base.
+        # The log/diff/divide below are O(paths×steps) — the dominant cost of the
+        # post-sim tail at large path counts — so capping the subsample keeps a
+        # 250k-path run from spending seconds on a heatmap that 8k paths estimate
+        # identically. The full S_paths/V_paths are untouched (the fans and path
+        # explorer still get every path).
+        n_diag = min(n_base, _CORR_DIAG_PATHS)
+
         # Per-asset daily log-returns, de-jumped for dividends. A deterministic
         # ex-date drop adds log(1-d) to that step's return for ONE asset only,
         # which would spuriously decorrelate it from the others (and the jumps are
         # not part of the stochastic co-movement being checked); strip it first.
         daily = []
         for i in range(n):
-            d = np.diff(np.log(S[i][:n_base]), axis=1)          # (n_base, N)
+            d = np.diff(np.log(S[i][:n_diag]), axis=1)          # (n_diag, N)
             if self.div_schedule is not None:
                 d = d - np.log(1.0 - self.div_schedule[i])[np.newaxis, :]
             daily.append(d)
 
-        denom = (self.N - 1) * n_base
+        denom = (self.N - 1) * n_diag
 
         def _pooled_corr(cols: list) -> np.ndarray:
             """Sample Pearson correlation pooled over paths and time, given one
@@ -556,7 +573,7 @@ class HestonMultiSimulator:
         # actually fed into the Cholesky, so "realized vs input (corr_SS)" is a
         # like-for-like check of the engine (matches corr_SS to <0.3% in tests).
         realized_corr = _pooled_corr([
-            daily[i] / np.sqrt(np.maximum(V[i][:n_base, :-1], 1e-12))
+            daily[i] / np.sqrt(np.maximum(V[i][:n_diag, :-1], 1e-12))
             for i in range(n)
         ])
 
