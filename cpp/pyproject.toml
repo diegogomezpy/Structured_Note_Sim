@@ -1,0 +1,16 @@
+[build-system]
+requires = ["scikit-build-core>=0.8", "pybind11>=2.11"]
+build-backend = "scikit_build_core.build"
+
+[project]
+name = "heston-cpp"
+version = "0.1.0"
+description = "Phase-1 C++ Heston engine for Structured_Note_Sim (optional fast path)"
+requires-python = ">=3.10"
+
+[tool.scikit-build]
+cmake.version = ">=3.18"
+wheel.expand-macos-universal-tags = true
+# Local dev tunes for the host; CI overrides with a portable baseline (see
+# .github/workflows/wheels.yml).
+cmake.args = ["-DHESTON_NATIVE=ON"]

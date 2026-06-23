@@ -1,0 +1,40 @@
+# Build portable wheels for the optional C++ engine (cpp/heston_cpp) so the app
+# can `pip install` a prebuilt binary instead of compiling at deploy time.
+# Manual / tag-triggered — the core app does not depend on this.
+name: build-cpp-wheels
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ["cpp-v*"]
+
+jobs:
+  wheels:
+    name: wheels on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build wheels
+        uses: pypa/cibuildwheel@v2.21
+        with:
+          package-dir: cpp
+        env:
+          # Skip 32-bit/musl/PyPy; build CPython 3.10–3.13.
+          CIBW_BUILD: "cp310-* cp311-* cp312-* cp313-*"
+          CIBW_SKIP: "*-musllinux_* *_i686 *-win32 pp*"
+          # Portable baseline, NOT -march=native (would bake in the CI host's ISA).
+          CIBW_ENVIRONMENT: "CMAKE_ARGS=-DHESTON_NATIVE=OFF"
+          # OpenMP for the manylinux / macOS builders.
+          CIBW_BEFORE_ALL_LINUX: "yum install -y libgomp || apt-get update && apt-get install -y libgomp1"
+          CIBW_BEFORE_ALL_MACOS: "brew install libomp"
+          CIBW_TEST_COMMAND: "python -c \"import heston_cpp; print(heston_cpp.__doc__)\""
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cpp-wheels-${{ matrix.os }}
+          path: ./wheelhouse/*.whl
