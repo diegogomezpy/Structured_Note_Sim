@@ -1867,14 +1867,27 @@ elif st.session_state["page"] == "dashboard":
                                       obs_steps=_obs_steps, obs_times=_obs_times)
             s0_values    = [p.S0 for p in cal_result.params]
 
-            # Memory: store the display arrays as float32 (halves the footprint).
-            # All payoff statistics in note_results were already computed at
-            # float64 by price_note above, and everything downstream (percentile
-            # fans, path explorer, per-asset perf) is display-level.
+            # Precompute the percentile fan ENVELOPES once, here, so the charts never
+            # rescan the full path arrays on a rerun (and the arrays needn't be kept
+            # in RAM just to feed the fans). Worst-of fan is in perf space; the
+            # per-asset fans in price space. Tiny: (7, N+1) and (n, 7, N+1).
+            _PCTS = [1, 5, 25, 50, 75, 95, 99]
+            wof_bands   = np.percentile(wof_paths, _PCTS, axis=0).astype(np.float32)
+            asset_bands = np.stack(
+                [np.percentile(sim_prices[:, :, i], _PCTS, axis=0) for i in range(n_assets)]
+            ).astype(np.float32)
+
+            # Storage: the only per-path array still needed is the explorer's display
+            # data. Keep it as float16 PERFORMANCE (price/S0): perf is bounded ~[0,~20]
+            # so float16 never overflows (raw prices could), it halves the footprint
+            # vs float32, and the ~5e-4 rounding is invisible on a chart. The worst-of
+            # path is derived on the fly from it in the explorer, so worst_of_paths is
+            # NOT stored. Payoff stats in note_results stay float64-exact.
             st.session_state["results"] = {
                 **note_results,
-                "worst_of_paths": _store_array(wof_paths.astype(np.float32), "wof"),
-                "sim_prices":     _store_array(sim_prices.astype(np.float32), "sp"),
+                "perf_paths":     _store_array(perf_paths.astype(np.float16), "perf"),
+                "wof_bands":      wof_bands,
+                "asset_bands":    asset_bands,
                 "asset_names":    list(selected_tickers.values()),
                 "s0_values":      s0_values,
                 "params":         cal_result.params,
@@ -1890,7 +1903,7 @@ elif st.session_state["page"] == "dashboard":
                 "engine_used":    _eng_used,
                 "run_secs":       _run_secs,
             }
-            # Release the float64 working set NOW that the float32 display copies are
+            # Release the float64 working set NOW that the compact display copies are
             # stored — don't hold the big cubes (sim_prices/perf_paths f64, ~hundreds
             # of MB) until the next rerun unwinds the frame. note_results' arrays live
             # on inside session_state (the spread copied the refs), so dropping the
@@ -1910,6 +1923,12 @@ elif st.session_state["page"] == "dashboard":
 
     # ── Tab structure (always rendered) ──────────────────────────────────
     R        = st.session_state["results"]   # None until simulation runs
+    # A result cached by an older app version (before the perf_paths/bands storage
+    # schema) survives a hot-reload in session_state — discard it rather than
+    # KeyError on the new keys; the user just re-runs to regenerate it.
+    if R is not None and "perf_paths" not in R:
+        st.session_state["results"] = R = None
+        gc.collect()
     _has_sim = R is not None
 
     # Resolve live issue date
@@ -1926,9 +1945,10 @@ elif st.session_state["page"] == "dashboard":
         if _live_issue_date and run_terms.issue_date != _live_issue_date:
             run_terms = NoteTerms.from_dict({**R["terms_snapshot"], "issue_date": _live_issue_date})
         asset_names = R.get("asset_names") or st.session_state.get("last_asset_names") or list(selected_tickers.values())
-        wof_paths   = R["worst_of_paths"]
-        sim_prices  = R["sim_prices"]
-        N           = wof_paths.shape[1] - 1
+        # Display perf paths (float16, per-asset) — the explorer's only big array.
+        # The fans use the precomputed bands; worst-of is derived per-path below.
+        perf_disp   = R["perf_paths"]
+        N           = R["wof_bands"].shape[1] - 1
         # Real-calendar grid (stored by the run block); fall back to the old
         # uniform grid for results cached before this feature.
         t_grid      = R.get("t_grid_years")
@@ -1987,9 +2007,10 @@ elif st.session_state["page"] == "dashboard":
                 R["expected_irr"], run_terms.coupon_pa, tr,
             )
             _fig_wof = build_wof_fan(
-                wof_paths, t_grid, run_terms.knock_in_barrier, obs_pairs, tr,
+                None, t_grid, run_terms.knock_in_barrier, obs_pairs, tr,
                 autocall_barrier=run_terms.autocall_barrier,
                 autocall_schedule=_ac_sched_t,
+                bands=R["wof_bands"],
             )
             _fig_corr_input = build_corr_heatmap(R["corr_SS"], asset_names, tr("corr_input"))
             # Cache MC figures for PDF generation (used by sidebar PDF button)
@@ -2070,7 +2091,8 @@ elif st.session_state["page"] == "dashboard":
                 st.markdown(tr("individual_paths_md"))
                 _individual_figs = []
                 for i, name in enumerate(asset_names):
-                    _ind_fig = build_fan_chart(sim_prices[:, :, i], name, t_grid, obs_pairs, tr)
+                    _ind_fig = build_fan_chart(None, name, t_grid, obs_pairs, tr,
+                                               bands=R["asset_bands"][i])
                     _individual_figs.append((name, _ind_fig))
                     st.plotly_chart(_ind_fig, use_container_width=True)
                 # Cache per-underlying fans for the PDF (Price Paths analysis).
@@ -2087,7 +2109,7 @@ elif st.session_state["page"] == "dashboard":
             # return band, coupon-paid periods) and steps through the matches. The
             # filter runs over the per-path arrays price_note already returns, so
             # there is no second payoff pass — see _path_filter_matches.
-            max_path     = sim_prices.shape[0] - 1
+            max_path     = perf_disp.shape[0] - 1
             n_obs_mc     = len(obs_times_l)
             _mc_disp_sym = {disp: sym for sym, disp in selected_tickers.items()}
             _mc_total    = R.get("total_returns")
@@ -2178,14 +2200,17 @@ elif st.session_state["page"] == "dashboard":
                     st.caption(tr("explorer_match_caption", k=pos + 1, m=M, n=pn))
 
                     autocall_q    = int(R["autocall_events"][pn])
-                    s0_arr        = np.array(R.get("s0_values") or [p.S0 for p in R["params"]])
-                    asset_perf_pn = sim_prices[pn] / s0_arr[np.newaxis, :]
+                    # perf_disp already holds price/S0 (float16); widen for math/display.
+                    asset_perf_pn = np.asarray(perf_disp[pn], dtype=np.float64)
+                    # Worst-of for THIS path, derived on the fly (worst_of_paths is no
+                    # longer stored — min over assets at each daily step).
+                    _wof_path     = asset_perf_pn.min(axis=1)
                     _ki           = bool(R["knock_in_triggered"][pn])
                     # Rich per-observation legend entries via the canonical engine
                     # (replay_note honours memory / coupon basket / autocall-only).
                     _perf_obs_pn = asset_perf_pn[obs_steps_i, :]
                     _cpn_rows    = replay_note(_perf_obs_pn, run_terms)["rows"]
-                    _wof_levels  = [float(wof_paths[pn, s]) for s in obs_steps_i]
+                    _wof_levels  = [float(_wof_path[s]) for s in obs_steps_i]
                     _marker_info = _build_path_marker_info(
                         _cpn_rows, autocall_q, len(obs_steps_i), _wof_levels,
                         _ki, run_terms, tr)
@@ -2193,7 +2218,7 @@ elif st.session_state["page"] == "dashboard":
                     # it (dashed, like the historical explorer); the separate raw-
                     # price chart is dropped from screen. Truncates at the call.
                     _sp_wof_fig = build_path_wof_chart(
-                        wof_paths[pn], autocall_q, obs_steps_i, obs_labels,
+                        _wof_path, autocall_q, obs_steps_i, obs_labels,
                         run_terms.knock_in_barrier, pn, tr,
                         asset_paths=asset_perf_pn, asset_names=asset_names,
                         autocall_barrier=run_terms.autocall_barrier,
@@ -2220,7 +2245,7 @@ elif st.session_state["page"] == "dashboard":
                     principal = float(R["principal_payoffs"][pn])
                     coupons   = float(R["coupon_payoffs"][pn])
                     irr       = float(R["annualized_returns"][pn])
-                    worst_f   = float(wof_paths[pn, -1])
+                    worst_f   = float(_wof_path[-1])
                     ki        = bool(R["knock_in_triggered"][pn])
 
                     if autocall_q > 0:

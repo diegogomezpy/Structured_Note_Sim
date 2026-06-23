@@ -273,15 +273,20 @@ def build_irr_distribution(
 # ---------------------------------------------------------------------------
 
 def build_fan_chart(
-    paths:      np.ndarray,   # (n_paths, N+1) — single asset
+    paths:      np.ndarray | None,   # (n_paths, N+1) single asset, or None if bands given
     asset_name: str,
     t_grid:     np.ndarray,
     obs_labels: list[tuple[str, float]],  # [(label, t), ...] e.g. [("3M", 0.25)]
     tr:         Translator,
+    bands:      np.ndarray | None = None,  # precomputed (7, N+1) percentile bands
 ) -> go.Figure:
-    S0 = paths[:, 0].mean()
+    # `bands` is the [1,5,25,50,75,95,99]-percentile envelope, precomputed once at
+    # run-time so this doesn't rescan the full path array on every rerun (and the
+    # array need not be kept in RAM just for the fan). Falls back to computing it.
     pcts = [1, 5, 25, 50, 75, 95, 99]
-    bands = np.percentile(paths, pcts, axis=0)
+    if bands is None:
+        bands = np.percentile(paths, pcts, axis=0)
+    S0 = float(bands[3, 0])        # every path starts at S0, so any pct at t=0 == S0
     # index map: 0=1st 1=5th 2=25th 3=median 4=75th 5=95th 6=99th
     fig = go.Figure()
     fig.add_trace(go.Scatter(
@@ -332,16 +337,20 @@ def build_fan_chart(
 # ---------------------------------------------------------------------------
 
 def build_wof_fan(
-    worst_of_paths:   np.ndarray,
+    worst_of_paths:   np.ndarray | None,   # or None when `bands` is supplied
     t_grid:           np.ndarray,
     knock_in_barrier: float,
     obs_labels:       list[tuple[str, float]],
     tr:               Translator,
     autocall_barrier: float | None = None,
     autocall_schedule: list[tuple[float, float]] | None = None,
+    bands:            np.ndarray | None = None,  # precomputed (7, N+1) percentile bands
 ) -> go.Figure:
+    # Precomputed once at run-time (see build_fan_chart) so this doesn't rescan the
+    # full worst-of array on every rerun. Falls back to computing it.
     pcts = [1, 5, 25, 50, 75, 95, 99]
-    bands = np.percentile(worst_of_paths, pcts, axis=0)
+    if bands is None:
+        bands = np.percentile(worst_of_paths, pcts, axis=0)
     # index map: 0=1st 1=5th 2=25th 3=median 4=75th 5=95th 6=99th
     fig = go.Figure()
     fig.add_trace(go.Scatter(
