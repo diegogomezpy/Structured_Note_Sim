@@ -9,6 +9,7 @@ import random
 import sys
 import time
 import pathlib
+import tempfile
 
 _ROOT = pathlib.Path(__file__).parent.parent
 _APP  = pathlib.Path(__file__).parent
@@ -313,12 +314,60 @@ def _safe_paths(ram_gb: float, n_assets: int, n_steps: int, budget: float = 0.5)
     return max(int(raw // 1000) * 1000, 1000)
 
 
+# ── Optional disk-backing of the retained display arrays ──────────────────────
+# With "store paths on disk" on, the big per-path display arrays (sim_prices,
+# worst_of_paths) are written to a temp .npy and held as read-only np.memmaps, so
+# they live in EVICTABLE OS page cache instead of locked process RAM — the machine
+# stays responsive while browsing results on a tight box. The chart/explorer code
+# reads them transparently (it only slices and np.percentiles — never mutates), so
+# nothing downstream changes. This does NOT raise the path ceiling: the run's
+# transient float64 working set is still in RAM (that's what the memory guard caps).
+_MMAP_DIR = pathlib.Path(tempfile.gettempdir()) / "snsim_paths"
+
+
+def _store_array(arr: np.ndarray, tag: str):
+    """Return what to keep in session_state for a big display array: the array
+    itself, or — when disk-backing is on — a read-only memmap of it on disk.
+    Falls back to the in-RAM array if the write fails."""
+    if not st.session_state.get("store_on_disk"):
+        return arr
+    try:
+        _MMAP_DIR.mkdir(parents=True, exist_ok=True)
+        path = _MMAP_DIR / f"{tag}_{os.getpid()}_{int(time.time() * 1e6)}.npy"
+        np.save(path, arr)                       # the in-RAM `arr` is freed on return
+        st.session_state.setdefault("_mmap_files", []).append(str(path))
+        return np.load(path, mmap_mode="r")
+    except Exception:
+        return arr
+
+
+def _purge_mmap_files() -> None:
+    """Delete the previous run's temp path files. Call AFTER the old results (and
+    thus the memmap objects referencing them) have been dropped. Also sweeps any
+    files older than a day, so a crashed session can't leak temp arrays forever."""
+    for _f in st.session_state.get("_mmap_files", []):
+        try:
+            os.unlink(_f)
+        except OSError:
+            pass
+    st.session_state["_mmap_files"] = []
+    try:                                              # belt-and-suspenders sweep
+        _cutoff = time.time() - 86_400
+        for _p in _MMAP_DIR.glob("*.npy"):
+            if _p.stat().st_mtime < _cutoff:
+                _p.unlink(missing_ok=True)
+    except OSError:
+        pass
+
+
 _DEFAULTS = {
     "page":             "setup",   # "setup" | "dashboard"
     "run_terms":        None,
     "selected_tickers": None,
     "n_paths":          10000,
     "engine":           "numpy",  # "numpy" | "cpp" (compiled engine, if built)
+    "store_on_disk":    False,    # disk-back the retained path arrays (lower RAM)
+    "_mmap_files":      [],       # temp .npy paths to clean up on the next run
     "seed":             42,
     "results":          None,
     "path_num":         0,
@@ -1370,6 +1419,13 @@ if st.session_state["page"] == "setup":
         )
         if engine == "cpp" and not _cpp_ok:
             st.caption(tr("setup_engine_cpp_unbuilt"))
+
+        store_on_disk = st.checkbox(
+            tr("setup_store_on_disk"),
+            value=bool(st.session_state.get("store_on_disk", False)),
+            help=tr("setup_store_on_disk_help"),
+        )
+
         st.caption(tr("setup_price_history_caption"))
         _calib_opts   = [1.0, 2.0, 3.0, 5.0, 10.0]
         _calib_labels = {
@@ -1463,6 +1519,7 @@ if st.session_state["page"] == "setup":
             st.session_state["selected_tickers"] = selected_tickers
             st.session_state["n_paths"]          = n_paths
             st.session_state["engine"]           = engine
+            st.session_state["store_on_disk"]    = store_on_disk
             st.session_state["seed"]             = int(seed)
             st.session_state["history_years"]    = history_years
             st.session_state["calib_years"]      = calib_years
@@ -1708,6 +1765,7 @@ elif st.session_state["page"] == "dashboard":
         st.session_state["results"] = None
         _R_pre = None
         gc.collect()
+        _purge_mmap_files()   # delete the prior run's temp path files (refs now gone)
         with st.status(tr("mc_status_title"), expanded=True) as _mc_status:
             st.write(tr("mc_status_loading"))
             _hist_years = st.session_state.get("history_years", None)
@@ -1815,8 +1873,8 @@ elif st.session_state["page"] == "dashboard":
             # fans, path explorer, per-asset perf) is display-level.
             st.session_state["results"] = {
                 **note_results,
-                "worst_of_paths": wof_paths.astype(np.float32),
-                "sim_prices":     sim_prices.astype(np.float32),
+                "worst_of_paths": _store_array(wof_paths.astype(np.float32), "wof"),
+                "sim_prices":     _store_array(sim_prices.astype(np.float32), "sp"),
                 "asset_names":    list(selected_tickers.values()),
                 "s0_values":      s0_values,
                 "params":         cal_result.params,

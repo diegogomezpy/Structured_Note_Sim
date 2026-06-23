@@ -619,6 +619,16 @@ _STRINGS: dict[str, tuple[str, str]] = {
                                  "NumPy will be used until then.",
                                  "⚠️ Motor C++ no compilado — ejecuta `pip install ./cpp` para activarlo. "
                                  "Se usará NumPy mientras tanto."),
+    "setup_store_on_disk":      ("Store simulated paths on disk (lower RAM)",
+                                 "Guardar trayectorias en disco (menos RAM)"),
+    "setup_store_on_disk_help": ("Keeps the retained per-path arrays in a temp file (memory-mapped) instead of "
+                                 "RAM, so the machine stays responsive while browsing results. Slightly slower "
+                                 "charts and a brief disk write per run. Does not raise the path limit — the run "
+                                 "itself still needs the working memory shown above.",
+                                 "Mantiene las trayectorias en un archivo temporal (mapeado en memoria) en vez de "
+                                 "en RAM, para que el equipo siga respondiendo al explorar resultados. Gráficos algo "
+                                 "más lentos y una breve escritura en disco por ejecución. No aumenta el límite de "
+                                 "trayectorias — la ejecución sigue necesitando la memoria de trabajo indicada arriba."),
     "mc_engine_caption":        ("Engine: {engine} · {paths:,} paths · {secs:.2f}s",
                                  "Motor: {engine} · {paths:,} trayectorias · {secs:.2f}s"),
     "mc_cpp_fallback":          ("C++ engine unavailable ({e}); ran with NumPy instead.",
