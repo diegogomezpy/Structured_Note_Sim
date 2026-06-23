@@ -284,6 +284,34 @@ def _cpp_engine_available() -> bool:
     return _CPP_AVAILABLE
 
 
+# ── Memory budgeting for the full-path MC ─────────────────────────────────────
+# The simulator keeps EVERY daily step for all 2×n_paths (antithetic) paths — the
+# fans and path explorer need them — so RAM, not CPU, is the real ceiling. These
+# helpers estimate the peak and stop a run that would blow past physical RAM
+# (which only swaps to disk and hangs). ~6× one S-cube covers the C++ S+V cubes,
+# the wrapper's per-asset copies, and the numpy stacks that briefly coexist.
+def _physical_ram_gb() -> float:
+    """Total physical RAM in GB (psutil-free; macOS/Linux). 0.0 if unknown."""
+    try:
+        return os.sysconf("SC_PAGE_SIZE") * os.sysconf("SC_PHYS_PAGES") / 1e9
+    except (ValueError, OSError, AttributeError):
+        return 0.0
+
+
+def _sim_peak_gb(n_paths: int, n_assets: int, n_steps: int) -> float:
+    """Rough peak RAM (GB) for a full-path MC run with `n_steps` daily steps."""
+    cube = (2 * n_paths) * (n_steps + 1) * max(n_assets, 1) * 8   # one S-cube, bytes
+    return 6.0 * cube / 1e9
+
+
+def _safe_paths(ram_gb: float, n_assets: int, n_steps: int, budget: float = 0.5) -> int:
+    """Largest n_paths whose estimated peak fits in `budget`×RAM, floored to 1000.
+    Budget < 1 leaves headroom for the OS, browser, and Streamlit/numpy base."""
+    per = 6.0 * 2 * (n_steps + 1) * max(n_assets, 1) * 8          # bytes per base path
+    raw = (budget * ram_gb * 1e9) / per if per else 0
+    return max(int(raw // 1000) * 1000, 1000)
+
+
 _DEFAULTS = {
     "page":             "setup",   # "setup" | "dashboard"
     "run_terms":        None,
@@ -1313,6 +1341,18 @@ if st.session_state["page"] == "setup":
             seed = int(st.number_input(tr("setup_random_seed"),
                                        value=int(st.session_state["seed"])))
 
+        # Live memory estimate for the chosen path count (full daily paths are
+        # kept, so RAM is the ceiling). N ≈ trading days to maturity.
+        _ram_gb  = _physical_ram_gb()
+        _est_N   = max(int(round(float(maturity) * 252)), 1)
+        _est_gb  = _sim_peak_gb(n_paths, max(len(selected_labels), 1), _est_N)
+        if _ram_gb and _est_gb > 0.6 * _ram_gb:
+            st.warning(tr("setup_mem_warn", gb=_est_gb, ram=_ram_gb))
+        elif _ram_gb:
+            st.caption(tr("setup_mem_estimate", gb=_est_gb, ram=_ram_gb))
+        else:
+            st.caption(tr("setup_mem_estimate_noram", gb=_est_gb))
+
         # Compute engine: NumPy reference (always available) vs the compiled,
         # multi-core C++ engine (identical results; only offered when built).
         _cpp_ok       = _cpp_engine_available()
@@ -1650,13 +1690,25 @@ elif st.session_state["page"] == "dashboard":
     _needs_mc    = _pdf_needs_mc()
     _run_for_pdf = _pdf_btn and st.session_state.get("results") is None and _needs_mc
     if run_button or _run_for_pdf:
-        with st.spinner(tr("mc_run_spinner")):
+        # Guard: a run that would need more than physical RAM only swaps to disk
+        # and hangs (full daily paths are kept). Stop early with a concrete fix
+        # instead of letting it stall for minutes.
+        _ram_gb  = _physical_ram_gb()
+        _guard_N = max(int(round(terms.maturity * 252)), 1)
+        _guard_gb = _sim_peak_gb(n_paths, len(selected_tickers), _guard_N)
+        if _ram_gb and _guard_gb > _ram_gb:
+            st.error(tr("mc_mem_block", gb=_guard_gb, ram=_ram_gb,
+                        safe=_safe_paths(_ram_gb, len(selected_tickers), _guard_N)))
+            st.stop()
+        with st.status(tr("mc_status_title"), expanded=True) as _mc_status:
+            st.write(tr("mc_status_loading"))
             _hist_years = st.session_state.get("history_years", None)
             # Calibrate drift/vol/correlations on ADJUSTED closes (total-return
             # dynamics — ex-date jumps must not pollute the estimates) ...
             prices_adj = _safe_load_prices(tickers_tuple, years=_hist_years, field="adj_close")
             # ... but barriers, S0, and dividend jumps live in RAW price space.
             prices_raw = _safe_load_prices(tickers_tuple, years=_hist_years, field="close")
+            st.write(tr("mc_status_calibrating"))
             cal    = HestonCalibrator(
                 prices_df   = prices_adj,
                 calib_years = st.session_state.get("calib_years", 5.0),
@@ -1715,6 +1767,8 @@ elif st.session_state["page"] == "dashboard":
             # isn't built (so a config requesting "cpp" never hard-fails the run).
             _engine   = st.session_state.get("engine", "numpy")
             _eng_used = _engine
+            st.write(tr("mc_status_simulating", paths=2 * n_paths,
+                        engine=tr(f"setup_engine_{_engine}")))
             _t_run    = time.perf_counter()
             try:
                 sim_results = sim.run(engine=_engine)
@@ -1731,6 +1785,7 @@ elif st.session_state["page"] == "dashboard":
             perf_paths = sim_prices / S0_vec
             wof_paths  = perf_paths.min(axis=2)
 
+            st.write(tr("mc_status_pricing"))
             note_results = price_note(perf_paths, terms, seed=seed + 1,
                                       obs_steps=_obs_steps, obs_times=_obs_times)
             s0_values    = [p.S0 for p in cal_result.params]
@@ -1764,6 +1819,8 @@ elif st.session_state["page"] == "dashboard":
             }
             st.session_state["last_asset_names"] = list(selected_tickers.values())
             st.session_state["path_num"] = 0
+            _mc_status.update(label=tr("mc_status_done", secs=_run_secs),
+                              state="complete", expanded=False)
             # If this run was triggered by Generate-report, remember to build the
             # PDF after the rerun (once the tabs have rendered + cached figures).
             if _run_for_pdf:

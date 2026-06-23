@@ -623,6 +623,29 @@ _STRINGS: dict[str, tuple[str, str]] = {
                                  "Motor: {engine} · {paths:,} trayectorias · {secs:.2f}s"),
     "mc_cpp_fallback":          ("C++ engine unavailable ({e}); ran with NumPy instead.",
                                  "Motor C++ no disponible ({e}); se ejecutó con NumPy."),
+    "setup_mem_estimate":       ("≈ {gb:.1f} GB peak memory for this run · {ram:.0f} GB on this machine.",
+                                 "≈ {gb:.1f} GB de memoria pico para esta ejecución · {ram:.0f} GB en esta máquina."),
+    "setup_mem_estimate_noram": ("≈ {gb:.1f} GB peak memory for this run (full daily paths are kept).",
+                                 "≈ {gb:.1f} GB de memoria pico (se conservan todas las trayectorias diarias)."),
+    "setup_mem_warn":           ("⚠️ ≈ {gb:.1f} GB peak for this path count — heavy on {ram:.0f} GB of RAM. The "
+                                 "engine keeps every daily step for all paths, so it may swap to disk and stall. "
+                                 "Lower the path count or shorten the note.",
+                                 "⚠️ ≈ {gb:.1f} GB pico para esta cantidad de trayectorias — exigente con {ram:.0f} GB "
+                                 "de RAM. El motor conserva cada paso diario de todas las trayectorias, así que puede "
+                                 "usar disco (swap) y atascarse. Reduce las trayectorias o acorta la nota."),
+    "mc_mem_block":             ("This run needs ≈ {gb:.1f} GB but the machine has only {ram:.0f} GB — it would swap "
+                                 "to disk and hang (this is what made it stall before). Reduce Monte Carlo paths to "
+                                 "about {safe:,} or fewer for this note, then run again.",
+                                 "Esta ejecución necesita ≈ {gb:.1f} GB pero la máquina tiene solo {ram:.0f} GB — "
+                                 "usaría disco (swap) y se colgaría (esto es lo que la atascó antes). Reduce las "
+                                 "trayectorias de Monte Carlo a unas {safe:,} o menos para esta nota y vuelve a ejecutar."),
+    "mc_status_title":          ("Running Monte Carlo…",                "Ejecutando Monte Carlo…"),
+    "mc_status_loading":        ("Loading & aligning market data…",     "Cargando y alineando datos de mercado…"),
+    "mc_status_calibrating":    ("Calibrating Heston parameters…",      "Calibrando parámetros de Heston…"),
+    "mc_status_simulating":     ("Simulating {paths:,} paths · {engine}…",
+                                 "Simulando {paths:,} trayectorias · {engine}…"),
+    "mc_status_pricing":        ("Evaluating the note payoff…",         "Evaluando el pago de la nota…"),
+    "mc_status_done":           ("Done in {secs:.1f}s",                 "Listo en {secs:.1f}s"),
 
     # ── Setup inline help / captions ───────────────────────────────────────
     "setup_barriers_caption":   ("All barriers are a % of each underlying's initial level (100% = starting price).",
