@@ -5,13 +5,14 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 find_package(pybind11 CONFIG REQUIRED)
-find_package(OpenMP)   # optional — without it the kernel still runs, serially
+find_package(Threads REQUIRED)   # std::thread multicore fan-out (no libomp needed)
 
 pybind11_add_module(heston_cpp heston_kernel.cpp)
 
-# -fopenmp-simd enables the `#pragma omp simd` vectorisation of the inner path
-# loops even without the OpenMP runtime, so the kernel is SIMD-fast serially; if
-# libomp is found below, OpenMP also parallelises across path-blocks (multicore).
+# -fopenmp-simd enables ONLY the `#pragma omp simd` vectorisation of the inner
+# path loops (compile-time, no OpenMP runtime). The multicore fan-out across
+# path-blocks is std::thread, so there is NO libomp/libgomp dependency on any
+# platform — the wheels stay self-contained.
 # -fno-math-errno lets the vectoriser use the vector sqrt/exp (which don't set
 # errno) — needed for libmvec on Linux to kick in; harmless for our inputs.
 target_compile_options(heston_cpp PRIVATE -O3 -funroll-loops -fopenmp-simd -fno-math-errno)
@@ -33,8 +34,6 @@ if(HESTON_NATIVE)
   target_compile_options(heston_cpp PRIVATE -march=native)
 endif()
 
-if(OpenMP_CXX_FOUND)
-  target_link_libraries(heston_cpp PRIVATE OpenMP::OpenMP_CXX)
-endif()
+target_link_libraries(heston_cpp PRIVATE Threads::Threads)
 
 install(TARGETS heston_cpp DESTINATION .)

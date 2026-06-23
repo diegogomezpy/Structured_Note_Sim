@@ -15,12 +15,21 @@
 // PATH-CONTIGUOUS layout (asset-major, paths inner), so the per-step variance and
 // price updates auto-vectorise across paths: `sqrt`/`exp` run on whole SIMD
 // registers (a vector libm via -fveclib: Accelerate vvexp on macOS, libmvec on
-// Linux). OpenMP then parallelises ACROSS path-blocks for the multicore factor.
+// Linux). std::thread then parallelises ACROSS path-blocks for the multicore
+// factor (one thread per contiguous chunk of blocks).
 //
-//   SIMD over paths (within a step)  ×  OpenMP over blocks (across cores)
+//   SIMD over paths (within a step)  ×  std::thread over blocks (across cores)
 //
-// Build flags that matter: -O3 -march=native -fopenmp-simd -fveclib=Accelerate
-// (and -fopenmp + libomp for the multicore part). See cpp/CMakeLists.txt.
+// Why std::thread and not OpenMP: the block decomposition is embarrassingly
+// parallel with a static partition, so OpenMP buys nothing over std::thread here,
+// and dropping it removes the libomp/libgomp RUNTIME dependency on every platform
+// (macOS ships no libomp; this keeps the wheels self-contained). The inner-loop
+// SIMD is unaffected — `#pragma omp simd` is enabled by -fopenmp-simd at COMPILE
+// time and needs no runtime. Per-block seeding (seed+blk) makes the output
+// independent of the thread count: an N-thread run is bit-identical to serial.
+//
+// Build flags that matter: -O3 -march=native -fopenmp-simd -fveclib=Accelerate.
+// See cpp/CMakeLists.txt.
 // ----------------------------------------------------------------------------
 
 #include <pybind11/pybind11.h>
@@ -29,7 +38,10 @@
 #include <random>
 #include <vector>
 #include <cstdint>
+#include <cstdlib>
 #include <algorithm>
+#include <thread>
+#include <utility>
 
 namespace py = pybind11;
 
@@ -71,6 +83,20 @@ struct Xoshiro256pp {
     double uniform() { return ((operator()() >> 11) + 0.5) * (1.0 / 9007199254740992.0); }
 };
 
+// Worker thread count: explicit request wins; else HESTON_NUM_THREADS /
+// OMP_NUM_THREADS env vars; else all logical cores. Capped to n_blocks by caller.
+static int resolve_threads(int requested) {
+    if (requested > 0) return requested;
+    for (const char* var : {"HESTON_NUM_THREADS", "OMP_NUM_THREADS"}) {
+        if (const char* e = std::getenv(var)) {
+            const int t = std::atoi(e);
+            if (t > 0) return t;
+        }
+    }
+    const unsigned h = std::thread::hardware_concurrency();
+    return h ? static_cast<int>(h) : 1;
+}
+
 py::tuple simulate(
     py::array_t<double, py::array::c_style | py::array::forcecast> S0,
     py::array_t<double, py::array::c_style | py::array::forcecast> V0,
@@ -84,7 +110,8 @@ py::tuple simulate(
     py::array_t<double, py::array::c_style | py::array::forcecast> div,  // (n,N) or zeros
     double t_dof,                                                        // 0 => Gaussian
     std::uint64_t seed,
-    int n_base) {
+    int n_base,
+    int nthreads_req) {                                                 // 0 => auto
 
     const int n   = static_cast<int>(S0.size());
     const int N   = static_cast<int>(dt.size());
@@ -111,8 +138,11 @@ py::tuple simulate(
     py::gil_scoped_release nogil;   // re-acquired before make_tuple below
     const int n_blocks = (n_base + BLK - 1) / BLK;
 
-    #pragma omp parallel
-    {
+    // Each worker owns a CONTIGUOUS range of path-blocks, its own scratch buffers
+    // and its own RNG. Blocks are seeded independently (seed+blk) and chisq is
+    // reset per block, so the output is independent of how blocks are split across
+    // threads — an N-thread run is bit-identical to serial.
+    auto worker = [&](int blk_begin, int blk_end) {
         // Per-thread, path-contiguous buffers ([k*BLK+p] / [a*BLK+p]).
         std::vector<double> z(static_cast<std::size_t>(two) * BLK);
         std::vector<double> w(static_cast<std::size_t>(two) * BLK);
@@ -123,11 +153,11 @@ py::tuple simulate(
         Xoshiro256pp xo;
         std::chi_squared_distribution<double> chisq(t_dof > 0.0 ? t_dof : 1.0);
 
-        #pragma omp for schedule(static)
-        for (int blk = 0; blk < n_blocks; ++blk) {
+        for (int blk = blk_begin; blk < blk_end; ++blk) {
             const int b0 = blk * BLK;
             const int bs = std::min(BLK, n_base - b0);   // paths in this block
             xo.seed(seed + static_cast<std::uint64_t>(blk));    // per-block stream
+            chisq.reset();                                      // drop any cached state
 
             for (int a = 0; a < n; ++a)
                 for (int p = 0; p < bs; ++p) {
@@ -226,16 +256,33 @@ py::tuple simulate(
                 }
             }
         }
-    }
+    };   // worker
+
+    // Static, contiguous partition of blocks across threads (each block ≈ equal
+    // work). The calling thread runs chunk 0; the remaining chunks get one
+    // std::thread each. A single chunk (nthr==1 or n_blocks==1) never spawns.
+    int nthr = resolve_threads(nthreads_req);
+    if (nthr > n_blocks) nthr = n_blocks;
+    if (nthr < 1) nthr = 1;
+    const int per = (n_blocks + nthr - 1) / nthr;
+    std::vector<std::pair<int, int>> ranges;
+    for (int b0 = 0; b0 < n_blocks; b0 += per)
+        ranges.emplace_back(b0, std::min(n_blocks, b0 + per));
+    std::vector<std::thread> pool;
+    pool.reserve(ranges.size() - 1);
+    for (std::size_t i = 1; i < ranges.size(); ++i)
+        pool.emplace_back(worker, ranges[i].first, ranges[i].second);
+    worker(ranges[0].first, ranges[0].second);          // chunk 0 on this thread
+    for (auto& th : pool) th.join();
     }  // GIL re-acquired here
     return py::make_tuple(S_out, V_out);
 }
 
 PYBIND11_MODULE(heston_cpp, m) {
-    m.doc() = "C++ Heston engine (block-SIMD + OpenMP; validated vs numpy).";
+    m.doc() = "C++ Heston engine (block-SIMD + std::thread; validated vs numpy).";
     m.def("simulate", &simulate,
           py::arg("S0"), py::arg("V0"), py::arg("kappa"), py::arg("theta"),
           py::arg("xi"), py::arg("mu"), py::arg("L"), py::arg("dt"),
           py::arg("sdt"), py::arg("div"), py::arg("t_dof"),
-          py::arg("seed"), py::arg("n_base"));
+          py::arg("seed"), py::arg("n_base"), py::arg("nthreads") = 0);
 }

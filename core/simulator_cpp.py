@@ -26,11 +26,14 @@ except ImportError as e:  # pragma: no cover - exercised only when unbuilt
 
 
 def simulate_full(S0v, V0v, kappa, theta, xi, mu, L, dt_arr, sdt_arr,
-                  div, t_dof, seed, n_base, n_assets, N):
+                  div, t_dof, seed, n_base, n_assets, N, nthreads=0):
     """Run the C++ kernel and return (S_paths, V_paths) as lists of n arrays
     shaped (n_total, N+1) — the same contract HestonMultiSimulator.run() returns.
 
     `div` may be None (→ all-zero, no-op ×1). `t_dof` None → Gaussian.
+    `nthreads`: 0 (default) = auto (all cores, or HESTON_NUM_THREADS/OMP_NUM_THREADS);
+    a positive value pins the worker count. Output is identical for any thread
+    count (per-block seeding), so this is purely a performance knob.
     """
     div_arr = (np.ascontiguousarray(div, dtype=np.float64)
                if div is not None else np.zeros((n_assets, N)))
@@ -46,6 +49,7 @@ def simulate_full(S0v, V0v, kappa, theta, xi, mu, L, dt_arr, sdt_arr,
         np.ascontiguousarray(sdt_arr, dtype=np.float64),
         div_arr,
         float(t_dof or 0.0), int(seed or 0), int(n_base),
+        int(nthreads or 0),
     )
     S = [np.ascontiguousarray(S_cube[:, :, i]) for i in range(n_assets)]
     V = [np.ascontiguousarray(V_cube[:, :, i]) for i in range(n_assets)]

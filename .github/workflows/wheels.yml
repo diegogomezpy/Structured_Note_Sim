@@ -29,9 +29,8 @@ jobs:
           CIBW_SKIP: "*-musllinux_* *_i686 *-win32 pp*"
           # Portable baseline, NOT -march=native (would bake in the CI host's ISA).
           CIBW_ENVIRONMENT: "CMAKE_ARGS=-DHESTON_NATIVE=OFF"
-          # OpenMP for the manylinux / macOS builders.
-          CIBW_BEFORE_ALL_LINUX: "yum install -y libgomp || apt-get update && apt-get install -y libgomp1"
-          CIBW_BEFORE_ALL_MACOS: "brew install libomp"
+          # No libomp/libgomp step: multicore is std::thread, so the wheels are
+          # self-contained (only the C++/pthread runtime, always present).
           CIBW_TEST_COMMAND: "python -c \"import heston_cpp; print(heston_cpp.__doc__)\""
 
       - uses: actions/upload-artifact@v4
