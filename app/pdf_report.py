@@ -3002,10 +3002,17 @@ def _build_pdf_report(
         pdf.figure(_fig_to_png(bt_figures.get("prices"), **_kw),
                    _t("fig_bt_prices", lang), _t("src_hist", lang))
 
-    # NOTE: the historical Path Explorer (a single illustrative worst-of path)
-    # is intentionally NOT in the PDF. It earns its place in the interactive app,
-    # where the user scrubs through issue dates — but on a static page it is one
-    # arbitrary path with no interaction, the weakest item in the report.
+    # 5c. Historical Path Explorer — one worst-of path per comparison panel, with
+    # the user's panel title (or the issue date). Mirrors the on-screen explorer.
+    _bt_panels = bt_figures.get("panels") or []
+    if bt_summary and _inc("bt_path") and _bt_panels:
+        _bt_div()
+        pdf.start_section(_t("bt_subtab_explorer", lang))
+        for _p in _bt_panels:
+            if _p.get("path") is None:
+                continue
+            _cap = _p.get("title") or _t("fig_bt_path", lang).format(issue=_p.get("issue", ""))
+            pdf.figure(_fig_to_png(_p["path"], **_kw), _cap, _t("src_hist", lang))
 
     # ── 6. Current performance ─────────────────────────────────────────────
     if live_data:

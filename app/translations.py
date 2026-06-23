@@ -709,6 +709,7 @@ _STRINGS: dict[str, tuple[str, str]] = {
     "rep_bt_pie":               ("Worst-asset breakdown",            "Desglose de peor activo"),
     "rep_bt_irr":               ("IRR by issue date",               "TIR por fecha de emisión"),
     "rep_bt_prices":            ("Historical prices",               "Precios históricos"),
+    "rep_bt_path":              ("Historical path explorer",        "Explorador de trayectorias históricas"),
     "rep_bt_explorer":          ("Path explorer",                   "Explorador de trayectorias"),
     # Build-report sub-items — Current performance
     "rep_live_metrics":         ("Summary metrics",                 "Métricas de resumen"),

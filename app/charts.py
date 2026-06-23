@@ -853,13 +853,15 @@ def build_historical_wof_path(
             color = _GREEN if paid else _GREY
 
         fig.add_trace(go.Scatter(
-            x=[obs_date], y=[wof_val],
+            # ISO string, not a raw Timestamp — kaleido (PDF) can't JSON-serialise
+            # a Timestamp x and the chart would silently drop from the report.
+            x=[pd.Timestamp(obs_date).isoformat()], y=[wof_val],
             mode="markers",
             marker=dict(size=size, color=color, symbol=symbol,
                         line=dict(width=1.5, color="white")),
             name=label, showlegend=True,
         ))
-        fig.add_vline(x=obs_date.isoformat(), line_dash="dot",
+        fig.add_vline(x=pd.Timestamp(obs_date).isoformat(), line_dash="dot",
                       line_color="#cccccc",
                       annotation_text=f"P{q+1}", annotation_position="top")
         if is_call:

@@ -219,8 +219,12 @@ def _render_underlying_card(name, sym, metrics, override, prices_1y, tr) -> None
     m4.metric(tr("ul_rsi"),    f"{float(rsi):.0f}"     if rsi not in (None, "") else "—")
 
     # A user-entered description wins as-is; otherwise show the full Yahoo
-    # business summary.
+    # business summary. In Spanish mode, auto-translate it for display (cached;
+    # idempotent for text that is already Spanish) so a loaded note's English
+    # descriptions follow the UI language without re-prefilling.
     desc = override.get("description") or metrics.get("business_summary") or ""
+    if desc and getattr(tr, "lang", "en") == "es":
+        desc = _translate_cached(desc, "es")
     if desc:
         st.caption(desc)
 
@@ -561,6 +565,7 @@ _REPORT_TREE = {
         ("bt_pie",      "rep_bt_pie",      ["bt_pie"]),
         ("bt_irr",      "rep_bt_irr",      ["bt_irr"]),
         ("bt_prices",   "rep_bt_prices",   ["bt_prices"]),
+        ("bt_path",     "rep_bt_path",     ["bt_path"]),
     ]),
     "live": ("report_cat_live", [
         ("live_metrics", "rep_live_metrics", ["live_metrics"]),
@@ -1411,7 +1416,7 @@ elif st.session_state["page"] == "dashboard":
     st.sidebar.markdown(
         f"{', '.join(selected_tickers.values())}  \n"
         f"{int(terms.maturity*12)}M · {terms.n_obs} obs · {terms.payment_freq} · "
-        f"{terms.coupon_pa*100:.2g}% p.a."
+        f"{terms.coupon_pa*100:g}% p.a."
     )
     st.sidebar.download_button(
         tr("sidebar_download_config"),
@@ -1493,7 +1498,7 @@ elif st.session_state["page"] == "dashboard":
             f"<b>{terms.name}</b> — "
             f"{', '.join(selected_tickers.values())} · "
             f"{int(terms.maturity*12)}M · {terms.n_obs} obs · "
-            f"{tr('metric_coupon_pa')} {terms.coupon_pa*100:.2g}% · "
+            f"{tr('metric_coupon_pa')} {terms.coupon_pa*100:g}% · "
             f"{tr('dash_memory') if terms.memory else tr('dash_no_memory')} · "
             f"KI {terms.knock_in_barrier:.0%} · Autocall {terms.autocall_barrier:.0%}</div>",
             unsafe_allow_html=True,
@@ -1503,7 +1508,7 @@ elif st.session_state["page"] == "dashboard":
             f"**{terms.name}** — "
             f"{', '.join(selected_tickers.values())} · "
             f"{int(terms.maturity*12)}M · {terms.n_obs} obs · "
-            f"{tr('metric_coupon_pa')} {terms.coupon_pa*100:.2g}% · "
+            f"{tr('metric_coupon_pa')} {terms.coupon_pa*100:g}% · "
             f"{tr('dash_memory') if terms.memory else tr('dash_no_memory')} · "
             f"KI {terms.knock_in_barrier:.0%} · Autocall {terms.autocall_barrier:.0%}"
         )
@@ -1521,6 +1526,8 @@ elif st.session_state["page"] == "dashboard":
             # Issuer profile (description + credit ratings) — mirrors the PDF
             # 'Issuer Information' section so it's visible in the app too.
             _iss_desc = getattr(terms, "issuer_description", "") or ""
+            if _iss_desc and getattr(tr, "lang", "en") == "es":
+                _iss_desc = _translate_cached(_iss_desc, "es")
             if _iss_desc:
                 st.caption(_iss_desc)
             _iss_ratings = [
@@ -1560,7 +1567,7 @@ elif st.session_state["page"] == "dashboard":
         s3.metric(tr("metric_frequency"), terms.payment_freq.capitalize())
         st.markdown("**" + tr("structure_group_coupon") + "**")
         p1, p2, p3 = st.columns(3)
-        p1.metric(tr("metric_coupon_pa"), f"{terms.coupon_pa*100:.2g}%")
+        p1.metric(tr("metric_coupon_pa"), f"{terms.coupon_pa*100:g}%")
         p2.metric(tr("metric_coupon_period"), f"{terms.coupon_rate*100:.4f}%")
         p3.metric(tr("metric_memory"), tr("yes") if terms.memory else tr("no_str"))
         st.markdown("**" + tr("structure_group_barriers") + "**")
@@ -2502,8 +2509,14 @@ elif st.session_state["page"] == "dashboard":
                             )
                             st.plotly_chart(_bt_path_fig, use_container_width=True,
                                             key=f"bt_pathfig_{pid}")
-                            # On-screen only: the single illustrative path is no
-                            # longer carried into the static PDF (see pdf_report).
+                            # Carry this panel's path into the PDF backtest section
+                            # (one chart per comparison panel, with its title/date).
+                            st.session_state.setdefault("_pdf_bt_figures", {}) \
+                                .setdefault("panels", []).append({
+                                    "title": _custom_title or None,
+                                    "path":  _bt_path_fig,
+                                    "issue": selected_issue.strftime("%Y-%m-%d"),
+                                })
                     except Exception as e:
                         st.error(tr("bt_could_not_build_path", e=e))
 
@@ -2511,6 +2524,8 @@ elif st.session_state["page"] == "dashboard":
             def _bt_path_explorer():
                 st.subheader(tr("bt_path_explorer_header"))
                 st.caption(tr("bt_path_explorer_caption"))
+                # Rebuild the per-panel PDF list each run so removed panels drop out.
+                st.session_state.setdefault("_pdf_bt_figures", {})["panels"] = []
                 ids = st.session_state.setdefault("bt_panel_ids", [0])
                 if len(ids) < 3 and st.button(tr("explorer_add_panel"),
                                               key="bt_add_panel"):
@@ -2822,12 +2837,29 @@ elif st.session_state["page"] == "dashboard":
                         _pdf_ul_figs[_n] = build_underlying_price_chart(_ul_px[_n], _n, tr)
             except Exception as _e:
                 print(f"[app] underlying price charts for PDF failed: {_e}")
+            # In Spanish mode, translate the issuer + underlying descriptions into a
+            # copy of the terms so the report matches the (auto-translated) app.
+            _pdf_lang  = "es" if lang_choice == "Español" else "en"
+            _pdf_terms = run_terms
+            if _pdf_lang == "es":
+                _td = run_terms.to_dict()
+                if _td.get("issuer_description"):
+                    _td["issuer_description"] = _translate_cached(_td["issuer_description"], "es")
+                _uls = dict(_td.get("underlyings") or {})
+                for _nm, _ov in list(_uls.items()):
+                    if isinstance(_ov, dict) and _ov.get("description"):
+                        _uls[_nm] = {**_ov, "description": _translate_cached(_ov["description"], "es")}
+                _td["underlyings"] = _uls
+                try:
+                    _pdf_terms = NoteTerms.from_dict(_td)
+                except Exception:
+                    _pdf_terms = run_terms
             _pdf_bytes = generate_pdf_report(
-                terms            = run_terms,
+                terms            = _pdf_terms,
                 results          = R or {},
                 asset_names      = asset_names,
                 figures          = st.session_state.get("_pdf_mc_figures", {}),
-                lang             = "es" if lang_choice == "Español" else "en",
+                lang             = _pdf_lang,
                 bt_summary       = st.session_state.get("_pdf_bt_summary"),
                 bt_figures       = st.session_state.get("_pdf_bt_figures"),
                 live_data        = st.session_state.get("_pdf_live_data"),
