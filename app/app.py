@@ -30,6 +30,10 @@ _ON_STREAMLIT_CLOUD = os.getcwd().startswith("/mount/src") or "STREAMLIT_CLOUD" 
 # ~1 GB container. Antithetic variates double this to 2×n_paths in the output.
 _MAX_PATHS = int(os.environ.get("SNSIM_MAX_PATHS", 15000 if _ON_STREAMLIT_CLOUD else 250000))
 
+# Underlyings per note. The simulator, charts, and logo row are all built around
+# a small basket; 5 is the practical ceiling (worst-of of 5 names).
+_MAX_UNDERLYINGS = 5
+
 import numpy as np
 import pandas as pd
 import streamlit as st
@@ -158,6 +162,13 @@ def _live_card(label: str, value: str, *, delta: str | None = None,
     )
 
 
+def _display_sym(sym: str | None) -> str:
+    """Ticker as shown to the user. Yahoo prefixes indices with '^' (^GSPC), which
+    reads as noise in a chip/label — strip it for display only (data calls keep it)."""
+    s = str(sym or "")
+    return s[1:] if s.startswith("^") else s
+
+
 def _asset_chip(name: str, sym: str) -> str:
     """A compact underlying chip: logo + display name + ticker symbol."""
     import html as _html
@@ -168,7 +179,7 @@ def _asset_chip(name: str, sym: str) -> str:
         "<div class='snsim-asset-chip'>"
         f"{logo_img}"
         f"<span class='ac-text'><span class='ac-name'>{_html.escape(str(name))}</span>"
-        f"<span class='ac-sym'>{_html.escape(str(sym))}</span></span></div>"
+        f"<span class='ac-sym'>{_html.escape(_display_sym(sym))}</span></span></div>"
     )
 
 
@@ -831,13 +842,26 @@ if st.session_state["page"] == "setup":
         st.session_state["setup_ul_default"]
         or ["SPX — S&P 500", "SX5E — Euro Stoxx 50", "SMI — Swiss Market"]
     )
-    # Filter to only valid options
-    default_ul = [d for d in default_ul if d in all_labels]
+    # Filter to valid options and cap at the 5-underlying limit (a >5 default would
+    # otherwise conflict with max_selections below).
+    default_ul = [d for d in default_ul if d in all_labels][:_MAX_UNDERLYINGS]
+
+    # Apply a custom ticker queued by the "Add" button below. Must happen BEFORE the
+    # widget is created (you can't set a widget's session_state value afterwards),
+    # and only while there's room under the limit.
+    _pending = st.session_state.pop("_pending_ul_select", None)
+    if _pending and _pending in all_labels:
+        _cur = list(st.session_state.get("setup_underlyings", default_ul))
+        if _pending not in _cur and len(_cur) < _MAX_UNDERLYINGS:
+            _cur.append(_pending)
+            st.session_state["setup_underlyings"] = _cur
 
     selected_labels = st.multiselect(
         tr("setup_select_underlyings"), all_labels,
         default=default_ul,
         key="setup_underlyings",
+        max_selections=_MAX_UNDERLYINGS,
+        help=tr("setup_underlyings_limit_help"),
     )
 
     # ── Custom ticker input ───────────────────────────────────────────────
@@ -857,12 +881,20 @@ if st.session_state["page"] == "setup":
                     ct = dict(st.session_state.get("custom_tickers", {}))
                     ct[custom_sym] = custom_name
                     st.session_state["custom_tickers"] = ct
-                    # Auto-select the new ticker
                     new_lbl = f"{custom_name} — {custom_sym} (custom)"
                     current = list(st.session_state.get("setup_underlyings", default_ul))
-                    if new_lbl not in current:
-                        current.append(new_lbl)
-                    st.session_state["setup_ul_default"] = current
+                    if new_lbl in current:
+                        st.toast(tr("setup_custom_exists", name=custom_name), icon="ℹ️")
+                    elif len(current) >= _MAX_UNDERLYINGS:
+                        # Registered as an option, but the basket is full — let the
+                        # user free a slot rather than silently exceeding the limit.
+                        st.toast(tr("setup_custom_added_full", name=custom_name,
+                                    sym=custom_sym, n=_MAX_UNDERLYINGS), icon="⚠️")
+                    else:
+                        # Queue it; applied to the multiselect before it renders next run.
+                        st.session_state["_pending_ul_select"] = new_lbl
+                        st.toast(tr("setup_custom_added", name=custom_name,
+                                    sym=custom_sym), icon="✅")
                     st.rerun()
                 else:
                     st.warning(tr("setup_enter_both"))

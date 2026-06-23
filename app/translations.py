@@ -443,6 +443,16 @@ _STRINGS: dict[str, tuple[str, str]] = {
     "setup_add_btn":            ("Add",                                "Agregar"),
     "setup_enter_both":         ("Enter both a symbol and a display name.",
                                  "Ingrese tanto un símbolo como un nombre."),
+    "setup_underlyings_limit_help": ("Up to 5 underlyings per note.",
+                                 "Hasta 5 subyacentes por nota."),
+    "setup_custom_added":       ("Added {name} ({sym}) and selected it.",
+                                 "Se agregó {name} ({sym}) y se seleccionó."),
+    "setup_custom_added_full":  ("Added {name} ({sym}) to the list — basket is full ({n} max). "
+                                 "Deselect one to use it.",
+                                 "Se agregó {name} ({sym}) a la lista — la cesta está llena (máx. {n}). "
+                                 "Quite uno para usarlo."),
+    "setup_custom_exists":      ("{name} is already in the basket.",
+                                 "{name} ya está en la cesta."),
     "setup_note_terms":         ("Note Terms",                         "Términos de la Nota"),
     "setup_note_name":          ("Note name",                          "Nombre de la nota"),
     "setup_note_name_help":     ("Display name used in the dashboard and PDF report.",
