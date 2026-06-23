@@ -540,6 +540,13 @@ tr = Translator("es" if lang_choice == "Español" else "en")
 # Build-report panel tree: category -> (category label key, [sub-items]).
 # Each sub-item is (widget_id, label_key, [fine PDF keys it maps to]). The fine
 # keys are what generate_pdf_report gates on via include_sections; "__mc_fans__"
+# Path-explorer filter vocabularies. MODULE-level so BOTH the Monte Carlo and the
+# backtest explorer panels can reference them — the backtest tab renders (and its
+# explorer fragment reruns) independently of whether the MC sim has run, so these
+# must never be scoped to the MC results block.
+_OUTCOMES   = ["any", "autocalled", "maturity", "loss"]
+_KI_CHOICES = ["any", "yes", "no"]
+
 # expands to one mc_fan_{i} per underlying. A category master toggle ticks/clears
 # all of its sub-items at once.
 _REPORT_TREE = {
@@ -1891,8 +1898,8 @@ elif st.session_state["page"] == "dashboard":
                 _mc_total = np.asarray(R["nominal_payoffs"], dtype=float) - 1.0
             _mc_total    = np.asarray(_mc_total, dtype=float)
             _mc_coupon_m = R.get("coupon_amounts")   # None for pre-feature caches
-            _OUTCOMES    = ["any", "autocalled", "maturity", "loss"]
-            _KI_CHOICES  = ["any", "yes", "no"]
+            # _OUTCOMES / _KI_CHOICES are module-level (shared with the backtest
+            # explorer, which runs independently of the MC sim).
 
             def _render_mc_panel(pid, idx, is_primary):
                 obs_labels = [lbl for lbl, _ in obs_pairs]
@@ -1926,10 +1933,11 @@ elif st.session_state["page"] == "dashboard":
                         _rlo, _rhi = float(_mc_total.min()), float(_mc_total.max())
                         if _rhi - _rlo < 1e-9:
                             _rhi = _rlo + 0.01
+                        _sl_min, _sl_max = round(_rlo * 100, 1), round(_rhi * 100, 1)
                         ret_band = st.slider(
                             tr("explorer_return_label"),
-                            min_value=round(_rlo * 100, 1), max_value=round(_rhi * 100, 1),
-                            value=(round(_rlo * 100, 1), round(_rhi * 100, 1)),
+                            min_value=_sl_min, max_value=_sl_max,
+                            value=(_sl_min, _sl_max),
                             format="%.1f%%", key=f"mc_ret_{pid}")
                         if _mc_coupon_m is not None:
                             coupon_periods = st.multiselect(
@@ -1941,11 +1949,16 @@ elif st.session_state["page"] == "dashboard":
                             coupon_periods = []
                             st.caption(tr("explorer_coupon_unavailable"))
 
+                    # At the slider extremes (untouched), apply NO bound — the 0.1%
+                    # display rounding makes the rounded edge fall just inside the
+                    # true data range, which would silently drop paths sitting
+                    # exactly at the min/max (e.g. every path at the coupon cap).
                     matches = _path_filter_matches(
                         R["autocall_events"], R["knock_in_triggered"], _mc_total,
                         _mc_coupon_m, outcome=outcome, ac_periods=ac_periods,
                         ki_choice=ki_choice,
-                        ret_lo=ret_band[0] / 100.0, ret_hi=ret_band[1] / 100.0,
+                        ret_lo=None if ret_band[0] <= _sl_min else ret_band[0] / 100.0,
+                        ret_hi=None if ret_band[1] >= _sl_max else ret_band[1] / 100.0,
                         coupon_periods=coupon_periods)
                     M = len(matches)
                     st.caption(tr("explorer_match_count", m=M, total=max_path + 1))
@@ -2422,10 +2435,11 @@ elif st.session_state["page"] == "dashboard":
                         _rlo, _rhi = float(_bt_irr.min()), float(_bt_irr.max())
                         if _rhi - _rlo < 1e-9:
                             _rhi = _rlo + 0.01
+                        _sl_min, _sl_max = round(_rlo * 100, 1), round(_rhi * 100, 1)
                         ret_band = st.slider(
                             tr("explorer_irr_label"),
-                            min_value=round(_rlo * 100, 1), max_value=round(_rhi * 100, 1),
-                            value=(round(_rlo * 100, 1), round(_rhi * 100, 1)),
+                            min_value=_sl_min, max_value=_sl_max,
+                            value=(_sl_min, _sl_max),
                             format="%.1f%%", key=f"bt_ret_{pid}")
                         if _bt_coupon_m is not None:
                             coupon_periods = st.multiselect(
@@ -2436,10 +2450,14 @@ elif st.session_state["page"] == "dashboard":
                             coupon_periods = []
                             st.caption(tr("explorer_coupon_unavailable"))
 
+                    # At the slider extremes (untouched), apply NO bound — see the
+                    # Monte Carlo panel: 0.1% display rounding otherwise drops paths
+                    # sitting exactly at the min/max IRR (e.g. the coupon cap).
                     matches = _path_filter_matches(
                         _bt_ac, _bt_ki, _bt_irr, _bt_coupon_m, outcome=outcome,
                         ac_periods=ac_periods, ki_choice=ki_choice,
-                        ret_lo=ret_band[0] / 100.0, ret_hi=ret_band[1] / 100.0,
+                        ret_lo=None if ret_band[0] <= _sl_min else ret_band[0] / 100.0,
+                        ret_hi=None if ret_band[1] >= _sl_max else ret_band[1] / 100.0,
                         coupon_periods=coupon_periods)
                     M = len(matches)
                     st.caption(tr("explorer_match_count", m=M, total=len(bt)))
