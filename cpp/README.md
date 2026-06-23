@@ -35,24 +35,21 @@ python scripts/compare_engines.py 25000
 Confirms the terminal moments, cross-asset correlation, and a priced note's
 payoff stats match numpy to Monte-Carlo error, and reports the speedup.
 
-## Wire it into the app (after it validates)
+## Using it
 
-`simulate_full` already returns numpy's `(S_paths, V_paths)` contract, so the
-`run()` hook is small — add an `engine` argument and branch before the loop:
+It is wired into the simulator behind a flag (the numpy engine stays the default
+and the reference for posterity):
 
 ```python
-# core/simulator.py — HestonMultiSimulator.run(self, engine="numpy")
-if engine == "cpp":
-    from core.simulator_cpp import simulate_full
-    dt = self.dt_grid if self.dt_grid is not None else np.full(self.N, self.T/self.N)
-    S, V = simulate_full(S0v, V0v, kappa, theta, xi, mu, self.L, dt, np.sqrt(dt),
-                         self.div_schedule, self.t_dof, self.seed,
-                         self.n_paths, n, self.N)
-    # …then the existing tail (terminal values + realized-corr) on S, V.
+sim.run()                 # numpy reference (default) — what the app uses
+sim.run(engine="cpp")     # compiled engine; raises ImportError if not built
 ```
 
-Everything downstream (`price_note`, charts, backtest) is unchanged — the
-boundary is `arrays in → arrays out`.
+Both return the identical results dict (`S_paths`, `V_paths`, `realized_corr`, …),
+so everything downstream (`price_note`, charts, backtest) is unchanged — the
+boundary is `arrays in → arrays out`. The app calls `run()` with no argument, so
+it is unaffected unless you opt in. To offer it as a user choice, pass the flag
+through from a Streamlit toggle to the cached `sim.run(...)` call.
 
 ## Status
 

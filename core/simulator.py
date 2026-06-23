@@ -329,13 +329,21 @@ class HestonMultiSimulator:
     # Core simulation
     # ------------------------------------------------------------------
 
-    def run(self) -> dict:
+    def run(self, engine: str = "numpy") -> dict:
         """
         Simulate all paths using:
           - Milstein scheme for the variance process
           - Antithetic variates (output has 2*n_paths paths)
           - Student-t copula if t_dof is set, else Gaussian
           - Vectorized realized correlation (no path loop)
+
+        engine : "numpy" (default) | "cpp"
+            "numpy" is the reference implementation (bit-identical to the original
+            and kept for posterity). "cpp" hands the time loop to the optional
+            compiled kernel (cpp/, parallel across cores); it keeps full daily
+            paths and is validated against numpy by CONVERGENCE of statistics, not
+            bit-equality (different RNG stream). It requires the heston_cpp module
+            to be built (`pip install ./cpp`); otherwise it raises ImportError.
 
         Returns
         -------
@@ -376,14 +384,10 @@ class HestonMultiSimulator:
         print(f"  [Scheme] Milstein (variance) + log-Euler (price)")
         print(f"  [VR]     Antithetic variates — {n_base:,} base paths → {n_total:,} total")
 
-        # Per-asset Heston parameters as vectors, broadcast over paths. The TIME
-        # loop is irreducibly sequential (V[t+1] depends on V[t]), but the inner
-        # PER-ASSET loop is not: folding it into array ops over the (n_total, n)
-        # step slice removes N·(n−1) Python iterations and runs each step as a few
-        # large numpy kernels instead of n small ones. The RNG draw order is
-        # unchanged and the per-element arithmetic is the same formula, so results
-        # are bit-identical to the per-asset version (verified against the prior
-        # implementation), just faster.
+        if engine not in ("numpy", "cpp"):
+            raise ValueError(f"engine must be 'numpy' or 'cpp', got {engine!r}")
+
+        # Per-asset Heston parameter vectors (used by both engines).
         kappa = np.array([p.kappa for p in self.params])
         theta = np.array([p.theta for p in self.params])
         xi    = np.array([p.xi    for p in self.params])
@@ -391,19 +395,31 @@ class HestonMultiSimulator:
         mu    = np.array([p.mu    for p in self.params])
         S0v   = np.array([p.S0    for p in self.params])
         V0v   = np.array([p.V0    for p in self.params])
+        div   = self.div_schedule    # (n, N) or None
 
-        # Stored TIME-FIRST as (N+1, n_total, n): each step writes the contiguous
-        # block [t+1] (paths × assets) rather than a strided per-path column — the
-        # same cache-locality win as the old per-asset row layout (a column write
-        # into a (n_paths, N+1) array touches a separate cache line per path and
-        # measured ~16× slower), now spanning assets too. Transposed back to the
-        # public list-of-(n_total, N+1) contract after the loop (one cheap copy).
+        # ── C++ engine (optional, off by default) ────────────────────────────
+        # Hands the time loop to the compiled kernel (parallel across base paths),
+        # then rejoins the shared tail below (terminal values + realized corr) on
+        # the full daily arrays it returns. Validated against the numpy engine by
+        # convergence, not bit-equality — see scripts/compare_engines.py.
+        if engine == "cpp":
+            from core.simulator_cpp import simulate_full
+            S, V = simulate_full(
+                S0v, V0v, kappa, theta, xi, mu, self.L, dt_arr, sdt_arr,
+                div, self.t_dof, self.seed, n_base, n, self.N)
+            return self._finalize(S, V, n, n_base, feller_results)
+
+        # ── numpy engine (reference; kept for posterity) ─────────────────────
+        # The TIME loop is irreducibly sequential (V[t+1] depends on V[t]), but
+        # the inner PER-ASSET loop is folded into array ops over the (n_total, n)
+        # step slice — each step is a few large numpy kernels, bit-identical to
+        # the per-asset version. Stored TIME-FIRST as (N+1, n_total, n) so each
+        # step writes a contiguous (paths × assets) block, not a strided per-path
+        # column (~16× cache win); transposed to the public list form after.
         S = np.empty((self.N + 1, n_total, n))
         V = np.empty((self.N + 1, n_total, n))
         S[0] = S0v[np.newaxis, :]
         V[0] = V0v[np.newaxis, :]
-
-        div = self.div_schedule    # (n, N) or None
 
         # Main simulation loop (sequential in time, vectorized over paths × assets)
         for t in range(self.N):
@@ -465,7 +481,12 @@ class HestonMultiSimulator:
         # below) keeps fast row-over-paths access. One cheap copy per asset.
         S = [np.ascontiguousarray(S[:, :, i].T) for i in range(n)]
         V = [np.ascontiguousarray(V[:, :, i].T) for i in range(n)]
+        return self._finalize(S, V, n, n_base, feller_results)
 
+    def _finalize(self, S, V, n, n_base, feller_results):
+        """Shared post-loop tail for both engines: store the paths, compute the
+        terminal values and the realized/effective correlation diagnostics, and
+        assemble the public results dict."""
         self.S_paths = S
         self.V_paths = V
 
