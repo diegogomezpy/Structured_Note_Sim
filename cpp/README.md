@@ -54,30 +54,33 @@ through from a Streamlit toggle to the cached `sim.run(...)` call.
 ## Status
 
 **Validated and SIMD-optimized.** Matches the numpy engine within Monte-Carlo
-error (terminal moments, correlation, priced-note stats all Δ < 0.004 at 50k
-paths) and runs **~2.24× faster SINGLE-THREADED** at 50k paths (`-march=native
--fopenmp-simd -fveclib=Accelerate`). That was measured on a host *without* OpenMP,
-so it is the SIMD win alone — the multicore factor stacks on top wherever libomp
-is present (Linux CI wheels, or `brew install libomp` locally). The inner per-step
-update is vectorised across a contiguous block of paths; the vector libm runs
-`sqrt`/`exp` on whole SIMD registers.
+error (terminal moments, correlation, priced-note stats all Δ < 0.005) and runs
+**~2.5× faster SINGLE-THREADED** on this host (an Apple-Silicon Mac *without*
+OpenMP, so it is the SIMD win alone — the multicore factor stacks on top wherever
+libomp is present: Linux CI wheels, or `brew install libomp` locally). Two things
+got it there:
+
+- **Block-SIMD + vectorized `sqrt`/`exp`** — the per-step update runs across a
+  contiguous block of paths so the vector libm (`-fveclib`) does the transcendentals
+  on whole SIMD registers. (1.26× scalar → 2.24×.)
+- **xoshiro256++ + branch-free Box–Muller RNG** — replaced `std::mt19937_64` +
+  `std::normal_distribution` (whose rejection-based polar method can't vectorise),
+  measured **~19% faster** in a fair interleaved A/B. Even more on wider SIMD
+  (this host is 2-wide NEON; AVX2/AVX-512 gain more from the vectorised sin/cos).
 
 ## Optimization roadmap
 
-Done: **block-SIMD restructure** (paths contiguous in the inner loop) and
-**vectorized `sqrt`/`exp`** (via `-fveclib`) — the 1.26× scalar kernel → 2.24×.
-OpenMP across path-blocks is wired (`#pragma omp parallel for`) and multiplies by
-core count wherever the runtime is linked. Remaining levers:
+Done: block-SIMD restructure, vectorized `sqrt`/`exp`/`sin`/`cos`/`log`, and the
+SIMD RNG. OpenMP across path-blocks is wired (`#pragma omp parallel for`) and
+multiplies by core count wherever the runtime is linked — the **biggest remaining
+win** (≈ N_cores). Other levers:
 
-1. **Faster RNG** — now the single-thread bottleneck (the exp is vectorised, so
-   scalar `std::mt19937_64` + `std::normal_distribution` dominates). Swap for a
-   SIMD PCG / xoshiro with a vectorised Box–Muller, or Intel MKL VSL
-   `vdRngGaussian`. Biggest remaining single-thread win.
-2. **Memory at scale.** For ≫100k paths, store only the observation columns on the
+1. **Memory at scale.** For ≫100k paths, store only the observation columns on the
    C++ side (the payoff needs ~K columns, not all N) — the trick the backtest uses
    — so 1M paths fits in RAM. (This engine keeps full paths because the app's fans
    and explorer need them; a pricing-only mode would drop them.)
-3. **Tune `BLK`** (currently 64) per target ISA.
+2. **Tune `BLK`** (currently 64) per target ISA; try one-stream-per-SIMD-lane
+   xoshiro to vectorise the uniform fill too (now scalar).
 
 Phase 2 (GPU / CUDA) is the higher ceiling (~50–300×) but needs GPU hardware; see
 `docs/architecture_review.md`.

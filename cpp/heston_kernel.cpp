@@ -37,6 +37,40 @@ namespace py = pybind11;
 // = 4 doubles, AVX-512 = 8); 64 amortises loop overhead while staying in L1.
 static constexpr int BLK = 64;
 
+// ── RNG ─────────────────────────────────────────────────────────────────────
+// xoshiro256++ — a very fast, high-quality PRNG (passes BigCrush). One stream per
+// path-block, seeded via splitmix64. We draw a contiguous buffer of uniforms,
+// then convert to normals with a branch-free Box–Muller that VECTORISES (the
+// log/sqrt/sin/cos run on whole SIMD registers via the vector libm). This
+// replaced std::normal_distribution, whose rejection-based polar method has data-
+// dependent branches and cannot vectorise — the RNG was the bottleneck once exp
+// was vectorised.
+static inline std::uint64_t splitmix64(std::uint64_t& s) {
+    std::uint64_t z = (s += 0x9E3779B97F4A7C15ULL);
+    z = (z ^ (z >> 30)) * 0xBF58476D1CE4E5B9ULL;
+    z = (z ^ (z >> 27)) * 0x94D049BB133111EBULL;
+    return z ^ (z >> 31);
+}
+static inline std::uint64_t rotl64(std::uint64_t x, int k) {
+    return (x << k) | (x >> (64 - k));
+}
+struct Xoshiro256pp {
+    std::uint64_t s[4];
+    using result_type = std::uint64_t;            // UniformRandomBitGenerator
+    static constexpr std::uint64_t min() { return 0; }
+    static constexpr std::uint64_t max() { return ~std::uint64_t(0); }
+    void seed(std::uint64_t sd) { std::uint64_t z = sd; for (int i = 0; i < 4; ++i) s[i] = splitmix64(z); }
+    std::uint64_t operator()() {
+        const std::uint64_t r = rotl64(s[0] + s[3], 23) + s[0];
+        const std::uint64_t t = s[1] << 17;
+        s[2] ^= s[0]; s[3] ^= s[1]; s[1] ^= s[2]; s[0] ^= s[3]; s[2] ^= t; s[3] = rotl64(s[3], 45);
+        return r;
+    }
+    // Uniform in (0,1) — 53-bit mantissa, offset by 0.5 ULP so it is never 0/1
+    // (the Box–Muller log needs a strictly positive argument).
+    double uniform() { return ((operator()() >> 11) + 0.5) * (1.0 / 9007199254740992.0); }
+};
+
 py::tuple simulate(
     py::array_t<double, py::array::c_style | py::array::forcecast> S0,
     py::array_t<double, py::array::c_style | py::array::forcecast> V0,
@@ -84,16 +118,16 @@ py::tuple simulate(
         std::vector<double> w(static_cast<std::size_t>(two) * BLK);
         std::vector<double> Sb(static_cast<std::size_t>(n) * BLK), Vb(static_cast<std::size_t>(n) * BLK);
         std::vector<double> Sa(static_cast<std::size_t>(n) * BLK), Va(static_cast<std::size_t>(n) * BLK);
+        std::vector<double> u(static_cast<std::size_t>(two) * BLK);
         std::vector<double> chi(BLK);
-        std::mt19937_64 gen(seed);
-        std::normal_distribution<double> norm(0.0, 1.0);
+        Xoshiro256pp xo;
         std::chi_squared_distribution<double> chisq(t_dof > 0.0 ? t_dof : 1.0);
 
         #pragma omp for schedule(static)
         for (int blk = 0; blk < n_blocks; ++blk) {
             const int b0 = blk * BLK;
             const int bs = std::min(BLK, n_base - b0);   // paths in this block
-            gen.seed(seed + static_cast<std::uint64_t>(blk));   // per-block stream
+            xo.seed(seed + static_cast<std::uint64_t>(blk));    // per-block stream
 
             for (int a = 0; a < n; ++a)
                 for (int p = 0; p < bs; ++p) {
@@ -112,12 +146,23 @@ py::tuple simulate(
             for (int t = 0; t < N; ++t) {
                 const double dtt = pdt[t], sdtt = psdt[t];
 
-                // Draw normals into path-contiguous z[k*BLK + p].
-                for (int k = 0; k < two; ++k)
-                    for (int p = 0; p < bs; ++p) z[k * BLK + p] = norm(gen);
+                // Draw N(0,1) into path-contiguous z[k*BLK + p]: fast xoshiro
+                // uniforms + a branch-free, SIMD Box–Muller (split-half so each
+                // R = sqrt(-2 ln u1) and the sin/cos run on whole registers). The
+                // full BLK width is filled; tail slots beyond `bs` go unused.
+                const int M = two * BLK;
+                for (int i = 0; i < M; ++i) u[i] = xo.uniform();
+                const int half = M / 2;
+                #pragma omp simd
+                for (int j = 0; j < half; ++j) {
+                    const double R  = std::sqrt(-2.0 * std::log(u[j]));
+                    const double th = 6.283185307179586476 * u[j + half];
+                    z[j]        = R * std::cos(th);
+                    z[j + half] = R * std::sin(th);
+                }
                 if (t_dof > 0.0) {                         // Student-t copula
                     for (int p = 0; p < bs; ++p)
-                        chi[p] = t_scale / std::sqrt(chisq(gen) / t_dof);
+                        chi[p] = t_scale / std::sqrt(chisq(xo) / t_dof);
                     for (int k = 0; k < two; ++k) {
                         double* __restrict zk = &z[k * BLK];
                         #pragma omp simd
