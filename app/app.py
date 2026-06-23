@@ -4,6 +4,7 @@ Run with:  streamlit run app/app.py
 """
 
 import os
+import gc
 import random
 import sys
 import time
@@ -1700,6 +1701,13 @@ elif st.session_state["page"] == "dashboard":
             st.error(tr("mc_mem_block", gb=_guard_gb, ram=_ram_gb,
                         safe=_safe_paths(_ram_gb, len(selected_tickers), _guard_N)))
             st.stop()
+        # Drop the PREVIOUS run's retained arrays before allocating this run's
+        # working set, so a re-run never holds both result sets at once. _R_pre
+        # (read above for asset_names) also references the old dict — null it too,
+        # or session_state["results"]=None won't actually free the arrays.
+        st.session_state["results"] = None
+        _R_pre = None
+        gc.collect()
         with st.status(tr("mc_status_title"), expanded=True) as _mc_status:
             st.write(tr("mc_status_loading"))
             _hist_years = st.session_state.get("history_years", None)
@@ -1780,7 +1788,18 @@ elif st.session_state["page"] == "dashboard":
             _run_secs = time.perf_counter() - _t_run
 
             n_assets   = len(cal_result.params)
-            sim_prices = np.stack(sim_results["S_paths"], axis=2)
+            sim_prices = np.stack(sim_results["S_paths"], axis=2)   # (2·n_paths, N+1, n) f64
+            # The raw per-asset path lists are now redundant: sim_prices is the
+            # stacked copy and V_paths is never read downstream. Pull out the only
+            # fields still needed (3×3 corr matrices) and free the rest immediately
+            # — both sim_results AND the sim object hold those arrays, so drop both;
+            # that's ~2/3 of the run's float64 footprint released before pricing.
+            _realized_corr  = sim_results["realized_corr"]
+            _effective_corr = sim_results.get("effective_corr")
+            sim.S_paths = sim.V_paths = None
+            del sim_results, sim
+            gc.collect()
+
             S0_vec     = np.array([p.S0 for p in cal_result.params]).reshape(1, 1, n_assets)
             perf_paths = sim_prices / S0_vec
             wof_paths  = perf_paths.min(axis=2)
@@ -1793,11 +1812,7 @@ elif st.session_state["page"] == "dashboard":
             # Memory: store the display arrays as float32 (halves the footprint).
             # All payoff statistics in note_results were already computed at
             # float64 by price_note above, and everything downstream (percentile
-            # fans, path explorer, per-asset perf) is display-level. Keep only
-            # realized_corr from sim_results — the sole field the dashboard reads;
-            # the rest of sim_results held S_paths (a duplicate of sim_prices)
-            # plus V_paths, ~2/3 of the run's memory for data never read again.
-            # grid_dates / div_schedule were write-only and are dropped too.
+            # fans, path explorer, per-asset perf) is display-level.
             st.session_state["results"] = {
                 **note_results,
                 "worst_of_paths": wof_paths.astype(np.float32),
@@ -1806,8 +1821,8 @@ elif st.session_state["page"] == "dashboard":
                 "s0_values":      s0_values,
                 "params":         cal_result.params,
                 "corr_SS":        cal_result.corr_SS,
-                "realized_corr":  sim_results["realized_corr"],
-                "effective_corr": sim_results.get("effective_corr"),
+                "realized_corr":  _realized_corr,
+                "effective_corr": _effective_corr,
                 "t_dof":          cal_result.t_dof,
                 "terms_snapshot": terms.to_dict(),
                 # Real-calendar grid metadata (drives charts + obs tables)
@@ -1817,6 +1832,14 @@ elif st.session_state["page"] == "dashboard":
                 "engine_used":    _eng_used,
                 "run_secs":       _run_secs,
             }
+            # Release the float64 working set NOW that the float32 display copies are
+            # stored — don't hold the big cubes (sim_prices/perf_paths f64, ~hundreds
+            # of MB) until the next rerun unwinds the frame. note_results' arrays live
+            # on inside session_state (the spread copied the refs), so dropping the
+            # local name is safe. gc.collect() returns the freed pages to the OS.
+            del sim_prices, perf_paths, wof_paths, note_results
+            gc.collect()
+
             st.session_state["last_asset_names"] = list(selected_tickers.values())
             st.session_state["path_num"] = 0
             _mc_status.update(label=tr("mc_status_done", secs=_run_secs),
