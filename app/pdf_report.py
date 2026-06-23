@@ -2883,17 +2883,26 @@ def _build_pdf_report(
             pdf.figure(_fig_to_png(fig, **_kw),
                        _t("fig_individual", lang).format(name=nm), src_mc)
 
-    # 3c. Path Explorer — the single simulated path the user last viewed
+    # 3c. Path Explorer — the simulated path(s) the user last viewed. One worst-of
+    # chart per comparison panel, captioned with the user's panel title (or the
+    # default "Worst-of path #N"); the primary panel also carries the price chart.
     _sec = _lazy_section(_t("mc_subtab_explorer", lang), before=_mc_div)
     _pn = figures.get("single_path_num", 0)
     if _inc("mc_single_price") and figures.get("single_path_price") is not None:
         _sec()
         pdf.figure(_fig_to_png(figures.get("single_path_price"), **_kw),
                    _t("fig_single_price", lang).format(n=_pn), src_mc)
-    if _inc("mc_single_wof") and figures.get("single_path_wof") is not None:
-        _sec()
-        pdf.figure(_fig_to_png(figures.get("single_path_wof"), **_kw),
-                   _t("fig_single_wof", lang).format(n=_pn), src_mc)
+    # Back-compat: sessions from before multi-panel only stored one wof figure.
+    _panels = figures.get("panels")
+    if not _panels and figures.get("single_path_wof") is not None:
+        _panels = [{"title": None, "wof": figures.get("single_path_wof"), "num": _pn}]
+    if _inc("mc_single_wof") and _panels:
+        for _p in _panels:
+            if _p.get("wof") is None:
+                continue
+            _sec()
+            _cap = _p.get("title") or _t("fig_single_wof", lang).format(n=_p.get("num", 0))
+            pdf.figure(_fig_to_png(_p["wof"], **_kw), _cap, src_mc)
 
     # ── 4. Calibration ─────────────────────────────────────────────────────
     # Still part of the Monte Carlo lens (the model behind the simulation), so it

@@ -119,8 +119,8 @@ def build_figures(results: dict, terms: NoteTerms, lang: str = "en") -> dict:
     obs_pairs = [(f"P{i+1}", float(t)) for i, t in enumerate(obs_times)]
 
     f_irr = charts.build_irr_distribution(
-        results["annualized_returns"], results["autocall_events"],
-        results["expected_irr"], terms.coupon_pa, tr)
+        results["annualized_returns"], results.get("total_returns"),
+        results["autocall_events"], results["expected_irr"], terms.coupon_pa, tr)
     f_wof = charts.build_wof_fan(
         results["worst_of_paths"], results["t_grid_years"],
         terms.knock_in_barrier, obs_pairs, tr,

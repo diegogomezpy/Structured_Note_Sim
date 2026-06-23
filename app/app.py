@@ -1929,18 +1929,25 @@ elif st.session_state["page"] == "dashboard":
                     )
                     st.plotly_chart(_sp_wof_fig, use_container_width=True,
                                     key=f"mc_woffig_{pid}")
-                    # The PRIMARY panel feeds the PDF Path Explorer. The per-asset
-                    # price chart is built here for the PDF only (kept off-screen).
-                    if is_primary and "_pdf_mc_figures" in st.session_state:
-                        path_df = pd.DataFrame(
-                            {n: sim_prices[pn, :, i] for i, n in enumerate(asset_names)})
-                        _sp_price_fig = build_path_price_chart(
-                            path_df, pn, obs_steps_i, obs_labels, tr)
-                        st.session_state["_pdf_mc_figures"].update({
-                            "single_path_price": _sp_price_fig,
-                            "single_path_wof":   _sp_wof_fig,
-                            "single_path_num":   pn,
+                    # Feed the PDF Path Explorer: EVERY panel contributes its worst-of
+                    # chart + the user's panel title, so the report mirrors all the
+                    # comparison panels. The primary panel also supplies the per-asset
+                    # price chart (built here for the PDF only, kept off-screen).
+                    if "_pdf_mc_figures" in st.session_state:
+                        _pdf_figs = st.session_state["_pdf_mc_figures"]
+                        _pdf_figs.setdefault("panels", []).append({
+                            "title": _custom_title or None,
+                            "wof":   _sp_wof_fig,
+                            "num":   pn,
                         })
+                        if is_primary:
+                            path_df = pd.DataFrame(
+                                {n: sim_prices[pn, :, i] for i, n in enumerate(asset_names)})
+                            _pdf_figs.update({
+                                "single_path_price": build_path_price_chart(
+                                    path_df, pn, obs_steps_i, obs_labels, tr),
+                                "single_path_num":   pn,
+                            })
 
                     principal = float(R["principal_payoffs"][pn])
                     coupons   = float(R["coupon_payoffs"][pn])
@@ -1980,6 +1987,10 @@ elif st.session_state["page"] == "dashboard":
             def _mc_path_explorer():
                 st.subheader(tr("single_path_subheader"))
                 st.caption(tr("explorer_intro_caption"))
+                # Rebuild the per-panel PDF list from scratch each run so removed
+                # panels drop out and the order (A, B, C) is preserved.
+                if "_pdf_mc_figures" in st.session_state:
+                    st.session_state["_pdf_mc_figures"]["panels"] = []
                 ids = st.session_state.setdefault("mc_panel_ids", [0])
                 if len(ids) < 3 and st.button(tr("explorer_add_panel"),
                                               key="mc_add_panel"):

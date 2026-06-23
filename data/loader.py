@@ -398,7 +398,15 @@ def _iv_3m(ticker, sym: str, quote_type: str | None, spot, closes=None):
     level (also an implied figure). When neither is available — e.g. a single
     European stock with no Yahoo option chain — falls back to a ~3M realized vol
     computed from ``closes`` so the figure is still populated and honestly
-    labelled. ``(None, None)`` only when there is no price history either."""
+    labelled. ``(None, None)`` only when there is no price history either.
+
+    A realized-vol sanity gate guards against Yahoo's intermittently broken ATM
+    quotes: implied vol carries a risk premium and so normally sits AT or ABOVE
+    realized, never a small fraction of it. When the option-chain figure comes
+    back far below realized (e.g. Morgan Stanley at 2.3% against ~30% realized —
+    above the 1% junk floor but still nonsense) we treat it as bad data and use
+    the realized figure instead, honestly labelled."""
+    rv = _realized_vol(closes) if closes is not None else None
     try:
         exps = ticker.options
     except Exception:
@@ -410,6 +418,9 @@ def _iv_3m(ticker, sym: str, quote_type: str | None, spot, closes=None):
             oc = ticker.option_chain(best)
             iv = _atm_iv(oc.calls, oc.puts, spot)
             if iv is not None:
+                # Implausibly far below realized → bad quote; prefer realized.
+                if rv is not None and iv < 0.5 * rv:
+                    return rv, "realized"
                 return iv, "implied"
         except Exception:
             pass
@@ -422,7 +433,6 @@ def _iv_3m(ticker, sym: str, quote_type: str | None, spot, closes=None):
                 return float(h.iloc[-1]) / 100.0, "implied"
         except Exception:
             pass
-    rv = _realized_vol(closes) if closes is not None else None
     if rv is not None:
         return rv, "realized"
     return None, None
