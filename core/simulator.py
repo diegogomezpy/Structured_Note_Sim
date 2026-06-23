@@ -199,27 +199,6 @@ def validate_and_fix_corr(
 
 
 # ---------------------------------------------------------------------------
-# One Heston time step — the single source of truth for the update formula.
-# Operates on (n_total, n) slices (paths × assets); kappa/theta/xi/xi2/mu are
-# per-asset vectors broadcast over paths. Used by every storage mode in run(),
-# so the Milstein-variance + log-Euler-price scheme can never drift between them.
-# ---------------------------------------------------------------------------
-
-def _heston_step(S_prev, V_prev, dW_S, dW_V, dt, kappa, theta, xi, xi2, mu):
-    V_pos  = np.maximum(V_prev, 0.0)
-    sqV    = np.sqrt(V_pos)
-    V_next = np.maximum(
-        V_prev
-        + kappa * (theta - V_prev) * dt
-        + xi * sqV * dW_V
-        + 0.5 * xi2 * (dW_V ** 2 - dt),
-        0.0,
-    )
-    S_next = S_prev * np.exp(mu * dt - 0.5 * V_pos * dt + sqV * dW_S)
-    return S_next, V_next
-
-
-# ---------------------------------------------------------------------------
 # Multi-asset simulator
 # ---------------------------------------------------------------------------
 
@@ -350,8 +329,7 @@ class HestonMultiSimulator:
     # Core simulation
     # ------------------------------------------------------------------
 
-    def run(self, keep_steps: Optional[list] = None,
-            engine: str = "numpy") -> dict:
+    def run(self) -> dict:
         """
         Simulate all paths using:
           - Milstein scheme for the variance process
@@ -359,41 +337,14 @@ class HestonMultiSimulator:
           - Student-t copula if t_dof is set, else Gaussian
           - Vectorized realized correlation (no path loop)
 
-        engine : "numpy" (default) | "numba"
-            "numpy" is the reference implementation (bit-identical to the original
-            and to prior versions). "numba" is an OPTIONAL JIT engine that runs the
-            same model parallelised across cores; it keeps full daily paths and is
-            validated against the numpy engine by CONVERGENCE of statistics, not
-            bit-equality (different RNG stream + fastmath). It ignores keep_steps
-            (always full storage) and requires `pip install numba`.
-
-        Storage modes
-        -------------
-        keep_steps=None  (default, "full"):
-            Store every daily step for S and V — the interactive contract. Needed
-            for the percentile fans, the path explorer, and the realized/effective
-            correlation diagnostics (which require full daily resolution of the
-            base paths). Memory ~ N · 2·n_paths · n · 8 B per array.
-
-        keep_steps=[s1, s2, ...]  ("observation-only"):
-            Store ONLY those step indices of S (step 0 is always included), so the
-            output is the compact (2·n_paths, K, n) array the payoff engine needs —
-            exactly the shape core.backtest builds. The time loop still integrates
-            every step (the SDE recursion is sequential); it just doesn't *retain*
-            the intermediate columns, rolling a 1-step state instead. Memory drops
-            from O(N) to O(K) columns — the difference between ~24 GB and ~0.6 GB at
-            1,000,000 paths — which is what makes large pricing runs feasible.
-            V is not stored and the correlation diagnostics return None (they need
-            full daily resolution; run a smaller full sample for them).
-
         Returns
         -------
         dict with keys:
-            S_paths    : list of n arrays (2*n_paths, K)   [K = N+1 in full mode]
-            V_paths    : list of n arrays (2*n_paths, N+1) | None (obs-only mode)
-            S_terminal : np.ndarray (2*n_paths, n)  — at the last kept step
+            S_paths    : list of n arrays (2*n_paths, N+1)
+            V_paths    : list of n arrays (2*n_paths, N+1)
+            S_terminal : np.ndarray (2*n_paths, n)
             log_returns_terminal : np.ndarray (2*n_paths, n)
-            realized_corr / effective_corr : np.ndarray (n, n) | None (obs-only)
+            realized_corr : np.ndarray (n, n)
             feller     : list of (bool, float) per asset
         """
         n        = self.n_assets
@@ -433,9 +384,6 @@ class HestonMultiSimulator:
         # unchanged and the per-element arithmetic is the same formula, so results
         # are bit-identical to the per-asset version (verified against the prior
         # implementation), just faster.
-        if engine not in ("numpy", "numba"):
-            raise ValueError(f"engine must be 'numpy' or 'numba', got {engine!r}")
-
         kappa = np.array([p.kappa for p in self.params])
         theta = np.array([p.theta for p in self.params])
         xi    = np.array([p.xi    for p in self.params])
@@ -444,47 +392,16 @@ class HestonMultiSimulator:
         S0v   = np.array([p.S0    for p in self.params])
         V0v   = np.array([p.V0    for p in self.params])
 
-        # Which step columns to RETAIN. Full mode keeps all N+1; observation-only
-        # keeps {0} ∪ keep_steps. The recursion still visits every step either way
-        # (it's sequential) — we just decide what to store. col_for[t] is the
-        # compact column index for global step t, or -1 if that step is dropped.
-        full = keep_steps is None
-        if full:
-            kept = list(range(self.N + 1))
-        else:
-            kept = sorted({0, *(int(s) for s in keep_steps if 0 <= int(s) <= self.N)})
-        K = len(kept)
-        col_for = np.full(self.N + 1, -1, dtype=int)
-        for _c, _t in enumerate(kept):
-            col_for[_t] = _c
-
-        # ── Numba engine ─────────────────────────────────────────────────────
-        # Hands the time loop to the JIT kernel (parallel across base paths), then
-        # rejoins the shared tail below (terminal values + realized-corr) on the
-        # full daily arrays it returns. Always full storage; keep_steps ignored.
-        if engine == "numba":
-            from core.simulator_numba import simulate_full
-            S, V = simulate_full(
-                S0v, V0v, kappa, theta, xi, mu, self.L, dt_arr, sdt_arr,
-                self.div_schedule, self.t_dof, self.seed, n_base, n, self.N)
-            return self._finalize(S, V, n, n_base, feller_results, full=True)
-
-        # ── numpy engine (reference) ─────────────────────────────────────────
-        # Stored TIME-FIRST as (K, n_total, n): each retained step writes the
-        # contiguous block [col] (paths × assets) rather than a strided per-path
-        # column (a column write into a (n_paths, N+1) array touches a separate
-        # cache line per path — measured ~16× slower). In full mode K = N+1 and
-        # this is the whole grid; in observation-only mode K ≪ N+1, which is the
-        # memory win. V is only materialised when full (it feeds the realized-corr
-        # diagnostic and the public V_paths). The recursion carries a rolling
-        # 1-step state (S_prev/V_prev) so dropped columns cost no storage.
-        out_S = np.empty((K, n_total, n))
-        out_V = np.empty((K, n_total, n)) if full else None
-        S_prev = np.empty((n_total, n)); S_prev[:] = S0v[np.newaxis, :]
-        V_prev = np.empty((n_total, n)); V_prev[:] = V0v[np.newaxis, :]
-        out_S[0] = S_prev
-        if full:
-            out_V[0] = V_prev
+        # Stored TIME-FIRST as (N+1, n_total, n): each step writes the contiguous
+        # block [t+1] (paths × assets) rather than a strided per-path column — the
+        # same cache-locality win as the old per-asset row layout (a column write
+        # into a (n_paths, N+1) array touches a separate cache line per path and
+        # measured ~16× slower), now spanning assets too. Transposed back to the
+        # public list-of-(n_total, N+1) contract after the loop (one cheap copy).
+        S = np.empty((self.N + 1, n_total, n))
+        V = np.empty((self.N + 1, n_total, n))
+        S[0] = S0v[np.newaxis, :]
+        V[0] = V0v[np.newaxis, :]
 
         div = self.div_schedule    # (n, N) or None
 
@@ -518,9 +435,22 @@ class HestonMultiSimulator:
             dW_S = W[:, :n] * sdt             # (n_total, n)
             dW_V = W[:, n:] * sdt             # (n_total, n)
 
-            # --- One Heston step (shared formula; bit-identical across modes) ---
-            S_next, V_next = _heston_step(
-                S_prev, V_prev, dW_S, dW_V, dt, kappa, theta, xi, xi2, mu)
+            V_t   = V[t]                       # (n_total, n)
+            V_pos = np.maximum(V_t, 0.0)
+            sqV   = np.sqrt(V_pos)
+
+            # --- Milstein variance step + full truncation (all assets at once) ---
+            # dV = kappa*(theta-V)*dt + xi*sqrt(V)*dW_V + 0.5*xi²*(dW_V² - dt)
+            V[t + 1] = np.maximum(
+                V_t
+                + kappa * (theta - V_t) * dt
+                + xi * sqV * dW_V
+                + 0.5 * xi2 * (dW_V ** 2 - dt),
+                0.0,
+            )
+
+            # --- Log-Euler price step (exact for GBM) ---
+            S[t + 1] = S[t] * np.exp(mu * dt - 0.5 * V_pos * dt + sqV * dW_S)
 
             # --- Pre-programmed dividend jump (proportional drop, per ex-date) ---
             # The drift mu is calibrated on adjusted closes (total return); the
@@ -528,28 +458,14 @@ class HestonMultiSimulator:
             # decline the note's barriers observe. Broadcast over paths; a 0 entry
             # is a no-op (×1), so no per-asset branch is needed.
             if div is not None:
-                S_next *= (1.0 - div[:, t])[np.newaxis, :]
+                S[t + 1] *= (1.0 - div[:, t])[np.newaxis, :]
 
-            # Retain this step's columns only if it's a kept step.
-            _c = col_for[t + 1]
-            if _c >= 0:
-                out_S[_c] = S_next
-                if full:
-                    out_V[_c] = V_next
-            S_prev, V_prev = S_next, V_next
-
-        # Back to the public (n_total, K) contract: list of n C-contiguous arrays
+        # Back to the public (n_total, N+1) contract: list of n C-contiguous arrays
         # so every downstream consumer (price_note, charts, the realized-corr block
         # below) keeps fast row-over-paths access. One cheap copy per asset.
-        S = [np.ascontiguousarray(out_S[:, :, i].T) for i in range(n)]
-        V = ([np.ascontiguousarray(out_V[:, :, i].T) for i in range(n)]
-             if full else None)
-        return self._finalize(S, V, n, n_base, feller_results, full=full)
+        S = [np.ascontiguousarray(S[:, :, i].T) for i in range(n)]
+        V = [np.ascontiguousarray(V[:, :, i].T) for i in range(n)]
 
-    def _finalize(self, S, V, n, n_base, feller_results, full):
-        """Shared post-loop tail for both engines: store the paths, compute
-        terminal values, and (full-storage only) the realized/effective
-        correlation diagnostics. Returns the public results dict."""
         self.S_paths = S
         self.V_paths = V
 
@@ -564,23 +480,6 @@ class HestonMultiSimulator:
         # by design, making the diagnostic circular.  We use only the first n_base
         # paths (the original draws) for an honest out-of-sample check.
         #
-        # The diagnostic needs the FULL daily series of S and V, so it is only
-        # computed in full-storage mode. Observation-only runs are for large-scale
-        # pricing; validate correlation on a smaller full-mode sample instead.
-        if not full:
-            realized_corr = effective_corr = None
-            results = {
-                "S_paths":              S,
-                "V_paths":              None,
-                "S_terminal":           S_T,
-                "log_returns_terminal": LR,
-                "realized_corr":        None,
-                "effective_corr":       None,
-                "feller":               feller_results,
-            }
-            self._print_summary(results)
-            return results
-
         # Held per asset as 2-D (n_base, N) arrays rather than one stacked
         # (n_base, N, n) cube. The cube forced two np.stack(axis=2) rearrangements
         # plus a chain of (n_base, N, n) temporaries (daily returns, vol weights,
@@ -688,18 +587,13 @@ class HestonMultiSimulator:
         for row in self.corr_SS:
             print("    " + "  ".join(f"{v:+.3f}" for v in row))
         print()
-        if RC is None:
-            # Observation-only run: the realized-corr diagnostic needs full daily
-            # resolution, which this storage mode deliberately doesn't retain.
-            print("  Realized correlation: n/a (observation-only storage mode)")
-        else:
-            print("  Realized instantaneous correlations (vol-standardized):")
-            names = [p.name for p in self.params]
-            header = "         " + "  ".join(f"{nm:>7}" for nm in names)
-            print(header)
-            for i, nm in enumerate(names):
-                row = "  ".join(f"{RC[i,j]:+.3f}" for j in range(n))
-                print(f"  {nm:>7}  {row}")
+        print("  Realized instantaneous correlations (vol-standardized):")
+        names = [p.name for p in self.params]
+        header = "         " + "  ".join(f"{nm:>7}" for nm in names)
+        print(header)
+        for i, nm in enumerate(names):
+            row = "  ".join(f"{RC[i,j]:+.3f}" for j in range(n))
+            print(f"  {nm:>7}  {row}")
         print("=" * 60 + "\n")
 
     def plot(self, n_display: int = 40, save_path: str | None = None) -> None:

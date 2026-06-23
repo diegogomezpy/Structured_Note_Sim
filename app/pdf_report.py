@@ -2470,7 +2470,7 @@ def _cover_page(
         _mc.append(_t("mc_subtab_payoff", lang))
     if inc("mc_wof") or _any_fan:
         _mc.append(_t("mc_subtab_paths", lang))
-    if inc("mc_single_price") or inc("mc_single_wof"):
+    if inc("mc_single_wof"):
         _mc.append(_t("mc_subtab_explorer", lang))
     if results.get("params") and (inc("calib_table") or inc("calib_corr")):
         _mc.append(_t("calibration", lang))
@@ -2730,7 +2730,7 @@ def _build_pdf_report(
         # so it is included only when the report actually carries MC output. A
         # Note-details / backtest / live-only report (sim skipped) omits it.
         _mc_keys = {"mc_metrics", "mc_irr", "mc_autocall", "mc_wof",
-                    "mc_single_price", "mc_single_wof", "calib_table", "calib_corr"}
+                    "mc_single_wof", "calib_table", "calib_corr"}
         _mc_keys |= {f"mc_fan_{i}" for i in range(len(asset_names or []))}
         if any(_inc(k) for k in _mc_keys):
             pdf.ln(8)   # breathing room before the model box
@@ -2885,13 +2885,10 @@ def _build_pdf_report(
 
     # 3c. Path Explorer — the simulated path(s) the user last viewed. One worst-of
     # chart per comparison panel, captioned with the user's panel title (or the
-    # default "Worst-of path #N"); the primary panel also carries the price chart.
+    # default "Worst-of path #N"). The per-asset price chart was removed from the
+    # explorer, so it is no longer in the report either.
     _sec = _lazy_section(_t("mc_subtab_explorer", lang), before=_mc_div)
     _pn = figures.get("single_path_num", 0)
-    if _inc("mc_single_price") and figures.get("single_path_price") is not None:
-        _sec()
-        pdf.figure(_fig_to_png(figures.get("single_path_price"), **_kw),
-                   _t("fig_single_price", lang).format(n=_pn), src_mc)
     # Back-compat: sessions from before multi-panel only stored one wof figure.
     _panels = figures.get("panels")
     if not _panels and figures.get("single_path_wof") is not None:

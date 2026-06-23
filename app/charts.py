@@ -543,19 +543,24 @@ def build_path_wof_chart(
     asset_names:      list[str]  | None = None,
     autocall_barrier: float | None      = None,
     autocall_schedule: list[tuple[float, float]] | None = None,
-    coupon_flags:     list[bool] | None = None,
-    knock_in:         bool = False,
+    marker_info:      list[dict] | None = None,
     title:            str | None = None,
 ) -> go.Figure:
     """Worst-of performance path with per-observation event markers.
 
     The note's life ends at the autocall: when ``autocall_q > 0`` the worst-of
     line and the observation markers stop at the call step — nothing is drawn for
-    the periods that never happened. Each marker's legend entry spells out what
-    occurred (coupon paid / missed, autocall, and at maturity the knock-in /
-    par-redemption outcome) so the path reads on its own. Pass ``asset_paths`` to
-    overlay the individual underlyings behind the worst-of (dashed). ``title``
-    overrides the default header."""
+    the periods that never happened.
+
+    ``marker_info`` is one dict per live observation, built by the caller from the
+    canonical engine (replay_note) so the legend spells out the full note state at
+    each date: worst-of level, the coupon outcome (paid amount, memory multiplier
+    or pending count, or an accruing/paid premium for growth autocalls), the
+    autocall, and at maturity the knock-in / par-redemption result. Each carries:
+        {"text": str, "kind": one of call_coupon|call|coupon|missed|knock_in}
+    ``kind`` drives the marker colour/shape; ``text`` is the legend label. Pass
+    ``asset_paths`` to overlay the underlyings (dashed). ``title`` overrides the
+    header."""
     asset_colors = [_BLUE, _BLUE_LIGHT, _NAVY, "#f39c12", "#9b59b6"]
     fig = go.Figure()
 
@@ -584,38 +589,25 @@ def build_path_wof_chart(
         annotation_position="bottom right",
     )
     _add_autocall_barrier(fig, autocall_barrier, autocall_schedule, tr, x0=0)
-    for i, (step, label) in enumerate(zip(obs_steps, obs_labels)):
-        period       = i + 1
-        if autocall_q > 0 and period > autocall_q:
-            break                       # note terminated at the call
-        called_here      = (autocall_q == period)
-        reached_maturity = (autocall_q == 0 and period == n_obs)
-        paid = bool(coupon_flags[i]) if (coupon_flags is not None and i < len(coupon_flags)) else None
-
-        parts = [label]
-        if called_here:
-            parts.append(tr("leg_called"))
-        elif reached_maturity:
-            parts.append(tr("leg_maturity"))
-        if paid is not None:
-            parts.append(tr("coupon_paid_label") if paid else tr("coupon_missed_label"))
-        if reached_maturity:
-            parts.append(tr("leg_knock_in") if knock_in else tr("leg_no_knock_in"))
-        name = " · ".join(parts)
-
-        if reached_maturity and knock_in:
-            marker_color, marker_sym, sz = _RED, "x", 13
-        elif called_here:
-            marker_color = _GREEN if paid else _BLUE
-            marker_sym, sz = "star", 14
-        else:
-            marker_color = (_GREEN if paid else _GREY) if paid is not None else _GREY
-            marker_sym, sz = "circle", 11
+    # kind → (colour, symbol, size). Star = autocall (green if it also paid),
+    # red ✕ = capital loss at maturity, green/grey circle = coupon paid / missed.
+    _kind_style = {
+        "call_coupon": (_GREEN, "star",   14),
+        "call":        (_BLUE,  "star",   14),
+        "coupon":      (_GREEN, "circle", 11),
+        "missed":      (_GREY,  "circle", 11),
+        "knock_in":    (_RED,   "x",      13),
+    }
+    for i, info in enumerate(marker_info or []):
+        if i >= len(obs_steps):
+            break
+        step, label = obs_steps[i], obs_labels[i]
+        color, marker_sym, sz = _kind_style.get(info.get("kind"), (_GREY, "circle", 11))
         fig.add_trace(go.Scatter(
             x=[step], y=[worst_path[step]], mode="markers",
-            marker=dict(size=sz, color=marker_color, symbol=marker_sym,
+            marker=dict(size=sz, color=color, symbol=marker_sym,
                         line=dict(width=1.5, color=_WHITE)),
-            name=name,
+            name=info.get("text", label),
         ))
         fig.add_vline(x=step, line_dash="dot", line_color="#aaa",
                       annotation_text=label, annotation_position="top")
@@ -1084,14 +1076,18 @@ def build_live_performance_chart(
             tip = tr("chart_marker_coupon_missed", label=m["label"])
             color, symbol, size = _RED, "circle", 9
         fig.add_trace(go.Scatter(
-            x=[m["date"]], y=[m["wof"]],
+            # ISO string, not a raw Timestamp: kaleido serialises the figure to
+            # JSON to render the PDF and a Timestamp x raises "Type is not JSON
+            # serializable" — the chart then silently drops from the report
+            # (it renders fine in the browser, which is why it was easy to miss).
+            x=[pd.Timestamp(m["date"]).isoformat()], y=[m["wof"]],
             mode="markers",
             marker=dict(size=size, color=color, symbol=symbol,
                         line=dict(width=1.5, color="white")),
             name=tip, showlegend=True,
             hovertemplate=f"{tip}<br>{tr('chart_worst_of')}: {m['wof']:.1%}<extra></extra>",
         ))
-        fig.add_vline(x=m["date"].isoformat(), line_dash="dot", line_color="#cccccc",
+        fig.add_vline(x=pd.Timestamp(m["date"]).isoformat(), line_dash="dot", line_color="#cccccc",
                       annotation_text=m["label"], annotation_position="top")
 
     # Future observation reference lines (calendar dates)

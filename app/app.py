@@ -39,7 +39,7 @@ from data.loader     import (load_prices, load_dividends, build_dividend_schedul
 from translations import Translator
 from charts import (
     build_irr_distribution, build_fan_chart, build_wof_fan,
-    build_path_price_chart, build_path_wof_chart, build_corr_heatmap,
+    build_path_wof_chart, build_corr_heatmap,
     build_backtest_outcome_bar, build_worst_asset_pie,
     build_backtest_irr_scatter, build_historical_prices,
     build_historical_wof_path, build_live_performance_chart,
@@ -454,6 +454,64 @@ def _path_filter_matches(autocall_events, knock_in, total_returns, coupon_amount
     return np.nonzero(mask)[0]
 
 
+def _build_path_marker_info(rows, autocall_q, n_obs, wof_levels, knock_in, terms, tr):
+    """Per-observation legend entries for the path-explorer worst-of chart.
+
+    `rows` are replay_note(...)['rows'] (the canonical per-period facts);
+    `wof_levels[i]` is the worst-of at observation i. Returns one {text, kind}
+    per LIVE observation (the list stops at the autocall — the note is gone
+    after). Each label states the full note state at that date: worst-of level,
+    the coupon outcome (paid amount, memory multiplier or pending count, or an
+    accruing / paid premium for growth autocalls), the autocall, and at maturity
+    the knock-in vs par-redemption result.
+    """
+    info = []
+    n_live = autocall_q if autocall_q > 0 else n_obs
+    rate = terms.coupon_rate
+    for i in range(n_live):
+        period       = i + 1
+        row          = rows[i] if i < len(rows) else None
+        amt          = float(row["coupon_amount"]) if row else 0.0
+        pending      = int(row["pending_after"]) if row else 0
+        called       = (autocall_q == period)
+        reached_mat  = (autocall_q == 0 and period == n_obs)
+
+        parts = [f"P{period}", tr("leg_wof", v=f"{wof_levels[i]:.0%}")]
+        if called:
+            parts.append(tr("leg_called"))
+        elif reached_mat:
+            parts.append(tr("leg_maturity"))
+
+        if terms.coupon_at_autocall_only:                 # growth autocall premium
+            if amt > 0:
+                parts.append(tr("leg_premium", v=f"{amt:.2%}", k=period))
+            elif not called and not reached_mat:
+                parts.append(tr("leg_accruing"))
+        elif amt > 0:                                     # coupon paid
+            released = round(amt / rate) if rate else 1
+            if terms.memory and released > 1:
+                parts.append(tr("leg_coupon_memory", v=f"{amt:.2%}", k=released))
+            else:
+                parts.append(tr("leg_coupon", v=f"{amt:.2%}"))
+        else:                                             # coupon missed
+            if terms.memory and pending > 0:
+                parts.append(tr("leg_no_coupon_pending", k=pending))
+            else:
+                parts.append(tr("leg_no_coupon"))
+
+        if reached_mat:
+            parts.append(tr("leg_knock_in") if knock_in else tr("leg_redeemed_par"))
+
+        if reached_mat and knock_in:
+            kind = "knock_in"
+        elif called:
+            kind = "call_coupon" if amt > 0 else "call"
+        else:
+            kind = "coupon" if amt > 0 else "missed"
+        info.append({"text": " · ".join(parts), "kind": kind})
+    return info
+
+
 @st.cache_data(ttl=3600)
 def _run_backtest_cached(tickers_tuple, terms_json,
                          bt_start_str=None, bt_end_str=None,
@@ -493,7 +551,7 @@ _REPORT_TREE = {
         ("mc_irr",      "rep_mc_irr",      ["mc_irr"]),
         ("mc_wof",      "rep_mc_wof",      ["mc_wof"]),
         ("mc_fans",     "rep_mc_fans",     ["__mc_fans__"]),
-        ("mc_explorer", "rep_mc_explorer", ["mc_single_price", "mc_single_wof"]),
+        ("mc_explorer", "rep_mc_explorer", ["mc_single_wof"]),
         ("mc_corr",     "rep_mc_corr",     ["calib_corr"]),
         ("mc_calib",    "rep_mc_calib",    ["calib_table"]),
     ]),
@@ -1906,15 +1964,14 @@ elif st.session_state["page"] == "dashboard":
                     s0_arr        = np.array(R.get("s0_values") or [p.S0 for p in R["params"]])
                     asset_perf_pn = sim_prices[pn] / s0_arr[np.newaxis, :]
                     _ki           = bool(R["knock_in_triggered"][pn])
-                    # Per-observation coupon-paid flags via the canonical engine
+                    # Rich per-observation legend entries via the canonical engine
                     # (replay_note honours memory / coupon basket / autocall-only).
-                    # replay stops at the autocall date, so pad later periods False.
                     _perf_obs_pn = asset_perf_pn[obs_steps_i, :]
                     _cpn_rows    = replay_note(_perf_obs_pn, run_terms)["rows"]
-                    coupon_flags = [
-                        (_cpn_rows[i]["coupon_amount"] > 0) if i < len(_cpn_rows) else False
-                        for i in range(len(obs_steps_i))
-                    ]
+                    _wof_levels  = [float(wof_paths[pn, s]) for s in obs_steps_i]
+                    _marker_info = _build_path_marker_info(
+                        _cpn_rows, autocall_q, len(obs_steps_i), _wof_levels,
+                        _ki, run_terms, tr)
                     # Worst-of line with the underlying asset performances behind
                     # it (dashed, like the historical explorer); the separate raw-
                     # price chart is dropped from screen. Truncates at the call.
@@ -1924,15 +1981,15 @@ elif st.session_state["page"] == "dashboard":
                         asset_paths=asset_perf_pn, asset_names=asset_names,
                         autocall_barrier=run_terms.autocall_barrier,
                         autocall_schedule=_ac_sched_st,
-                        coupon_flags=coupon_flags, knock_in=_ki,
+                        marker_info=_marker_info,
                         title=_custom_title or None,
                     )
                     st.plotly_chart(_sp_wof_fig, use_container_width=True,
                                     key=f"mc_woffig_{pid}")
                     # Feed the PDF Path Explorer: EVERY panel contributes its worst-of
                     # chart + the user's panel title, so the report mirrors all the
-                    # comparison panels. The primary panel also supplies the per-asset
-                    # price chart (built here for the PDF only, kept off-screen).
+                    # comparison panels. (The per-asset price chart was dropped from
+                    # the explorer, so it is no longer carried into the report.)
                     if "_pdf_mc_figures" in st.session_state:
                         _pdf_figs = st.session_state["_pdf_mc_figures"]
                         _pdf_figs.setdefault("panels", []).append({
@@ -1941,13 +1998,7 @@ elif st.session_state["page"] == "dashboard":
                             "num":   pn,
                         })
                         if is_primary:
-                            path_df = pd.DataFrame(
-                                {n: sim_prices[pn, :, i] for i, n in enumerate(asset_names)})
-                            _pdf_figs.update({
-                                "single_path_price": build_path_price_chart(
-                                    path_df, pn, obs_steps_i, obs_labels, tr),
-                                "single_path_num":   pn,
-                            })
+                            _pdf_figs["single_path_num"] = pn
 
                     principal = float(R["principal_payoffs"][pn])
                     coupons   = float(R["coupon_payoffs"][pn])
