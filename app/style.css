@@ -281,6 +281,24 @@ h3 { font-size: 1.12rem; }
     to   { opacity: 1; transform: none; }
 }
 
+/* Path-explorer charts get a richer "load-in" than the plain tab fade: a rise +
+   gentle scale with an ease-out-back curve, so stepping Random/Prev/Next or
+   landing on a filtered match feels like the path is being dealt onto the page.
+   Scoped to keyed containers (st.container(key="pathload…")) — the prefix match
+   covers every explorer panel, including the multi-panel comparison instances.
+   The chart's own width-transition is preserved (only this enter runs once). */
+[class*="st-key-pathload"] [data-testid="stPlotlyChart"] {
+    animation: sti-chartload 0.55s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+@keyframes sti-chartload {
+    from { opacity: 0; transform: translateY(16px) scale(0.985); }
+    60%  { opacity: 1; }
+    to   { opacity: 1; transform: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+    [class*="st-key-pathload"] [data-testid="stPlotlyChart"] { animation: none; }
+}
+
 /* ---- Sidebar ---- */
 [data-testid="stSidebar"] {
     background: var(--slate2);

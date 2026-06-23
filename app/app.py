@@ -34,6 +34,7 @@ from core.simulator  import HestonMultiSimulator
 from core.backtest   import run_backtest, snapped_obs_dates
 from data.loader     import (load_prices, load_dividends, build_dividend_schedule,
                              load_underlying_metrics, resolve_issuer_summary,
+                             fetch_business_summary, summarize_business_summary,
                              translate_text)
 
 from translations import Translator
@@ -218,9 +219,18 @@ def _render_underlying_card(name, sym, metrics, override, prices_1y, tr) -> None
     m3.metric(tr("ul_last_price"), f"{float(lp):,.2f}" if lp not in (None, "") else "—")
     m4.metric(tr("ul_rsi"),    f"{float(rsi):.0f}"     if rsi not in (None, "") else "—")
 
-    desc = override.get("description") or metrics.get("business_summary") or ""
+    # A user-entered description wins as-is; the raw Yahoo summary fallback is
+    # condensed so the card shows a one-liner, not a paragraph of boilerplate.
+    # The full Yahoo text stays available behind a toggle.
+    _full_desc = metrics.get("business_summary")
+    desc = override.get("description")
+    if not desc:
+        desc = summarize_business_summary(_full_desc) or ""
     if desc:
         st.caption(desc)
+    if _full_desc and _full_desc.strip() and _full_desc.strip() != (desc or "").strip():
+        with st.expander(tr("ul_show_full_desc")):
+            st.caption(_full_desc)
 
     cols = getattr(prices_1y, "columns", [])
     if prices_1y is not None and name in cols:
@@ -355,6 +365,28 @@ def _resolve_issuer_summary_cached(name):
         _ISSUER_SUMMARY_CACHE[name] = out
     return out
 
+
+# Per-underlying business-summary cache keyed on symbol. Same "cache only real
+# hits" policy as the issuer cache. Uses the lightweight fetch_business_summary
+# (one .info read, no option-chain IV / RSI work) so the prefill button doesn't
+# wait on the full metrics bundle it would only throw away.
+_UL_SUMMARY_CACHE: dict[str, str] = {}
+
+
+def _fetch_ul_summary_cached(sym):
+    """Business summary for one underlying symbol, for the description prefill."""
+    if not sym:
+        return None
+    if sym in _UL_SUMMARY_CACHE:
+        return _UL_SUMMARY_CACHE[sym]
+    try:
+        out = fetch_business_summary(sym)
+    except Exception:
+        out = None
+    if out:
+        _UL_SUMMARY_CACHE[sym] = out
+    return out
+
 # Translation cache keyed on (text, target). Only SUCCESSFUL translations are
 # cached; a failure (returns the input unchanged) is NOT, so a transient blip —
 # or a click made before deep-translator was installed — doesn't pin the English
@@ -378,6 +410,57 @@ def _translate_cached(text, target_lang):
     if out and out != text:          # a genuine translation — cache it
         _TRANSLATION_CACHE[key] = out
     return out
+
+
+def _path_filter_matches(autocall_events, knock_in, total_returns, coupon_amounts,
+                         outcome="any", ac_periods=None, ki_choice="any",
+                         ret_lo=None, ret_hi=None, coupon_periods=None):
+    """Return the sorted indices of paths matching the path-explorer query.
+
+    Operates on the per-path arrays price_note already returns, so the same
+    filter logic serves the Monte Carlo explorer (and, fed the backtest's
+    per-issue arrays, the backtest explorer). All clauses are AND-combined:
+
+      outcome        "any" | "autocalled" | "maturity" | "loss" (maturity + KI)
+      ac_periods     restrict autocalls to these 1-indexed periods (None = any)
+      ki_choice      "any" | "yes" | "no"   (knock-in actually cost capital)
+      ret_lo/ret_hi  inclusive total-return band (None = unbounded that side)
+      coupon_periods path must have paid a coupon at EACH listed 1-indexed period
+                     (needs the coupon matrix; ignored when it's unavailable —
+                     e.g. a results dict cached before the matrix was exposed)
+    """
+    ac   = np.asarray(autocall_events)
+    ki   = np.asarray(knock_in, dtype=bool)
+    ret  = np.asarray(total_returns, dtype=float)
+    mask = np.ones(ac.shape[0], dtype=bool)
+
+    if outcome == "autocalled":
+        mask &= ac > 0
+        if ac_periods:
+            mask &= np.isin(ac, list(ac_periods))
+    elif outcome == "maturity":
+        mask &= ac == 0
+    elif outcome == "loss":
+        mask &= (ac == 0) & ki
+
+    if ki_choice == "yes":
+        mask &= ki
+    elif ki_choice == "no":
+        mask &= ~ki
+
+    if ret_lo is not None:
+        mask &= ret >= ret_lo
+    if ret_hi is not None:
+        mask &= ret <= ret_hi
+
+    if coupon_periods and coupon_amounts is not None:
+        ca = np.asarray(coupon_amounts)
+        for p in coupon_periods:
+            if 1 <= int(p) <= ca.shape[1]:
+                mask &= ca[:, int(p) - 1] > 0
+
+    return np.nonzero(mask)[0]
+
 
 @st.cache_data(ttl=3600)
 def _run_backtest_cached(tickers_tuple, terms_json,
@@ -684,11 +767,13 @@ if st.session_state["page"] == "setup":
                 with _dc2:
                     if st.button(tr("setup_ul_prefill"), key=f"ul_prefill_{_sym}",
                                  help=tr("setup_ul_prefill_help")):
-                        try:
-                            _m = _load_underlying_metrics_cached(((_sym, _nm),))
-                            _summ = (_m.get(_nm, {}) or {}).get("business_summary") or ""
-                        except Exception:
-                            _summ = ""
+                        with st.spinner(tr("setup_ul_prefill_spinner")):
+                            try:
+                                _summ = _fetch_ul_summary_cached(_sym) or ""
+                            except Exception:
+                                _summ = ""
+                        # Drop in a short blurb, not the full Yahoo boilerplate.
+                        _summ = summarize_business_summary(_summ) or ""
                         if _summ:
                             # Localise the English summary to the UI language.
                             _tgt = "es" if lang_choice == "Español" else "en"
@@ -1056,7 +1141,9 @@ if st.session_state["page"] == "setup":
         with _idc2:
             if st.button(tr("setup_ul_prefill"), key="issuer_desc_prefill",
                          help=tr("setup_ul_prefill_help"), disabled=not issuer_input):
-                _isumm = _resolve_issuer_summary_cached(issuer_input.strip()) if issuer_input else None
+                with st.spinner(tr("setup_ul_prefill_spinner")):
+                    _isumm = _resolve_issuer_summary_cached(issuer_input.strip()) if issuer_input else None
+                _isumm = summarize_business_summary(_isumm)
                 if _isumm:
                     _itgt = "es" if lang_choice == "Español" else "en"
                     _iout = _translate_cached(_isumm, _itgt)
@@ -1731,95 +1818,184 @@ elif st.session_state["page"] == "dashboard":
                 # Cache per-underlying fans for the PDF (Price Paths analysis).
                 st.session_state["_pdf_mc_figures"]["individual"] = _individual_figs
 
-            # P2: isolate the path explorer in a fragment so its Random/Prev/Next
+            # P2: isolate the path explorer in a fragment so its filter / step
             # buttons rerun ONLY this block, not every tab (the backtest + live
             # tabs no longer rebuild on a path step). It closes over the last
             # full run's arrays, which are stable until the next Run Simulation.
+            #
+            # The explorer renders one or more independent comparison panels. Each
+            # panel queries the full set of simulated paths down to those matching
+            # the user's conditions (outcome, autocall period, knock-in, total-
+            # return band, coupon-paid periods) and steps through the matches. The
+            # filter runs over the per-path arrays price_note already returns, so
+            # there is no second payoff pass — see _path_filter_matches.
+            max_path     = sim_prices.shape[0] - 1
+            n_obs_mc     = len(obs_times_l)
+            _mc_disp_sym = {disp: sym for sym, disp in selected_tickers.items()}
+            _mc_total    = R.get("total_returns")
+            if _mc_total is None:
+                _mc_total = np.asarray(R["nominal_payoffs"], dtype=float) - 1.0
+            _mc_total    = np.asarray(_mc_total, dtype=float)
+            _mc_coupon_m = R.get("coupon_amounts")   # None for pre-feature caches
+            _OUTCOMES    = ["any", "autocalled", "maturity", "loss"]
+            _KI_CHOICES  = ["any", "yes", "no"]
+
+            def _render_mc_panel(pid, idx, is_primary):
+                obs_labels = [lbl for lbl, _ in obs_pairs]
+                with st.container(border=True, key=f"pathload_mc_{pid}"):
+                    _h1, _h2 = st.columns([6, 1])
+                    _h1.markdown(tr("explorer_panel_label", label=chr(65 + idx)))
+                    if not is_primary and _h2.button(
+                            "✕", key=f"mc_panel_rm_{pid}", help=tr("explorer_remove_panel")):
+                        st.session_state["mc_panel_ids"].remove(pid)
+                        st.rerun(scope="fragment")
+                    _custom_title = st.text_input(
+                        tr("explorer_panel_name"), key=f"mc_title_{pid}",
+                        placeholder=tr("explorer_panel_name_ph")).strip()
+
+                    # ── Filter controls ──────────────────────────────────────
+                    with st.expander(tr("explorer_filter_title"), expanded=False):
+                        outcome = st.radio(
+                            tr("explorer_outcome_label"), _OUTCOMES,
+                            format_func=lambda o: tr(f"explorer_outcome_{o}"),
+                            horizontal=True, key=f"mc_outcome_{pid}")
+                        ac_periods = []
+                        if outcome == "autocalled":
+                            ac_periods = st.multiselect(
+                                tr("explorer_ac_period_label"),
+                                list(range(1, n_obs_mc + 1)),
+                                key=f"mc_acper_{pid}")
+                        ki_choice = st.radio(
+                            tr("explorer_ki_label"), _KI_CHOICES,
+                            format_func=lambda k: tr(f"explorer_ki_{k}"),
+                            horizontal=True, key=f"mc_ki_{pid}")
+                        _rlo, _rhi = float(_mc_total.min()), float(_mc_total.max())
+                        if _rhi - _rlo < 1e-9:
+                            _rhi = _rlo + 0.01
+                        ret_band = st.slider(
+                            tr("explorer_return_label"),
+                            min_value=round(_rlo * 100, 1), max_value=round(_rhi * 100, 1),
+                            value=(round(_rlo * 100, 1), round(_rhi * 100, 1)),
+                            format="%.1f%%", key=f"mc_ret_{pid}")
+                        if _mc_coupon_m is not None:
+                            coupon_periods = st.multiselect(
+                                tr("explorer_coupon_label"),
+                                list(range(1, n_obs_mc + 1)),
+                                key=f"mc_cpnper_{pid}",
+                                help=tr("explorer_coupon_help"))
+                        else:
+                            coupon_periods = []
+                            st.caption(tr("explorer_coupon_unavailable"))
+
+                    matches = _path_filter_matches(
+                        R["autocall_events"], R["knock_in_triggered"], _mc_total,
+                        _mc_coupon_m, outcome=outcome, ac_periods=ac_periods,
+                        ki_choice=ki_choice,
+                        ret_lo=ret_band[0] / 100.0, ret_hi=ret_band[1] / 100.0,
+                        coupon_periods=coupon_periods)
+                    M = len(matches)
+                    st.caption(tr("explorer_match_count", m=M, total=max_path + 1))
+                    if M == 0:
+                        st.info(tr("explorer_no_matches"))
+                        return
+
+                    # ── Step through the matches ─────────────────────────────
+                    pos_key = f"mc_pos_{pid}"
+                    pos = min(st.session_state.get(pos_key, 0), M - 1)
+                    _c1, _c2, _c3 = st.columns(3)
+                    if _c1.button(tr("btn_random"), key=f"mc_rnd_{pid}"):
+                        pos = random.randint(0, M - 1)
+                    if _c2.button(tr("btn_prev"), key=f"mc_prev_{pid}"):
+                        pos = max(0, pos - 1)
+                    if _c3.button(tr("btn_next"), key=f"mc_next_{pid}"):
+                        pos = min(M - 1, pos + 1)
+                    st.session_state[pos_key] = pos
+                    pn = int(matches[pos])
+                    st.caption(tr("explorer_match_caption", k=pos + 1, m=M, n=pn))
+
+                    autocall_q    = int(R["autocall_events"][pn])
+                    s0_arr        = np.array(R.get("s0_values") or [p.S0 for p in R["params"]])
+                    asset_perf_pn = sim_prices[pn] / s0_arr[np.newaxis, :]
+                    _ki           = bool(R["knock_in_triggered"][pn])
+                    # Per-observation coupon-paid flags via the canonical engine
+                    # (replay_note honours memory / coupon basket / autocall-only).
+                    # replay stops at the autocall date, so pad later periods False.
+                    _perf_obs_pn = asset_perf_pn[obs_steps_i, :]
+                    _cpn_rows    = replay_note(_perf_obs_pn, run_terms)["rows"]
+                    coupon_flags = [
+                        (_cpn_rows[i]["coupon_amount"] > 0) if i < len(_cpn_rows) else False
+                        for i in range(len(obs_steps_i))
+                    ]
+                    # Monte Carlo explorer shows ONLY the worst-of line (no per-
+                    # asset paths); the chart truncates the note's life at the call.
+                    _sp_wof_fig = build_path_wof_chart(
+                        wof_paths[pn], autocall_q, obs_steps_i, obs_labels,
+                        run_terms.knock_in_barrier, pn, tr,
+                        autocall_barrier=run_terms.autocall_barrier,
+                        autocall_schedule=_ac_sched_st,
+                        coupon_flags=coupon_flags, knock_in=_ki,
+                        title=_custom_title or None,
+                    )
+                    st.plotly_chart(_sp_wof_fig, use_container_width=True,
+                                    key=f"mc_woffig_{pid}")
+                    # The PRIMARY panel feeds the PDF Path Explorer. The per-asset
+                    # price chart is built here for the PDF only (kept off-screen).
+                    if is_primary and "_pdf_mc_figures" in st.session_state:
+                        path_df = pd.DataFrame(
+                            {n: sim_prices[pn, :, i] for i, n in enumerate(asset_names)})
+                        _sp_price_fig = build_path_price_chart(
+                            path_df, pn, obs_steps_i, obs_labels, tr)
+                        st.session_state["_pdf_mc_figures"].update({
+                            "single_path_price": _sp_price_fig,
+                            "single_path_wof":   _sp_wof_fig,
+                            "single_path_num":   pn,
+                        })
+
+                    principal = float(R["principal_payoffs"][pn])
+                    coupons   = float(R["coupon_payoffs"][pn])
+                    irr       = float(R["annualized_returns"][pn])
+                    worst_f   = float(wof_paths[pn, -1])
+                    ki        = bool(R["knock_in_triggered"][pn])
+
+                    if autocall_q > 0:
+                        t_q = obs_times_l[autocall_q - 1]
+                        st.markdown(tr("autocalled_at_md", q=autocall_q, t=t_q))
+                    elif ki:
+                        st.markdown(tr("maturity_knock_in_md", wof=worst_f))
+                    else:
+                        st.markdown(tr("maturity_no_knock_in_md", wof=worst_f))
+
+                    mc1, mc2, mc3 = st.columns(3)
+                    mc1.metric(tr("metric_principal"), f"{principal:.2%}",
+                               help=tr("mc_help_principal"))
+                    mc2.metric(tr("metric_coupons"),   f"{coupons:.2%}",
+                               help=tr("mc_help_coupons"))
+                    mc3.metric(tr("metric_irr_pa"),    f"{irr:.2%}",
+                               help=tr("mc_help_irr_pa"))
+
+                    # Per-asset final performance with logos (logo inside the card)
+                    _pe_cols = st.columns(len(asset_names))
+                    for _pe_i, (_pe_name, _pe_col) in enumerate(zip(asset_names, _pe_cols)):
+                        _pe_final = float(asset_perf_pn[-1, _pe_i])
+                        _pe_d = _pe_final - 1.0
+                        _pe_col.markdown(_live_card(
+                            _pe_name, f"{_pe_final:.1%}",
+                            delta=f"{'↓' if _pe_d < 0 else '↑'} {tr('live_metric_vs_strike', v=_pe_d)}",
+                            delta_kind=("neg" if _pe_d < 0 else "pos"),
+                            logo=_logo_src(_mc_disp_sym.get(_pe_name, ""))),
+                            unsafe_allow_html=True)
+
             @st.fragment
             def _mc_path_explorer():
                 st.subheader(tr("single_path_subheader"))
-                max_path = sim_prices.shape[0] - 1
-                pc1, pc2, pc3 = st.columns(3)
-                if pc1.button(tr("btn_random")):
-                    st.session_state["path_num"] = random.randint(0, max_path)
-                if pc2.button(tr("btn_prev")):
-                    st.session_state["path_num"] = max(0, st.session_state["path_num"] - 1)
-                if pc3.button(tr("btn_next")):
-                    st.session_state["path_num"] = min(max_path, st.session_state["path_num"] + 1)
-
-                pn = st.session_state["path_num"]
-                st.caption(tr("path_caption", n=pn, total=max_path))
-                obs_labels = [lbl for lbl, _ in obs_pairs]
-
-                path_df = pd.DataFrame(
-                    {n: sim_prices[pn, :, i] for i, n in enumerate(asset_names)}
-                )
-                _sp_price_fig = build_path_price_chart(path_df, pn, obs_steps_i, obs_labels, tr)
-                st.plotly_chart(_sp_price_fig, use_container_width=True)
-                autocall_q    = int(R["autocall_events"][pn])
-                s0_arr        = np.array(R.get("s0_values") or [p.S0 for p in R["params"]])
-                asset_perf_pn = sim_prices[pn] / s0_arr[np.newaxis, :]
-                # Per-observation coupon-paid flags via the canonical engine
-                # (replay_note honours memory / coupon basket / autocall-only).
-                # replay stops at the autocall date, so pad later periods False.
-                _perf_obs_pn = asset_perf_pn[obs_steps_i, :]
-                _replay_pn   = replay_note(_perf_obs_pn, run_terms)
-                _cpn_rows    = _replay_pn["rows"]
-                coupon_flags = [
-                    (_cpn_rows[i]["coupon_amount"] > 0) if i < len(_cpn_rows) else False
-                    for i in range(len(obs_steps_i))
-                ]
-                _sp_wof_fig = build_path_wof_chart(
-                    wof_paths[pn], autocall_q, obs_steps_i, obs_labels,
-                    run_terms.knock_in_barrier, pn, tr,
-                    asset_paths=asset_perf_pn, asset_names=asset_names,
-                    autocall_barrier=run_terms.autocall_barrier,
-                    autocall_schedule=_ac_sched_st,
-                    coupon_flags=coupon_flags,
-                )
-                st.plotly_chart(_sp_wof_fig, use_container_width=True)
-                # Cache the viewed path's figures for the PDF (Path Explorer).
-                if "_pdf_mc_figures" in st.session_state:
-                    st.session_state["_pdf_mc_figures"].update({
-                        "single_path_price": _sp_price_fig,
-                        "single_path_wof":   _sp_wof_fig,
-                        "single_path_num":   pn,
-                    })
-
-                principal = float(R["principal_payoffs"][pn])
-                coupons   = float(R["coupon_payoffs"][pn])
-                irr       = float(R["annualized_returns"][pn])
-                worst_f   = float(wof_paths[pn, -1])
-                ki        = bool(R["knock_in_triggered"][pn])
-
-                if autocall_q > 0:
-                    t_q = obs_times_l[autocall_q - 1]
-                    st.markdown(tr("autocalled_at_md", q=autocall_q, t=t_q))
-                elif ki:
-                    st.markdown(tr("maturity_knock_in_md", wof=worst_f))
-                else:
-                    st.markdown(tr("maturity_no_knock_in_md", wof=worst_f))
-
-                mc1, mc2, mc3 = st.columns(3)
-                mc1.metric(tr("metric_principal"), f"{principal:.2%}",
-                           help=tr("mc_help_principal"))
-                mc2.metric(tr("metric_coupons"),   f"{coupons:.2%}",
-                           help=tr("mc_help_coupons"))
-                mc3.metric(tr("metric_irr_pa"),    f"{irr:.2%}",
-                           help=tr("mc_help_irr_pa"))
-
-                # Per-asset final performance with logos (logo inside the card)
-                _disp_to_sym_pe = {disp: sym for sym, disp in selected_tickers.items()}
-                _pe_cols = st.columns(len(asset_names))
-                for _pe_i, (_pe_name, _pe_col) in enumerate(zip(asset_names, _pe_cols)):
-                    _pe_final = float(asset_perf_pn[-1, _pe_i])
-                    _pe_d = _pe_final - 1.0
-                    _pe_col.markdown(_live_card(
-                        _pe_name, f"{_pe_final:.1%}",
-                        delta=f"{'↓' if _pe_d < 0 else '↑'} {tr('live_metric_vs_strike', v=_pe_d)}",
-                        delta_kind=("neg" if _pe_d < 0 else "pos"),
-                        logo=_logo_src(_disp_to_sym_pe.get(_pe_name, ""))),
-                        unsafe_allow_html=True)
+                st.caption(tr("explorer_intro_caption"))
+                ids = st.session_state.setdefault("mc_panel_ids", [0])
+                if len(ids) < 3 and st.button(tr("explorer_add_panel"),
+                                              key="mc_add_panel"):
+                    ids.append((max(ids) + 1) if ids else 0)
+                    st.rerun(scope="fragment")
+                for _idx, _pid in enumerate(list(ids)):
+                    _render_mc_panel(_pid, _idx, is_primary=(_idx == 0))
 
             with mc_tab3:
                 _mc_path_explorer()
@@ -2144,34 +2320,88 @@ elif st.session_state["page"] == "dashboard":
                 except Exception:
                     pass
 
-            # P2: the issue-date selector reruns ONLY this fragment, so picking
-            # a different historical issue no longer rebuilds the MC tab, the
+            # P2: the explorer reruns ONLY its own fragment, so filtering /
+            # stepping a historical issue no longer rebuilds the MC tab, the
             # backtest summary charts, or the live tab. Closes over bt /
-            # _all_prices / terms from the last full run (stable until rerun).
-            @st.fragment
-            def _bt_path_explorer():
-                st.subheader(tr("bt_path_explorer_header"))
-                st.caption(tr("bt_path_explorer_caption"))
+            # bt_summary / _all_prices / terms from the last full run.
+            #
+            # Per-issue arrays for the explorer filter — row-aligned with `bt`
+            # (RangeIndex), so a positional match index maps straight to bt.iloc.
+            _bt_ac       = bt["Call Quarter"].to_numpy()
+            _bt_ki       = bt["Knock-in"].to_numpy()
+            _bt_irr      = bt["IRR"].to_numpy()
+            _bt_coupon_m = bt_summary.get("coupon_amounts")
+            n_obs_bt     = terms.n_obs
 
-                issue_dates = sorted(bt["Issue Date"].unique())
+            def _render_bt_panel(pid, idx, is_primary):
+                with st.container(border=True, key=f"pathload_bt_{pid}"):
+                    _h1, _h2 = st.columns([6, 1])
+                    _h1.markdown(tr("explorer_panel_label", label=chr(65 + idx)))
+                    if not is_primary and _h2.button(
+                            "✕", key=f"bt_panel_rm_{pid}", help=tr("explorer_remove_panel")):
+                        st.session_state["bt_panel_ids"].remove(pid)
+                        st.rerun(scope="fragment")
+                    _custom_title = st.text_input(
+                        tr("explorer_panel_name"), key=f"bt_title_{pid}",
+                        placeholder=tr("explorer_panel_name_ph")).strip()
 
-                _prev_dates = st.session_state.get("bt_issue_dates_list", [])
-                if list(issue_dates) != list(_prev_dates):
-                    st.session_state["bt_issue_dates_list"] = list(issue_dates)
-                    st.session_state["bt_issue_idx"] = 0
+                    with st.expander(tr("explorer_filter_title"), expanded=False):
+                        outcome = st.radio(
+                            tr("explorer_outcome_label"), _OUTCOMES,
+                            format_func=lambda o: tr(f"explorer_outcome_{o}"),
+                            horizontal=True, key=f"bt_outcome_{pid}")
+                        ac_periods = []
+                        if outcome == "autocalled":
+                            ac_periods = st.multiselect(
+                                tr("explorer_ac_period_label"),
+                                list(range(1, n_obs_bt + 1)), key=f"bt_acper_{pid}")
+                        ki_choice = st.radio(
+                            tr("explorer_ki_label"), _KI_CHOICES,
+                            format_func=lambda k: tr(f"explorer_ki_{k}"),
+                            horizontal=True, key=f"bt_ki_{pid}")
+                        _rlo, _rhi = float(_bt_irr.min()), float(_bt_irr.max())
+                        if _rhi - _rlo < 1e-9:
+                            _rhi = _rlo + 0.01
+                        ret_band = st.slider(
+                            tr("explorer_irr_label"),
+                            min_value=round(_rlo * 100, 1), max_value=round(_rhi * 100, 1),
+                            value=(round(_rlo * 100, 1), round(_rhi * 100, 1)),
+                            format="%.1f%%", key=f"bt_ret_{pid}")
+                        if _bt_coupon_m is not None:
+                            coupon_periods = st.multiselect(
+                                tr("explorer_coupon_label"),
+                                list(range(1, n_obs_bt + 1)), key=f"bt_cpnper_{pid}",
+                                help=tr("explorer_coupon_help"))
+                        else:
+                            coupon_periods = []
+                            st.caption(tr("explorer_coupon_unavailable"))
 
-                _issue_idx = min(st.session_state.get("bt_issue_idx", 0), len(issue_dates) - 1)
+                    matches = _path_filter_matches(
+                        _bt_ac, _bt_ki, _bt_irr, _bt_coupon_m, outcome=outcome,
+                        ac_periods=ac_periods, ki_choice=ki_choice,
+                        ret_lo=ret_band[0] / 100.0, ret_hi=ret_band[1] / 100.0,
+                        coupon_periods=coupon_periods)
+                    M = len(matches)
+                    st.caption(tr("explorer_match_count", m=M, total=len(bt)))
+                    if M == 0:
+                        st.info(tr("explorer_no_matches"))
+                        return
 
-                selected_issue = st.selectbox(
-                    tr("bt_issue_date_select"),
-                    issue_dates,
-                    index=_issue_idx,
-                    format_func=lambda d: d.strftime("%Y-%m-%d"),
-                    key="bt_issue_selector",
-                )
+                    pos_key = f"bt_pos_{pid}"
+                    pos = min(st.session_state.get(pos_key, 0), M - 1)
+                    _c1, _c2, _c3 = st.columns(3)
+                    if _c1.button(tr("btn_random"), key=f"bt_rnd_{pid}"):
+                        pos = random.randint(0, M - 1)
+                    if _c2.button(tr("btn_prev"), key=f"bt_prev_{pid}"):
+                        pos = max(0, pos - 1)
+                    if _c3.button(tr("btn_next"), key=f"bt_next_{pid}"):
+                        pos = min(M - 1, pos + 1)
+                    st.session_state[pos_key] = pos
 
-                if selected_issue is not None:
-                    row = bt[bt["Issue Date"] == selected_issue].iloc[0]
+                    row = bt.iloc[int(matches[pos])]
+                    selected_issue = row["Issue Date"]
+                    st.caption(tr("explorer_bt_match_caption", k=pos + 1, m=M,
+                                  d=selected_issue.strftime("%Y-%m-%d")))
                     st.markdown(
                         f"{tr('bt_outcome_label', outcome=row['Outcome'])} &nbsp;|&nbsp; "
                         f"{tr('bt_irr_label', irr=row['IRR'])} &nbsp;|&nbsp; "
@@ -2214,12 +2444,27 @@ elif st.session_state["page"] == "dashboard":
                                 autocall_schedule = _pe_sched,
                                 coupon_at_autocall_only = terms.coupon_at_autocall_only,
                                 coupon_flags      = _pe_flags,
+                                knock_in          = bool(row["Knock-in"]),
+                                title             = _custom_title or None,
                             )
-                            st.plotly_chart(_bt_path_fig, use_container_width=True)
+                            st.plotly_chart(_bt_path_fig, use_container_width=True,
+                                            key=f"bt_pathfig_{pid}")
                             # On-screen only: the single illustrative path is no
                             # longer carried into the static PDF (see pdf_report).
                     except Exception as e:
                         st.error(tr("bt_could_not_build_path", e=e))
+
+            @st.fragment
+            def _bt_path_explorer():
+                st.subheader(tr("bt_path_explorer_header"))
+                st.caption(tr("bt_path_explorer_caption"))
+                ids = st.session_state.setdefault("bt_panel_ids", [0])
+                if len(ids) < 3 and st.button(tr("explorer_add_panel"),
+                                              key="bt_add_panel"):
+                    ids.append((max(ids) + 1) if ids else 0)
+                    st.rerun(scope="fragment")
+                for _idx, _pid in enumerate(list(ids)):
+                    _render_bt_panel(_pid, _idx, is_primary=(_idx == 0))
 
             with bt_tab3:
                 _bt_path_explorer()

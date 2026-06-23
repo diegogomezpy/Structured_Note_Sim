@@ -553,6 +553,9 @@ def price_note(
             "knock_in_mask":        np.zeros(n_paths, dtype=bool),
             "annualized_returns":   irr_cp,
             "total_returns":        total_return_cp,
+            # Per-path × per-period coupon matrix (none on a capital-protected
+            # note — exposed so the path-explorer filter has a uniform shape).
+            "coupon_amounts":       np.zeros((n_paths, n_obs)),
             # Legacy alias
             "autocall_events":      zeros.astype(int),
             # Scalars
@@ -735,6 +738,16 @@ def price_note(
             terms.coupon_rate * autocall_period.astype(float),
             0.0,
         )
+        # Keep the per-period coupon matrix consistent with the actual payoff:
+        # a growth autocall pays NO periodic coupons — the accrued premium is a
+        # single lump at the call period. Without this the matrix still held the
+        # periodic barrier-met amounts (computed above), so the path-explorer
+        # "coupon paid at period t" filter saw coupons the note never paid and
+        # disagreed with the chart's replay_note flags. Lump goes at the call.
+        coupon_amounts = np.zeros((n_paths, n_obs))
+        _call_col = np.clip(autocall_period - 1, 0, n_obs - 1)
+        _rows = np.nonzero(any_autocalled)[0]
+        coupon_amounts[_rows, _call_col[_rows]] = total_coupons[_rows]
 
     # ------------------------------------------------------------------
     # Principal redemption — dispatched via knock_in_cond + protection_cond
@@ -838,6 +851,11 @@ def price_note(
         "knock_in_mask":        ki_total,   # breached AND not rescued (a real knock-in)
         "annualized_returns":   annualized_irr,
         "total_returns":        total_return,
+        # Per-path × per-period coupon amounts (n_paths, n_obs). Cells > 0 are
+        # the periods that actually paid a coupon — powers the path-explorer
+        # "coupon paid at period t" filter. Same engine, so it matches the
+        # per-path coupon_payoffs total exactly: coupon_amounts.sum(1) == coupon_payoffs.
+        "coupon_amounts":       coupon_amounts,
 
         # Legacy alias (app.py uses this key)
         "autocall_events":      autocall_period,

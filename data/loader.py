@@ -343,22 +343,35 @@ def _wilder_rsi(closes, period: int = 14):
     return float(100.0 - 100.0 / (1.0 + au / ad))
 
 
-def _atm_iv(calls: pd.DataFrame, puts: pd.DataFrame, spot: float):
-    """ATM implied vol: the strike NEAREST to spot (~100% moneyness), averaging
-    the call and put at that strike. Returns None if no usable quote is found."""
+_IV_MIN = 0.01    # 1%   — reject Yahoo's junk near-zero ATM quotes
+_IV_MAX = 5.0     # 500% — reject obvious garbage on the high side
+
+
+def _atm_iv(calls: pd.DataFrame, puts: pd.DataFrame, spot: float, n_near: int = 3):
+    """ATM implied vol near spot (~100% moneyness): the median of the plausible
+    call/put implied-vol quotes among the ``n_near`` strikes closest to spot.
+    Returns None if no usable quote is found.
+
+    Yahoo regularly returns junk implied vols for the exact ATM strike — values
+    like 1e-5 or 5e-4 that are not real vols (they'd display as 0.0%). Taking the
+    nearest strike alone then surfaced that garbage. We instead scan a few near-
+    ATM strikes and keep only quotes inside a sane band (_IV_MIN.._IV_MAX); if
+    they are ALL junk, returning None lets _iv_3m fall back to a realized vol that
+    is at least honest, rather than printing 0.0%."""
     import numpy as np
     ivs = []
     for chain in (calls, puts):
         try:
             if chain is None or len(chain) == 0 or not spot:
                 continue
-            row = chain.iloc[(chain["strike"] - spot).abs().argmin()]
-            iv  = float(row["impliedVolatility"])
-            if np.isfinite(iv) and iv > 0:
-                ivs.append(iv)
+            order = (chain["strike"] - spot).abs().to_numpy().argsort()[:n_near]
+            for iv in chain["impliedVolatility"].to_numpy()[order]:
+                iv = float(iv)
+                if np.isfinite(iv) and _IV_MIN <= iv <= _IV_MAX:
+                    ivs.append(iv)
         except Exception:
             continue
-    return float(np.mean(ivs)) if ivs else None
+    return float(np.median(ivs)) if ivs else None
 
 
 def _realized_vol(closes, window: int = 63):
@@ -551,6 +564,93 @@ def translate_text(text: str | None, target_lang: str,
         print(f"[loader] MyMemory translate failed ({type(e).__name__}: {e}); keeping original.")
 
     return text
+
+
+# Tokens that mark low-information boilerplate (geography lists, founding/HQ) vs
+# the substance of what a company actually does. Used to score sentences so the
+# blurb keeps the descriptive one, not "...offers products in the US, Europe,...".
+_GEO_HINTS = ("united states", "north america", "south america", "latin america",
+              "europe", "middle east", "africa", "asia-pacific", "asia pacific",
+              "asia", "canada", "worldwide", "internationally", "headquarter",
+              "incorporated", "was founded", "based in", "various countries")
+_BIZ_HINTS = ("offer", "provide", "operate", "design", "manufactur", "develop",
+              "produce", "sell", "engage", "distribut", "product", "service",
+              "segment", "platform", "solution", "market", "technolog", "brand")
+_ABBREV = ("inc", "corp", "co", "ltd", "llc", "plc", "sa", "ag", "nv", "bv",
+           "spa", "mr", "mrs", "dr", "u.s", "u.k", "no", "vs")
+
+
+def _split_sentences(text: str) -> list[str]:
+    """Sentence-split that re-joins fragments left by abbreviation periods
+    ("Alphabet Inc." would otherwise split after "Inc.")."""
+    import re
+    parts = re.split(r"(?<=[.!?])\s+", text)
+    out: list[str] = []
+    _abbr_re = re.compile(r"\b(" + "|".join(_ABBREV) + r")\.$", re.IGNORECASE)
+    for p in parts:
+        if out and _abbr_re.search(out[-1]):
+            out[-1] = out[-1] + " " + p
+        else:
+            out.append(p)
+    return out
+
+
+def _sentence_score(s: str) -> float:
+    low = s.lower()
+    geo = sum(low.count(t) for t in _GEO_HINTS)
+    biz = sum(low.count(t) for t in _BIZ_HINTS)
+    return biz - 0.7 * geo
+
+
+def summarize_business_summary(text: str | None, max_chars: int = 260) -> str | None:
+    """Condense a long Yahoo ``longBusinessSummary`` into one informative line.
+
+    Yahoo summaries open with a low-content geography sentence as often as not
+    ("Alphabet Inc. offers various products and platforms in the United States,
+    Europe, the Middle East, ..."), so taking the first sentence(s) produced
+    blurbs that said nothing. Instead this scores the first few sentences on
+    business-substance vs geography/founding boilerplate and keeps the most
+    descriptive one (adding the next for context if it's terse), capped at
+    ``max_chars`` on a word boundary. Never raises; returns the input unchanged
+    when it's already short."""
+    if not text or not text.strip():
+        return text
+    import re
+    clean = re.sub(r"\s+", " ", text).strip()
+    sents = [s for s in _split_sentences(clean) if s.strip()][:6]
+    if not sents:
+        return clean[:max_chars]
+    best_i = max(range(len(sents)), key=lambda i: (_sentence_score(sents[i]), -i))
+    blurb = sents[best_i].strip()
+    if len(blurb) < 90 and best_i + 1 < len(sents):
+        blurb = (blurb + " " + sents[best_i + 1].strip()).strip()
+    if len(blurb) <= max_chars:
+        return blurb
+    cut = blurb[:max_chars].rsplit(" ", 1)[0].rstrip(" ,.;:")
+    return cut + "…"
+
+
+def fetch_business_summary(sym: str, ssl_verify: bool = True) -> str | None:
+    """Fetch ONLY a ticker's business summary — the lightweight path for the
+    description prefill buttons.
+
+    ``load_underlying_metrics`` pulls the full profile *plus* an option-chain
+    implied-vol lookup and an RSI computation; the prefill needs none of that, so
+    going through it made the button wait on work it then discarded. This hits
+    ``yf.Ticker(sym).info`` once and reads a single field. Returns None on any
+    failure (caller falls back / shows a toast)."""
+    if not sym:
+        return None
+    try:
+        import yfinance as yf
+    except ImportError:
+        return None
+    try:
+        info = yf.Ticker(sym).info or {}
+        return info.get("longBusinessSummary") or None
+    except Exception as e:
+        print(f"[loader] fetch_business_summary failed for {sym}: {e}")
+        return None
 
 
 def resolve_issuer_summary(name: str, ssl_verify: bool = True) -> str | None:

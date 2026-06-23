@@ -376,22 +376,36 @@ class HestonMultiSimulator:
         print(f"  [Scheme] Milstein (variance) + log-Euler (price)")
         print(f"  [VR]     Antithetic variates — {n_base:,} base paths → {n_total:,} total")
 
-        # Pre-allocate for both original and antithetic paths.
-        #
-        # Stored TIME-FIRST (N+1, n_total) during the loop so each step writes a
-        # contiguous row S[i][t+1], not a strided column S[i][:, t+1]. A column
-        # write into a C-contiguous (n_paths, N+1) array touches a separate cache
-        # line per path (stride = (N+1)*8 bytes), so the hot loop was dominated by
-        # cache misses — measured ~16x slower than the row-write layout. The
-        # arrays are transposed back to the public (n_total, N+1) contract after
-        # the loop (a single cheap copy), so every downstream consumer is unchanged.
-        S = [np.empty((self.N + 1, n_total)) for _ in range(n)]
-        V = [np.empty((self.N + 1, n_total)) for _ in range(n)]
-        for i, p in enumerate(self.params):
-            S[i][0, :] = p.S0
-            V[i][0, :] = p.V0
+        # Per-asset Heston parameters as vectors, broadcast over paths. The TIME
+        # loop is irreducibly sequential (V[t+1] depends on V[t]), but the inner
+        # PER-ASSET loop is not: folding it into array ops over the (n_total, n)
+        # step slice removes N·(n−1) Python iterations and runs each step as a few
+        # large numpy kernels instead of n small ones. The RNG draw order is
+        # unchanged and the per-element arithmetic is the same formula, so results
+        # are bit-identical to the per-asset version (verified against the prior
+        # implementation), just faster.
+        kappa = np.array([p.kappa for p in self.params])
+        theta = np.array([p.theta for p in self.params])
+        xi    = np.array([p.xi    for p in self.params])
+        xi2   = xi ** 2
+        mu    = np.array([p.mu    for p in self.params])
+        S0v   = np.array([p.S0    for p in self.params])
+        V0v   = np.array([p.V0    for p in self.params])
 
-        # Main simulation loop
+        # Stored TIME-FIRST as (N+1, n_total, n): each step writes the contiguous
+        # block [t+1] (paths × assets) rather than a strided per-path column — the
+        # same cache-locality win as the old per-asset row layout (a column write
+        # into a (n_paths, N+1) array touches a separate cache line per path and
+        # measured ~16× slower), now spanning assets too. Transposed back to the
+        # public list-of-(n_total, N+1) contract after the loop (one cheap copy).
+        S = np.empty((self.N + 1, n_total, n))
+        V = np.empty((self.N + 1, n_total, n))
+        S[0] = S0v[np.newaxis, :]
+        V[0] = V0v[np.newaxis, :]
+
+        div = self.div_schedule    # (n, N) or None
+
+        # Main simulation loop (sequential in time, vectorized over paths × assets)
         for t in range(self.N):
             dt  = dt_arr[t]
             sdt = sdt_arr[t]
@@ -416,47 +430,41 @@ class HestonMultiSimulator:
             # --- Antithetic: stack [Z, -Z] → (n_total, 2n) ---
             Z_full = np.concatenate([Z, -Z], axis=0)
 
-            # --- Correlate via Cholesky ---
-            W = Z_full @ self.L.T   # (n_total, 2n)
+            # --- Correlate via Cholesky, then split into price/vol Brownians ---
+            W    = Z_full @ self.L.T          # (n_total, 2n)
+            dW_S = W[:, :n] * sdt             # (n_total, n)
+            dW_V = W[:, n:] * sdt             # (n_total, n)
 
-            for i, p in enumerate(self.params):
-                dW_S = W[:, i]     * sdt
-                dW_V = W[:, n + i] * sdt
+            V_t   = V[t]                       # (n_total, n)
+            V_pos = np.maximum(V_t, 0.0)
+            sqV   = np.sqrt(V_pos)
 
-                V_t   = V[i][t]          # contiguous row (time-first layout)
-                V_pos = np.maximum(V_t, 0.0)
-                sqV   = np.sqrt(V_pos)
+            # --- Milstein variance step + full truncation (all assets at once) ---
+            # dV = kappa*(theta-V)*dt + xi*sqrt(V)*dW_V + 0.5*xi²*(dW_V² - dt)
+            V[t + 1] = np.maximum(
+                V_t
+                + kappa * (theta - V_t) * dt
+                + xi * sqV * dW_V
+                + 0.5 * xi2 * (dW_V ** 2 - dt),
+                0.0,
+            )
 
-                # --- Milstein variance step ---
-                # dV = kappa*(theta-V)*dt + xi*sqrt(V)*dW_V
-                #    + 0.5*xi²*(dW_V² - dt)      ← Milstein correction
-                V_next = (
-                    V_t
-                    + p.kappa * (p.theta - V_t) * dt
-                    + p.xi * sqV * dW_V
-                    + 0.5 * p.xi ** 2 * (dW_V ** 2 - dt)
-                )
-                V[i][t + 1] = np.maximum(V_next, 0.0)   # full truncation
+            # --- Log-Euler price step (exact for GBM) ---
+            S[t + 1] = S[t] * np.exp(mu * dt - 0.5 * V_pos * dt + sqV * dW_S)
 
-                # --- Log-Euler price step (exact for GBM) ---
-                S[i][t + 1] = S[i][t] * np.exp(
-                    p.mu * dt - 0.5 * V_pos * dt + sqV * dW_S
-                )
+            # --- Pre-programmed dividend jump (proportional drop, per ex-date) ---
+            # The drift mu is calibrated on adjusted closes (total return); the
+            # deterministic ex-date deduction reproduces the predictable price
+            # decline the note's barriers observe. Broadcast over paths; a 0 entry
+            # is a no-op (×1), so no per-asset branch is needed.
+            if div is not None:
+                S[t + 1] *= (1.0 - div[:, t])[np.newaxis, :]
 
-                # --- Pre-programmed dividend jump (proportional drop) ---
-                # Converts total-return dynamics into price paths: the drift
-                # mu is calibrated on adjusted closes (total return), and the
-                # deterministic ex-date deduction reproduces the predictable
-                # price decline the note's barriers actually observe.
-                if self.div_schedule is not None and self.div_schedule[i, t] > 0.0:
-                    S[i][t + 1] *= (1.0 - self.div_schedule[i, t])
-
-        # Transpose back to the public (n_total, N+1) contract. ascontiguousarray
-        # so every downstream consumer (price_note, charts, the realized-corr
-        # block below) keeps fast row-over-paths access. This single copy is
-        # negligible next to the loop time it saves.
-        S = [np.ascontiguousarray(s.T) for s in S]
-        V = [np.ascontiguousarray(v.T) for v in V]
+        # Back to the public (n_total, N+1) contract: list of n C-contiguous arrays
+        # so every downstream consumer (price_note, charts, the realized-corr block
+        # below) keeps fast row-over-paths access. One cheap copy per asset.
+        S = [np.ascontiguousarray(S[:, :, i].T) for i in range(n)]
+        V = [np.ascontiguousarray(V[:, :, i].T) for i in range(n)]
 
         self.S_paths = S
         self.V_paths = V

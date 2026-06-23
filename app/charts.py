@@ -544,21 +544,37 @@ def build_path_wof_chart(
     autocall_barrier: float | None      = None,
     autocall_schedule: list[tuple[float, float]] | None = None,
     coupon_flags:     list[bool] | None = None,
+    knock_in:         bool = False,
+    title:            str | None = None,
 ) -> go.Figure:
+    """Worst-of performance path with per-observation event markers.
+
+    The note's life ends at the autocall: when ``autocall_q > 0`` the worst-of
+    line and the observation markers stop at the call step — nothing is drawn for
+    the periods that never happened. Each marker's legend entry spells out what
+    occurred (coupon paid / missed, autocall, and at maturity the knock-in /
+    par-redemption outcome) so the path reads on its own. Pass ``asset_paths`` to
+    overlay the individual underlyings; the Monte Carlo explorer omits them to
+    keep the focus on the worst-of. ``title`` overrides the default header."""
     asset_colors = [_BLUE, _BLUE_LIGHT, _NAVY, "#f39c12", "#9b59b6"]
     fig = go.Figure()
 
-    # Per-asset lines behind worst-of (if provided)
+    n_obs   = len(obs_steps)
+    # Truncate the displayed life at the autocall — the note no longer exists.
+    cut     = obs_steps[autocall_q - 1] if autocall_q > 0 else len(worst_path) - 1
+    x_full  = np.arange(cut + 1)
+
+    # Per-asset lines behind worst-of (only when explicitly requested)
     if asset_paths is not None and asset_names is not None:
         for i, name in enumerate(asset_names):
             fig.add_trace(go.Scatter(
-                y=asset_paths[:, i], mode="lines", name=name,
+                x=x_full, y=asset_paths[:cut + 1, i], mode="lines", name=name,
                 line=dict(color=asset_colors[i % len(asset_colors)], width=1.2, dash="dot"),
                 opacity=0.65,
             ))
 
     fig.add_trace(go.Scatter(
-        y=worst_path, mode="lines",
+        x=x_full, y=worst_path[:cut + 1], mode="lines",
         name=tr("chart_worst_of"),
         line=dict(color=_NAVY, width=2.5),
     ))
@@ -569,34 +585,43 @@ def build_path_wof_chart(
     )
     _add_autocall_barrier(fig, autocall_barrier, autocall_schedule, tr, x0=0)
     for i, (step, label) in enumerate(zip(obs_steps, obs_labels)):
-        called_here  = (autocall_q == i + 1)
-        marker_sym   = "star"     if called_here else "circle"
-        suffix       = tr("called_label") if called_here else tr("continued_label")
-        # When coupon_flags is supplied, colour the marker by whether a coupon
-        # was actually paid at this observation (green = paid, grey = none) so
-        # the coupon outcome is visible at each date; the star/circle shape
-        # still distinguishes the autocall. Falls back to the call-based blue
-        # when no coupon data is available.
-        if coupon_flags is not None:
-            paid         = bool(coupon_flags[i]) if i < len(coupon_flags) else False
-            marker_color = _GREEN if paid else _GREY
-            cpn_suffix   = tr("coupon_paid_label") if paid else tr("coupon_missed_label")
-            name         = f"{label} {suffix} · {cpn_suffix}"
+        period       = i + 1
+        if autocall_q > 0 and period > autocall_q:
+            break                       # note terminated at the call
+        called_here      = (autocall_q == period)
+        reached_maturity = (autocall_q == 0 and period == n_obs)
+        paid = bool(coupon_flags[i]) if (coupon_flags is not None and i < len(coupon_flags)) else None
+
+        parts = [label]
+        if called_here:
+            parts.append(tr("leg_called"))
+        elif reached_maturity:
+            parts.append(tr("leg_maturity"))
+        if paid is not None:
+            parts.append(tr("coupon_paid_label") if paid else tr("coupon_missed_label"))
+        if reached_maturity:
+            parts.append(tr("leg_knock_in") if knock_in else tr("leg_no_knock_in"))
+        name = " · ".join(parts)
+
+        if reached_maturity and knock_in:
+            marker_color, marker_sym, sz = _RED, "x", 13
+        elif called_here:
+            marker_color = _GREEN if paid else _BLUE
+            marker_sym, sz = "star", 14
         else:
-            marker_color = _BLUE if called_here else _GREY
-            name         = f"{label} {suffix}"
+            marker_color = (_GREEN if paid else _GREY) if paid is not None else _GREY
+            marker_sym, sz = "circle", 11
         fig.add_trace(go.Scatter(
-            x=[step], y=[worst_path[step]],
-            mode="markers",
-            marker=dict(size=14 if called_here else 11, color=marker_color,
-                        symbol=marker_sym, line=dict(width=1.5, color=_WHITE)),
+            x=[step], y=[worst_path[step]], mode="markers",
+            marker=dict(size=sz, color=marker_color, symbol=marker_sym,
+                        line=dict(width=1.5, color=_WHITE)),
             name=name,
         ))
         fig.add_vline(x=step, line_dash="dot", line_color="#aaa",
                       annotation_text=label, annotation_position="top")
 
     fig.update_layout(
-        title=tr("wof_path_title", n=path_num),
+        title=title or tr("wof_path_title", n=path_num),
         yaxis=dict(title=tr("perf_vs_initial"), tickformat=".0%"),
         xaxis=dict(title=tr("time_step")),
         hovermode="x unified",
@@ -763,16 +788,24 @@ def build_historical_prices(
             mode="lines", name=col,
             line=dict(color=palette[i % len(palette)], width=1.5),
         ))
+    # Annotations sit BELOW the line ("bottom") so they never collide with the
+    # legend, which is pinned in a horizontal strip under the chart.
     fig.add_vline(x=bt_start.isoformat(), line_dash="dot", line_color=_GREY,
-                  annotation_text=tr("backtest_start"), annotation_position="top right")
+                  annotation_text=tr("backtest_start"), annotation_position="bottom right")
     fig.add_vline(x=bt_end.isoformat(),   line_dash="dot", line_color=_GREY,
-                  annotation_text=tr("backtest_end"),   annotation_position="top left")
+                  annotation_text=tr("backtest_end"),   annotation_position="bottom left")
     fig.update_layout(
         title=tr("chart_hist_prices_title"),
         xaxis=dict(title=tr("date_axis")),
         yaxis=dict(title=tr("normalised_level")),
         hovermode="x unified",
-        legend=dict(x=0.01, y=0.99),
+        # Horizontal legend under the plot — the underlyings can spread across
+        # the full width instead of bunching into the top-left corner where the
+        # "Backtest start" marker label lands (the start line sits at the far
+        # left, so its label and a top-left legend overlapped).
+        legend=dict(orientation="h", yanchor="top", y=-0.18,
+                    xanchor="center", x=0.5),
+        margin=dict(t=44, b=64),
     )
     return _apply_theme(fig)
 
@@ -847,19 +880,26 @@ def build_historical_wof_path(
     autocall_schedule: list[tuple] | None = None,
     coupon_at_autocall_only: bool = False,
     coupon_flags:     list[bool] | None = None,
+    knock_in:         bool = False,
+    title:            str | None = None,
 ) -> go.Figure:
     """
     Show per-asset performance + worst-of line for one historical issue date.
 
     obs_dates are the SNAPPED trading-day observation dates (the same ones the
-    payoff engine evaluated). Markers stop at the autocall date — the note no
-    longer exists afterwards. The coupon barrier colours the markers and is
-    drawn as its own line when it differs from the KI barrier (never conflate
-    the two). For step-down notes pass autocall_schedule = [(date, level),...].
-    """
+    payoff engine evaluated). The price line AND the markers stop at the autocall
+    date — the note no longer exists afterwards. The coupon barrier colours the
+    markers and is drawn as its own line when it differs from the KI barrier
+    (never conflate the two). At maturity the final marker spells out the
+    knock-in / par outcome. For step-down notes pass
+    autocall_schedule = [(date, level),...]. ``title`` overrides the header."""
     issue_idx = hist_prices.index.searchsorted(issue_date)
-    if obs_dates:
-        end_idx = min(int(hist_prices.index.searchsorted(obs_dates[-1])) + 1, len(hist_prices))
+    # End the displayed window at the autocall date when called early, else at
+    # the final observation — so the line doesn't run on past the note's life.
+    _last_obs = (obs_dates[call_quarter - 1] if (call_quarter > 0 and obs_dates
+                 and call_quarter <= len(obs_dates)) else (obs_dates[-1] if obs_dates else None))
+    if _last_obs is not None:
+        end_idx = min(int(hist_prices.index.searchsorted(_last_obs)) + 1, len(hist_prices))
     else:
         end_idx = len(hist_prices)
     slice_    = hist_prices.iloc[issue_idx:end_idx]
@@ -899,31 +939,45 @@ def build_historical_wof_path(
     _add_autocall_barrier(fig, autocall_barrier, autocall_schedule, tr,
                           x0=hist_prices.index[issue_idx])
 
-    # Observation markers — only while the note is alive
+    # Observation markers — only while the note is alive. Each entry names the
+    # event (coupon, autocall, and the maturity knock-in / par outcome) so the
+    # legend reads on its own.
+    n_obs_bt = len(obs_dates)
     for q, obs_date in enumerate(obs_dates):
         loc = hist_prices.index.searchsorted(obs_date) - issue_idx
         if loc < 0 or loc >= len(dates):
             break
         wof_val = float(wof[loc])
-        is_call = (call_quarter == q + 1)
+        is_call          = (call_quarter == q + 1)
+        reached_maturity = (call_quarter == 0 and q + 1 == n_obs_bt)
         symbol  = "star" if is_call else "circle"
         size    = 14 if is_call else 9
-        label   = tr("chart_period_called", p=q + 1) if is_call else f"P{q+1}"
 
-        # Colour by whether a coupon was actually paid at this observation.
-        # Prefer the engine-computed flags (replay_note) when supplied — they
-        # honour memory, the coupon basket and coupon_at_autocall_only. Fall
-        # back to the simple worst-of vs coupon-barrier test only when no flags
-        # are passed (older callers).
+        # Coupon paid at this observation — prefer the engine-computed flags
+        # (replay_note: honours memory, the coupon basket, coupon_at_autocall_only).
         if coupon_flags is not None:
-            paid  = bool(coupon_flags[q]) if q < len(coupon_flags) else False
-            color = _GREEN if paid else _GREY
-            label = f"{label} · {tr('coupon_paid_label') if paid else tr('coupon_missed_label')}"
+            paid = bool(coupon_flags[q]) if q < len(coupon_flags) else False
         elif coupon_at_autocall_only:
-            # No periodic coupon — colour by the call, not a coupon barrier
-            color = _BLUE if is_call else _GREY
+            paid = is_call
         else:
-            color = _GREEN if wof_val >= coupon_barrier else _RED
+            paid = wof_val >= coupon_barrier
+
+        parts = [f"P{q+1}"]
+        if is_call:
+            parts.append(tr("leg_called"))
+        elif reached_maturity:
+            parts.append(tr("leg_maturity"))
+        parts.append(tr("coupon_paid_label") if paid else tr("coupon_missed_label"))
+        if reached_maturity:
+            parts.append(tr("leg_knock_in") if knock_in else tr("leg_no_knock_in"))
+        label = " · ".join(parts)
+
+        if reached_maturity and knock_in:
+            color, symbol, size = _RED, "x", 12
+        elif is_call:
+            color = _GREEN if paid else _BLUE
+        else:
+            color = _GREEN if paid else _GREY
 
         fig.add_trace(go.Scatter(
             x=[obs_date], y=[wof_val],
@@ -941,7 +995,7 @@ def build_historical_wof_path(
     outcome = (tr("chart_outcome_autocalled_p", q=call_quarter)
                if call_quarter > 0 else tr("outcome_maturity"))
     fig.update_layout(
-        title=tr("chart_hist_wof_title", issue=issue_date.date(), outcome=outcome),
+        title=title or tr("chart_hist_wof_title", issue=issue_date.date(), outcome=outcome),
         xaxis=dict(title=tr("date_axis")),
         yaxis=dict(title=tr("chart_perf_vs_issue"), tickformat=".0%"),
         hovermode="x unified",
