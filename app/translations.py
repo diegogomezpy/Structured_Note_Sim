@@ -606,6 +606,23 @@ _STRINGS: dict[str, tuple[str, str]] = {
     "setup_growth_subheader":   ("Step-down (growth autocall)",        "Step-down (autocall creciente)"),
     "setup_metadata_header":    ("Metadata & identification (optional)","Metadatos e identificación (opcional)"),
     "setup_engine_header":      ("Simulation engine settings",         "Configuración del motor de simulación"),
+    "setup_engine_select":      ("Compute engine",                     "Motor de cálculo"),
+    "setup_engine_numpy":       ("NumPy (default)",                    "NumPy (predeterminado)"),
+    "setup_engine_cpp":         ("C++ (multi-core)",                   "C++ (multinúcleo)"),
+    "setup_engine_help":        ("NumPy is the reference engine (no build step). C++ is the compiled, "
+                                 "multi-core engine — identical results, faster on multi-core machines. "
+                                 "Build it with `pip install ./cpp`.",
+                                 "NumPy es el motor de referencia (sin compilación). C++ es el motor compilado "
+                                 "y multinúcleo — resultados idénticos, más rápido en máquinas multinúcleo. "
+                                 "Compílalo con `pip install ./cpp`."),
+    "setup_engine_cpp_unbuilt": ("⚠️ C++ engine not built — run `pip install ./cpp` to enable it. "
+                                 "NumPy will be used until then.",
+                                 "⚠️ Motor C++ no compilado — ejecuta `pip install ./cpp` para activarlo. "
+                                 "Se usará NumPy mientras tanto."),
+    "mc_engine_caption":        ("Engine: {engine} · {paths:,} paths · {secs:.2f}s",
+                                 "Motor: {engine} · {paths:,} trayectorias · {secs:.2f}s"),
+    "mc_cpp_fallback":          ("C++ engine unavailable ({e}); ran with NumPy instead.",
+                                 "Motor C++ no disponible ({e}); se ejecutó con NumPy."),
 
     # ── Setup inline help / captions ───────────────────────────────────────
     "setup_barriers_caption":   ("All barriers are a % of each underlying's initial level (100% = starting price).",

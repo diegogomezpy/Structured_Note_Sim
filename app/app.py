@@ -6,6 +6,7 @@ Run with:  streamlit run app/app.py
 import os
 import random
 import sys
+import time
 import pathlib
 
 _ROOT = pathlib.Path(__file__).parent.parent
@@ -22,7 +23,10 @@ if str(_APP) not in sys.path:
 # Override explicitly with the SNSIM_MAX_PATHS env var (set it in the app's
 # "Advanced settings → Secrets/env" on Streamlit Cloud to tune the ceiling).
 _ON_STREAMLIT_CLOUD = os.getcwd().startswith("/mount/src") or "STREAMLIT_CLOUD" in os.environ
-_MAX_PATHS = int(os.environ.get("SNSIM_MAX_PATHS", 15000 if _ON_STREAMLIT_CLOUD else 50000))
+# Local ceiling is generous (the compiled C++ engine + a multi-core box can chew
+# through far more than the old 50K); the hosted cap stays conservative for the
+# ~1 GB container. Antithetic variates double this to 2×n_paths in the output.
+_MAX_PATHS = int(os.environ.get("SNSIM_MAX_PATHS", 15000 if _ON_STREAMLIT_CLOUD else 250000))
 
 import numpy as np
 import pandas as pd
@@ -266,11 +270,26 @@ def _tab_intro(kind: str, number: str, eyebrow: str, question: str) -> None:
 # ==========================================================================
 # Session state defaults
 # ==========================================================================
+_CPP_AVAILABLE: bool | None = None
+def _cpp_engine_available() -> bool:
+    """True if the compiled C++ engine (`heston_cpp`) can be imported. Memoized —
+    build it with `pip install ./cpp`, then restart the app to pick it up."""
+    global _CPP_AVAILABLE
+    if _CPP_AVAILABLE is None:
+        try:
+            import heston_cpp  # noqa: F401
+            _CPP_AVAILABLE = True
+        except Exception:
+            _CPP_AVAILABLE = False
+    return _CPP_AVAILABLE
+
+
 _DEFAULTS = {
     "page":             "setup",   # "setup" | "dashboard"
     "run_terms":        None,
     "selected_tickers": None,
     "n_paths":          10000,
+    "engine":           "numpy",  # "numpy" | "cpp" (compiled engine, if built)
     "seed":             42,
     "results":          None,
     "path_num":         0,
@@ -1293,6 +1312,23 @@ if st.session_state["page"] == "setup":
         with eng_b:
             seed = int(st.number_input(tr("setup_random_seed"),
                                        value=int(st.session_state["seed"])))
+
+        # Compute engine: NumPy reference (always available) vs the compiled,
+        # multi-core C++ engine (identical results; only offered when built).
+        _cpp_ok       = _cpp_engine_available()
+        _engine_opts  = ["numpy", "cpp"]
+        _engine_cur   = st.session_state.get("engine", "numpy")
+        if _engine_cur not in _engine_opts:
+            _engine_cur = "numpy"
+        engine = st.radio(
+            tr("setup_engine_select"), _engine_opts,
+            index=_engine_opts.index(_engine_cur),
+            horizontal=True,
+            format_func=lambda e: tr(f"setup_engine_{e}"),
+            help=tr("setup_engine_help"),
+        )
+        if engine == "cpp" and not _cpp_ok:
+            st.caption(tr("setup_engine_cpp_unbuilt"))
         st.caption(tr("setup_price_history_caption"))
         _calib_opts   = [1.0, 2.0, 3.0, 5.0, 10.0]
         _calib_labels = {
@@ -1385,6 +1421,7 @@ if st.session_state["page"] == "setup":
             st.session_state["run_terms"]        = terms
             st.session_state["selected_tickers"] = selected_tickers
             st.session_state["n_paths"]          = n_paths
+            st.session_state["engine"]           = engine
             st.session_state["seed"]             = int(seed)
             st.session_state["history_years"]    = history_years
             st.session_state["calib_years"]      = calib_years
@@ -1674,7 +1711,19 @@ elif st.session_state["page"] == "dashboard":
                 dt_grid      = _dt_grid,
                 div_schedule = _div_sched,
             )
-            sim_results = sim.run()
+            # Selected engine, with a graceful fall back to NumPy if the C++ module
+            # isn't built (so a config requesting "cpp" never hard-fails the run).
+            _engine   = st.session_state.get("engine", "numpy")
+            _eng_used = _engine
+            _t_run    = time.perf_counter()
+            try:
+                sim_results = sim.run(engine=_engine)
+            except ImportError as _eng_e:
+                _eng_used = "numpy"
+                if _engine != "numpy":
+                    st.warning(tr("mc_cpp_fallback", e=_eng_e))
+                sim_results = sim.run(engine="numpy")
+            _run_secs = time.perf_counter() - _t_run
 
             n_assets   = len(cal_result.params)
             sim_prices = np.stack(sim_results["S_paths"], axis=2)
@@ -1710,6 +1759,8 @@ elif st.session_state["page"] == "dashboard":
                 "t_grid_years":   np.concatenate([[0.0], np.cumsum(_dt_grid)]),
                 "obs_steps":      _obs_steps,
                 "obs_times":      _obs_times,
+                "engine_used":    _eng_used,
+                "run_secs":       _run_secs,
             }
             st.session_state["last_asset_names"] = list(selected_tickers.values())
             st.session_state["path_num"] = 0
@@ -1777,6 +1828,14 @@ elif st.session_state["page"] == "dashboard":
                 except Exception as e:
                     st.error(tr("mc_fetch_failed", e=e))
         else:
+            # Which engine actually ran, the realized sample size (antithetic →
+            # 2×n_paths), and the wall-clock — handy when comparing numpy vs cpp.
+            _eng_used = R.get("engine_used", "numpy")
+            if R.get("run_secs") is not None:
+                st.caption(tr("mc_engine_caption",
+                              engine=tr(f"setup_engine_{_eng_used}"),
+                              paths=int(len(R["annualized_returns"])),
+                              secs=float(R["run_secs"])))
             # Build the three headline MC figures ONCE per rerun and reuse the
             # same objects for both the on-screen tabs and the PDF cache. Each
             # of these runs np.percentile over the full (2·n_paths × N) array,
