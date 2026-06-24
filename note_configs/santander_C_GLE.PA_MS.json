@@ -1,9 +1,9 @@
 {
-  "name": "CADIEM Phoenix Autocall — Citi / SocGen / Morgan Stanley",
-  "issuer": "CADIEM",
+  "name": "Santander Phoenix Autocall — Citi / SocGen / Morgan Stanley",
+  "issuer": "Santander",
   "maturity": 2.0,
   "payment_freq": "quarterly",
-  "coupon_pa": 0.135,
+  "coupon_pa": 0.1235,
   "coupon_barrier": 0.5,
   "autocall_barrier": 1.0,
   "autocall_start_period": 1,
