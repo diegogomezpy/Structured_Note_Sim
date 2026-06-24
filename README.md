@@ -45,8 +45,8 @@ The project covers the full quantitative workflow:
 │   ├── style.css              # Streamlit theme (matches the PDF)
 │   └── __init__.py
 │
-├── note_configs/             # 12 ready-to-use JSON term sheets (upload in the app)
-│                             #   HSBC ×2, BBVA, Citi, Santander ×2, Barclays,
+├── note_configs/             # 13 ready-to-use JSON term sheets (upload in the app)
+│                             #   HSBC ×2, BBVA, Citi, Santander ×3, Barclays,
 │                             #   BNP Paribas, Julius Baer, PUENTE ×3
 ├── branding/                 # Firm branding JSON + bundled ticker logos
 │   ├── branding_example.json #   documented template (all keys)
@@ -221,7 +221,7 @@ The `NoteTerms` dataclass captures the full specification of an autocallable not
 
 ### Reference Term Sheets
 
-Twelve real term sheets are included as ready-to-use JSON configs (upload any of them on the setup page):
+Thirteen real term sheets are included as ready-to-use JSON configs (upload any of them on the setup page):
 
 | File | Issuer | Type | Underlyings | Tenor | Coupon | KI |
 |------|--------|------|-------------|-------|--------|-----|
@@ -230,6 +230,7 @@ Twelve real term sheets are included as ready-to-use JSON configs (upload any of
 | `citi_xs3096699163.json` | Citi | Growth autocall (step-down) | GOOGL / AMZN / AAPL | 2Y quarterly | 12% p.a. premium | 53.7% European |
 | `santander_xs3242406752.json` | Santander | Phoenix Memory | C / GLE.PA / MS | 2Y quarterly | 10.6% p.a. | 50% European |
 | `santander_xs3242417106.json` | Santander | Phoenix Memory | C / GLE.PA / MS | 2Y quarterly | 10.6% p.a. | 50% European |
+| `santander_C_GLE.PA_MS.json` | Santander | Phoenix Memory | C / GLE.PA / MS | 2Y quarterly | 12.35% p.a. | 50% European |
 | `hsbc_xs3287776739.json` | HSBC | Phoenix (single asset) | AMD | 18M quarterly | 18% p.a. | 55.5% European |
 | `barclays_xs3305367727.json` | Barclays | Reverse Convertible | ORCL / ADBE | 1Y monthly | 15.25% p.a. guaranteed | 50% European |
 | `bnp_paribas_pr00529720.json` | BNP Paribas | Phoenix One Star | DELL / IBM / MSFT | 1Y quarterly | 16% p.a. | 50% European |
