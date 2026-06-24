@@ -118,7 +118,7 @@ export function PathFan({
       </div>
 
       <Panel pad={14} right={`${t('explorer_showing')} ${shown.toLocaleString()} ${t('explorer_of')} ${data.n_total.toLocaleString()} ${sampledNoun ?? t('explorer_sampled')}`}>
-        <div style={{ height: 440 }}><Figure fig={fig} /></div>
+        <div style={{ height: 440 }}><Figure fig={fig} name="worst_of_paths" /></div>
       </Panel>
     </div>
   )

@@ -135,7 +135,7 @@ export default function LivePanel({ result, terms }: { result: LiveResult; terms
       {/* Live performance chart — above the table, so the visual reads first. */}
       {result.figure && (
         <Panel title={t('live_chart_title')} pad={14}>
-          <div style={{ height: 440 }}><Figure fig={result.figure} /></div>
+          <div style={{ height: 440 }}><Figure fig={result.figure} name="live_performance" /></div>
         </Panel>
       )}
 

@@ -47,7 +47,7 @@ export default function MonteCarloPanel({ result, terms }: { result: SimResult; 
             <OutcomeWaterfall summary={summary} />
           </Panel>
           <Panel title={t('irr_distribution')} pad={14}>
-            <div style={{ height: CHART_H }}><Figure fig={figures.irr_dist} /></div>
+            <div style={{ height: CHART_H }}><Figure fig={figures.irr_dist} name="irr_distribution" /></div>
           </Panel>
           <Panel title={t('autocall_by_period_h')} pad={0}>
             <AutocallByPeriodTable summary={summary} autocallStart={terms.autocall_start_period} />
@@ -58,7 +58,7 @@ export default function MonteCarloPanel({ result, terms }: { result: SimResult; 
       {sub === 'fans' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }} className="fade-up">
           <Panel title={t('worst_of_fan')} pad={14}>
-            <div style={{ height: CHART_H }}><Figure fig={figures.wof_fan} /></div>
+            <div style={{ height: CHART_H }}><Figure fig={figures.wof_fan} name="worst_of_fan" /></div>
           </Panel>
           {figures.asset_fans.length > 0 && (
             <Panel title={t('per_asset')} pad={14}>
@@ -69,7 +69,7 @@ export default function MonteCarloPanel({ result, terms }: { result: SimResult; 
                       <TickerLogo symbol={nameToSym[a.name] ?? a.name} name={a.name} size={20} />
                       <span style={{ fontSize: 13, fontWeight: 600 }}>{a.name}</span>
                     </div>
-                    <div style={{ height: 240 }}><Figure fig={a.fig} /></div>
+                    <div style={{ height: 240 }}><Figure fig={a.fig} name={`${a.name}_fan`} /></div>
                   </div>
                 ))}
               </div>
@@ -90,13 +90,13 @@ export default function MonteCarloPanel({ result, terms }: { result: SimResult; 
         <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }} className="fade-up">
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 18 }}>
             <Panel title={t('corr_input')} pad={14}>
-              <div style={{ height: 280 }}><Figure fig={figures.corr_input} /></div>
+              <div style={{ height: 280 }}><Figure fig={figures.corr_input} name="corr_input" /></div>
             </Panel>
             <Panel title={t('corr_realized')} pad={14}>
-              <div style={{ height: 280 }}><Figure fig={figures.corr_realized} /></div>
+              <div style={{ height: 280 }}><Figure fig={figures.corr_realized} name="corr_realized" /></div>
             </Panel>
             <Panel title={t('corr_difference')} pad={14}>
-              <div style={{ height: 280 }}><Figure fig={figures.corr_diff} /></div>
+              <div style={{ height: 280 }}><Figure fig={figures.corr_diff} name="corr_difference" /></div>
             </Panel>
           </div>
           <Panel title={t('calibration_h')} pad={0}>

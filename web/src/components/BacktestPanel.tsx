@@ -130,8 +130,8 @@ export default function BacktestPanel({ result, terms, range, onApplyRange }: {
 
       {figures && (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 18 }}>
-          <Panel title={t('bt_worst_pie')} pad={14}><div style={{ height: 300 }}><Figure fig={figures.worst_asset_pie} /></div></Panel>
-          <Panel title={t('bt_irr_scatter')} pad={14}><div style={{ height: 300 }}><Figure fig={figures.irr_scatter} /></div></Panel>
+          <Panel title={t('bt_worst_pie')} pad={14}><div style={{ height: 300 }}><Figure fig={figures.worst_asset_pie} name="worst_asset_pie" /></div></Panel>
+          <Panel title={t('bt_irr_scatter')} pad={14}><div style={{ height: 300 }}><Figure fig={figures.irr_scatter} name="backtest_irr_scatter" /></div></Panel>
         </div>
       )}
 
@@ -177,7 +177,7 @@ export default function BacktestPanel({ result, terms, range, onApplyRange }: {
 
       {sub === 'prices' && figures && (
         <Panel title={t('bt_price_history')} pad={14} className="fade-up">
-          <div style={{ height: 440 }}><Figure fig={figures.prices} /></div>
+          <div style={{ height: 440 }}><Figure fig={figures.prices} name="price_history" /></div>
         </Panel>
       )}
 
