@@ -19,7 +19,7 @@ export default function Header({ terms, run }: { terms: NoteTerms | null; run: R
   return (
     <header style={{
       display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 18,
-      padding: '11px clamp(18px, 4vw, 64px)', background: 'var(--header-bg)',
+      padding: '11px clamp(14px, 1.6vw, 28px)', background: 'var(--header-bg)',
       borderBottom: '1px solid var(--border)', boxShadow: 'var(--shadow)', position: 'relative', zIndex: 5,
     }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 16, minWidth: 0 }}>

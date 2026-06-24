@@ -171,16 +171,17 @@ input[type='range']::-webkit-slider-thumb:hover { transform: scale(1.15); }
 /* ── app layout ─────────────────────────────────────────────────────────── */
 .app-layout {
   display: grid;
-  grid-template-columns: 360px minmax(0, 1fr);
-  gap: 22px;
+  grid-template-columns: 330px minmax(0, 1fr);
+  gap: 20px;
   align-items: start;
-  padding: 24px clamp(22px, 4vw, 64px);
-  max-width: 1920px;
+  padding: 18px clamp(14px, 1.6vw, 28px);
+  width: 100%;          /* fill the flex column; without this, auto margins shrink it to content */
+  max-width: 2560px;
   margin: 0 auto;
 }
-.app-rail { position: sticky; top: 22px; }
+.app-rail { position: sticky; top: 18px; }
 @media (max-width: 1000px) {
-  .app-layout { grid-template-columns: 1fr; padding: 16px; }
+  .app-layout { grid-template-columns: 1fr; padding: 14px; }
   .app-rail { position: static; }
 }
 
