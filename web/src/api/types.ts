@@ -230,6 +230,29 @@ export interface UnderlyingMetric {
   figure: any
 }
 
+export interface InspectFilters {
+  outcome?: 'any' | 'autocalled' | 'maturity' | 'loss'
+  ac_periods?: number[]
+  ki_choice?: 'any' | 'yes' | 'no'
+  ret_lo?: number | null
+  ret_hi?: number | null
+  coupon_periods?: number[]
+}
+
+export interface InspectResult {
+  n_total: number
+  n_matched: number
+  ret_range: [number, number]
+  n_obs: number
+  coupon_available: boolean
+  position: number
+  path_index: number | null
+  figure: any
+  outcome?: { autocall_q: number; call_time: number | null; knock_in: boolean; worst_final: number | null }
+  metrics?: { principal: number | null; coupons: number | null; irr: number | null; total_return: number | null }
+  assets?: { name: string; final: number | null }[]
+}
+
 export type ReportSection = 'mc' | 'calibration' | 'backtest' | 'live'
 
 export interface ReportRequest {

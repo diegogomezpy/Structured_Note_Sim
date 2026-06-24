@@ -117,7 +117,7 @@ def sample_paths(run_id: str, *, sample: int = 400, seed: int = 7) -> dict | Non
         tcols.append(N1 - 1)
 
     ap  = note.get("autocall_period")
-    ki  = note.get("knock_in_mask")
+    ki  = note.get("knock_in_triggered")   # price_note's key (was wrongly "knock_in_mask")
     irr = note.get("annualized_returns")
 
     wof_sel = np.asarray(perf[idx]).min(axis=2)   # (k, N+1) worst-of per asset
@@ -139,6 +139,181 @@ def sample_paths(run_id: str, *, sample: int = 400, seed: int = 7) -> dict | Non
             "autocall": _f(terms.get("autocall_barrier")),
             "coupon":   _f(terms.get("coupon_barrier")),
         },
+    }
+
+
+# ── single-path inspector (Monte Carlo & backtest share this) ───────────────────
+def _path_filter_matches(autocall_events, knock_in, total_returns, coupon_amounts,
+                         *, outcome="any", ac_periods=None, ki_choice="any",
+                         ret_lo=None, ret_hi=None, coupon_periods=None):
+    """Sorted indices of paths matching the explorer query (AND-combined). Pure —
+    operates on the per-path arrays price_note returns, so it serves both the MC
+    and backtest inspectors. Ported verbatim from app.py:_path_filter_matches."""
+    ac   = np.asarray(autocall_events)
+    ki   = np.asarray(knock_in, dtype=bool)
+    ret  = np.asarray(total_returns, dtype=float)
+    mask = np.ones(ac.shape[0], dtype=bool)
+
+    if outcome == "autocalled":
+        mask &= ac > 0
+        if ac_periods:
+            mask &= np.isin(ac, list(ac_periods))
+    elif outcome == "maturity":
+        mask &= ac == 0
+    elif outcome == "loss":
+        mask &= (ac == 0) & ki
+
+    if ki_choice == "yes":
+        mask &= ki
+    elif ki_choice == "no":
+        mask &= ~ki
+
+    if ret_lo is not None:
+        mask &= ret >= ret_lo
+    if ret_hi is not None:
+        mask &= ret <= ret_hi
+
+    if coupon_periods and coupon_amounts is not None:
+        ca = np.asarray(coupon_amounts)
+        for p in coupon_periods:
+            if 1 <= int(p) <= ca.shape[1]:
+                mask &= ca[:, int(p) - 1] > 0
+
+    return np.nonzero(mask)[0]
+
+
+def _build_path_marker_info(rows, autocall_q, n_obs, wof_levels, knock_in, terms, tr):
+    """Per-observation legend entries for the inspector's worst-of chart (ported
+    from app.py:_build_path_marker_info). Each entry: {text, kind}."""
+    info = []
+    n_live = autocall_q if autocall_q > 0 else n_obs
+    rate = terms.coupon_rate
+    for i in range(n_live):
+        period      = i + 1
+        row         = rows[i] if i < len(rows) else None
+        amt         = float(row["coupon_amount"]) if row else 0.0
+        pending     = int(row["pending_after"]) if row else 0
+        called      = (autocall_q == period)
+        reached_mat = (autocall_q == 0 and period == n_obs)
+
+        parts = [f"P{period}", tr("leg_wof", v=f"{wof_levels[i]:.0%}")]
+        if called:
+            parts.append(tr("leg_called"))
+        elif reached_mat:
+            parts.append(tr("leg_maturity"))
+
+        if terms.coupon_at_autocall_only:
+            if amt > 0:
+                parts.append(tr("leg_premium", v=f"{amt:.2%}", k=period))
+            elif not called and not reached_mat:
+                parts.append(tr("leg_accruing"))
+        elif amt > 0:
+            released = round(amt / rate) if rate else 1
+            if terms.memory and released > 1:
+                parts.append(tr("leg_coupon_memory", v=f"{amt:.2%}", k=released))
+            else:
+                parts.append(tr("leg_coupon", v=f"{amt:.2%}"))
+        else:
+            if terms.memory and pending > 0:
+                parts.append(tr("leg_no_coupon_pending", k=pending))
+            else:
+                parts.append(tr("leg_no_coupon"))
+
+        if reached_mat:
+            parts.append(tr("leg_knock_in") if knock_in else tr("leg_redeemed_par"))
+
+        if reached_mat and knock_in:
+            kind = "knock_in"
+        elif called:
+            kind = "call_coupon" if amt > 0 else "call"
+        else:
+            kind = "coupon" if amt > 0 else "missed"
+        info.append({"text": " · ".join(parts), "kind": kind})
+    return info
+
+
+def inspect_run(run_id: str, *, lang: str = "en", filters: dict | None = None,
+                position: int = 0, randomize: bool = False, title: str | None = None) -> dict | None:
+    """One Monte-Carlo path in full detail for the single-path inspector: the
+    worst-of + per-asset trajectories with per-observation event markers (via
+    replay_note), plus filter/match metadata so the client can step through the
+    paths matching its query. Returns None if the run has expired."""
+    run = get_run(run_id)
+    if run is None:
+        return None
+    tr     = translations.Translator(lang)
+    perf   = run["perf_paths"]                       # (P, N+1, A) float16
+    note   = run.get("note", {})
+    terms  = NoteTerms.from_dict(run["terms"])
+    obs_steps = list(run["obs_steps"])
+    obs_times = list(run["obs_times"])
+    asset_names = run["asset_names"]
+    n_obs   = terms.n_obs
+    obs_labels = [f"P{i + 1}" for i in range(n_obs)]
+
+    ac       = np.asarray(note["autocall_period"])
+    ki_arr   = np.asarray(note["knock_in_triggered"], dtype=bool)
+    total    = np.asarray(note["total_returns"], dtype=float)
+    coupon_m = note.get("coupon_amounts")
+    P = perf.shape[0]
+    ret_range = [float(total.min()), float(total.max())]
+
+    f = filters or {}
+    matches = _path_filter_matches(
+        ac, ki_arr, total, coupon_m,
+        outcome=f.get("outcome", "any"), ac_periods=f.get("ac_periods"),
+        ki_choice=f.get("ki_choice", "any"),
+        ret_lo=f.get("ret_lo"), ret_hi=f.get("ret_hi"),
+        coupon_periods=f.get("coupon_periods"))
+    M = int(len(matches))
+
+    base = {"n_total": int(P), "n_matched": M, "ret_range": ret_range,
+            "n_obs": int(n_obs), "coupon_available": coupon_m is not None}
+    if M == 0:
+        return {**base, "position": 0, "path_index": None, "figure": None}
+
+    if randomize:
+        position = int(np.random.default_rng().integers(0, M))
+    position = max(0, min(int(position), M - 1))
+    pn = int(matches[position])
+
+    asset_paths = np.asarray(perf[pn], dtype=np.float64)   # (N+1, A)
+    worst_path  = asset_paths.min(axis=1)
+    autocall_q  = int(ac[pn])
+    ki_pn       = bool(ki_arr[pn])
+
+    perf_obs    = asset_paths[obs_steps, :]
+    rows        = replay_note(perf_obs, terms)["rows"]
+    wof_levels  = [float(worst_path[s]) for s in obs_steps]
+    marker_info = _build_path_marker_info(rows, autocall_q, n_obs, wof_levels, ki_pn, terms, tr)
+
+    ac_sched = (list(zip(obs_steps, terms.autocall_barrier_schedule()))
+                if terms.autocall_step_down else None)
+    fig = charts.build_path_wof_chart(
+        worst_path, autocall_q, obs_steps, obs_labels, terms.knock_in_barrier, pn, tr,
+        asset_paths=asset_paths, asset_names=asset_names,
+        autocall_barrier=terms.autocall_barrier, autocall_schedule=ac_sched,
+        marker_info=marker_info, title=title or None)
+
+    return {
+        **base,
+        "position":   position,
+        "path_index": pn,
+        "figure":     _fig(fig),
+        "outcome": {
+            "autocall_q":   autocall_q,
+            "call_time":    _f(obs_times[autocall_q - 1]) if autocall_q > 0 else None,
+            "knock_in":     ki_pn,
+            "worst_final":  _f(float(worst_path[-1])),
+        },
+        "metrics": {
+            "principal":    _f(note["principal_payoffs"][pn]),
+            "coupons":      _f(note["coupon_payoffs"][pn]),
+            "irr":          _f(note["annualized_returns"][pn]),
+            "total_return": _f(total[pn]),
+        },
+        "assets": [{"name": nm, "final": _f(float(asset_paths[-1, i]))}
+                   for i, nm in enumerate(asset_names)],
     }
 
 

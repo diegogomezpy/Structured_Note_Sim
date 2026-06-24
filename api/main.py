@@ -67,6 +67,14 @@ class MetricsRequest(BaseModel):
     lang: str = "en"
 
 
+class InspectRequest(BaseModel):
+    filters: dict = Field(default_factory=dict)   # outcome/ac_periods/ki_choice/ret_lo/ret_hi/coupon_periods
+    position: int = 0
+    randomize: bool = False
+    title: str | None = None
+    lang: str = "en"
+
+
 class ReportRequest(BaseModel):
     terms: dict
     sections: list[str] = Field(default_factory=list)  # mc/calibration/backtest/live; empty = all
@@ -173,6 +181,17 @@ def live(req: LiveRequest):
         return engine.run_live_api(terms, lang=req.lang)
     except Exception as e:
         raise HTTPException(500, f"current performance failed: {e}")
+
+
+@app.post("/api/runs/{run_id}/inspect")
+def inspect(run_id: str, req: InspectRequest):
+    """One Monte-Carlo path in full detail for the single-path inspector
+    (see engine.inspect_run)."""
+    data = engine.inspect_run(run_id, lang=req.lang, filters=req.filters,
+                              position=req.position, randomize=req.randomize, title=req.title)
+    if data is None:
+        raise HTTPException(404, "run not found or expired — re-run the simulation")
+    return data
 
 
 @app.post("/api/backtest/paths")

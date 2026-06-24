@@ -5,6 +5,7 @@ import Figure from './Figure'
 import HeroMetrics from './HeroMetrics'
 import OutcomeWaterfall from './OutcomeWaterfall'
 import PathExplorer from './PathExplorer'
+import PathInspector from './PathInspector'
 import { AutocallByPeriodTable, CalibrationTable } from './MCTables'
 import Tabs from './Tabs'
 import TickerLogo from './TickerLogo'
@@ -73,7 +74,13 @@ export default function MonteCarloPanel({ result, terms }: { result: SimResult; 
         </div>
       )}
 
-      {sub === 'explorer' && <PathExplorer runId={result.run_id} />}
+      {sub === 'explorer' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 22 }} className="fade-up">
+          <PathExplorer runId={result.run_id} />
+          <div style={{ borderTop: '1px solid var(--border)' }} />
+          <PathInspector runId={result.run_id} terms={terms} />
+        </div>
+      )}
 
       {sub === 'correlation' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }} className="fade-up">

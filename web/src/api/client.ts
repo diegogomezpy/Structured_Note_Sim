@@ -1,6 +1,7 @@
 import type {
-  BacktestResult, ConfigMeta, ExplorerData, Health, LiveResult, LogoData, NoteTerms,
-  ReportRequest, SimResult, SimulateRequest, UnderlyingMetric, UnderlyingOption,
+  BacktestResult, ConfigMeta, ExplorerData, Health, InspectFilters, InspectResult,
+  LiveResult, LogoData, NoteTerms, ReportRequest, SimResult, SimulateRequest,
+  UnderlyingMetric, UnderlyingOption,
 } from './types'
 
 async function jget<T>(url: string): Promise<T> {
@@ -53,4 +54,6 @@ export const api = {
     jget<ExplorerData>(`/api/runs/${runId}/paths?sample=${sample}`),
   backtestPaths: (terms: NoteTerms, seed = 7, sample = 400) =>
     jpost<ExplorerData>(`/api/backtest/paths?sample=${sample}&seed=${seed}`, { terms }),
+  inspectRun: (runId: string, body: { filters?: InspectFilters; position?: number; randomize?: boolean; title?: string | null; lang?: string }) =>
+    jpost<InspectResult>(`/api/runs/${runId}/inspect`, body),
 }
