@@ -5,6 +5,7 @@ import { useI18n } from './i18n/I18nProvider'
 import Header from './components/Header'
 import SetupRail, { type RunOpts } from './components/SetupRail'
 import NoteTimeline from './components/NoteTimeline'
+import ObservationSchedule from './components/ObservationSchedule'
 import Panel from './components/Panel'
 import Tabs from './components/Tabs'
 import RunProgress from './components/RunProgress'
@@ -151,6 +152,7 @@ export default function App() {
           {terms && (
             <Panel title={t('note_structure')} right={t('live_updates')}>
               <NoteTimeline terms={terms} />
+              <ObservationSchedule terms={terms} />
             </Panel>
           )}
 

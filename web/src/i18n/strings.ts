@@ -83,6 +83,8 @@ export const S: Dict = {
   // structure
   note_structure:   { en: 'Note structure', es: 'Estructura de la nota' },
   live_updates:     { en: 'updates as you edit terms', es: 'se actualiza al editar' },
+  obs_schedule:     { en: 'Observation schedule', es: 'Calendario de observaciones' },
+  col_coupon_rate:  { en: 'Coupon', es: 'Cupón' },
   issue:            { en: 'issue', es: 'emisión' },
   maturity_short:   { en: 'maturity', es: 'venc.' },
   autocall_window:  { en: 'autocall window', es: 'ventana de autocancelación' },
