@@ -38,14 +38,26 @@ export default function BacktestPanel({ result, terms }: { result: BacktestResul
     return k === 'ki' ? t('knocked_in') : t('held_to_mat')
   }
 
-  const counts = { ac: 0, mat: 0, ki: 0 }
-  for (const i of issues) counts[classify(i)] += 1
+  // Break the autocalls out by period (matching the Monte-Carlo waterfall),
+  // then held-to-maturity and knock-in.
   const n = issues.length
-  const segs = ([
-    { kind: 'ac', label: t('autocalled_at'), frac: counts.ac / n },
-    { kind: 'mat', label: t('held_to_mat'), frac: counts.mat / n },
-    { kind: 'ki', label: t('knocked_in'), frac: counts.ki / n },
-  ] as { kind: Kind; label: string; frac: number }[]).filter((s) => s.frac > 0)
+  const periodCounts: Record<number, number> = {}
+  let matCount = 0, kiCount = 0
+  for (const i of issues) {
+    const k = classify(i)
+    if (k === 'ac') periodCounts[i.call_quarter] = (periodCounts[i.call_quarter] ?? 0) + 1
+    else if (k === 'mat') matCount += 1
+    else kiCount += 1
+  }
+  const acQs = Object.keys(periodCounts).map(Number).sort((a, b) => a - b)
+  const segs = [
+    ...acQs.map((q, i) => ({
+      key: `ac${q}`, label: `${t('autocalled_at')} P${q}`, count: periodCounts[q], frac: periodCounts[q] / n,
+      color: 'var(--accent)', opacity: 1 - 0.5 * (acQs.length > 1 ? i / (acQs.length - 1) : 0),
+    })),
+    { key: 'mat', label: t('held_to_mat'), count: matCount, frac: matCount / n, color: 'var(--green)', opacity: 1 },
+    { key: 'ki', label: t('knocked_in'), count: kiCount, frac: kiCount / n, color: 'var(--red)', opacity: 1 },
+  ].filter((s) => s.frac > 0)
 
   const rows = [...issues].reverse() // most recent first
 
@@ -65,18 +77,18 @@ export default function BacktestPanel({ result, terms }: { result: BacktestResul
       <Panel title={t('bt_outcomes')} right={`${n} ${t('bt_issues').toLowerCase()}`}>
         <div style={{ display: 'flex', height: 28, borderRadius: 8, overflow: 'hidden', background: 'var(--surface-2)' }}>
           {segs.map((s) => (
-            <div key={s.kind} title={`${s.label} — ${pct(s.frac, 1)}`}
-                 style={{ flex: `${s.frac} 0 0`, background: KIND_COLOR[s.kind], display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 500, color: '#fff' }}>
+            <div key={s.key} title={`${s.label} — ${s.count} · ${pct(s.frac, 1)}`}
+                 style={{ flex: `${s.frac} 0 0`, background: s.color, opacity: s.opacity, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 500, color: '#fff' }}>
               {s.frac > 0.07 ? pct(s.frac, 0) : ''}
             </div>
           ))}
         </div>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px 16px', marginTop: 12 }}>
           {segs.map((s) => (
-            <div key={s.kind} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12 }}>
-              <span style={{ width: 9, height: 9, borderRadius: 3, background: KIND_COLOR[s.kind] }} />
+            <div key={s.key} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12 }}>
+              <span style={{ width: 9, height: 9, borderRadius: 3, background: s.color, opacity: s.opacity }} />
               <span style={{ color: 'var(--text-muted)' }}>{s.label}</span>
-              <span className="mono" style={{ color: 'var(--text)' }}>{counts[s.kind]} · {pct(s.frac, 0)}</span>
+              <span className="mono" style={{ color: 'var(--text)' }}>{s.count} · {pct(s.frac, 0)}</span>
             </div>
           ))}
         </div>

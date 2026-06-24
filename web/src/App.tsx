@@ -89,17 +89,19 @@ export default function App() {
     if (!terms) return
     setStatus('running')
     setErrorMsg('')
+    // Re-run refreshes the whole report: if the backtest has already been
+    // loaded, refresh it alongside the Monte Carlo run so both stay in sync.
+    if (btResult) void fetchBacktest()
     try {
       const res = await api.simulate({ terms, n_paths: opts.n_paths, engine: opts.engine, lang })
       setResult(res)
       setRunSig(sigOf(terms, opts))
-      setTab('mc')
       setStatus('idle')
     } catch (e) {
       setErrorMsg(String(e instanceof Error ? e.message : e))
       setStatus('error')
     }
-  }, [terms, opts, lang])
+  }, [terms, opts, lang, btResult, fetchBacktest])
 
   const stale = useMemo(
     () => !!result && !!runSig && !!terms && sigOf(terms, opts) !== runSig,
