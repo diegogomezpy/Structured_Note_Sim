@@ -53,6 +53,7 @@ class SimulateRequest(BaseModel):
 class BacktestRequest(BaseModel):
     terms: dict
     history_years: float | None = None
+    lang: str = "en"
 
 
 # ── endpoints ─────────────────────────────────────────────────────────────────
@@ -133,7 +134,7 @@ def backtest(req: BacktestRequest):
     except Exception as e:
         raise HTTPException(400, f"invalid note terms: {e}")
     try:
-        return engine.run_backtest_api(terms, history_years=req.history_years)
+        return engine.run_backtest_api(terms, history_years=req.history_years, lang=req.lang)
     except Exception as e:
         raise HTTPException(500, f"backtest failed: {e}")
 

@@ -1,5 +1,8 @@
+import { useState } from 'react'
 import { useI18n } from '../i18n/I18nProvider'
 import Panel from './Panel'
+import Figure from './Figure'
+import Tabs from './Tabs'
 import TickerLogo from './TickerLogo'
 import { pct, pctSigned } from '../lib/format'
 import type { BacktestIssue, BacktestResult, NoteTerms } from '../api/types'
@@ -23,7 +26,8 @@ function MiniStat({ label, value, tone }: { label: string; value: string; tone?:
 
 export default function BacktestPanel({ result, terms }: { result: BacktestResult; terms: NoteTerms }) {
   const { t } = useI18n()
-  const { summary, issues } = result
+  const [sub, setSub] = useState('outcomes')
+  const { summary, issues, figures } = result
 
   const nameToSym: Record<string, string> = {}
   for (const [sym, name] of Object.entries(terms.tickers ?? {})) nameToSym[name] = sym
@@ -74,6 +78,10 @@ export default function BacktestPanel({ result, terms }: { result: BacktestResul
                   tone={(summary.prob_knock_in ?? 0) <= 0.15 ? 'var(--green)' : 'var(--red)'} />
       </div>
 
+      <Tabs tabs={[{ id: 'outcomes', label: t('bt_sub_outcomes') }, { id: 'prices', label: t('bt_sub_prices') }]} active={sub} onChange={setSub} />
+
+      {sub === 'outcomes' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }} className="fade-up">
       <Panel title={t('bt_outcomes')} right={`${n} ${t('bt_issues').toLowerCase()}`}>
         <div style={{ display: 'flex', height: 28, borderRadius: 8, overflow: 'hidden', background: 'var(--surface-2)' }}>
           {segs.map((s) => (
@@ -93,6 +101,13 @@ export default function BacktestPanel({ result, terms }: { result: BacktestResul
           ))}
         </div>
       </Panel>
+
+      {figures && (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 18 }}>
+          <Panel title={t('bt_worst_pie')} pad={14}><div style={{ height: 300 }}><Figure fig={figures.worst_asset_pie} /></div></Panel>
+          <Panel title={t('bt_irr_scatter')} pad={14}><div style={{ height: 300 }}><Figure fig={figures.irr_scatter} /></div></Panel>
+        </div>
+      )}
 
       <Panel title={t('bt_table')} pad={0}>
         <div style={{ maxHeight: 420, overflow: 'auto' }}>
@@ -131,6 +146,14 @@ export default function BacktestPanel({ result, terms }: { result: BacktestResul
           </table>
         </div>
       </Panel>
+        </div>
+      )}
+
+      {sub === 'prices' && figures && (
+        <Panel title={t('bt_price_history')} pad={14} className="fade-up">
+          <div style={{ height: 440 }}><Figure fig={figures.prices} /></div>
+        </Panel>
+      )}
     </div>
   )
 }

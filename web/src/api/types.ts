@@ -132,9 +132,16 @@ export interface BacktestSummary {
   [k: string]: number | null
 }
 
+export interface BacktestFigures {
+  worst_asset_pie: any
+  irr_scatter: any
+  prices: any
+}
+
 export interface BacktestResult {
   summary: BacktestSummary
   issues: BacktestIssue[]
+  figures: BacktestFigures | null
 }
 
 export interface ExplorerPath {

@@ -30,8 +30,8 @@ export const api = {
   config: (file: string) => jget<NoteTerms>(`/api/configs/${file}`),
   logos: () => jget<LogoData>('/api/logos'),
   simulate: (req: SimulateRequest) => jpost<SimResult>('/api/simulate', req),
-  backtest: (terms: NoteTerms, history_years: number | null = null) =>
-    jpost<BacktestResult>('/api/backtest', { terms, history_years }),
+  backtest: (terms: NoteTerms, lang = 'en', history_years: number | null = null) =>
+    jpost<BacktestResult>('/api/backtest', { terms, history_years, lang }),
   runPaths: (runId: string, sample = 400) =>
     jget<ExplorerData>(`/api/runs/${runId}/paths?sample=${sample}`),
 }

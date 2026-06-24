@@ -65,7 +65,7 @@ export default function App() {
     setBtStatus('running')
     setBtError('')
     try {
-      const r = await api.backtest(terms)
+      const r = await api.backtest(terms, lang)
       setBtResult(r)
       setBtSig(JSON.stringify(terms))
       setBtStatus('idle')
@@ -73,7 +73,7 @@ export default function App() {
       setBtError(String(e instanceof Error ? e.message : e))
       setBtStatus('error')
     }
-  }, [terms])
+  }, [terms, lang])
 
   const btStale = !!btResult && !!terms && JSON.stringify(terms) !== btSig
 

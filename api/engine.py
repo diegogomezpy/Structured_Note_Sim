@@ -254,20 +254,50 @@ def run_simulation(terms: NoteTerms, *, n_paths: int = 10000, seed: int = 42,
 
 
 # ── backtest flow ───────────────────────────────────────────────────────────────
-def run_backtest_api(terms: NoteTerms, *, history_years: float | None = None) -> dict:
-    """Historical backtest over realized prices — summary metrics + outcome data."""
+def _lerp_hex(c1: str, c2: str, t: float) -> str:
+    a = [int(c1[i:i + 2], 16) for i in (1, 3, 5)]
+    b = [int(c2[i:i + 2], 16) for i in (1, 3, 5)]
+    return "#%02x%02x%02x" % tuple(round(a[k] + (b[k] - a[k]) * t) for k in range(3))
+
+
+def run_backtest_api(terms: NoteTerms, *, history_years: float | None = None,
+                     lang: str = "en") -> dict:
+    """Historical backtest over realized prices — summary metrics, per-issue rows,
+    and the outcome/scatter/pie/price figures (mirrors the Streamlit backtest)."""
+    tr = translations.Translator(lang)
     prices = load_prices(source="yfinance", tickers=dict(terms.tickers),
                          years=history_years, field="close")
     bt, summary = run_backtest(prices, terms)
     if bt.empty:
-        return {"summary": {}, "n_issues": 0, "issues": []}
+        return {"summary": {}, "issues": [], "figures": None}
+
     out_summary = {k: _f(v) for k, v in summary.items()
                    if not isinstance(v, (list, np.ndarray))}
     out_summary["n_issues"] = int(len(bt))
+
+    # Outcome label per issue + a colour map (autocall periods on a blue ramp,
+    # held-to-maturity slate, knock-in red) — the chart builders key off this.
+    def _label(cq, ki):
+        if int(cq) > 0:
+            return f"Autocalled P{int(cq)}"
+        return "Knock-in" if bool(ki) else "Held to maturity"
+    bt = bt.copy()
+    bt["Outcome"] = [_label(cq, ki) for cq, ki in zip(bt["Call Quarter"], bt["Knock-in"])]
+    ac_periods = sorted({int(cq) for cq in bt["Call Quarter"] if int(cq) > 0})
+    color_map = {"Held to maturity": "#334155", "Knock-in": "#dc2626"}
+    for i, q in enumerate(ac_periods):
+        t = i / max(1, len(ac_periods) - 1)
+        color_map[f"Autocalled P{q}"] = _lerp_hex("#93c5fd", "#1e3a8a", t)
+
+    figures = {
+        "worst_asset_pie": _fig(charts.build_worst_asset_pie(bt, tr)),
+        "irr_scatter":     _fig(charts.build_backtest_irr_scatter(bt, color_map, tr)),
+        "prices":          _fig(charts.build_historical_prices(
+            prices, bt["Issue Date"].min(), bt["Issue Date"].max(), tr)),
+    }
+
     return {
         "summary": out_summary,
-        # Per-issue rows. `outcome` is derived client-side from call_quarter +
-        # knock_in so the labels stay in one place (and translate).
         "issues": [
             {"issue_date": d.strftime("%Y-%m-%d"),
              "call_quarter": int(cq), "knock_in": bool(ki),
@@ -276,4 +306,5 @@ def run_backtest_api(terms: NoteTerms, *, history_years: float | None = None) ->
                 bt["Issue Date"], bt["Call Quarter"], bt["Knock-in"],
                 bt["IRR"], bt["Worst Asset"], bt["Worst Final Perf"])
         ],
+        "figures": figures,
     }

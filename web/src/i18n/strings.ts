@@ -157,6 +157,11 @@ export const S: Dict = {
   col_worst_perf:   { en: 'Worst final', es: 'Peor final' },
   col_irr:          { en: 'IRR p.a.', es: 'TIR anual' },
   run_backtest:     { en: 'Run backtest', es: 'Ejecutar backtest' },
+  bt_sub_outcomes:  { en: 'Outcomes', es: 'Resultados' },
+  bt_sub_prices:    { en: 'Prices', es: 'Precios' },
+  bt_worst_pie:     { en: 'Worst asset', es: 'Peor activo' },
+  bt_irr_scatter:   { en: 'IRR by issue date', es: 'TIR por fecha de emisión' },
+  bt_price_history: { en: 'Price history', es: 'Histórico de precios' },
 
   // path explorer
   explorer_intro:   { en: 'A random sample of simulated worst-of paths, coloured by outcome. Filter below; drag on the chart to zoom.', es: 'Una muestra aleatoria de trayectorias del peor de, coloreadas por resultado. Filtra abajo; arrastra en el gráfico para hacer zoom.' },
