@@ -436,17 +436,20 @@ Pillow >= 12, < 13       # logo handling in the PDF
 
 ---
 
-## Known Limitations & Future Work
+## Scope, Limitations & Future Work
 
-| Limitation | Impact | Potential fix |
-|-----------|--------|--------------|
-| P-measure calibration only | $\rho \approx 0$; no implied vol surface | Carr-Madan / characteristic function calibration from options |
-| In-sample backtest | Calibration window overlaps backtest window | Expanding-window calibration |
-| Euler price step | Minor bias with stochastic vol | Full Milstein for price process |
-| Single $\nu$ across assets | Ignores per-asset tail structure | Per-asset copula or vine copula |
-| No Greeks | Cannot hedge positions | Bump-and-reprice or adjoint AD |
+**What this is:** a forward-scenario, backtesting, and visualization tool for structured notes. It calibrates Heston to historical data under the **physical (P) measure**, simulates plausible real-world paths, evaluates the note's payoff across them, replays it on actual history, and tracks it live — answering _"what could happen / what would have happened / what's happening now"_ for a given note.
 
-**Planned extensions:** risk-neutral calibration, barrier and Asian options, variance swap pricing, GPU acceleration (CuPy), Sobol quasi-Monte Carlo, Greeks.
+**What it is not:** a risk-neutral derivatives-pricing or hedging engine. It does not produce an arbitrage-free fair value, calibrate to an implied-volatility surface, or compute Greeks — that is a different (Q-measure) tool, and deliberately out of scope here.
+
+| Limitation | Impact | Note |
+|-----------|--------|------|
+| Physical-measure (P) calibration — *by design* | Calibrated $\rho \approx 0$ on the recent bull-market sample (not the textbook $-0.65$); paths reflect likely *real-world* outcomes, not arbitrage-free prices | Intentional for scenario analysis; a longer / regime-mixed calibration window shifts $\rho$ |
+| In-sample backtest | The calibration window overlaps the backtest window | Expanding-window / walk-forward calibration would remove the overlap |
+| Log-Euler price step | Minor discretisation bias under stochastic vol | Full Milstein for the price process |
+| Single $\nu$ across assets | Ignores per-asset tail structure | Per-asset or vine copula |
+
+**Planned extensions** — all in service of better/faster *scenarios*, not pricing: GPU acceleration (CuPy) stacking on the C++ engine, Sobol quasi-Monte Carlo for faster convergence, expanding-window calibration, and additional structured-note payoff variants.
 
 ---
 
