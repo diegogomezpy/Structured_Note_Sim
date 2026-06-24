@@ -29,6 +29,7 @@ export const api = {
   underlyings: () => jget<UnderlyingOption[]>('/api/underlyings'),
   configs: () => jget<ConfigMeta[]>('/api/configs'),
   config: (file: string) => jget<NoteTerms>(`/api/configs/${file}`),
+  parseConfig: (config: unknown) => jpost<NoteTerms>('/api/configs/parse', { config }),
   logos: () => jget<LogoData>('/api/logos'),
   simulate: (req: SimulateRequest) => jpost<SimResult>('/api/simulate', req),
   backtest: (terms: NoteTerms, lang = 'en', history_years: number | null = null) =>

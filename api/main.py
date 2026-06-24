@@ -129,6 +129,28 @@ def list_configs():
     return out
 
 
+class ParseConfigRequest(BaseModel):
+    config: dict
+
+
+@app.post("/api/configs/parse")
+def parse_config(req: ParseConfigRequest):
+    """Normalise an uploaded term-sheet JSON through NoteTerms (legacy fields
+    migrated). Auto-corrects an inverted ``tickers`` map ({name: symbol}) — a
+    yfinance symbol is short, uppercase and space-free, a display name isn't."""
+    d = dict(req.config)
+    tk = d.get("tickers")
+    if isinstance(tk, dict) and tk:
+        def _sym(s: object) -> bool:
+            return isinstance(s, str) and len(s) <= 6 and s == s.upper() and " " not in s
+        if all(_sym(v) for v in tk.values()) and not all(_sym(k) for k in tk.keys()):
+            d["tickers"] = {v: k for k, v in tk.items()}
+    try:
+        return NoteTerms.from_dict(d).to_dict()
+    except Exception as e:
+        raise HTTPException(400, f"could not parse config: {e}")
+
+
 @app.get("/api/configs/{file}")
 def get_config(file: str):
     """A single config, normalised through NoteTerms (legacy fields migrated)."""

@@ -71,6 +71,22 @@ export default function App() {
     setLiveSig('')
   }, [])
 
+  // Load a user-uploaded term-sheet JSON: normalise it through the backend
+  // (legacy-field migration + inverted-ticker fix), then treat it like a config.
+  const loadUploadedConfig = useCallback(async (raw: unknown) => {
+    setErrorMsg('')
+    try {
+      const tm = await api.parseConfig(raw)
+      setConfigFile('')
+      setTerms(tm)
+      setResult(null); setRunSig('')
+      setBtResult(null); setBtSig('')
+      setLiveResult(null); setLiveSig('')
+    } catch (e) {
+      setErrorMsg(String(e instanceof Error ? e.message : e))
+    }
+  }, [])
+
   const fetchBacktest = useCallback(async () => {
     if (!terms) return
     setBtStatus('running')
@@ -167,6 +183,7 @@ export default function App() {
               <SetupRail
                 terms={terms} onChange={setTerms}
                 configs={configs} configFile={configFile} onSelectConfig={loadConfig}
+                onUploadConfig={loadUploadedConfig}
                 opts={opts}
                 running={status === 'running'} stale={stale} onRun={run}
                 onOpenSettings={() => setSettingsOpen(true)}

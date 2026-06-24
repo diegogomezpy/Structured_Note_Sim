@@ -1,3 +1,4 @@
+import { useRef, useState } from 'react'
 import { useI18n } from '../i18n/I18nProvider'
 import { pct } from '../lib/format'
 import Icon from './Icon'
@@ -33,13 +34,14 @@ function Barrier({ label, value, onChange, min = 0, max = 300 }: {
 }
 
 export default function SetupRail({
-  terms, onChange, configs, configFile, onSelectConfig, opts, running, stale, onRun, onOpenSettings,
+  terms, onChange, configs, configFile, onSelectConfig, onUploadConfig, opts, running, stale, onRun, onOpenSettings,
 }: {
   terms: NoteTerms
   onChange: (t: NoteTerms) => void
   configs: ConfigMeta[]
   configFile: string
   onSelectConfig: (file: string) => void
+  onUploadConfig: (raw: unknown) => void
   opts: RunOpts
   running: boolean
   stale: boolean
@@ -48,14 +50,37 @@ export default function SetupRail({
 }) {
   const { t } = useI18n()
   const set = <K extends keyof NoteTerms>(k: K, v: NoteTerms[K]) => onChange({ ...terms, [k]: v })
+  const fileRef = useRef<HTMLInputElement>(null)
+  const [uploadErr, setUploadErr] = useState('')
+
+  const onFile = async (file: File | undefined) => {
+    setUploadErr('')
+    if (!file) return
+    try {
+      onUploadConfig(JSON.parse(await file.text()))
+    } catch {
+      setUploadErr(t('upload_invalid'))
+    }
+    if (fileRef.current) fileRef.current.value = ''
+  }
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
       <div>
-        <label style={{ fontSize: 12, color: 'var(--text-muted)', display: 'block', marginBottom: 6 }}>{t('config_label')}</label>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+          <label style={{ fontSize: 12, color: 'var(--text-muted)' }}>{t('config_label')}</label>
+          <button className="btn btn--ghost" style={{ padding: '3px 8px', fontSize: 11.5 }}
+                  onClick={() => fileRef.current?.click()} title={t('upload_config_hint')}>
+            <Icon name="upload" size={13} /> {t('upload_config')}
+          </button>
+          <input ref={fileRef} type="file" accept="application/json,.json" style={{ display: 'none' }}
+                 onChange={(e) => onFile(e.target.files?.[0])} />
+        </div>
         <select value={configFile} onChange={(e) => onSelectConfig(e.target.value)}>
+          {configFile === '' && <option value="">{t('uploaded_config')}</option>}
           {configs.map((c) => <option key={c.file} value={c.file}>{c.name}</option>)}
         </select>
+        {uploadErr && <div style={{ fontSize: 11.5, color: 'var(--red)', marginTop: 5 }}>{uploadErr}</div>}
       </div>
 
       <div>

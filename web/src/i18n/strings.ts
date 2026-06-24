@@ -13,6 +13,10 @@ export const S: Dict = {
   // setup rail
   setup_heading:    { en: 'Note setup', es: 'Configuración' },
   config_label:     { en: 'Term sheet', es: 'Ficha técnica' },
+  upload_config:    { en: 'Upload', es: 'Subir' },
+  upload_config_hint: { en: 'Load a term-sheet JSON', es: 'Cargar una ficha JSON' },
+  uploaded_config:  { en: 'Uploaded term sheet', es: 'Ficha subida' },
+  upload_invalid:   { en: 'Invalid JSON file.', es: 'Archivo JSON no válido.' },
   underlyings:      { en: 'Underlyings', es: 'Subyacentes' },
   add_underlying:   { en: 'Add underlying…', es: 'Añadir subyacente…' },
   add_custom:       { en: 'Custom ticker', es: 'Ticker personalizado' },
