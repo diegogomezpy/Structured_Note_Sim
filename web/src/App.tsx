@@ -18,14 +18,14 @@ type Status = 'idle' | 'running' | 'error'
 /** Signature of the exact inputs a run depends on, so we can flag a displayed
     result as stale once the user edits terms or run options after running. */
 const sigOf = (terms: NoteTerms, opts: RunOpts) =>
-  JSON.stringify({ terms, n: opts.n_paths, e: opts.engine })
+  JSON.stringify({ terms, n: opts.n_paths, e: opts.engine, s: opts.seed, c: opts.calib_years })
 
 export default function App() {
   const { t, lang } = useI18n()
   const [configs, setConfigs] = useState<ConfigMeta[]>([])
   const [configFile, setConfigFile] = useState('')
   const [terms, setTerms] = useState<NoteTerms | null>(null)
-  const [opts, setOpts] = useState<RunOpts>({ n_paths: 10000, engine: 'numpy' })
+  const [opts, setOpts] = useState<RunOpts>({ n_paths: 10000, engine: 'numpy', seed: 42, calib_years: 5 })
   const [cppAvailable, setCppAvailable] = useState(false)
   const [result, setResult] = useState<SimResult | null>(null)
   const [runSig, setRunSig] = useState('')
@@ -93,7 +93,10 @@ export default function App() {
     // loaded, refresh it alongside the Monte Carlo run so both stay in sync.
     if (btResult) void fetchBacktest()
     try {
-      const res = await api.simulate({ terms, n_paths: opts.n_paths, engine: opts.engine, lang })
+      const res = await api.simulate({
+        terms, n_paths: opts.n_paths, engine: opts.engine,
+        seed: opts.seed, calib_years: opts.calib_years, lang,
+      })
       setResult(res)
       setRunSig(sigOf(terms, opts))
       setStatus('idle')

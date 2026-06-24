@@ -13,6 +13,8 @@ export interface UnderlyingOption {
 
 /** NoteTerms.to_dict() payload. Optional fields kept loose — only the ones the
     UI reads/edits are typed; the rest round-trip untouched on simulate. */
+export type Basket = 'worst_of' | 'best_of' | 'average'
+
 export interface NoteTerms {
   name: string
   issuer: string
@@ -24,9 +26,22 @@ export interface NoteTerms {
   autocall_start_period: number
   knock_in_barrier: number
   memory: boolean
-  coupon_basket: string
-  autocall_basket: string
+  coupon_basket: Basket
+  autocall_basket: Basket
   one_star_level: number | null
+  // advanced / optional payoff fields (always present after NoteTerms.to_dict)
+  autocall_step_down: number | null
+  autocall_floor: number | null
+  coupon_at_autocall_only: boolean
+  min_return: number
+  capital_guarantee: number
+  upside_cap: number | null
+  principal_protection: number
+  // metadata
+  issuer_description: string
+  issuer_rating_sp: string
+  issuer_rating_moody: string
+  issuer_rating_fitch: string
   tickers: Record<string, string>
   issue_date: string | null
   underlyings: string[] | null
