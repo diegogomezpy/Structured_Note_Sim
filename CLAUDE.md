@@ -28,6 +28,10 @@ load_prices()       HestonCalibrator          HestonMultiSimulator     price_not
 
 The Streamlit app (`app/app.py`) wires these together. All Plotly figure builders live in `app/charts.py` as pure functions with no Streamlit calls—they take numpy/pandas arguments and return `go.Figure`.
 
+### Simulation engines (numpy default, optional C++)
+
+`HestonMultiSimulator.run(engine="numpy"|"cpp")`. **numpy is the default and the reference**; the app calls `run()` with no argument. The optional C++ engine (`cpp/heston_kernel.cpp`, pybind11, wrapped by `core/simulator_cpp.py`) runs the same model — block-SIMD with a branch-free xoshiro256++/Box–Muller RNG, parallelised across path-blocks with `std::thread` (no OpenMP/libomp). It is **not** bit-identical to numpy (different RNG stream); it is validated by convergence of statistics (`scripts/compare_engines.py`), not bit-equality. `run()` returns the same results dict either way (`_finalize` is the shared tail), so everything downstream is unchanged. Build with `pip install ./cpp` **into the same interpreter that launches the app** (common gotcha: building into `.venv` but running `streamlit` from the system Python). If `"cpp"` is selected but unbuilt, the app catches `ImportError` and falls back to numpy.
+
 ### Single payoff engine for MC and backtest
 
 `core/note.py:price_note()` is the sole payoff evaluator. Both the Monte Carlo path and the historical backtest construct a `perf_paths: (n_paths, N+1, n_assets)` array (performance relative to S0) and pass it directly to `price_note()`. There is deliberately no second payoff implementation in `backtest.py`. Any payoff change must be made once, in `price_note()`, and it will apply to both.
@@ -85,4 +89,15 @@ Legacy configs that used `final_basket="best_of"` + `final_redemption_barrier` a
 
 ## Streamlit session state
 
-The app has two pages controlled by `st.session_state["page"]`: `"setup"` and `"dashboard"`. All heavy computation (calibration, simulation, backtest) is cached via `@st.cache_data`. Cache keys for the backtest use `tickers_tuple` (a `tuple` of `(sym, name)` pairs) and `terms.to_json()`. Simulation results are stored in `st.session_state["results"]` and are `None` until the user clicks "Run Simulation".
+The app has two pages controlled by `st.session_state["page"]`: `"setup"` and `"dashboard"`. Price loads (`_load_prices`) and the backtest (`_run_backtest_cached`, keyed on `tickers_tuple` + `terms.to_json()`) are cached via `@st.cache_data`. The Monte Carlo run is **not** cached — it executes in the dashboard's run block and stores into `st.session_state["results"]` (`None` until "Run Simulation").
+
+### Results storage schema (memory-sensitive — read before touching it)
+
+The engine keeps full daily paths, so **RAM, not CPU, is the ceiling**. `results` deliberately does NOT keep the full float64 cubes. After a run it stores:
+
+- `perf_paths` — per-asset performance (price/S0) as **float16** (bounded ~[0, 20] so it never overflows like raw prices could; the ~5e-4 rounding is display-only). This is the path explorer's only big array.
+- `wof_bands` (7, N+1) and `asset_bands` (n, 7, N+1) — the `[1,5,25,50,75,95,99]` percentile fan envelopes, **precomputed once** so the charts never rescan the full arrays on a rerun.
+- **No `worst_of_paths`** — the explorer derives one path's worst-of from `perf_paths[pn].min(axis=1)` on demand.
+- payoff stats from `price_note` (float64-exact; the float16 is display-only, so coupon/IRR/KI totals are unaffected).
+
+Discipline to preserve: the float64 working set (raw S/V paths, stacked/perf cubes) is `del`'d + `gc.collect()`'d right after the compact copies are stored — don't reintroduce long-lived references. A **memory guard** (`_sim_peak_gb` vs `_physical_ram_gb`) stops a run whose estimated peak exceeds physical RAM before it can swap. An optional `store_on_disk` toggle memory-maps `perf_paths` to a temp `.npy` (`_store_array` / `_purge_mmap_files`). The band-aware chart builders (`build_wof_fan`, `build_fan_chart`) take a `bands=` arg and skip the percentile scan when given.

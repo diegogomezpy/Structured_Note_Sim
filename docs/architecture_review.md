@@ -4,6 +4,12 @@ _Context: evaluating whether the Monte-Carlo simulator and backtester can be
 ported to C++ for speed, and whether the Python boundaries are clean enough to
 make that a drop-in replacement rather than a rewrite._
 
+> **Update — acted on.** This review's verdict held: an optional compiled engine
+> now exists (`cpp/heston_kernel.cpp`, block-SIMD + `std::thread`, wired in behind
+> `HestonMultiSimulator.run(engine="cpp")` and validated vs numpy by convergence).
+> See [`cpp/README.md`](../cpp/README.md). The analysis below is the original,
+> kept as the design record.
+
 ## Verdict
 
 The separation is clean and the C++ boundary is already well drawn. The app

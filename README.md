@@ -26,7 +26,8 @@ The project covers the full quantitative workflow:
 .
 ├── core/
 │   ├── calibrator.py          # Historical Heston calibration pipeline
-│   ├── simulator.py           # Multi-asset Heston Monte Carlo engine
+│   ├── simulator.py           # Multi-asset Heston Monte Carlo engine (run(engine=...))
+│   ├── simulator_cpp.py       # Thin wrapper over the optional compiled C++ engine
 │   ├── note.py                # NoteTerms dataclass + vectorized payoff engine
 │   ├── backtest.py            # Historical backtest using realized prices
 │   └── __init__.py            # Public API: HestonParams, NoteTerms, price_note, ...
@@ -50,9 +51,14 @@ The project covers the full quantitative workflow:
 ├── branding/                 # Firm branding JSON + bundled ticker logos
 │   ├── branding_example.json #   documented template (all keys)
 │   └── ticker_logos/         #   optional local PNG logos
-├── fonts/                    # IBM Plex Sans + Inter (embedded in the PDF)
+├── fonts/                    # IBM Plex Sans (embedded in the PDF)
+├── cpp/                      # Optional compiled engine (pybind11 + block-SIMD + std::thread)
+│   ├── heston_kernel.cpp     #   the kernel; validated against numpy by convergence
+│   ├── CMakeLists.txt        #   build (scikit-build-core); `pip install ./cpp`
+│   └── README.md             #   build / benchmark / wiring notes
 ├── scripts/
-│   └── verify_pdf.py         # Standalone PDF-render harness (needs PyMuPDF)
+│   ├── verify_pdf.py         # Standalone PDF-render harness (needs PyMuPDF)
+│   └── compare_engines.py    # Validate + benchmark the C++ engine vs numpy
 │
 ├── .streamlit/
 │   └── config.toml           # Light theme + navy/blue palette
@@ -113,6 +119,17 @@ At each time step the Gaussian increments are scaled by $\sqrt{\chi^2(\nu)/\nu}$
 $$W = \frac{Z}{\sqrt{s}} \cdot L^\top, \quad s \sim \chi^2(\nu)/\nu$$
 
 $\nu$ is calibrated automatically from historical returns via per-asset MLE, with the median taken across assets. Typical values are $\nu \approx 4$–$5$ for equity indices.
+
+### Optional Compiled Engine (C++)
+
+`HestonMultiSimulator.run()` defaults to the vectorised **numpy** engine (always available, no build step — the reference implementation). An optional **compiled C++ engine** runs the identical model faster:
+
+```python
+sim.run()                 # numpy reference (default) — what the app uses
+sim.run(engine="cpp")     # compiled engine; raises ImportError if not built
+```
+
+It is block-SIMD (the per-step `exp`/`sqrt`/`sin`/`cos` vectorise across a contiguous block of paths via a vector libm) with a branch-free Box–Muller xoshiro256++ RNG, and parallelised across path-blocks with `std::thread` (no OpenMP/libomp dependency). It keeps full daily paths and is validated against numpy by **convergence of statistics**, not bit-equality (different RNG stream). Build it with `pip install ./cpp`; in the app, pick the engine in *Simulation engine settings*. See [`cpp/README.md`](cpp/README.md) for build, benchmarks, and the threads knob (`HESTON_NUM_THREADS`).
 
 ---
 
@@ -272,7 +289,7 @@ sim = HestonMultiSimulator(
     corr_VV=result.corr_VV, corr_SV=result.corr_SV,
     T=1.0, N=252, n_paths=10_000, seed=42, t_dof=result.t_dof,
 )
-sim_results = sim.run()
+sim_results = sim.run()              # or sim.run(engine="cpp") once `pip install ./cpp` is built
 ```
 
 ### Note Pricing
@@ -338,9 +355,9 @@ After confirming setup, the dashboard frames the note through three **analysis l
 
 **Monte Carlo — _"what could happen?"_**
 - Summary metrics — expected IRR, total return, expected coupon, P(autocalled), P(knock-in), and the autocall breakdown by period
-- IRR distribution — histogram of annualised IRR split by autocalled vs maturity paths, with mean and coupon p.a. reference lines
-- Price-path fan charts — worst-of basket + per-asset fans (5/25/50/75/95th percentiles) with observation markers
-- Path explorer — step through individual simulated paths (per-asset + worst-of lines)
+- IRR distribution — a discrete two-panel chart (expected total return and mean IRR p.a. per scenario: each autocall period vs held-to-maturity). Structured-note IRRs cluster on a few discrete outcomes, so a continuous histogram collapses to spikes — the discrete view is the default for all notes
+- Price-path fan charts — worst-of basket + per-asset fans (1/5/25/50/75/95/99th percentile bands, precomputed once per run) with observation markers
+- Path explorer — query and step through individual simulated paths (filter by outcome, autocall period, knock-in, total-return band, or "coupon paid at period t"), with side-by-side comparison panels and per-observation note-mechanic legends
 - Correlation diagnostics — input vs realised correlation heatmaps + the Heston parameter table
 
 **Historical Backtest — _"what would have happened?"_**
@@ -371,12 +388,17 @@ long-term:
   until it's patched. If the app starts failing to load prices, bump `yfinance`
   first (`pip install -U yfinance`) and re-pin. Data-load failures surface as a
   clean in-app message (with a retry hint), not a traceback.
-- **Path-count ceiling for memory.** MC peak memory scales with
-  `n_paths × n_steps × n_assets`; on the free tier (~1 GB) a 50K-path multi-year
-  note can OOM the container. The "Monte Carlo paths" slider is therefore capped
-  at **15,000 on Streamlit Cloud** (auto-detected) and **50,000 locally**.
-  Override the ceiling with the **`SNSIM_MAX_PATHS`** environment variable (set
-  it under *Manage app → Settings → Secrets/Advanced* on the cloud).
+- **Path-count ceiling for memory.** The engine keeps full daily paths, so MC
+  peak memory scales with `n_paths × n_steps × n_assets`. The "Monte Carlo paths"
+  slider is capped at **15,000 on Streamlit Cloud** (auto-detected, ~1 GB tier)
+  and **250,000 locally**; override with the **`SNSIM_MAX_PATHS`** environment
+  variable. Two safeguards back this up: a **live memory estimate** next to the
+  slider warns before you commit, and a **pre-run guard** stops a run whose
+  estimated peak exceeds physical RAM (it would only swap and hang) with a
+  recommended path count instead. The retained per-path arrays are stored
+  compactly (float16 performance + precomputed fan bands; the worst-of is derived
+  on demand), and an optional **"Store paths on disk"** toggle memory-maps them so
+  they live in evictable OS cache rather than process RAM on a tight machine.
 - **Cold starts:** the Community Cloud instance sleeps after inactivity; the
   first visitor waits ~30 s for it to wake. This is expected, not a failure.
 
