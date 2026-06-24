@@ -63,9 +63,17 @@ def health():
 
 @app.get("/api/underlyings")
 def list_underlyings():
-    """The selectable ticker universe (label + yfinance symbol)."""
-    return [{"label": label, "symbol": sym}
+    """The selectable ticker universe (label + yfinance symbol + logo URL)."""
+    return [{"label": label, "symbol": sym, "logo": underlyings.logo_for(sym)}
             for label, sym in underlyings.UNDERLYING_OPTIONS.items()]
+
+
+@app.get("/api/logos")
+def logos():
+    """Curated symbol→logo-URL map plus the fallback URL template (so the client
+    can resolve a logo for any ticker), and the issuer (bank) favicon map."""
+    return {"map": underlyings.TICKER_LOGOS, "base": underlyings.LOGO_BASE,
+            "issuers": underlyings.ISSUER_LOGOS}
 
 
 @app.get("/api/configs")

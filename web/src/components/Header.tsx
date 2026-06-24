@@ -1,0 +1,98 @@
+import { useTheme } from '../theme/ThemeProvider'
+import { useI18n } from '../i18n/I18nProvider'
+import Icon from './Icon'
+import BrandMark from './BrandMark'
+import TickerLogo, { IssuerLogo } from './TickerLogo'
+import type { NoteTerms } from '../api/types'
+
+export interface RunMeta { engine: string; nPaths: number; stale: boolean }
+
+function compactPaths(n: number): string {
+  return n >= 1000 ? `${Math.round(n / 1000)}k` : String(n)
+}
+
+export default function Header({ terms, run }: { terms: NoteTerms | null; run: RunMeta | null }) {
+  const { mode, toggle } = useTheme()
+  const { lang, setLang, t } = useI18n()
+  const tickers = terms ? Object.entries(terms.tickers ?? {}) : []
+
+  return (
+    <header style={{
+      display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 18,
+      padding: '11px clamp(18px, 4vw, 64px)', background: 'var(--header-bg)',
+      borderBottom: '1px solid var(--border)', boxShadow: 'var(--shadow)', position: 'relative', zIndex: 5,
+    }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 16, minWidth: 0 }}>
+        {/* brand */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 11, flexShrink: 0 }}>
+          <div style={{
+            width: 38, height: 38, borderRadius: 11, background: 'var(--accent)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff',
+          }}>
+            <BrandMark size={22} />
+          </div>
+          <div style={{ lineHeight: 1.15 }}>
+            <div style={{ fontSize: 10, fontWeight: 600, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--text-faint)' }}>
+              Structured products
+            </div>
+            <div style={{ fontSize: 15, fontWeight: 600, letterSpacing: '-0.01em' }}>{t('app_title')}</div>
+          </div>
+        </div>
+
+        {/* active instrument readout */}
+        {terms && (
+          <>
+            <span style={{ width: 1, height: 30, background: 'var(--border)', flexShrink: 0 }} />
+            <div style={{ display: 'flex', alignItems: 'center', gap: 9, minWidth: 0 }}>
+              {terms.issuer && (
+                <>
+                  <IssuerLogo issuer={terms.issuer} size={22} />
+                  <span style={{ fontSize: 13, fontWeight: 600 }}>{terms.issuer}</span>
+                </>
+              )}
+              <span style={{ display: 'flex', alignItems: 'center', gap: 5, marginLeft: 2 }}>
+                {tickers.map(([sym, name]) => <TickerLogo key={sym} symbol={sym} name={name} size={17} />)}
+              </span>
+              <span style={{ fontSize: 12, color: 'var(--text-faint)' }}>
+                {terms.maturity}y · {t('worst_of')}
+              </span>
+            </div>
+          </>
+        )}
+      </div>
+
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexShrink: 0 }}>
+        {run && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
+            <span className="mono" style={{ fontSize: 11, color: 'var(--text-faint)' }}>
+              {run.engine} · {compactPaths(run.nPaths)}
+            </span>
+            <span className="pill" style={{
+              background: run.stale ? 'var(--amber-weak)' : 'var(--green-weak)',
+              color: run.stale ? 'var(--amber)' : 'var(--green)',
+            }}>
+              <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'currentColor' }} />
+              {run.stale ? t('status_stale') : t('status_current')}
+            </span>
+          </div>
+        )}
+        <div style={{ display: 'flex', border: '1px solid var(--border-strong)', borderRadius: 999, overflow: 'hidden' }}>
+          {(['en', 'es'] as const).map((l) => (
+            <button key={l} onClick={() => setLang(l)}
+                    style={{
+                      border: 'none', cursor: 'pointer', fontSize: 12, fontWeight: 600, padding: '5px 12px',
+                      fontFamily: 'inherit',
+                      background: lang === l ? 'var(--accent)' : 'transparent',
+                      color: lang === l ? '#fff' : 'var(--text-muted)',
+                    }}>
+              {l.toUpperCase()}
+            </button>
+          ))}
+        </div>
+        <button className="btn btn--ghost" onClick={toggle} aria-label="Toggle theme" style={{ padding: 8 }}>
+          <Icon name={mode === 'light' ? 'moon' : 'sun'} size={17} />
+        </button>
+      </div>
+    </header>
+  )
+}

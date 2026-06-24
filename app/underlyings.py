@@ -142,6 +142,45 @@ TICKER_LOGOS: dict[str, str] = {
     "^BVSP":      _GF.format(domain="b3.com.br"),
     "^MXX":       _GF.format(domain="bmv.com.mx"),
 }
+# Public alias + resolver so callers (the API) can build a logo URL for ANY
+# symbol — mapped ones use the curated URL, everything else falls back to the
+# parqet symbol service (covers most listed equities/ETFs).
+LOGO_BASE = _LOGO_BASE
+
+
+def logo_for(sym: str) -> str:
+    """Best logo URL for a yfinance symbol (curated map → parqet fallback)."""
+    return TICKER_LOGOS.get(sym) or _LOGO_BASE.format(sym=sym)
+
+
+# Issuer (bank) logos — favicon via the issuer's corporate domain. Keyed by the
+# `issuer` string used in the note configs.
+_ISSUER_DOMAINS = {
+    "Barclays":          "barclays.com",
+    "BBVA":              "bbva.com",
+    "BNP Paribas":       "bnpparibas.com",
+    "Bank Julius Baer":  "juliusbaer.com",
+    "Citigroup":         "citi.com",
+    "HSBC":              "hsbc.com",
+    "Santander":         "santander.com",
+    "PUENTE":            "puentenet.com",
+}
+ISSUER_LOGOS: dict[str, str] = {
+    name: _GF.format(domain=dom) for name, dom in _ISSUER_DOMAINS.items()
+}
+
+
+def issuer_logo_for(name: str) -> str | None:
+    """Favicon URL for an issuer name (exact, else case-insensitive match)."""
+    if name in ISSUER_LOGOS:
+        return ISSUER_LOGOS[name]
+    low = (name or "").strip().lower()
+    for k, v in ISSUER_LOGOS.items():
+        if k.lower() == low:
+            return v
+    return None
+
+
 # Map by yfinance symbol → label for JSON loading
 _TICKER_TO_LABEL   = {v: k for k, v in UNDERLYING_OPTIONS.items()}
 

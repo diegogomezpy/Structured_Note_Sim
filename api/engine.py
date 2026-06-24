@@ -164,10 +164,16 @@ def run_simulation(terms: NoteTerms, *, n_paths: int = 10000, seed: int = 42,
     summary = {k: _f(note.get(k)) for k in (
         "expected_irr", "expected_total_return", "expected_coupon",
         "prob_autocall", "prob_knock_in_total", "expected_nominal_payout",
-        "loss_given_knock_in")}
+        "loss_given_knock_in", "prob_maturity", "prob_rescued",
+        "prob_barrier_event")}
     summary["n_paths"] = int(len(note["annualized_returns"]))   # 2×n_paths (antithetic)
     summary["engine"]  = eng_used
     summary["assets"]  = asset_names
+    summary["coupon_pa"] = _f(terms.coupon_pa)
+    summary["n_obs"]     = int(terms.n_obs)
+    # Per-period autocall fractions — powers the outcome waterfall on the client.
+    summary["autocall_by_period"] = [float(x) for x in
+                                     note.get("prob_autocall_by_period", [])]
 
     # Cache compact arrays for the path explorer (Phase 3).
     run_id = _store_run({
