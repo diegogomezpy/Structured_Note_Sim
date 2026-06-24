@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { api } from './api/client'
-import type { ConfigMeta, NoteTerms, SimResult } from './api/types'
+import type { BacktestResult, ConfigMeta, NoteTerms, SimResult } from './api/types'
 import { useI18n } from './i18n/I18nProvider'
 import Header from './components/Header'
 import SetupRail, { type RunOpts } from './components/SetupRail'
@@ -9,6 +9,7 @@ import Panel from './components/Panel'
 import Tabs from './components/Tabs'
 import RunProgress from './components/RunProgress'
 import MonteCarloPanel from './components/MonteCarloPanel'
+import BacktestPanel from './components/BacktestPanel'
 import BrandMark from './components/BrandMark'
 import Icon from './components/Icon'
 
@@ -31,6 +32,11 @@ export default function App() {
   const [status, setStatus] = useState<Status>('idle')
   const [errorMsg, setErrorMsg] = useState('')
   const [tab, setTab] = useState('mc')
+  // Backtest is fetched lazily on first open of its tab (only depends on terms).
+  const [btResult, setBtResult] = useState<BacktestResult | null>(null)
+  const [btSig, setBtSig] = useState('')
+  const [btStatus, setBtStatus] = useState<Status>('idle')
+  const [btError, setBtError] = useState('')
 
   // Bootstrap: engine availability + config list + default term sheet.
   useEffect(() => {
@@ -48,7 +54,36 @@ export default function App() {
     setTerms(tm)
     setResult(null)
     setRunSig('')
+    setBtResult(null)
+    setBtSig('')
   }, [])
+
+  const fetchBacktest = useCallback(async () => {
+    if (!terms) return
+    setBtStatus('running')
+    setBtError('')
+    try {
+      const r = await api.backtest(terms)
+      setBtResult(r)
+      setBtSig(JSON.stringify(terms))
+      setBtStatus('idle')
+    } catch (e) {
+      setBtError(String(e instanceof Error ? e.message : e))
+      setBtStatus('error')
+    }
+  }, [terms])
+
+  const btStale = !!btResult && !!terms && JSON.stringify(terms) !== btSig
+
+  // Auto-load the backtest when its tab is opened and the cached result (if any)
+  // no longer matches the current terms. Term edits while already on the tab show
+  // a stale affordance instead of refetching on every keystroke.
+  useEffect(() => {
+    if (tab === 'bt' && terms && btStatus !== 'running' && JSON.stringify(terms) !== btSig) {
+      fetchBacktest()
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tab])
 
   const run = useCallback(async () => {
     if (!terms) return
@@ -152,7 +187,34 @@ export default function App() {
             </>
           )}
 
-          {tab !== 'mc' && (
+          {tab === 'bt' && (
+            <>
+              {btStale && btResult && btStatus !== 'running' && (
+                <div role="status" style={{
+                  display: 'flex', alignItems: 'center', gap: 10, padding: '11px 16px',
+                  background: 'var(--amber-weak)', border: '1px solid var(--amber)',
+                  borderRadius: 11, fontSize: 13, color: 'var(--text)',
+                }}>
+                  <Icon name="refresh" size={16} />
+                  <span style={{ flex: 1 }}>{t('stale_banner')}</span>
+                  <button className="btn" onClick={fetchBacktest} style={{ padding: '6px 12px' }}>{t('rerun')}</button>
+                </div>
+              )}
+              {btStatus === 'running' && (
+                <Panel pad={40}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, color: 'var(--text-muted)', fontSize: 14 }}>
+                    <Icon name="spinner" size={18} /> {t('loading')}
+                  </div>
+                </Panel>
+              )}
+              {btStatus === 'error' && (
+                <Panel><div style={{ color: 'var(--red)', fontSize: 13 }}><strong>{t('error')}.</strong> {btError}</div></Panel>
+              )}
+              {btStatus !== 'running' && btResult && terms && <BacktestPanel result={btResult} terms={terms} />}
+            </>
+          )}
+
+          {(tab === 'live' || tab === 'report') && (
             <Panel pad={48}>
               <div style={{ textAlign: 'center', color: 'var(--text-faint)', fontSize: 14 }}>{t('coming_soon')}</div>
             </Panel>

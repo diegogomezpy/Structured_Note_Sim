@@ -203,12 +203,14 @@ def run_backtest_api(terms: NoteTerms, *, history_years: float | None = None) ->
     out_summary["n_issues"] = int(len(bt))
     return {
         "summary": out_summary,
+        # Per-issue rows. `outcome` is derived client-side from call_quarter +
+        # knock_in so the labels stay in one place (and translate).
         "issues": [
             {"issue_date": d.strftime("%Y-%m-%d"),
              "call_quarter": int(cq), "knock_in": bool(ki),
-             "irr": _f(irr), "outcome": str(oc)}
-            for d, cq, ki, irr, oc in zip(
+             "irr": _f(irr), "worst_asset": str(wa), "worst_perf": _f(wp)}
+            for d, cq, ki, irr, wa, wp in zip(
                 bt["Issue Date"], bt["Call Quarter"], bt["Knock-in"],
-                bt["IRR"], bt.get("Outcome", bt["Call Quarter"]))
+                bt["IRR"], bt["Worst Asset"], bt["Worst Final Perf"])
         ],
     }

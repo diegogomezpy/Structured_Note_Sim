@@ -1,5 +1,6 @@
 import type {
-  ConfigMeta, Health, LogoData, NoteTerms, SimResult, SimulateRequest, UnderlyingOption,
+  BacktestResult, ConfigMeta, Health, LogoData, NoteTerms, SimResult,
+  SimulateRequest, UnderlyingOption,
 } from './types'
 
 async function jget<T>(url: string): Promise<T> {
@@ -29,4 +30,6 @@ export const api = {
   config: (file: string) => jget<NoteTerms>(`/api/configs/${file}`),
   logos: () => jget<LogoData>('/api/logos'),
   simulate: (req: SimulateRequest) => jpost<SimResult>('/api/simulate', req),
+  backtest: (terms: NoteTerms, history_years: number | null = null) =>
+    jpost<BacktestResult>('/api/backtest', { terms, history_years }),
 }

@@ -81,6 +81,31 @@ export interface SimulateRequest {
   lang?: 'en' | 'es'
 }
 
+export interface BacktestIssue {
+  issue_date: string
+  call_quarter: number
+  knock_in: boolean
+  irr: number | null
+  worst_asset: string
+  worst_perf: number | null
+}
+
+export interface BacktestSummary {
+  n_issues: number
+  mean_irr: number | null
+  median_irr: number | null
+  prob_called: number | null
+  prob_knock_in: number | null
+  prob_maturity: number | null
+  loss_given_knock_in: number | null
+  [k: string]: number | null
+}
+
+export interface BacktestResult {
+  summary: BacktestSummary
+  issues: BacktestIssue[]
+}
+
 export interface Health {
   status: string
   cpp_engine: boolean

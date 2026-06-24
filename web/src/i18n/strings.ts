@@ -80,6 +80,23 @@ export const S: Dict = {
   sub_correlation:  { en: 'Correlation', es: 'Correlación' },
   sub_explorer:     { en: 'Path explorer', es: 'Explorador' },
 
+  // backtest
+  bt_issues:        { en: 'Historical issues', es: 'Emisiones históricas' },
+  bt_mean_irr:      { en: 'Mean IRR', es: 'TIR media' },
+  bt_median_irr:    { en: 'Median IRR', es: 'TIR mediana' },
+  bt_called_rate:   { en: 'Autocall rate', es: 'Tasa de autocancelación' },
+  bt_ki_rate:       { en: 'Knock-in rate', es: 'Tasa de knock-in' },
+  bt_outcomes:      { en: 'Outcome distribution', es: 'Distribución de resultados' },
+  bt_table:         { en: 'Issue-by-issue', es: 'Emisión por emisión' },
+  bt_empty:         { en: 'No historical issues for this configuration — the underlyings may not have enough overlapping history.', es: 'No hay emisiones históricas para esta configuración — puede que los subyacentes no tengan suficiente historia común.' },
+  bt_intro:         { en: 'Replays this note over every historical start date with enough remaining data, using realized prices.', es: 'Reproduce esta nota en cada fecha de inicio histórica con datos suficientes, usando precios reales.' },
+  col_date:         { en: 'Issue date', es: 'Fecha de emisión' },
+  col_outcome:      { en: 'Outcome', es: 'Resultado' },
+  col_worst:        { en: 'Worst asset', es: 'Peor activo' },
+  col_worst_perf:   { en: 'Worst final', es: 'Peor final' },
+  col_irr:          { en: 'IRR p.a.', es: 'TIR anual' },
+  run_backtest:     { en: 'Run backtest', es: 'Ejecutar backtest' },
+
   // states
   loading:          { en: 'Loading…', es: 'Cargando…' },
   no_run_title:     { en: 'No simulation yet', es: 'Aún no hay simulación' },
