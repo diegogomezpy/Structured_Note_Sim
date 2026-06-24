@@ -1,0 +1,29 @@
+# Keep the build context (and image) small. fonts/, note_configs/, branding/,
+# app/, core/, data/, .streamlit/ are all needed and intentionally NOT ignored.
+.venv
+venv
+env
+**/__pycache__
+*.pyc
+*.pyo
+.git
+.gitignore
+.gitattributes
+.DS_Store
+.claude
+docs
+# C++ engine is not used in the deploy (numpy is the default engine).
+cpp
+core/simulator_cpp.py
+scripts/verify_pdf.py
+scripts/compare_engines.py
+# Local-only branding overrides (the example template is kept).
+branding/branding_*.json
+!branding/branding_example.json
+# Build/test artifacts
+*.egg-info
+.pytest_cache
+.ipynb_checkpoints
+wheelhouse
+dist
+build

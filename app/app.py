@@ -304,11 +304,28 @@ def _cpp_engine_available() -> bool:
 # (which only swaps to disk and hangs). ~6× one S-cube covers the C++ S+V cubes,
 # the wrapper's per-asset copies, and the numpy stacks that briefly coexist.
 def _physical_ram_gb() -> float:
-    """Total physical RAM in GB (psutil-free; macOS/Linux). 0.0 if unknown."""
+    """RAM budget in GB the memory guard should respect — the **smaller** of the
+    host's physical RAM and any container memory limit (cgroup v2/v1). Without the
+    cgroup check, on Cloud Run / Docker / Fly this would read the big host node and
+    the guard would let a run OOM the small container. 0.0 if unknown."""
     try:
-        return os.sysconf("SC_PAGE_SIZE") * os.sysconf("SC_PHYS_PAGES") / 1e9
+        host = os.sysconf("SC_PAGE_SIZE") * os.sysconf("SC_PHYS_PAGES")
     except (ValueError, OSError, AttributeError):
-        return 0.0
+        host = 0
+    limit = 0
+    for _p in ("/sys/fs/cgroup/memory.max",                       # cgroup v2
+               "/sys/fs/cgroup/memory/memory.limit_in_bytes"):    # cgroup v1
+        try:
+            with open(_p) as _f:
+                _v = _f.read().strip()
+            # "max" (v2) or a sentinel near 2^63 (v1) == no limit set.
+            if _v and _v != "max" and int(_v) < (1 << 62):
+                limit = int(_v)
+                break
+        except (OSError, ValueError):
+            pass
+    candidates = [v for v in (host, limit) if v > 0]
+    return (min(candidates) / 1e9) if candidates else 0.0
 
 
 def _sim_peak_gb(n_paths: int, n_assets: int, n_steps: int) -> float:
