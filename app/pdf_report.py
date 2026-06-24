@@ -11,7 +11,7 @@ Visual language modelled on sell-side QIS / wealth-management publications:
     rule; section headers in SemiBold with rule below; metric bands; filled-
     header data tables with zebra rows; callout boxes; figure captions.
   - Footer: page N of M, generation datetime, 6pt disclaimer.
-  - Typography: Inter variable font (Regular / SemiBold / Bold / Light /
+  - Typography: IBM Plex Sans (Regular / SemiBold / Bold / Light /
     Italic / Bold Italic) with automatic Helvetica fallback.
 
 Public API (unchanged)
@@ -72,7 +72,6 @@ from fpdf import FPDF
 _REPO_ROOT       = Path(__file__).parent.parent
 _TICKER_LOGO_DIR = _REPO_ROOT / "branding" / "ticker_logos"
 _FONT_DIR        = _REPO_ROOT / "fonts"
-_INTER_TTC       = _FONT_DIR / "Inter.ttc"
 _IBM_REGULAR     = _FONT_DIR / "IBMPlexSans-Regular.ttf"
 _IBM_BOLD        = _FONT_DIR / "IBMPlexSans-Bold.ttf"
 _IBM_SEMIBOLD    = _FONT_DIR / "IBMPlexSans-SemiBold.ttf"
@@ -497,8 +496,8 @@ def _fmt_long_date(d: datetime.date, lang: str) -> str:
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Text sanitisation
-# Inter covers all Latin/Greek/punctuation/math Unicode natively, so we only
-# need to neutralise emojis and a handful of symbols Inter omits.
+# IBM Plex Sans covers all Latin/Greek/punctuation/math Unicode natively, so we
+# only need to neutralise emojis and a handful of symbols it omits.
 # ──────────────────────────────────────────────────────────────────────────────
 _EMOJI_STRIP = {
     "✅": "OK", "⚠️": "!", "❌": "x", "🚀": ">>", "⏳": "...",
@@ -509,7 +508,7 @@ _EMOJI_STRIP = {
 def _safe(text: object, *, latin1: bool = False) -> str:
     """Sanitise text for the PDF.
 
-    With Inter (Unicode font) only emojis need neutralising.
+    With IBM Plex Sans (Unicode font) only emojis need neutralising.
     Pass latin1=True only for the Helvetica fallback path.
     """
     s = str(text)
@@ -533,26 +532,12 @@ def _safe(text: object, *, latin1: bool = False) -> str:
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Font registration
-# Primary: IBM Plex Sans individual TTF files (institutional quality).
-# Fallback 1: Inter TTC collection (if IBM files are missing).
-# Fallback 2: Helvetica (built-in, Latin-1 only).
-#
-# TTC indices used from Inter.ttc (fallback):
-#   0  = Inter Regular       14 = Inter Bold
-#   3  = Inter Italic        15 = Inter Bold Italic
-#   6  = Inter Light         12 = Inter SemiBold
+# Primary: IBM Plex Sans individual TTF files (institutional quality, Unicode).
+# Fallback: Helvetica (built-in, Latin-1 only).
 # ──────────────────────────────────────────────────────────────────────────────
-_TTC_IDX = {
-    ("Inter",      ""):   0,
-    ("Inter",      "I"):  3,
-    ("Inter",      "B"):  14,
-    ("Inter",      "BI"): 15,
-    ("InterSB",    ""):   12,
-    ("InterLight", ""):   6,
-}
 
 # Font family name exposed to _sf() — switches based on what is available
-_FONT_FAMILY = "IBMPlexSans"   # overridden to "Inter" if IBM files absent
+_FONT_FAMILY = "IBMPlexSans"   # overridden to "Helvetica" if IBM files absent
 
 
 def _register_ibm_plex(pdf: FPDF) -> bool:
@@ -574,25 +559,12 @@ def _register_ibm_plex(pdf: FPDF) -> bool:
         return False
 
 
-def _register_inter(pdf: FPDF) -> bool:
-    """Register Inter variants from the TTC collection. Returns True on success."""
-    if not _INTER_TTC.exists():
-        return False
-    try:
-        ttc = str(_INTER_TTC)
-        for (family, style), idx in _TTC_IDX.items():
-            pdf.add_font(family, style, ttc, collection_font_number=idx)
-        return True
-    except Exception:
-        return False
-
-
 # ──────────────────────────────────────────────────────────────────────────────
 # FPDF subclass
 # ──────────────────────────────────────────────────────────────────────────────
 
 class _NotePDF(FPDF):
-    """A4 portrait document with QIS-publication styling and Inter typography."""
+    """A4 portrait document with QIS-publication styling and IBM Plex Sans typography."""
 
     def __init__(self, lang: str = "en", issuer: str = "", doc_ref: str = "",
                  primary_color: tuple = _DEFAULT_PRIMARY,
@@ -645,21 +617,15 @@ class _NotePDF(FPDF):
         self.set_margins(16, 16, 16)
         self.set_auto_page_break(auto=True, margin=28)
         self.alias_nb_pages()
-        # Try IBM Plex Sans first; fall back to Inter TTC; last resort Helvetica
+        # IBM Plex Sans (Unicode); last resort the built-in Helvetica (Latin-1).
         if _register_ibm_plex(self):
             self._font_family = "IBMPlexSans"
             self._use_unicode = True
             print("[PDF font] Using IBM Plex Sans")
-        elif _register_inter(self):
-            self._font_family = "Inter"
-            self._use_unicode = True
-            print("[PDF font] Using Inter (IBM Plex Sans files missing)")
         else:
             self._font_family = "Helvetica"
             self._use_unicode = False
             print("[PDF font] Using Helvetica fallback")
-        # Legacy flag — kept so external code referencing _use_inter still works
-        self._use_inter = self._use_unicode
 
     # ------------------------------------------------------------------
     # Font helpers
@@ -667,8 +633,8 @@ class _NotePDF(FPDF):
     def _sf(self, size: float, weight: str = "regular") -> None:
         """Set font by semantic weight.
 
-        Dispatches to IBM Plex Sans, Inter, or Helvetica depending on which
-        was successfully registered at construction time.
+        Dispatches to IBM Plex Sans or Helvetica depending on which was
+        successfully registered at construction time.
         """
         ff = self._font_family
         if ff == "IBMPlexSans":
@@ -681,16 +647,6 @@ class _NotePDF(FPDF):
                 "light":       ("IBMPlexSansLight", ""),
             }
             family, style = _map.get(weight, ("IBMPlexSans", ""))
-        elif ff == "Inter":
-            _map = {
-                "regular":     ("Inter",      ""),
-                "bold":        ("Inter",      "B"),
-                "bold_italic": ("Inter",      "BI"),
-                "italic":      ("Inter",      "I"),
-                "semibold":    ("InterSB",    ""),
-                "light":       ("InterLight", ""),
-            }
-            family, style = _map.get(weight, ("Inter", ""))
         else:
             _hmap = {
                 "regular":     ("Helvetica", ""),
