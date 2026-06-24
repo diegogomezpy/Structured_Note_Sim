@@ -59,6 +59,56 @@ def get_run(run_id: str) -> dict | None:
     return _RUNS.get(run_id)
 
 
+def sample_paths(run_id: str, *, sample: int = 400, seed: int = 7) -> dict | None:
+    """A bounded, time-downsampled sample of worst-of trajectories for the path
+    explorer, each tagged with its outcome (autocall period / knock-in / IRR) so
+    the client can filter, colour, and zoom without re-simulating. Returns None
+    if the run has been evicted from the in-memory store."""
+    run = get_run(run_id)
+    if run is None:
+        return None
+    perf   = run["perf_paths"]          # (P, N+1, A) float16
+    t_grid = run["t_grid"]
+    note   = run.get("note", {})
+    terms  = run["terms"]
+
+    P, N1 = perf.shape[0], perf.shape[1]
+    rng = np.random.default_rng(seed)
+    k = min(int(sample), P)
+    idx = np.sort(rng.choice(P, size=k, replace=False))
+
+    # Downsample the time axis to ~100 points (keep first + last).
+    step  = max(1, N1 // 100)
+    tcols = list(range(0, N1, step))
+    if tcols[-1] != N1 - 1:
+        tcols.append(N1 - 1)
+
+    ap  = note.get("autocall_period")
+    ki  = note.get("knock_in_mask")
+    irr = note.get("annualized_returns")
+
+    wof_sel = np.asarray(perf[idx]).min(axis=2)   # (k, N+1) worst-of per asset
+    paths = []
+    for j, i in enumerate(idx):
+        paths.append({
+            "wof": [round(float(wof_sel[j, c]), 4) for c in tcols],
+            "ap":  int(ap[i])  if ap  is not None else 0,
+            "ki":  bool(ki[i]) if ki  is not None else False,
+            "irr": _f(irr[i])  if irr is not None else None,
+        })
+    return {
+        "t":        [round(float(t_grid[c]), 4) for c in tcols],
+        "paths":    paths,
+        "n_total":  int(P),
+        "obs_times": run.get("obs_times", []),
+        "barriers": {
+            "knock_in": _f(terms.get("knock_in_barrier")),
+            "autocall": _f(terms.get("autocall_barrier")),
+            "coupon":   _f(terms.get("coupon_barrier")),
+        },
+    }
+
+
 # ── helpers ───────────────────────────────────────────────────────────────────
 def _fig(fig) -> dict:
     """Plotly figure → plain dict (numpy-safe via Plotly's own JSON encoder)."""

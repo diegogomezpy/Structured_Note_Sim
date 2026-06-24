@@ -97,6 +97,17 @@ export const S: Dict = {
   col_irr:          { en: 'IRR p.a.', es: 'TIR anual' },
   run_backtest:     { en: 'Run backtest', es: 'Ejecutar backtest' },
 
+  // path explorer
+  explorer_intro:   { en: 'A random sample of simulated worst-of paths, coloured by outcome. Filter below; drag on the chart to zoom.', es: 'Una muestra aleatoria de trayectorias del peor de, coloreadas por resultado. Filtra abajo; arrastra en el gráfico para hacer zoom.' },
+  filter_all:       { en: 'All', es: 'Todas' },
+  explorer_showing: { en: 'Showing', es: 'Mostrando' },
+  explorer_of:      { en: 'of', es: 'de' },
+  explorer_sampled: { en: 'sampled paths', es: 'trayectorias muestreadas' },
+  explorer_resample:{ en: 'Resample', es: 'Re-muestrear' },
+  explorer_expired: { en: 'This run expired from the server cache — re-run the simulation to explore paths.', es: 'Esta simulación expiró de la caché del servidor — vuelve a ejecutar para explorar trayectorias.' },
+  chart_time_years: { en: 'Time (years)', es: 'Tiempo (años)' },
+  chart_wof:        { en: 'Worst-of performance', es: 'Rendimiento del peor de' },
+
   // states
   loading:          { en: 'Loading…', es: 'Cargando…' },
   no_run_title:     { en: 'No simulation yet', es: 'Aún no hay simulación' },

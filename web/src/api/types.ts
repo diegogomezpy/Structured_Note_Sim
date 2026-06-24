@@ -106,6 +106,21 @@ export interface BacktestResult {
   issues: BacktestIssue[]
 }
 
+export interface ExplorerPath {
+  wof: number[]
+  ap: number       // autocall period (0 = none)
+  ki: boolean
+  irr: number | null
+}
+
+export interface ExplorerData {
+  t: number[]
+  paths: ExplorerPath[]
+  n_total: number
+  obs_times: number[]
+  barriers: { knock_in: number | null; autocall: number | null; coupon: number | null }
+}
+
 export interface Health {
   status: string
   cpp_engine: boolean

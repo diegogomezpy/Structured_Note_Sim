@@ -1,5 +1,5 @@
 import type {
-  BacktestResult, ConfigMeta, Health, LogoData, NoteTerms, SimResult,
+  BacktestResult, ConfigMeta, ExplorerData, Health, LogoData, NoteTerms, SimResult,
   SimulateRequest, UnderlyingOption,
 } from './types'
 
@@ -32,4 +32,6 @@ export const api = {
   simulate: (req: SimulateRequest) => jpost<SimResult>('/api/simulate', req),
   backtest: (terms: NoteTerms, history_years: number | null = null) =>
     jpost<BacktestResult>('/api/backtest', { terms, history_years }),
+  runPaths: (runId: string, sample = 400) =>
+    jget<ExplorerData>(`/api/runs/${runId}/paths?sample=${sample}`),
 }

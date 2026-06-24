@@ -4,6 +4,7 @@ import Panel from './Panel'
 import Figure from './Figure'
 import HeroMetrics from './HeroMetrics'
 import OutcomeWaterfall from './OutcomeWaterfall'
+import PathExplorer from './PathExplorer'
 import Tabs from './Tabs'
 import TickerLogo from './TickerLogo'
 import type { NoteTerms, SimResult } from '../api/types'
@@ -22,6 +23,7 @@ export default function MonteCarloPanel({ result, terms }: { result: SimResult; 
   const subTabs = [
     { id: 'summary', label: t('sub_summary') },
     { id: 'fans', label: t('sub_fans') },
+    { id: 'explorer', label: t('sub_explorer') },
     { id: 'correlation', label: t('sub_correlation') },
   ]
 
@@ -66,6 +68,8 @@ export default function MonteCarloPanel({ result, terms }: { result: SimResult; 
           )}
         </div>
       )}
+
+      {sub === 'explorer' && <PathExplorer runId={result.run_id} />}
 
       {sub === 'correlation' && (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 18 }} className="fade-up">

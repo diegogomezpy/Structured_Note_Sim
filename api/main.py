@@ -117,6 +117,15 @@ def simulate(req: SimulateRequest):
         raise HTTPException(500, f"simulation failed: {e}")
 
 
+@app.get("/api/runs/{run_id}/paths")
+def run_paths(run_id: str, sample: int = 400):
+    """Sampled worst-of trajectories for the path explorer (see engine.sample_paths)."""
+    data = engine.sample_paths(run_id, sample=max(50, min(sample, 800)))
+    if data is None:
+        raise HTTPException(404, "run not found or expired — re-run the simulation")
+    return data
+
+
 @app.post("/api/backtest")
 def backtest(req: BacktestRequest):
     try:
