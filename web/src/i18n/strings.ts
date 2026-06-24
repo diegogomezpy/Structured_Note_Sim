@@ -31,6 +31,20 @@ export const S: Dict = {
   done:             { en: 'Done', es: 'Listo' },
   current_terms:    { en: 'Current terms', es: 'Términos actuales' },
 
+  // add-note tutorial
+  addnote_trigger:  { en: 'How to add a note', es: 'Cómo añadir una nota' },
+  addnote_title:    { en: 'Add your own note', es: 'Añade tu propia nota' },
+  addnote_intro:    { en: 'Load any structured note by uploading a JSON term sheet — it appears in the dropdown for this session. No coding needed.', es: 'Carga cualquier nota estructurada subiendo una ficha JSON — aparece en el menú durante esta sesión. Sin programar.' },
+  addnote_step1:    { en: 'Download the template below and open it in any text editor.', es: 'Descarga la plantilla de abajo y ábrela en un editor de texto.' },
+  addnote_step2:    { en: 'Fill in the fields for your note (see the reference below).', es: 'Rellena los campos de tu nota (ver referencia abajo).' },
+  addnote_step3:    { en: 'Click “Upload” next to the term-sheet dropdown and pick your file.', es: 'Pulsa “Subir” junto al menú de fichas y elige tu archivo.' },
+  addnote_fields:   { en: 'Field reference', es: 'Referencia de campos' },
+  addnote_example:  { en: 'Example', es: 'Ejemplo' },
+  addnote_download: { en: 'Download template', es: 'Descargar plantilla' },
+  addnote_copy:     { en: 'Copy', es: 'Copiar' },
+  addnote_copied:   { en: 'Copied', es: 'Copiado' },
+  addnote_tip:      { en: 'Tip: tickers map a Yahoo Finance symbol to a display name, e.g. {"AAPL": "Apple"}. Barriers are fractions of the initial level (0.70 = 70%).', es: 'Consejo: los tickers asocian un símbolo de Yahoo Finance a un nombre, p. ej. {"AAPL": "Apple"}. Las barreras son fracciones del nivel inicial (0,70 = 70%).' },
+
   // note-type presets
   sec_note_type:    { en: 'Note type', es: 'Tipo de nota' },
   nt_hint:          { en: 'Pre-fills the canonical fields for this structure — nothing is hidden, every field stays editable below.', es: 'Rellena los campos canónicos de esta estructura — nada se oculta, todo sigue editable abajo.' },

@@ -4,6 +4,7 @@ import { pct } from '../lib/format'
 import Icon from './Icon'
 import TickerLogo from './TickerLogo'
 import { Slider, SelectField } from './fields'
+import AddNoteHelp from './AddNoteHelp'
 import type { ConfigMeta, NoteTerms } from '../api/types'
 
 export interface RunOpts {
@@ -69,10 +70,13 @@ export default function SetupRail({
       <div>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
           <label style={{ fontSize: 12, color: 'var(--text-muted)' }}>{t('config_label')}</label>
-          <button className="btn btn--ghost" style={{ padding: '3px 8px', fontSize: 11.5 }}
-                  onClick={() => fileRef.current?.click()} title={t('upload_config_hint')}>
-            <Icon name="upload" size={13} /> {t('upload_config')}
-          </button>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+            <AddNoteHelp />
+            <button className="btn btn--ghost" style={{ padding: '3px 8px', fontSize: 11.5 }}
+                    onClick={() => fileRef.current?.click()} title={t('upload_config_hint')}>
+              <Icon name="upload" size={13} /> {t('upload_config')}
+            </button>
+          </div>
           <input ref={fileRef} type="file" accept="application/json,.json" style={{ display: 'none' }}
                  onChange={(e) => onFile(e.target.files?.[0])} />
         </div>
