@@ -118,6 +118,8 @@ export const S: Dict = {
   // structure
   note_structure:   { en: 'Note structure', es: 'Estructura de la nota' },
   live_updates:     { en: 'updates as you edit terms', es: 'se actualiza al editar' },
+  hide_diagram:     { en: 'Hide diagram', es: 'Ocultar diagrama' },
+  show_diagram:     { en: 'Show diagram', es: 'Mostrar diagrama' },
   obs_schedule:     { en: 'Observation schedule', es: 'Calendario de observaciones' },
   col_coupon_rate:  { en: 'Coupon', es: 'Cupón' },
   issue:            { en: 'issue', es: 'emisión' },

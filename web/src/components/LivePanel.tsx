@@ -132,6 +132,13 @@ export default function LivePanel({ result, terms }: { result: LiveResult; terms
         </div>
       )}
 
+      {/* Live performance chart — above the table, so the visual reads first. */}
+      {result.figure && (
+        <Panel title={t('live_chart_title')} pad={14}>
+          <div style={{ height: 440 }}><Figure fig={result.figure} /></div>
+        </Panel>
+      )}
+
       {/* Observation history */}
       <Panel title={t('live_obs_history')} pad={0}>
         <div style={{ maxHeight: 420, overflow: 'auto' }}>
@@ -166,13 +173,6 @@ export default function LivePanel({ result, terms }: { result: LiveResult; terms
           </table>
         </div>
       </Panel>
-
-      {/* Live performance chart */}
-      {result.figure && (
-        <Panel title={t('live_chart_title')} pad={14}>
-          <div style={{ height: 440 }}><Figure fig={result.figure} /></div>
-        </Panel>
-      )}
     </div>
   )
 }

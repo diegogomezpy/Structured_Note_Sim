@@ -39,6 +39,7 @@ export default function App() {
   const [errorMsg, setErrorMsg] = useState('')
   const [tab, setTab] = useState('mc')
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const [diagramOpen, setDiagramOpen] = useState(true)
   // Backtest is fetched lazily on first open of its tab (only depends on terms).
   const [btResult, setBtResult] = useState<BacktestResult | null>(null)
   const [btSig, setBtSig] = useState('')
@@ -204,8 +205,13 @@ export default function App() {
 
         <main style={{ display: 'flex', flexDirection: 'column', gap: 18, minWidth: 0 }}>
           {terms && (
-            <Panel title={t('note_structure')} right={t('live_updates')}>
-              <NoteTimeline terms={terms} />
+            <Panel title={t('note_structure')} right={
+              <button className="btn btn--ghost" style={{ padding: '3px 9px', fontSize: 11.5 }}
+                      onClick={() => setDiagramOpen((v) => !v)}>
+                {diagramOpen ? t('hide_diagram') : t('show_diagram')}
+              </button>
+            }>
+              {diagramOpen && <NoteTimeline terms={terms} />}
               <ObservationSchedule terms={terms} />
               <IssuerCard terms={terms} />
               <UnderlyingCards terms={terms} />

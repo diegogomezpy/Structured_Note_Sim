@@ -1,5 +1,5 @@
 import { useI18n } from '../i18n/I18nProvider'
-import { nObs, obsFractions } from '../lib/terms'
+import { nObs, obsFractions, autocallSchedule, hasStepDown } from '../lib/terms'
 import { pct } from '../lib/format'
 import type { NoteTerms } from '../api/types'
 
@@ -30,6 +30,18 @@ export default function NoteTimeline({ terms }: { terms: NoteTerms }) {
   const barriersEqual = Math.abs(cpLevel - kiLevel) < 1e-6
   const showDotLabels = n <= 8
 
+  // Step-down autocall: draw the declining barrier as a stepped line (holds the
+  // level between observations, drops at each). The base level coincides with the
+  // timeline baseline, so it descends from there over the autocall window.
+  const stepped = hasStepDown(terms)
+  const sched = stepped ? autocallSchedule(terms) : null
+  const minAc = sched ? Math.min(...sched) : acLevel
+  let stepPath = ''
+  if (sched) {
+    stepPath = `M ${X0} ${mapY(acLevel)}`
+    fracs.forEach((f, i) => { stepPath += ` H ${mapX(f).toFixed(1)} V ${mapY(sched[i]).toFixed(1)}` })
+  }
+
   return (
     <svg viewBox={`0 0 ${VIEW_W} 160`} width="100%" style={{ display: 'block', fontFamily: 'IBM Plex Sans, sans-serif' }}
          role="img" aria-label="Note structure timeline">
@@ -48,9 +60,15 @@ export default function NoteTimeline({ terms }: { terms: NoteTerms }) {
               stroke="var(--red)" strokeWidth="1" strokeDasharray="3 3" opacity="0.75" />
       )}
 
+      {/* step-down autocall barrier (declining hurdle) */}
+      {stepPath && (
+        <path d={stepPath} fill="none" stroke="var(--text-muted)" strokeWidth="1.3"
+              strokeDasharray="4 3" opacity="0.85" />
+      )}
+
       {/* barrier labels (right) */}
       <text x={X1 + 8} y={lineY + 3} fontSize="10" fill="var(--text-muted)">
-        {t('autocall_barrier').toLowerCase()} {pct(acLevel, 0)}
+        {t('autocall_barrier').toLowerCase()} {stepped ? `${pct(acLevel, 0)} → ${pct(minAc, 0)}` : pct(acLevel, 0)}
       </text>
       {barriersEqual ? (
         <text x={X1 + 8} y={mapY(cpLevel) + 3} fontSize="10" fill="var(--accent-text)">
