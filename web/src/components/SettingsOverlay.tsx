@@ -6,6 +6,7 @@ import Modal from './Modal'
 import Icon from './Icon'
 import UnderlyingPicker from './UnderlyingPicker'
 import { Slider, NumberField, SelectField, ToggleField, TextField } from './fields'
+import { NOTE_TYPES, detectNoteType, applyPreset } from '../lib/noteType'
 import type { RunOpts } from './SetupRail'
 import type { Basket, NoteTerms } from '../api/types'
 
@@ -52,6 +53,7 @@ export default function SettingsOverlay({
     { value: 'average' as Basket, label: t('basket_average') },
   ]
   const stepDown = terms.autocall_step_down ?? 0
+  const activeType = detectNoteType(terms)
 
   return (
     <Modal title={t('setup_heading')} onClose={onClose}
@@ -61,6 +63,27 @@ export default function SettingsOverlay({
           <Icon name="play" size={15} /> {t('run')}
         </button>
       </>}>
+
+      <Group n={0} title={t('sec_note_type')}>
+        <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 12, lineHeight: 1.5 }}>{t('nt_hint')}</div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 10 }}>
+          {NOTE_TYPES.map((nt) => {
+            const on = nt === activeType
+            return (
+              <button key={nt} onClick={() => onChange(applyPreset(terms, nt))}
+                style={{
+                  textAlign: 'left', cursor: 'pointer', fontFamily: 'inherit', padding: '11px 13px', borderRadius: 11,
+                  border: `1px solid ${on ? 'var(--accent)' : 'var(--border)'}`,
+                  background: on ? 'var(--accent-weak)' : 'var(--surface)',
+                  transition: 'border-color .12s ease, background .12s ease',
+                }}>
+                <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 4, color: on ? 'var(--accent-text)' : 'var(--text)' }}>{t(`nt_${nt}`)}</div>
+                <div style={{ fontSize: 11.5, color: 'var(--text-muted)', lineHeight: 1.45 }}>{t(`nt_${nt}_desc`)}</div>
+              </button>
+            )
+          })}
+        </div>
+      </Group>
 
       <Group n={1} title={t('underlyings')}>
         <UnderlyingPicker tickers={terms.tickers} onChange={(tk) => set('tickers', tk)} />

@@ -31,6 +31,20 @@ export const S: Dict = {
   done:             { en: 'Done', es: 'Listo' },
   current_terms:    { en: 'Current terms', es: 'Términos actuales' },
 
+  // note-type presets
+  sec_note_type:    { en: 'Note type', es: 'Tipo de nota' },
+  nt_hint:          { en: 'Pre-fills the canonical fields for this structure — nothing is hidden, every field stays editable below.', es: 'Rellena los campos canónicos de esta estructura — nada se oculta, todo sigue editable abajo.' },
+  nt_phoenix:       { en: 'Phoenix', es: 'Phoenix' },
+  nt_phoenix_desc:  { en: 'Conditional coupons above a barrier, with autocall and a knock-in.', es: 'Cupones condicionales sobre una barrera, con autocall y knock-in.' },
+  nt_reverse_conv:  { en: 'Reverse convertible', es: 'Convertible inverso' },
+  nt_reverse_conv_desc: { en: 'Guaranteed coupon (no barrier), no memory.', es: 'Cupón garantizado (sin barrera), sin memoria.' },
+  nt_growth_autocall: { en: 'Growth autocall', es: 'Autocall de crecimiento' },
+  nt_growth_autocall_desc: { en: 'No periodic coupon — premium accrues and pays as a lump at autocall.', es: 'Sin cupón periódico — la prima se acumula y se paga al autocall.' },
+  nt_capital_protected: { en: 'Capital protected', es: 'Capital protegido' },
+  nt_capital_protected_desc: { en: 'Principal guaranteed at maturity, participating in the upside.', es: 'Capital garantizado al vencimiento, participando en la subida.' },
+  nt_custom:        { en: 'Custom', es: 'Personalizado' },
+  nt_custom_desc:   { en: 'Leave every field exactly as it is.', es: 'Deja todos los campos tal cual.' },
+
   // sections
   sec_schedule_coupon: { en: 'Schedule & coupon', es: 'Programa y cupón' },
   sec_basket:       { en: 'Basket & overlays', es: 'Cesta y overlays' },
