@@ -48,6 +48,18 @@ export interface NoteTerms {
   [k: string]: unknown
 }
 
+export interface HestonParam {
+  name: string
+  S0: number | null
+  mu: number | null
+  V0: number | null
+  theta: number | null
+  kappa: number | null
+  xi: number | null
+  rho: number | null
+  feller: number | null
+}
+
 export interface SimSummary {
   expected_irr: number | null
   expected_total_return: number | null
@@ -65,6 +77,9 @@ export interface SimSummary {
   engine: string
   assets: string[]
   autocall_by_period: number[]
+  obs_times: number[]
+  t_dof: number | null
+  calibration: HestonParam[]
 }
 
 export interface AssetFan {
@@ -78,6 +93,7 @@ export interface SimFigures {
   asset_fans: AssetFan[]
   corr_input: any
   corr_realized: any
+  corr_diff: any
 }
 
 export interface SimResult {

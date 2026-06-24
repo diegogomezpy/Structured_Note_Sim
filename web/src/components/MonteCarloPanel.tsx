@@ -5,6 +5,7 @@ import Figure from './Figure'
 import HeroMetrics from './HeroMetrics'
 import OutcomeWaterfall from './OutcomeWaterfall'
 import PathExplorer from './PathExplorer'
+import { AutocallByPeriodTable, CalibrationTable } from './MCTables'
 import Tabs from './Tabs'
 import TickerLogo from './TickerLogo'
 import type { NoteTerms, SimResult } from '../api/types'
@@ -43,6 +44,9 @@ export default function MonteCarloPanel({ result, terms }: { result: SimResult; 
           <Panel title={t('irr_distribution')} pad={14}>
             <div style={{ height: CHART_H }}><Figure fig={figures.irr_dist} /></div>
           </Panel>
+          <Panel title={t('autocall_by_period_h')} pad={0}>
+            <AutocallByPeriodTable summary={summary} autocallStart={terms.autocall_start_period} />
+          </Panel>
         </div>
       )}
 
@@ -72,12 +76,20 @@ export default function MonteCarloPanel({ result, terms }: { result: SimResult; 
       {sub === 'explorer' && <PathExplorer runId={result.run_id} />}
 
       {sub === 'correlation' && (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 18 }} className="fade-up">
-          <Panel title={`${t('correlation')} · ${t('corr_input')}`} pad={14}>
-            <div style={{ height: 300 }}><Figure fig={figures.corr_input} /></div>
-          </Panel>
-          <Panel title={`${t('correlation')} · ${t('corr_realized')}`} pad={14}>
-            <div style={{ height: 300 }}><Figure fig={figures.corr_realized} /></div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }} className="fade-up">
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 18 }}>
+            <Panel title={t('corr_input')} pad={14}>
+              <div style={{ height: 280 }}><Figure fig={figures.corr_input} /></div>
+            </Panel>
+            <Panel title={t('corr_realized')} pad={14}>
+              <div style={{ height: 280 }}><Figure fig={figures.corr_realized} /></div>
+            </Panel>
+            <Panel title={t('corr_difference')} pad={14}>
+              <div style={{ height: 280 }}><Figure fig={figures.corr_diff} /></div>
+            </Panel>
+          </div>
+          <Panel title={t('calibration_h')} pad={0}>
+            <CalibrationTable summary={summary} nameToSym={nameToSym} />
           </Panel>
         </div>
       )}

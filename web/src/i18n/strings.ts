@@ -21,7 +21,14 @@ export const S: Dict = {
   add_btn:          { en: 'Add', es: 'Añadir' },
   max_underlyings:  { en: 'Maximum 5 underlyings.', es: 'Máximo 5 subyacentes.' },
 
+  // overlay / rail
+  note_settings:    { en: 'Note settings', es: 'Configuración de la nota' },
+  edit_settings:    { en: 'Edit note settings', es: 'Editar configuración' },
+  done:             { en: 'Done', es: 'Listo' },
+  current_terms:    { en: 'Current terms', es: 'Términos actuales' },
+
   // sections
+  sec_schedule_coupon: { en: 'Schedule & coupon', es: 'Programa y cupón' },
   sec_basket:       { en: 'Basket & overlays', es: 'Cesta y overlays' },
   sec_autocall:     { en: 'Autocall schedule', es: 'Programa de autocancelación' },
   sec_protection:   { en: 'Protection', es: 'Protección' },
@@ -101,6 +108,21 @@ export const S: Dict = {
   tab_backtest:     { en: 'Historical backtest', es: 'Backtest histórico' },
   tab_live:         { en: 'Current performance', es: 'Rendimiento actual' },
   tab_report:       { en: 'Report', es: 'Informe' },
+
+  // MC tables
+  autocall_by_period_h: { en: 'Autocall probability by period', es: 'Probabilidad de autocancelación por periodo' },
+  col_period:       { en: 'Period', es: 'Periodo' },
+  col_time:         { en: 'Time (y)', es: 'Tiempo (a)' },
+  col_p_autocall:   { en: 'P(autocall)', es: 'P(autocancelación)' },
+  col_eligible:     { en: 'Autocall eligible', es: 'Autocancelable' },
+  yes:              { en: 'Yes', es: 'Sí' },
+  no:               { en: 'No', es: 'No' },
+  coupon_only:      { en: 'coupon only', es: 'solo cupón' },
+  calibration_h:    { en: 'Calibrated Heston parameters', es: 'Parámetros Heston calibrados' },
+  corr_difference:  { en: 'Difference (input − realized)', es: 'Diferencia (entrada − realizada)' },
+  t_copula_dof:     { en: 'Student-t copula ν =', es: 'Cópula t de Student ν =' },
+  feller_ok:        { en: 'pass', es: 'ok' },
+  feller_warn:      { en: 'warn', es: 'aviso' },
 
   // chart panel titles
   irr_distribution: { en: 'IRR distribution', es: 'Distribución de TIR' },

@@ -10,6 +10,7 @@ import Tabs from './components/Tabs'
 import RunProgress from './components/RunProgress'
 import MonteCarloPanel from './components/MonteCarloPanel'
 import BacktestPanel from './components/BacktestPanel'
+import SettingsOverlay from './components/SettingsOverlay'
 import BrandMark from './components/BrandMark'
 import Icon from './components/Icon'
 
@@ -32,6 +33,7 @@ export default function App() {
   const [status, setStatus] = useState<Status>('idle')
   const [errorMsg, setErrorMsg] = useState('')
   const [tab, setTab] = useState('mc')
+  const [settingsOpen, setSettingsOpen] = useState(false)
   // Backtest is fetched lazily on first open of its tab (only depends on terms).
   const [btResult, setBtResult] = useState<BacktestResult | null>(null)
   const [btSig, setBtSig] = useState('')
@@ -131,11 +133,11 @@ export default function App() {
           <Panel title={t('setup_heading')}>
             {terms ? (
               <SetupRail
-                terms={terms} onChange={setTerms}
+                terms={terms}
                 configs={configs} configFile={configFile} onSelectConfig={loadConfig}
-                opts={opts} onOptsChange={setOpts}
-                cppAvailable={cppAvailable}
+                opts={opts}
                 running={status === 'running'} stale={stale} onRun={run}
+                onOpenSettings={() => setSettingsOpen(true)}
               />
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
@@ -226,6 +228,15 @@ export default function App() {
           )}
         </main>
       </div>
+
+      {settingsOpen && terms && (
+        <SettingsOverlay
+          terms={terms} onChange={setTerms}
+          opts={opts} onOptsChange={setOpts}
+          cppAvailable={cppAvailable}
+          onClose={() => setSettingsOpen(false)} onRun={run}
+        />
+      )}
     </div>
   )
 }

@@ -209,6 +209,9 @@ def run_simulation(terms: NoteTerms, *, n_paths: int = 10000, seed: int = 42,
             cal_result.corr_SS, asset_names, tr("corr_input"))),
         "corr_realized": _fig(charts.build_corr_heatmap(
             sim_results["realized_corr"], asset_names, tr("corr_realized"))),
+        "corr_diff": _fig(charts.build_corr_heatmap(
+            np.asarray(cal_result.corr_SS) - np.asarray(sim_results["realized_corr"]),
+            asset_names, "Δ  input − realized", zmin=-0.1, zmax=0.1)),
     }
 
     summary = {k: _f(note.get(k)) for k in (
@@ -224,6 +227,16 @@ def run_simulation(terms: NoteTerms, *, n_paths: int = 10000, seed: int = 42,
     # Per-period autocall fractions — powers the outcome waterfall on the client.
     summary["autocall_by_period"] = [float(x) for x in
                                      note.get("prob_autocall_by_period", [])]
+    summary["obs_times"] = [float(x) for x in obs_times]
+    # Calibrated Heston parameters per asset (+ Feller margin) for the calibration
+    # table, and the Student-t copula dof.
+    summary["t_dof"] = _f(cal_result.t_dof)
+    summary["calibration"] = [
+        {"name": p.name, "S0": _f(p.S0), "mu": _f(p.mu), "V0": _f(p.V0),
+         "theta": _f(p.theta), "kappa": _f(p.kappa), "xi": _f(p.xi), "rho": _f(p.rho),
+         "feller": _f(2 * p.kappa * p.theta - p.xi ** 2)}
+        for p in cal_result.params
+    ]
 
     # Cache compact arrays for the path explorer (Phase 3).
     run_id = _store_run({
