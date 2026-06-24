@@ -66,6 +66,10 @@ export const S: Dict = {
   autocall_barrier: { en: 'Autocall barrier', es: 'Barrera de autocancelación' },
   knock_in_barrier: { en: 'Knock-in barrier', es: 'Barrera de knock-in' },
   autocall_start:   { en: 'Autocall starts', es: 'Autocancelación desde' },
+  quick_edit:       { en: 'Terms', es: 'Términos' },
+  coupon_barrier_short: { en: 'Coupon', es: 'Cupón' },
+  knock_in_short:   { en: 'Knock-in', es: 'Knock-in' },
+  autocall_short:   { en: 'Autocall', es: 'Autocall' },
   memory:           { en: 'Memory coupons', es: 'Cupones con memoria' },
   paths:            { en: 'Paths', es: 'Trayectorias' },
   engine:           { en: 'Engine', es: 'Motor' },
@@ -184,12 +188,84 @@ export const S: Dict = {
   pricing:          { en: 'Pricing payoff', es: 'Valorando' },
   error:            { en: 'Something went wrong', es: 'Algo salió mal' },
   coming_soon:      { en: 'Coming soon', es: 'Próximamente' },
+
+  // underlying breakdown cards
+  ul_breakdown:     { en: 'Underlying breakdown', es: 'Análisis de subyacentes' },
+  ul_market_cap:    { en: 'Market cap', es: 'Capitalización' },
+  ul_iv_3m:         { en: '3M implied vol', es: 'Vol. implícita 3M' },
+  ul_vol_3m:        { en: '3M realized vol', es: 'Vol. realizada 3M' },
+  ul_last_price:    { en: 'Last price', es: 'Último precio' },
+  ul_rsi:           { en: 'RSI (14)', es: 'RSI (14)' },
+  ul_load_fail:     { en: 'Could not load underlying data.', es: 'No se pudieron cargar los datos.' },
+  ul_more:          { en: 'Show more', es: 'Ver más' },
+  ul_less:          { en: 'Show less', es: 'Ver menos' },
+
+  // report tab
+  report_intro:     { en: 'Generate a branded institutional PDF — pick the sections to include.', es: 'Genera un PDF institucional — elige las secciones a incluir.' },
+  report_sections:  { en: 'Sections', es: 'Secciones' },
+  report_generate:  { en: 'Generate PDF', es: 'Generar PDF' },
+  report_generating: { en: 'Building report — this can take ~15s', es: 'Generando informe — puede tardar ~15s' },
+  report_downloaded: { en: 'Report downloaded.', es: 'Informe descargado.' },
+  report_select_one: { en: 'Select at least one section.', es: 'Selecciona al menos una sección.' },
+  report_note:      { en: 'Always includes the cover, note terms and glossary. Uses the current engine settings.', es: 'Incluye siempre portada, términos y glosario. Usa la configuración actual del motor.' },
+  report_live_na:   { en: 'No issue date — current performance unavailable.', es: 'Sin fecha de emisión — rendimiento actual no disponible.' },
+  sec_mc:           { en: 'Monte Carlo', es: 'Monte Carlo' },
+  sec_mc_desc:      { en: 'IRR distribution, worst-of fan, autocall waterfall, per-asset fans.', es: 'Distribución de TIR, abanico del peor de, cascada de autocall, abanicos por activo.' },
+  sec_calib:        { en: 'Calibration', es: 'Calibración' },
+  sec_calib_desc:   { en: 'Heston parameters per asset and the input correlation matrix.', es: 'Parámetros de Heston por activo y matriz de correlación de entrada.' },
+  sec_bt:           { en: 'Historical backtest', es: 'Backtest histórico' },
+  sec_bt_desc:      { en: 'Outcome distribution, worst-asset pie, IRR scatter, price history.', es: 'Distribución de resultados, peor activo, dispersión de TIR, histórico de precios.' },
+  sec_live:         { en: 'Current performance', es: 'Rendimiento actual' },
+  sec_live_desc:    { en: 'Live metrics, observation history and the performance-since-issue chart.', es: 'Métricas en vivo, historial de observaciones y gráfico desde la emisión.' },
+
+  // current-performance (live) tab
+  live_intro:       { en: 'Where this note stands today — observations replayed against live prices.', es: 'Dónde está la nota hoy — observaciones reproducidas con precios en vivo.' },
+  live_no_issue:    { en: 'This note has no issue date set, so there is no live performance to track. Add an issue date in note settings.', es: 'Esta nota no tiene fecha de emisión, así que no hay rendimiento en vivo. Añade una fecha de emisión en la configuración.' },
+  live_not_issued:  { en: 'This note has not been issued yet — current performance becomes available on the issue date.', es: 'Esta nota aún no se ha emitido — el rendimiento actual estará disponible en la fecha de emisión.' },
+  live_no_data:     { en: 'Not enough price history since the issue date to show current performance.', es: 'No hay suficiente historial de precios desde la emisión para mostrar el rendimiento actual.' },
+  live_gap_warn:    { en: 'No trading data on the issue date; performance is anchored to the next available trading day.', es: 'Sin datos en la fecha de emisión; el rendimiento se ancla al siguiente día hábil disponible.' },
+  live_issued:      { en: 'Issued', es: 'Emitida' },
+  live_matures:     { en: 'Matures', es: 'Vence' },
+  live_elapsed:     { en: 'elapsed', es: 'transcurrido' },
+  live_remaining:   { en: 'remaining', es: 'restante' },
+  live_y:           { en: 'y', es: 'a' },
+  live_called_banner: { en: 'Autocalled at P{n} — capital returned with the accrued premium.', es: 'Autocancelada en P{n} — capital devuelto con la prima acumulada.' },
+  live_group_today: { en: 'Today', es: 'Hoy' },
+  live_group_barriers: { en: 'Barriers', es: 'Barreras' },
+  live_wof_today:   { en: 'Worst-of today', es: 'Peor de hoy' },
+  live_worst_asset: { en: 'Worst performer', es: 'Peor activo' },
+  live_ki_buffer:   { en: 'Knock-in buffer', es: 'Margen de barrera' },
+  live_ac_buffer:   { en: 'Autocall buffer', es: 'Margen de autocall' },
+  live_vs_strike:   { en: 'vs strike', es: 'vs strike' },
+  live_ref_barrier: { en: 'barrier {v}', es: 'barrera {v}' },
+  live_ref_autocall: { en: 'next call {v}', es: 'próx. call {v}' },
+  live_asset_perf:  { en: 'Underlyings vs strike', es: 'Subyacentes vs strike' },
+  live_obs_history: { en: 'Observation history', es: 'Historial de observaciones' },
+  live_coupons_paid: { en: 'Coupons paid', es: 'Cupones pagados' },
+  live_irr_to_date: { en: 'Coupon IRR to date', es: 'TIR de cupón a la fecha' },
+  live_pending:     { en: '{n} memory coupon(s) accrued ({v}) — paid if a future coupon barrier is met.', es: '{n} cupón(es) de memoria acumulado(s) ({v}) — se pagan si se cumple una barrera futura.' },
+  live_growth_premium: { en: 'No periodic coupon — the {v} premium accrues and is paid as a lump only at autocall.', es: 'Sin cupón periódico — la prima {v} se acumula y se paga de una vez solo al autocall.' },
+  live_col_period:  { en: 'Period', es: 'Período' },
+  live_col_date:    { en: 'Date', es: 'Fecha' },
+  live_col_status:  { en: 'Status', es: 'Estado' },
+  live_col_wof:     { en: 'Worst-of', es: 'Peor de' },
+  live_col_coupon:  { en: 'Coupon', es: 'Cupón' },
+  live_col_cumulative: { en: 'Cumulative', es: 'Acumulado' },
+  live_st_autocalled: { en: 'Autocalled', es: 'Autocancelada' },
+  live_st_coupon_paid: { en: 'Coupon paid', es: 'Cupón pagado' },
+  live_st_coupon_missed: { en: 'Coupon missed', es: 'Cupón fallido' },
+  live_st_no_coupon: { en: 'Premium accrued', es: 'Prima acumulada' },
+  live_st_upcoming: { en: 'Upcoming', es: 'Pendiente' },
+  live_chart_title: { en: 'Performance since issue', es: 'Rendimiento desde la emisión' },
 }
 
 export function makeT(lang: Lang) {
-  return (key: string): string => {
+  return (key: string, vars?: Record<string, string | number>): string => {
     const e = S[key]
-    if (!e) return key
-    return e[lang] ?? e.en
+    let s = e ? (e[lang] ?? e.en) : key
+    if (vars) {
+      for (const [k, v] of Object.entries(vars)) s = s.replaceAll(`{${k}}`, String(v))
+    }
+    return s
   }
 }

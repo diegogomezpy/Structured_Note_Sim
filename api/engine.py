@@ -28,16 +28,49 @@ _REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(_REPO))
 sys.path.insert(0, str(_REPO / "app"))
 
-from core.note import NoteTerms, price_note                       # noqa: E402
+from core.note import NoteTerms, price_note, replay_note          # noqa: E402
 from core.calibrator import HestonCalibrator                      # noqa: E402
 from core.simulator import HestonMultiSimulator                   # noqa: E402
 from core.backtest import run_backtest                            # noqa: E402
 from data.loader import (load_prices, load_dividends,             # noqa: E402
-                          build_dividend_schedule)
+                          build_dividend_schedule, load_underlying_metrics)
 import charts            # noqa: E402  (app/charts.py)
 import translations      # noqa: E402  (app/translations.py)
+import underlyings       # noqa: E402  (app/underlyings.py)
 
 _PCTS = [1, 5, 25, 50, 75, 95, 99]
+
+# ── Price cache (TTL) ─────────────────────────────────────────────────────────
+# yfinance pulls are the slow part of every flow (calibrate / backtest / live all
+# re-fetch the same daily closes). The Streamlit app memoised these via
+# st.cache_data(ttl=…); the API has no such layer, so the live tab in particular
+# re-pulled full history on every open. Cache by (tickers, years, field) with a
+# 1-hour TTL — matching the Streamlit refresh cadence — so a single warm-up pull
+# serves simulate + backtest + live. DataFrames are treated as read-only.
+import threading                                                # noqa: E402
+
+_PRICE_CACHE: "dict[tuple, tuple[float, pd.DataFrame]]" = {}
+_PRICE_TTL = 3600.0
+_PRICE_MAX = 32
+_PRICE_LOCK = threading.Lock()
+
+
+def _prices(tickers: dict, *, years: float | None, field: str = "close") -> pd.DataFrame:
+    """Cached load_prices: reuse a recent pull for the same tickers/window/field."""
+    key = (tuple(sorted(tickers.items())), years, field)
+    now = time.time()
+    with _PRICE_LOCK:
+        hit = _PRICE_CACHE.get(key)
+        if hit is not None and now - hit[0] < _PRICE_TTL:
+            return hit[1]
+    df = load_prices(source="yfinance", tickers=dict(tickers), years=years, field=field)
+    with _PRICE_LOCK:
+        _PRICE_CACHE[key] = (now, df)
+        if len(_PRICE_CACHE) > _PRICE_MAX:
+            oldest = min(_PRICE_CACHE.items(), key=lambda kv: kv[1][0])[0]
+            _PRICE_CACHE.pop(oldest, None)
+    return df
+
 
 # ── In-memory run store (bounded) ─────────────────────────────────────────────
 # Keeps the compact per-path arrays for the explorer. LRU-evicted so a long-lived
@@ -124,21 +157,19 @@ def _f(x) -> float | None:
 
 
 # ── simulation flow ────────────────────────────────────────────────────────────
-def run_simulation(terms: NoteTerms, *, n_paths: int = 10000, seed: int = 42,
-                   calib_years: float = 5.0, history_years: float | None = None,
-                   engine: str = "numpy", lang: str = "en") -> dict:
-    """Load → calibrate → simulate → price, then build the Monte Carlo figures.
-    Mirrors the old Streamlit run block; returns summary stats + Plotly-JSON
-    figures + a run_id (full paths cached server-side for the explorer)."""
+def _simulate_full(terms: NoteTerms, *, n_paths: int, seed: int, calib_years: float,
+                   history_years: float | None, engine: str) -> dict:
+    """Load → calibrate → simulate → price. The shared compute core behind both
+    the JSON simulate endpoint and the PDF report builder; returns the raw numpy
+    objects (full price_note dict, perf cubes, percentile bands, calibration) so
+    each caller can serialise or render as it needs. price_note stays the single
+    payoff engine."""
     tickers = dict(terms.tickers)
-    tr = translations.Translator(lang)
 
     # Calibrate on adjusted closes (total-return dynamics); barriers/S0/dividends
     # live in raw price space.
-    prices_adj = load_prices(source="yfinance", tickers=tickers,
-                             years=history_years, field="adj_close")
-    prices_raw = load_prices(source="yfinance", tickers=tickers,
-                             years=history_years, field="close")
+    prices_adj = _prices(tickers, years=history_years, field="adj_close")
+    prices_raw = _prices(tickers, years=history_years, field="close")
     cal_result = HestonCalibrator(prices_df=prices_adj, calib_years=calib_years).calibrate()
 
     raw_last = prices_raw.iloc[-1]
@@ -192,6 +223,29 @@ def run_simulation(terms: NoteTerms, *, n_paths: int = 10000, seed: int = 42,
     t_grid      = np.concatenate([[0.0], np.cumsum(dt_grid)])
     obs_pairs   = [(f"P{i+1}", t) for i, t in enumerate(obs_times)]
     asset_names = list(tickers.values())
+
+    return {
+        "cal_result": cal_result, "sim_results": sim_results, "note": note,
+        "perf_paths": perf_paths, "wof_paths": wof_paths, "sim_prices": sim_prices,
+        "wof_bands": wof_bands, "asset_bands": asset_bands, "t_grid": t_grid,
+        "obs_steps": obs_steps, "obs_times": obs_times, "obs_pairs": obs_pairs,
+        "asset_names": asset_names, "eng_used": eng_used,
+    }
+
+
+def run_simulation(terms: NoteTerms, *, n_paths: int = 10000, seed: int = 42,
+                   calib_years: float = 5.0, history_years: float | None = None,
+                   engine: str = "numpy", lang: str = "en") -> dict:
+    """Load → calibrate → simulate → price, then build the Monte Carlo figures.
+    Mirrors the old Streamlit run block; returns summary stats + Plotly-JSON
+    figures + a run_id (full paths cached server-side for the explorer)."""
+    tr = translations.Translator(lang)
+    sf = _simulate_full(terms, n_paths=n_paths, seed=seed, calib_years=calib_years,
+                        history_years=history_years, engine=engine)
+    cal_result, sim_results, note = sf["cal_result"], sf["sim_results"], sf["note"]
+    perf_paths, wof_bands, asset_bands = sf["perf_paths"], sf["wof_bands"], sf["asset_bands"]
+    t_grid, obs_steps, obs_times = sf["t_grid"], sf["obs_steps"], sf["obs_times"]
+    obs_pairs, asset_names, eng_used = sf["obs_pairs"], sf["asset_names"], sf["eng_used"]
 
     figures = {
         "irr_dist": _fig(charts.build_irr_distribution(
@@ -265,8 +319,7 @@ def run_backtest_api(terms: NoteTerms, *, history_years: float | None = None,
     """Historical backtest over realized prices — summary metrics, per-issue rows,
     and the outcome/scatter/pie/price figures (mirrors the Streamlit backtest)."""
     tr = translations.Translator(lang)
-    prices = load_prices(source="yfinance", tickers=dict(terms.tickers),
-                         years=history_years, field="close")
+    prices = _prices(dict(terms.tickers), years=history_years, field="close")
     bt, summary = run_backtest(prices, terms)
     if bt.empty:
         return {"summary": {}, "issues": [], "figures": None}
@@ -308,3 +361,378 @@ def run_backtest_api(terms: NoteTerms, *, history_years: float | None = None,
         ],
         "figures": figures,
     }
+
+
+# ── live / current-performance flow ─────────────────────────────────────────────
+def run_live_api(terms: NoteTerms, *, lang: str = "en", for_pdf: bool = False) -> dict:
+    """Current-performance replay of a partially-elapsed note (the Streamlit
+    "Current Performance" tab). Loads live prices from the issue date, replays the
+    observation calendar through today via core.note.replay_note (the single
+    source of truth for past-observation status), and returns summary metrics,
+    per-asset performance, the per-observation table, and the live chart figure.
+
+    With ``for_pdf=True`` returns ``{"available", "live_data", "live_figure"}``
+    shaped for app/pdf_report.py instead of the web JSON.
+
+    Returns ``{"available": False, "reason": ...}`` when the note has no usable
+    live data (no issue date, not yet issued, or too little price history)."""
+    tr = translations.Translator(lang)
+    tickers = dict(terms.tickers)
+    asset_names = list(tickers.values())
+    disp_to_sym = {disp: sym for sym, disp in tickers.items()}
+    obs_labels = [f"P{i + 1}" for i in range(terms.n_obs)]
+
+    if not terms.issue_date:
+        return {"available": False, "reason": "no_issue_date"}
+
+    issue_ts = pd.Timestamp(terms.issue_date)
+    today_ts = pd.Timestamp(pd.Timestamp.today().date())
+    if issue_ts > today_ts:
+        return {"available": False, "reason": "not_issued"}
+
+    mat_ts = issue_ts + pd.DateOffset(months=round(terms.maturity * 12))
+    elapsed_years   = (today_ts - issue_ts).days / 365.25
+    remaining_years = max(terms.maturity - elapsed_years, 0.0)
+    pct_elapsed     = min(elapsed_years / terms.maturity, 1.0) if terms.maturity else 1.0
+
+    full_prices = _prices(tickers, years=None, field="close")
+    issue_idx = int(full_prices.index.searchsorted(issue_ts))
+    if issue_idx >= len(full_prices):
+        issue_idx = len(full_prices) - 1
+    anchor_live = full_prices.index[issue_idx]
+    live_prices = full_prices.iloc[issue_idx:]
+    if len(live_prices) < 2:
+        return {"available": False, "reason": "not_enough_data"}
+
+    history_gap_days = int((anchor_live - issue_ts).days)
+
+    S0 = full_prices.iloc[issue_idx].values.astype(float)
+    today_slice = live_prices[live_prices.index <= today_ts]
+    perf_today  = today_slice.iloc[-1].values / S0
+    wof_today   = float(perf_today.min())
+    worst_i     = int(perf_today.argmin())
+    worst_asset = asset_names[worst_i]
+
+    obs_cal  = terms.obs_calendar_dates(anchor_live)
+    ac_sched = terms.autocall_barrier_schedule()
+    next_obs_idx = next((i for i, d in enumerate(obs_cal)
+                         if pd.Timestamp(d) > today_ts), len(ac_sched) - 1)
+    next_ac_barrier = float(ac_sched[next_obs_idx])
+    ki_buffer = wof_today - terms.knock_in_barrier
+    ac_buffer = wof_today - next_ac_barrier
+
+    # Snap each calendar observation date to the trading calendar; an obs is in
+    # the past only if its snapped trading day has already occurred.
+    obs_snapped: list = []
+    for d in obs_cal:
+        j = int(full_prices.index.searchsorted(d))
+        if j < len(full_prices) and full_prices.index[j] <= today_ts:
+            obs_snapped.append(full_prices.index[j])
+        else:
+            obs_snapped.append(None)
+
+    past_dates = [d for d in obs_snapped if d is not None]
+    if past_dates:
+        perf_obs = np.vstack([full_prices.loc[d].values / S0 for d in past_dates])
+    else:
+        perf_obs = np.empty((0, len(S0)))
+    replay = replay_note(perf_obs, terms)
+
+    obs_rows: list[dict] = []
+    obs_markers: list[dict] = []
+    running_total = 0.0
+    for q, label in enumerate(obs_labels):
+        snap = obs_snapped[q] if q < len(obs_snapped) else None
+        if q >= len(replay["rows"]) or snap is None:
+            # Upcoming — unless an autocall already terminated the note.
+            if replay["autocall_period"] and q + 1 > replay["autocall_period"]:
+                break
+            est = obs_cal[q].date().isoformat() if q < len(obs_cal) else None
+            obs_rows.append({
+                "period": label, "date": est, "status": "upcoming",
+                "wof": None, "coupon": None, "cumulative": None, "upcoming": True,
+            })
+            continue
+
+        r = replay["rows"][q]
+        obs_wof = float(perf_obs[q].min())
+        running_total += r["coupon_amount"]
+        if r["autocalled"]:
+            status = "autocalled"
+        elif terms.coupon_at_autocall_only:
+            status = "no_coupon"
+        elif r["coupon_met"]:
+            status = "coupon_paid"
+        else:
+            status = "coupon_missed"
+        obs_rows.append({
+            "period": label, "date": snap.date().isoformat(), "status": status,
+            "wof": round(obs_wof, 6),
+            "coupon": _f(r["coupon_amount"]) if r["coupon_amount"] > 0 else None,
+            "cumulative": round(running_total, 6), "upcoming": False,
+        })
+        obs_markers.append({
+            "date": snap, "label": label, "wof": obs_wof,
+            "autocalled": bool(r["autocalled"]),
+            "paid": bool(r["coupon_met"] or r["coupon_amount"] > 0),
+            "amount": float(r["coupon_amount"]),
+        })
+        if r["autocalled"]:
+            break
+
+    pending_coupons = int(replay["pending_coupons"])
+    total_coupons   = float(replay["total_coupons"])
+    irr_to_date     = total_coupons / max(elapsed_years, 1 / 252)
+    n_replayed      = len(replay["rows"])
+
+    # Future observation reference lines (calendar dates) — only while alive.
+    if replay["autocall_period"]:
+        future_obs = []
+    else:
+        future_obs = [(obs_labels[q], obs_cal[q])
+                      for q in range(n_replayed, terms.n_obs)]
+    live_sched = ([(d, ac_sched[q]) for q, d in enumerate(obs_cal)]
+                  if terms.autocall_step_down else None)
+
+    fig = charts.build_live_performance_chart(
+        hist_prices=live_prices, issue_date=anchor_live, today=today_ts,
+        maturity_date=mat_ts, obs_markers=obs_markers, future_obs=future_obs,
+        knock_in_barrier=terms.knock_in_barrier,
+        autocall_barrier=terms.autocall_barrier,
+        coupon_barrier=terms.coupon_barrier, tr=tr,
+        autocall_schedule=live_sched)
+
+    if for_pdf:
+        # PDF shapes (app/pdf_report.py): translated obs-table headers/values +
+        # the raw go.Figure. The obs table uses the row dict keys as headers.
+        _dash = tr("live_obs_dash")
+        _status_key = {"autocalled": "live_status_autocalled",
+                       "coupon_paid": "live_status_coupon_paid",
+                       "coupon_missed": "live_status_coupon_missed",
+                       "no_coupon": "live_status_no_coupon",
+                       "upcoming": "live_status_upcoming"}
+        pdf_rows = [{
+            tr("live_col_period"):     r["period"],
+            tr("live_col_date"):       r["date"] or _dash,
+            tr("live_col_status"):     tr(_status_key[r["status"]]),
+            tr("live_col_wof"):        f"{r['wof']:.1%}" if r["wof"] is not None else _dash,
+            tr("live_col_coupon"):     f"{r['coupon']:.4%}" if r["coupon"] else _dash,
+            tr("live_col_cumulative"): f"{r['cumulative']:.4%}" if r["cumulative"] is not None else _dash,
+        } for r in obs_rows]
+        return {
+            "available": True,
+            "live_data": {
+                "wof_today":     wof_today,
+                "worst_asset":   worst_asset,
+                "perf_today":    {nm: float(perf_today[i]) for i, nm in enumerate(asset_names)},
+                "irr_to_date":   irr_to_date,
+                "elapsed_years": elapsed_years,
+                "obs_rows":      pdf_rows,
+            },
+            "live_figure": fig,
+        }
+
+    return {
+        "available": True,
+        "summary": {
+            "issue_date":      issue_ts.date().isoformat(),
+            "anchor_date":     anchor_live.date().isoformat(),
+            "maturity_date":   mat_ts.date().isoformat(),
+            "today":           today_ts.date().isoformat(),
+            "history_gap_days": history_gap_days,
+            "elapsed_years":   _f(elapsed_years),
+            "remaining_years": _f(remaining_years),
+            "pct_elapsed":     _f(pct_elapsed),
+            "wof_today":       _f(wof_today),
+            "worst_asset":     worst_asset,
+            "worst_symbol":    disp_to_sym.get(worst_asset, ""),
+            "ki_buffer":       _f(ki_buffer),
+            "ac_buffer":       _f(ac_buffer),
+            "next_ac_barrier": _f(next_ac_barrier),
+            "knock_in_barrier": _f(terms.knock_in_barrier),
+            "coupon_barrier":  _f(terms.coupon_barrier),
+            "coupon_rate":     _f(terms.coupon_rate),
+            "coupon_pa":       _f(terms.coupon_pa),
+            "total_coupons":   _f(total_coupons),
+            "pending_coupons": pending_coupons,
+            "pending_value":   _f(pending_coupons * terms.coupon_rate),
+            "irr_to_date":     _f(irr_to_date),
+            "autocall_period": int(replay["autocall_period"]),
+            "alive":           not bool(replay["autocall_period"]),
+            "coupon_at_autocall_only": bool(terms.coupon_at_autocall_only),
+            "next_premium":    _f(terms.coupon_rate * (n_replayed + 1)),
+        },
+        "assets": [
+            {"name": nm, "symbol": disp_to_sym.get(nm, ""), "perf": _f(perf_today[i])}
+            for i, nm in enumerate(asset_names)
+        ],
+        "obs_rows": obs_rows,
+        "figure": _fig(fig),
+    }
+
+
+# ── underlying breakdown flow ────────────────────────────────────────────────────
+def run_underlying_metrics(tickers: dict, *, lang: str = "en") -> list[dict]:
+    """Per-underlying breakdown for the note-structure cards: long name, type/sector,
+    market cap, 3-month implied (or realized) vol, last price, Wilder RSI, business
+    summary, and a trailing-12-month price-chart figure. Best-effort — a ticker that
+    fails to resolve still returns its row (with the fields it has) so the panel
+    degrades cleanly."""
+    tr = translations.Translator(lang)
+    tickers = dict(tickers)
+    try:
+        prices_1y = _prices(tickers, years=1.0, field="close")
+        closes = {name: prices_1y[name] for name in prices_1y.columns}
+    except Exception as e:
+        print(f"[underlyings] 1Y price pull failed: {e}")
+        prices_1y, closes = None, None
+
+    try:
+        metrics = load_underlying_metrics(tickers, closes=closes)
+    except Exception as e:
+        print(f"[underlyings] metrics pull failed: {e}")
+        metrics = {}
+
+    out = []
+    for sym, name in tickers.items():
+        m = metrics.get(name, {}) or {}
+        fig = None
+        if prices_1y is not None and name in getattr(prices_1y, "columns", []):
+            try:
+                fig = _fig(charts.build_underlying_price_chart(prices_1y[name], name, tr))
+            except Exception as e:
+                print(f"[underlyings] price chart for {name} failed: {e}")
+        out.append({
+            "name": name, "symbol": sym,
+            "long_name":  m.get("long_name") or name,
+            "type":       m.get("type"),
+            "sector":     m.get("sector"),
+            "market_cap": _f(m.get("market_cap")),
+            "iv_3m":      _f(m.get("iv_3m")),
+            "iv_source":  m.get("iv_source"),
+            "last_price": _f(m.get("last_price")),
+            "rsi_14":     _f(m.get("rsi_14")),
+            "business_summary": m.get("business_summary"),
+            "figure":     fig,
+        })
+    return out
+
+
+# ── PDF report flow ──────────────────────────────────────────────────────────────
+def _expand_sections(groups: set[str], n_assets: int) -> set[str]:
+    """Map coarse UI section groups to the fine-grained item keys the PDF gates on.
+    Note terms + the observation schedule are always seeded — they are core to any
+    term sheet, and the PDF defines its shared `usable` page width inside that
+    block, so later sections (MC/calib/live) reference it expecting it present."""
+    keys: set[str] = {"note_terms", "obs_schedule"}
+    if "mc" in groups:
+        keys |= {"mc_metrics", "mc_irr", "mc_autocall", "mc_wof"}
+        keys |= {f"mc_fan_{i}" for i in range(n_assets)}
+    if "calibration" in groups:
+        keys |= {"calib_table", "calib_corr"}
+    if "backtest" in groups:
+        keys |= {"bt_metrics", "bt_outcome", "bt_pie", "bt_irr", "bt_prices"}
+    if "live" in groups:
+        keys |= {"live_metrics", "live_asset_table", "live_obs_table", "live_chart"}
+    return keys
+
+
+def _backtest_for_pdf(terms: NoteTerms, tr, history_years: float | None) -> tuple[dict | None, dict | None]:
+    """(bt_summary, bt_figures) for the PDF, or (None, None) if no issues backtest.
+    Builds the go.Figure objects (not JSON) the report embeds."""
+    prices = _prices(dict(terms.tickers), years=history_years, field="close")
+    bt, summary = run_backtest(prices, terms)
+    if bt.empty:
+        return None, None
+    bt = bt.copy()
+
+    def _label(cq, ki):
+        if int(cq) > 0:
+            return f"Autocalled P{int(cq)}"
+        return "Knock-in" if bool(ki) else "Held to maturity"
+    bt["Outcome"] = [_label(cq, ki) for cq, ki in zip(bt["Call Quarter"], bt["Knock-in"])]
+    ac_periods = sorted({int(cq) for cq in bt["Call Quarter"] if int(cq) > 0})
+    color_map = {"Held to maturity": "#334155", "Knock-in": "#dc2626"}
+    for i, q in enumerate(ac_periods):
+        color_map[f"Autocalled P{q}"] = _lerp_hex("#93c5fd", "#1e3a8a", i / max(1, len(ac_periods) - 1))
+
+    bt_summary = dict(summary)
+    ki_rows = bt[bt["Knock-in"]]
+    if not ki_rows.empty:
+        bt_summary["loss_given_ki"] = float(ki_rows["IRR"].mean())
+    bt_figures = {
+        "outcome":     charts.build_backtest_outcome_bar(bt, color_map, tr),
+        "pie":         charts.build_worst_asset_pie(bt, tr),
+        "irr_scatter": charts.build_backtest_irr_scatter(bt, color_map, tr),
+        "prices":      charts.build_historical_prices(
+            prices.resample("W-FRI").last().dropna(),
+            bt["Issue Date"].min(), bt["Issue Date"].max(), tr),
+    }
+    return bt_summary, bt_figures
+
+
+def build_report_pdf(terms: NoteTerms, *, sections: list[str] | None = None, lang: str = "en",
+                     n_paths: int = 10000, seed: int = 42, calib_years: float = 5.0,
+                     history_years: float | None = None, engine: str = "numpy") -> bytes:
+    """Assemble the institutional PDF report (app/pdf_report.py). Runs only the
+    flows whose sections were requested (empty/None ⇒ everything available), reusing
+    the cached price pulls. Returns the PDF bytes."""
+    from pdf_report import generate_pdf_report                     # heavy import, lazy
+
+    tr = translations.Translator(lang)
+    groups = set(sections or [])
+    all_on = not groups
+    want_mc   = all_on or {"mc", "calibration"} & groups
+    want_bt   = all_on or "backtest" in groups
+    want_live = all_on or "live" in groups
+
+    tickers = dict(terms.tickers)
+    asset_names = list(tickers.values())
+    n_assets = len(tickers)
+    include_sections = None if all_on else _expand_sections(groups, n_assets)
+
+    results: dict = {}
+    figures: dict = {}
+    if want_mc:
+        sf = _simulate_full(terms, n_paths=n_paths, seed=seed, calib_years=calib_years,
+                            history_years=history_years, engine=engine)
+        note, cal_result = sf["note"], sf["cal_result"]
+        t_grid, obs_pairs = sf["t_grid"], sf["obs_pairs"]
+        wof_bands, asset_bands = sf["wof_bands"], sf["asset_bands"]
+        results = {**note, "params": cal_result.params, "corr_SS": cal_result.corr_SS}
+        figures = {
+            "irr_dist": charts.build_irr_distribution(
+                note["annualized_returns"], note.get("total_returns"),
+                note["autocall_events"], note["expected_irr"], terms.coupon_pa, tr),
+            "wof_fan": charts.build_wof_fan(
+                None, t_grid, terms.knock_in_barrier, obs_pairs, tr,
+                autocall_barrier=terms.autocall_barrier, bands=wof_bands),
+            "individual": [(nm, charts.build_fan_chart(None, nm, t_grid, obs_pairs, tr,
+                                                       bands=asset_bands[i]))
+                           for i, nm in enumerate(asset_names)],
+            "corr": charts.build_corr_heatmap(cal_result.corr_SS, asset_names, tr("corr_input")),
+        }
+
+    bt_summary = bt_figures = None
+    if want_bt:
+        try:
+            bt_summary, bt_figures = _backtest_for_pdf(terms, tr, history_years)
+        except Exception as e:                                     # backtest is best-effort
+            print(f"[report] backtest section skipped: {e}")
+
+    live_data = live_figure = None
+    if want_live and terms.issue_date:
+        live = run_live_api(terms, lang=lang, for_pdf=True)
+        if live.get("available"):
+            live_data, live_figure = live["live_data"], live["live_figure"]
+
+    logo_urls     = {nm: underlyings.logo_for(sym) for sym, nm in tickers.items()}
+    logo_tickers  = {nm: sym for sym, nm in tickers.items()}
+    issuer_logo   = underlyings.issuer_logo_for(getattr(terms, "issuer", "") or "")
+
+    return generate_pdf_report(
+        terms=terms, results=results, asset_names=asset_names, figures=figures,
+        lang=lang, bt_summary=bt_summary, bt_figures=bt_figures,
+        live_data=live_data, live_figure=live_figure,
+        logo_urls=logo_urls, issuer_logo_url=issuer_logo, logo_tickers=logo_tickers,
+        include_sections=include_sections)

@@ -16,6 +16,7 @@ from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import Response
 from pydantic import BaseModel, Field
 
 _REPO = Path(__file__).resolve().parent.parent
@@ -54,6 +55,26 @@ class BacktestRequest(BaseModel):
     terms: dict
     history_years: float | None = None
     lang: str = "en"
+
+
+class LiveRequest(BaseModel):
+    terms: dict
+    lang: str = "en"
+
+
+class MetricsRequest(BaseModel):
+    tickers: dict          # {yfinance_symbol: display_name}
+    lang: str = "en"
+
+
+class ReportRequest(BaseModel):
+    terms: dict
+    sections: list[str] = Field(default_factory=list)  # mc/calibration/backtest/live; empty = all
+    lang: str = "en"
+    n_paths: int = Field(10000, ge=1000, le=250000)
+    seed: int = 42
+    calib_years: float = 5.0
+    engine: str = "numpy"
 
 
 # ── endpoints ─────────────────────────────────────────────────────────────────
@@ -137,6 +158,54 @@ def backtest(req: BacktestRequest):
         return engine.run_backtest_api(terms, history_years=req.history_years, lang=req.lang)
     except Exception as e:
         raise HTTPException(500, f"backtest failed: {e}")
+
+
+@app.post("/api/live")
+def live(req: LiveRequest):
+    """Current-performance replay for a partially-elapsed note (see
+    engine.run_live_api). Returns {available: false, reason} when the note has no
+    usable live data (no issue date, not yet issued, or too little history)."""
+    try:
+        terms = NoteTerms.from_dict(req.terms)
+    except Exception as e:
+        raise HTTPException(400, f"invalid note terms: {e}")
+    try:
+        return engine.run_live_api(terms, lang=req.lang)
+    except Exception as e:
+        raise HTTPException(500, f"current performance failed: {e}")
+
+
+@app.post("/api/underlyings/metrics")
+def underlying_metrics(req: MetricsRequest):
+    """Per-underlying breakdown cards (market cap, IV/vol, last price, RSI, summary,
+    1Y price chart). Slow (Yahoo .info + options per ticker) — the client fetches it
+    lazily when the breakdown section is opened."""
+    try:
+        return engine.run_underlying_metrics(req.tickers, lang=req.lang)
+    except Exception as e:
+        raise HTTPException(500, f"underlying metrics failed: {e}")
+
+
+@app.post("/api/report")
+def report(req: ReportRequest):
+    """Build the institutional PDF report and return it as a downloadable file.
+    `sections` selects which lenses to include (empty ⇒ everything available)."""
+    try:
+        terms = NoteTerms.from_dict(req.terms)
+    except Exception as e:
+        raise HTTPException(400, f"invalid note terms: {e}")
+    try:
+        pdf = engine.build_report_pdf(
+            terms, sections=req.sections, lang=req.lang, n_paths=req.n_paths,
+            seed=req.seed, calib_years=req.calib_years, engine=req.engine)
+    except Exception as e:
+        raise HTTPException(500, f"report generation failed: {e}")
+    # Content-Disposition is latin-1 only, so strip the filename to safe ASCII
+    # (note names carry em-dashes / accents that would crash header encoding).
+    import re
+    safe = re.sub(r"[^A-Za-z0-9_.-]+", "_", terms.name or "structured_note").strip("_")[:60]
+    return Response(content=pdf, media_type="application/pdf",
+                    headers={"Content-Disposition": f'attachment; filename="{safe or "note"}_report.pdf"'})
 
 
 def _cpp_available() -> bool:

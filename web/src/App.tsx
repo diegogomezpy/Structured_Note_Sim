@@ -1,16 +1,19 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { api } from './api/client'
-import type { BacktestResult, ConfigMeta, NoteTerms, SimResult } from './api/types'
+import type { BacktestResult, ConfigMeta, LiveResult, NoteTerms, SimResult } from './api/types'
 import { useI18n } from './i18n/I18nProvider'
 import Header from './components/Header'
 import SetupRail, { type RunOpts } from './components/SetupRail'
 import NoteTimeline from './components/NoteTimeline'
 import ObservationSchedule from './components/ObservationSchedule'
+import UnderlyingCards from './components/UnderlyingCards'
 import Panel from './components/Panel'
 import Tabs from './components/Tabs'
 import RunProgress from './components/RunProgress'
 import MonteCarloPanel from './components/MonteCarloPanel'
 import BacktestPanel from './components/BacktestPanel'
+import LivePanel from './components/LivePanel'
+import ReportPanel from './components/ReportPanel'
 import SettingsOverlay from './components/SettingsOverlay'
 import BrandMark from './components/BrandMark'
 import Icon from './components/Icon'
@@ -40,6 +43,11 @@ export default function App() {
   const [btSig, setBtSig] = useState('')
   const [btStatus, setBtStatus] = useState<Status>('idle')
   const [btError, setBtError] = useState('')
+  // Current-performance (live) is likewise fetched lazily, keyed on terms.
+  const [liveResult, setLiveResult] = useState<LiveResult | null>(null)
+  const [liveSig, setLiveSig] = useState('')
+  const [liveStatus, setLiveStatus] = useState<Status>('idle')
+  const [liveError, setLiveError] = useState('')
 
   // Bootstrap: engine availability + config list + default term sheet.
   useEffect(() => {
@@ -59,6 +67,8 @@ export default function App() {
     setRunSig('')
     setBtResult(null)
     setBtSig('')
+    setLiveResult(null)
+    setLiveSig('')
   }, [])
 
   const fetchBacktest = useCallback(async () => {
@@ -78,12 +88,32 @@ export default function App() {
 
   const btStale = !!btResult && !!terms && JSON.stringify(terms) !== btSig
 
-  // Auto-load the backtest when its tab is opened and the cached result (if any)
+  const fetchLive = useCallback(async () => {
+    if (!terms) return
+    setLiveStatus('running')
+    setLiveError('')
+    try {
+      const r = await api.live(terms, lang)
+      setLiveResult(r)
+      setLiveSig(JSON.stringify(terms))
+      setLiveStatus('idle')
+    } catch (e) {
+      setLiveError(String(e instanceof Error ? e.message : e))
+      setLiveStatus('error')
+    }
+  }, [terms, lang])
+
+  const liveStale = !!liveResult && !!terms && JSON.stringify(terms) !== liveSig
+
+  // Auto-load the backtest / live tabs when opened and the cached result (if any)
   // no longer matches the current terms. Term edits while already on the tab show
   // a stale affordance instead of refetching on every keystroke.
   useEffect(() => {
     if (tab === 'bt' && terms && btStatus !== 'running' && JSON.stringify(terms) !== btSig) {
       fetchBacktest()
+    }
+    if (tab === 'live' && terms && liveStatus !== 'running' && JSON.stringify(terms) !== liveSig) {
+      fetchLive()
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tab])
@@ -92,9 +122,10 @@ export default function App() {
     if (!terms) return
     setStatus('running')
     setErrorMsg('')
-    // Re-run refreshes the whole report: if the backtest has already been
-    // loaded, refresh it alongside the Monte Carlo run so both stay in sync.
+    // Re-run refreshes the whole report: if the backtest / live tabs have already
+    // been loaded, refresh them alongside the Monte Carlo run so all stay in sync.
     if (btResult) void fetchBacktest()
+    if (liveResult) void fetchLive()
     try {
       const res = await api.simulate({
         terms, n_paths: opts.n_paths, engine: opts.engine,
@@ -107,7 +138,7 @@ export default function App() {
       setErrorMsg(String(e instanceof Error ? e.message : e))
       setStatus('error')
     }
-  }, [terms, opts, lang, btResult, fetchBacktest])
+  }, [terms, opts, lang, btResult, fetchBacktest, liveResult, fetchLive])
 
   const stale = useMemo(
     () => !!result && !!runSig && !!terms && sigOf(terms, opts) !== runSig,
@@ -134,7 +165,7 @@ export default function App() {
           <Panel title={t('setup_heading')}>
             {terms ? (
               <SetupRail
-                terms={terms}
+                terms={terms} onChange={setTerms}
                 configs={configs} configFile={configFile} onSelectConfig={loadConfig}
                 opts={opts}
                 running={status === 'running'} stale={stale} onRun={run}
@@ -153,6 +184,7 @@ export default function App() {
             <Panel title={t('note_structure')} right={t('live_updates')}>
               <NoteTimeline terms={terms} />
               <ObservationSchedule terms={terms} />
+              <UnderlyingCards terms={terms} />
             </Panel>
           )}
 
@@ -223,11 +255,34 @@ export default function App() {
             </>
           )}
 
-          {(tab === 'live' || tab === 'report') && (
-            <Panel pad={48}>
-              <div style={{ textAlign: 'center', color: 'var(--text-faint)', fontSize: 14 }}>{t('coming_soon')}</div>
-            </Panel>
+          {tab === 'live' && (
+            <>
+              {liveStale && liveResult && liveStatus !== 'running' && (
+                <div role="status" style={{
+                  display: 'flex', alignItems: 'center', gap: 10, padding: '11px 16px',
+                  background: 'var(--amber-weak)', border: '1px solid var(--amber)',
+                  borderRadius: 11, fontSize: 13, color: 'var(--text)',
+                }}>
+                  <Icon name="refresh" size={16} />
+                  <span style={{ flex: 1 }}>{t('stale_banner')}</span>
+                  <button className="btn" onClick={fetchLive} style={{ padding: '6px 12px' }}>{t('rerun')}</button>
+                </div>
+              )}
+              {liveStatus === 'running' && (
+                <Panel pad={40}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, color: 'var(--text-muted)', fontSize: 14 }}>
+                    <Icon name="spinner" size={18} /> {t('loading')}
+                  </div>
+                </Panel>
+              )}
+              {liveStatus === 'error' && (
+                <Panel><div style={{ color: 'var(--red)', fontSize: 13 }}><strong>{t('error')}.</strong> {liveError}</div></Panel>
+              )}
+              {liveStatus !== 'running' && liveResult && terms && <LivePanel result={liveResult} terms={terms} />}
+            </>
           )}
+
+          {tab === 'report' && terms && <ReportPanel terms={terms} opts={opts} />}
         </main>
       </div>
 

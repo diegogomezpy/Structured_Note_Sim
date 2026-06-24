@@ -2,6 +2,7 @@ import { useI18n } from '../i18n/I18nProvider'
 import { pct } from '../lib/format'
 import Icon from './Icon'
 import TickerLogo from './TickerLogo'
+import { Slider, SelectField } from './fields'
 import type { ConfigMeta, NoteTerms } from '../api/types'
 
 export interface RunOpts {
@@ -11,19 +12,31 @@ export interface RunOpts {
   calib_years: number
 }
 
-function Row({ label, value }: { label: string; value: string }) {
+const FREQS: NoteTerms['payment_freq'][] = ['monthly', 'quarterly', 'semi-annual', 'annual']
+
+/** Compact percentage input (stored as a fraction, edited as a %) for the
+    barrier row — narrow enough to sit three-across in the rail. */
+function Barrier({ label, value, onChange, min = 0, max = 300 }: {
+  label: string; value: number; onChange: (v: number) => void; min?: number; max?: number
+}) {
   return (
-    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', padding: '5px 0', fontSize: 12.5 }}>
-      <span style={{ color: 'var(--text-muted)' }}>{label}</span>
-      <span className="mono" style={{ color: 'var(--text)' }}>{value}</span>
+    <div>
+      <div style={{ fontSize: 10, fontWeight: 600, letterSpacing: '0.03em', textTransform: 'uppercase', color: 'var(--text-muted)', marginBottom: 5, whiteSpace: 'nowrap' }}>{label}</div>
+      <div style={{ position: 'relative' }}>
+        <input type="number" value={Math.round(value * 1000) / 10} min={min} max={max} step={0.5}
+               onChange={(e) => { const v = parseFloat(e.target.value); if (!Number.isNaN(v)) onChange(v / 100) }}
+               style={{ textAlign: 'right', paddingRight: 20 }} />
+        <span style={{ position: 'absolute', right: 9, top: '50%', transform: 'translateY(-50%)', fontSize: 12, color: 'var(--text-faint)', pointerEvents: 'none' }}>%</span>
+      </div>
     </div>
   )
 }
 
 export default function SetupRail({
-  terms, configs, configFile, onSelectConfig, opts, running, stale, onRun, onOpenSettings,
+  terms, onChange, configs, configFile, onSelectConfig, opts, running, stale, onRun, onOpenSettings,
 }: {
   terms: NoteTerms
+  onChange: (t: NoteTerms) => void
   configs: ConfigMeta[]
   configFile: string
   onSelectConfig: (file: string) => void
@@ -34,7 +47,7 @@ export default function SetupRail({
   onOpenSettings: () => void
 }) {
   const { t } = useI18n()
-  const freqLabel = t(`freq_${terms.payment_freq}`)
+  const set = <K extends keyof NoteTerms>(k: K, v: NoteTerms[K]) => onChange({ ...terms, [k]: v })
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
@@ -56,16 +69,24 @@ export default function SetupRail({
         </div>
       </div>
 
-      <div>
-        <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--text-muted)', marginBottom: 4 }}>{t('current_terms')}</div>
-        <div style={{ borderTop: '1px solid var(--border)' }}>
-          <Row label={t('maturity')} value={`${terms.maturity}y · ${freqLabel.toLowerCase()}`} />
-          <Row label={t('coupon_pa')} value={pct(terms.coupon_pa, 1)} />
-          <Row label={t('coupon_barrier')} value={pct(terms.coupon_barrier, 0)} />
-          <Row label={t('knock_in_barrier')} value={pct(terms.knock_in_barrier, 0)} />
-          <Row label={t('autocall_barrier')} value={`${pct(terms.autocall_barrier, 0)} · P${terms.autocall_start_period}+`} />
-          <Row label={t('memory')} value={terms.memory ? t('yes') : t('no')} />
-          <Row label={t('paths')} value={`${opts.n_paths.toLocaleString()} · ${opts.engine}`} />
+      {/* Lean inline editor for the terms that drive the note diagram above —
+          maturity / schedule / coupon and the three barriers. Everything else
+          lives in the full settings overlay. */}
+      <div style={{ borderTop: '1px solid var(--border)', paddingTop: 14 }}>
+        <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--text-muted)', marginBottom: 12 }}>{t('quick_edit')}</div>
+
+        <Slider label={t('maturity')} value={terms.maturity} min={0.25} max={5} step={0.25}
+                fmt={(v) => `${v.toFixed(2)} y`} onChange={(v) => set('maturity', v)} />
+        <SelectField label={t('frequency')} value={terms.payment_freq}
+                     options={FREQS.map((f) => ({ value: f, label: t(`freq_${f}`) }))}
+                     onChange={(v) => set('payment_freq', v)} />
+        <Slider label={t('coupon_pa')} value={terms.coupon_pa} min={0} max={0.3} step={0.005}
+                fmt={(v) => pct(v, 1)} onChange={(v) => set('coupon_pa', v)} />
+
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, marginTop: 2 }}>
+          <Barrier label={t('coupon_barrier_short')} value={terms.coupon_barrier} onChange={(v) => set('coupon_barrier', v)} />
+          <Barrier label={t('knock_in_short')} value={terms.knock_in_barrier} onChange={(v) => set('knock_in_barrier', v)} />
+          <Barrier label={t('autocall_short')} value={terms.autocall_barrier} min={50} onChange={(v) => set('autocall_barrier', v)} />
         </div>
       </div>
 

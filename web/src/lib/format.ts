@@ -22,3 +22,18 @@ export function per100(x: number | null | undefined, dp = 1): string {
   if (x == null || !Number.isFinite(x)) return '—'
   return (x * 100).toFixed(dp)
 }
+
+/** Compact currency market cap: —, $1.2T, $265.0B, $980.0M. */
+export function marketCap(v: number | null | undefined): string {
+  if (v == null || !Number.isFinite(v)) return '—'
+  for (const [unit, div] of [['T', 1e12], ['B', 1e9], ['M', 1e6]] as const) {
+    if (v >= div) return `$${(v / div).toFixed(1)}${unit}`
+  }
+  return `$${v.toLocaleString()}`
+}
+
+/** Price with thousands separators and 2dp. */
+export function price(v: number | null | undefined): string {
+  if (v == null || !Number.isFinite(v)) return '—'
+  return v.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+}

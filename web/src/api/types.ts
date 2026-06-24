@@ -158,6 +158,89 @@ export interface ExplorerData {
   barriers: { knock_in: number | null; autocall: number | null; coupon: number | null }
 }
 
+export type LiveStatus = 'autocalled' | 'coupon_paid' | 'coupon_missed' | 'no_coupon' | 'upcoming'
+
+export interface LiveSummary {
+  issue_date: string
+  anchor_date: string
+  maturity_date: string
+  today: string
+  history_gap_days: number
+  elapsed_years: number | null
+  remaining_years: number | null
+  pct_elapsed: number | null
+  wof_today: number | null
+  worst_asset: string
+  worst_symbol: string
+  ki_buffer: number | null
+  ac_buffer: number | null
+  next_ac_barrier: number | null
+  knock_in_barrier: number | null
+  coupon_barrier: number | null
+  coupon_rate: number | null
+  coupon_pa: number | null
+  total_coupons: number | null
+  pending_coupons: number
+  pending_value: number | null
+  irr_to_date: number | null
+  autocall_period: number
+  alive: boolean
+  coupon_at_autocall_only: boolean
+  next_premium: number | null
+}
+
+export interface LiveAsset {
+  name: string
+  symbol: string
+  perf: number | null
+}
+
+export interface LiveObsRow {
+  period: string
+  date: string | null
+  status: LiveStatus
+  wof: number | null
+  coupon: number | null
+  cumulative: number | null
+  upcoming: boolean
+}
+
+export interface LiveResult {
+  available: boolean
+  reason?: 'no_issue_date' | 'not_issued' | 'not_enough_data'
+  summary?: LiveSummary
+  assets?: LiveAsset[]
+  obs_rows?: LiveObsRow[]
+  figure?: any
+}
+
+export interface UnderlyingMetric {
+  name: string
+  symbol: string
+  long_name: string
+  type: string | null
+  sector: string | null
+  market_cap: number | null
+  iv_3m: number | null
+  iv_source: string | null
+  last_price: number | null
+  rsi_14: number | null
+  business_summary: string | null
+  figure: any
+}
+
+export type ReportSection = 'mc' | 'calibration' | 'backtest' | 'live'
+
+export interface ReportRequest {
+  terms: NoteTerms
+  sections: ReportSection[]
+  lang?: 'en' | 'es'
+  n_paths?: number
+  seed?: number
+  calib_years?: number
+  engine?: 'numpy' | 'cpp'
+}
+
 export interface Health {
   status: string
   cpp_engine: boolean

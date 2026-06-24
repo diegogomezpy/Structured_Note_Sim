@@ -32,30 +32,30 @@ Legend: ✅ done in React · 🟡 partial · ⬜ not yet ported.
 
 ## 3. Note structure / term-sheet display (`app.py:1707-1777`)
 - 🟡 Two-line header w/ issuer badge (React header has this).
-- ⬜ Expander: issuer row (logo + description + rating metrics); **underlying breakdown cards** (`_render_underlying_card`: market cap, 3M IV/realized vol, last price, RSI, description, 1Y price chart) (`app.py:1709-1751`).
+- 🟡 ✅ **underlying breakdown cards** (`UnderlyingCards.tsx` via `/api/underlyings/metrics`: market cap, 3M IV/realized vol, last price, RSI, description, 1Y price chart — lazy-loaded, collapsible). ⬜ issuer row (logo + description + rating metrics) (`app.py:1709-1751`).
 - 🟡 Terms grouped metrics (React timeline + footer covers some).
-- ⬜ **Observation schedule table** (Period / Time / Autocall eligible) (`app.py:1771-1777`).
+- ✅ **Observation schedule table** (Period / Time / Autocall eligible) — `ObservationSchedule.tsx`.
 - ✅ NEW in React: live visual note timeline (no Streamlit equivalent).
 
 ## 4. Monte Carlo tab (`app.py:2027-2427`) — 5 sub-tabs
 - 🟡 Pre-run market-ready prefetch + run caption (`app.py:2029-2045`). React has staged progress.
-- ✅ **Summary**: expected IRR/total/coupon, P(autocall), P(KI), loss-given-KI (React hero metrics + waterfall). ⬜ One-Star rescue caption, ⬜ **autocall-by-period table** (`app.py:2078-2127`).
+- ✅ **Summary**: expected IRR/total/coupon, P(autocall), P(KI), loss-given-KI (React hero metrics + waterfall), ✅ **autocall-by-period table** (`MCTables.tsx`). ⬜ One-Star rescue caption.
 - ✅ **Payoff/IRR**: IRR distribution chart (React: in Summary sub-tab). ⬜ knock-in info caption.
 - ✅ **Paths**: worst-of fan + per-asset fans (React: Distributions sub-tab).
 - ✅ **Path explorer** — React has filter chips (all/autocalled/held/KI) + resample + zoom. ⬜ MISSING vs original: up to 3 comparison panels, rich per-observation legend, per-path metrics (principal/coupons/IRR), per-asset final-perf cards, single-path step (random/prev/next), coupon-paid-period filter (`app.py:2150-2345`).
-- 🟡 **Correlations & calibration**: ✅ input + realized heatmaps; ⬜ **difference heatmap**, ⬜ effective basket correlation + gap, ⬜ **calibrated Heston parameters table** (S₀/μ/V₀/θ/κ/ξ/ρ/Feller) (`app.py:2347-2427`).
+- 🟡 **Correlations & calibration**: ✅ input + realized heatmaps, ✅ **difference heatmap** (`corr_diff`), ✅ **calibrated Heston parameters table** (S₀/μ/V₀/θ/κ/ξ/ρ/Feller — `MCTables.tsx`). ⬜ effective basket correlation + gap (`app.py:2347-2427`).
 
 ## 5. Historical backtest tab (`app.py:2433-2827`) — 3 sub-tabs
-- ✅ **Outcomes**: mean IRR, autocall%, KI%, loss-given-KI, outcome bar w/ per-period gradient, issue table (React). ⬜ worst-asset pie, ⬜ **IRR scatter**.
-- ⬜ **Prices**: weekly downsampled price history w/ issue-window markers (`app.py:2648-2665`).
+- ✅ **Outcomes**: mean IRR, autocall%, KI%, loss-given-KI, outcome bar w/ per-period gradient, issue table, ✅ worst-asset pie, ✅ **IRR scatter** (React `BacktestPanel.tsx`).
+- ✅ **Prices**: weekly downsampled price history w/ issue-window markers (React Prices sub-tab).
 - ⬜ **Explorer**: backtest path explorer (3 panels, filters incl. IRR band, historical worst-of path via `replay_note`) (`app.py:2667-2827`).
 - ⬜ Date-range pickers (start/end + Apply) w/ context-fingerprint reset (`app.py:2487-2548`).
 
-## 6. Current performance (live) tab (`app.py:2833-3083`) — ⬜ entirely
-- Conditional on `issue_date <= today`. Progress bar, worst-of today, worst asset, KI/autocall buffers, per-asset cards, **observation history table** (via `replay_note`), pending-memory/growth-premium info, coupon-IRR-to-date, live performance chart.
+## 6. Current performance (live) tab (`app.py:2833-3083`) — ✅ ported
+- `LivePanel.tsx` via `/api/live` (`engine.run_live_api`, replay via `core.note.replay_note`): lifecycle progress bar, worst-of today + vs-strike, worst asset, KI/autocall buffers, per-asset cards, **observation history table**, pending-memory/growth-premium info, coupon-IRR-to-date, live performance chart. Auto-disabled when no issue date.
 
-## 7. PDF / report builder (`app.py:1642-3172` + `pdf_report.py`) — ⬜ entirely
-- Master/sub checkbox tree (4 categories, all default ON); Generate PDF (runs sim first if MC sections needed); branded multi-section PDF; download button. `app/pdf_report.py` is Streamlit-free and reusable.
+## 7. PDF / report builder (`app.py:1642-3172` + `pdf_report.py`) — ✅ ported
+- `ReportPanel.tsx` via `POST /api/report` (`engine.build_report_pdf`): section toggle cards (MC / Calibration / Backtest / Live, all default ON), runs only requested flows, downloads the branded PDF. Reuses `app/pdf_report.py`. ⬜ remaining: branding-JSON upload, custom logo overrides, issuer/underlying-description prefill.
 
 ## 8. Easy-to-miss behaviors
 - ⬜ Note-type picker pre-fills but never hides fields.

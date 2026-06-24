@@ -1,0 +1,116 @@
+import { useEffect, useState } from 'react'
+import { api } from '../api/client'
+import { useI18n } from '../i18n/I18nProvider'
+import Figure from './Figure'
+import Icon from './Icon'
+import TickerLogo from './TickerLogo'
+import { marketCap, price, pct, num } from '../lib/format'
+import type { NoteTerms, UnderlyingMetric } from '../api/types'
+
+function Metric({ label, value, help }: { label: string; value: string; help?: string }) {
+  return (
+    <div title={help}>
+      <div style={{ fontSize: 9.5, fontWeight: 600, letterSpacing: '0.05em', textTransform: 'uppercase', color: 'var(--text-muted)', marginBottom: 4 }}>{label}</div>
+      <div className="mono" style={{ fontSize: 16, fontWeight: 600 }}>{value}</div>
+    </div>
+  )
+}
+
+function Description({ text }: { text: string }) {
+  const { t } = useI18n()
+  const [open, setOpen] = useState(false)
+  const long = text.length > 240
+  return (
+    <div style={{ fontSize: 12, color: 'var(--text-muted)', lineHeight: 1.55 }}>
+      <span style={open || !long ? undefined : {
+        display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical', overflow: 'hidden',
+      }}>{text}</span>
+      {long && (
+        <button onClick={() => setOpen((o) => !o)}
+          style={{ display: 'block', marginTop: 4, background: 'none', border: 'none', padding: 0, cursor: 'pointer', color: 'var(--accent-text)', fontSize: 11.5, fontFamily: 'inherit' }}>
+          {open ? t('ul_less') : t('ul_more')}
+        </button>
+      )}
+    </div>
+  )
+}
+
+function Card({ m }: { m: UnderlyingMetric }) {
+  const { t } = useI18n()
+  const sub = [m.type, m.sector].filter(Boolean).join(' · ') || '—'
+  const ivRealized = m.iv_source === 'realized'
+  return (
+    <div className="card" style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 13 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+        <TickerLogo symbol={m.symbol} name={m.name} size={28} />
+        <div style={{ minWidth: 0 }}>
+          <div style={{ fontSize: 14, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{m.long_name}</div>
+          <div style={{ fontSize: 11.5, color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{sub}</div>
+        </div>
+      </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10 }}>
+        <Metric label={t('ul_market_cap')} value={marketCap(m.market_cap)} />
+        <Metric label={ivRealized ? t('ul_vol_3m') : t('ul_iv_3m')} value={m.iv_3m != null ? pct(m.iv_3m, 1) : '—'} />
+        <Metric label={t('ul_last_price')} value={price(m.last_price)} />
+        <Metric label={t('ul_rsi')} value={m.rsi_14 != null ? num(m.rsi_14, 0) : '—'} />
+      </div>
+
+      {m.business_summary && <Description text={m.business_summary} />}
+      {m.figure && <div style={{ height: 190 }}><Figure fig={m.figure} /></div>}
+    </div>
+  )
+}
+
+/** Lazy-loaded per-underlying breakdown (Yahoo metrics + 1Y chart). Collapsed by
+    default — the data pull is slow, so it fetches on first expand and caches per
+    ticker set. */
+export default function UnderlyingCards({ terms }: { terms: NoteTerms }) {
+  const { t, lang } = useI18n()
+  const [open, setOpen] = useState(false)
+  const [rows, setRows] = useState<UnderlyingMetric[] | null>(null)
+  const [status, setStatus] = useState<'idle' | 'loading' | 'error'>('idle')
+  const sig = JSON.stringify(terms.tickers)
+
+  // Refetch when the underlying set changes (only while open).
+  useEffect(() => {
+    if (!open) return
+    let cancelled = false
+    setStatus('loading')
+    api.underlyingMetrics(terms.tickers, lang)
+      .then((r) => { if (!cancelled) { setRows(r); setStatus('idle') } })
+      .catch(() => { if (!cancelled) setStatus('error') })
+    return () => { cancelled = true }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, sig, lang])
+
+  return (
+    <div style={{ borderTop: '1px solid var(--border)' }}>
+      <button onClick={() => setOpen((o) => !o)}
+        style={{
+          width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          background: 'transparent', border: 'none', cursor: 'pointer', fontFamily: 'inherit',
+          padding: '13px 0 11px', color: 'var(--text)',
+        }}>
+        <span style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--text-muted)' }}>{t('ul_breakdown')}</span>
+        <span style={{ transition: 'transform 0.15s ease', transform: open ? 'rotate(90deg)' : 'none', color: 'var(--text-faint)', fontSize: 13 }}>›</span>
+      </button>
+
+      {open && (
+        <div style={{ paddingBottom: 6 }}>
+          {status === 'loading' && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 9, color: 'var(--text-muted)', fontSize: 13, padding: '8px 0' }}>
+              <Icon name="spinner" size={16} /> {t('loading')}
+            </div>
+          )}
+          {status === 'error' && <div style={{ color: 'var(--red)', fontSize: 12.5, padding: '8px 0' }}>{t('ul_load_fail')}</div>}
+          {rows && status !== 'loading' && (
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 14 }} className="fade-up">
+              {rows.map((m) => <Card key={m.symbol} m={m} />)}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}

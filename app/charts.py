@@ -111,6 +111,10 @@ def _add_autocall_barrier(fig: go.Figure, autocall_barrier, autocall_schedule,
         if x0 is None:
             x0 = autocall_schedule[0][0]
         xs = [x0] + [t for t, _ in autocall_schedule]
+        # On a date axis the x values are pd.Timestamps; kaleido (PDF export)
+        # can't JSON-serialise a raw Timestamp, so pass ISO strings — identical on
+        # the date axis, and the browser path is unaffected. (Numeric axes pass through.)
+        xs = [x.isoformat() if isinstance(x, pd.Timestamp) else x for x in xs]
         ys = [autocall_schedule[0][1]] + [lvl for _, lvl in autocall_schedule]
         fig.add_trace(go.Scatter(
             x=xs, y=ys, mode="lines",

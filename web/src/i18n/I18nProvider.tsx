@@ -4,7 +4,7 @@ import { makeT, type Lang } from './strings'
 interface I18nCtx {
   lang: Lang
   setLang: (l: Lang) => void
-  t: (key: string) => string
+  t: (key: string, vars?: Record<string, string | number>) => string
 }
 
 const Ctx = createContext<I18nCtx>({ lang: 'en', setLang: () => {}, t: (k) => k })

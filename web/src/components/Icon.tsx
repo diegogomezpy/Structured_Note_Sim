@@ -1,4 +1,4 @@
-type Name = 'sun' | 'moon' | 'play' | 'refresh' | 'chart' | 'spinner' | 'x' | 'plus'
+type Name = 'sun' | 'moon' | 'play' | 'refresh' | 'chart' | 'spinner' | 'x' | 'plus' | 'info' | 'check'
 
 const PATHS: Record<Name, string> = {
   sun: 'M12 4V2M12 22v-2M4 12H2m20 0h-2M6.3 6.3 4.9 4.9m14.2 14.2-1.4-1.4M6.3 17.7l-1.4 1.4M19.1 4.9l-1.4 1.4M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8Z',
@@ -9,6 +9,8 @@ const PATHS: Record<Name, string> = {
   spinner: 'M12 3a9 9 0 1 0 9 9',
   x: 'M18 6 6 18M6 6l12 12',
   plus: 'M12 5v14M5 12h14',
+  info: 'M12 16v-4m0-4h.01M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20Z',
+  check: 'M20 6 9 17l-5-5',
 }
 
 export default function Icon({ name, size = 16 }: { name: Name; size?: number }) {
