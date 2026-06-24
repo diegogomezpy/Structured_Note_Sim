@@ -80,7 +80,7 @@ import warnings
 import numpy as np
 import pandas as pd
 from dataclasses import dataclass, field
-from typing import Optional, Union
+from typing import Optional
 from scipy.optimize import minimize
 from scipy import stats
 

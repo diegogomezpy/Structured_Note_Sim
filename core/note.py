@@ -39,7 +39,7 @@ from __future__ import annotations
 import json
 import warnings
 import numpy as np
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Callable, Literal
 
 BasketType = Literal["worst_of", "best_of", "average"]

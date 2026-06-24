@@ -50,7 +50,7 @@ Cross-asset dependency is specified via a 3-block correlation structure:
 """
 
 import numpy as np
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Optional
 
 

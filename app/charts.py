@@ -395,32 +395,6 @@ def build_wof_fan(
     return _apply_theme(fig)
 
 
-# ---------------------------------------------------------------------------
-# Tab 3 — path explorer: price paths
-# ---------------------------------------------------------------------------
-
-def build_path_price_chart(
-    path_prices: pd.DataFrame,
-    path_num:    int,
-    obs_steps:   list[int],
-    obs_labels:  list[str],
-    tr:          Translator,
-) -> go.Figure:
-    fig = px.line(
-        path_prices,
-        title=tr("asset_price_paths", n=path_num),
-        labels={
-            "value": tr("price_label"),
-            "index": tr("time_step"),
-        },
-        color_discrete_sequence=[_BLUE, _BLUE_LIGHT, _NAVY],
-    )
-    for step, label in zip(obs_steps, obs_labels):
-        fig.add_vline(x=step, line_dash="dot", line_color="#aaa",
-                      annotation_text=label, annotation_position="top")
-    return _apply_theme(fig)
-
-
 def build_path_wof_chart(
     worst_path:       np.ndarray,
     autocall_q:       int,
