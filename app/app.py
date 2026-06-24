@@ -755,13 +755,11 @@ def _safe_load_prices(tickers_tuple, **kw):
 
 def _detect_note_type(t: NoteTerms) -> str:
     """Infer which setup-form template a loaded config corresponds to, so the
-    note-type picker can show only the relevant fields. Order matters: the two
-    standalone payoff branches (capital-protected, bonus) are checked first
-    because they set fields the Phoenix tests would otherwise match."""
+    note-type picker can show only the relevant fields. Order matters: the
+    standalone payoff branch (capital-protected) is checked first because it
+    sets fields the Phoenix tests would otherwise match."""
     if getattr(t, "capital_guarantee", None) is not None:
         return "capital_protected"
-    if getattr(t, "min_return", 0.0) and t.min_return > 0:
-        return "bonus_cert"
     if getattr(t, "coupon_at_autocall_only", False) or getattr(t, "autocall_step_down", 0.0) > 0:
         return "growth_autocall"
     if t.coupon_barrier == 0.0 and not t.memory:
@@ -998,15 +996,15 @@ if st.session_state["page"] == "setup":
     # ── Note type ─────────────────────────────────────────────────────────
     _setup_header(2, tr("setup_note_type_header"))
     _nt_opts = ["phoenix", "reverse_conv", "growth_autocall",
-                "bonus_cert", "capital_protected", "custom"]
+                "capital_protected", "custom"]
     _nt_label = {
         "phoenix": tr("nt_phoenix"), "reverse_conv": tr("nt_reverse_conv"),
-        "growth_autocall": tr("nt_growth_autocall"), "bonus_cert": tr("nt_bonus_cert"),
+        "growth_autocall": tr("nt_growth_autocall"),
         "capital_protected": tr("nt_capital_protected"), "custom": tr("nt_custom"),
     }
     _nt_desc = {
         "phoenix": tr("nt_phoenix_desc"), "reverse_conv": tr("nt_reverse_conv_desc"),
-        "growth_autocall": tr("nt_growth_autocall_desc"), "bonus_cert": tr("nt_bonus_cert_desc"),
+        "growth_autocall": tr("nt_growth_autocall_desc"),
         "capital_protected": tr("nt_capital_protected_desc"), "custom": tr("nt_custom_desc"),
     }
     note_type = st.radio(
@@ -1022,7 +1020,6 @@ if st.session_state["page"] == "setup":
     _is_phoenix = note_type == "phoenix"
     _is_revconv = note_type == "reverse_conv"
     _is_growth  = note_type == "growth_autocall"
-    _is_bonus   = note_type == "bonus_cert"
     _is_capprot = note_type == "capital_protected"
     _is_custom  = note_type == "custom"
 
@@ -1037,7 +1034,6 @@ if st.session_state["page"] == "setup":
     _show_autocall       = True
     _show_growth         = True
     _show_ki             = True
-    _show_min_return     = True
     _show_capprot        = True
     _show_one_star       = True
 
@@ -1066,38 +1062,31 @@ if st.session_state["page"] == "setup":
     _base_floor      = getattr(base, "autocall_floor", None)
     floor_pct        = round((_base_floor if _base_floor is not None else 0.0) * 100, 4)
     premium_at_call  = bool(getattr(base, "coupon_at_autocall_only", False))
-    min_return_pct   = round(getattr(base, "min_return", 0.0) * 100, 4)
     _base_one_star   = getattr(base, "one_star_level", None)
     one_star_on      = _base_one_star is not None
     one_star_pct     = round((_base_one_star if _base_one_star is not None else 1.0) * 100, 4)
     capital_guarantee = getattr(base, "capital_guarantee", None)
     upside_cap        = getattr(base, "upside_cap", None)
 
-    if _is_bonus:
-        # No coupons, no autocall (barrier set unreachable); KI + floor only.
-        coupon_pa_pct = 0.0; coupon_bar_pct = 0.0; memory = False
-        autocall_bar_pct = 200.0; autocall_basket = "worst_of"; coupon_basket = "worst_of"
-        step_down_pct = 0.0; floor_pct = 0.0; premium_at_call = False
-        capital_guarantee = None; upside_cap = None; one_star_on = False
-    elif _is_capprot:
+    if _is_capprot:
         # Standalone payoff: engine ignores coupon/autocall/KI entirely.
         coupon_pa_pct = 0.0; coupon_bar_pct = 0.0; memory = False
         autocall_bar_pct = 200.0; autocall_basket = "worst_of"; coupon_basket = "worst_of"
-        ki_bar_pct = 0.0; min_return_pct = 0.0
+        ki_bar_pct = 0.0
         step_down_pct = 0.0; floor_pct = 0.0; premium_at_call = False
         one_star_on = False
     elif _is_revconv:
         # Guaranteed coupon (barrier 0), no memory; standard worst-of redemption.
         coupon_bar_pct = 0.0; memory = False
         step_down_pct = 0.0; floor_pct = 0.0; premium_at_call = False
-        min_return_pct = 0.0; capital_guarantee = None; upside_cap = None; one_star_on = False
+        capital_guarantee = None; upside_cap = None; one_star_on = False
     elif _is_growth:
         # Premium paid only at autocall; coupon barrier/memory n/a.
         memory = False; premium_at_call = True
-        min_return_pct = 0.0; capital_guarantee = None; upside_cap = None; one_star_on = False
+        capital_guarantee = None; upside_cap = None; one_star_on = False
     elif _is_phoenix:
         step_down_pct = 0.0; floor_pct = 0.0; premium_at_call = False
-        min_return_pct = 0.0; capital_guarantee = None; upside_cap = None
+        capital_guarantee = None; upside_cap = None
 
     # ── Schedule & Maturity ───────────────────────────────────────────────
     _setup_header(3, tr("setup_schedule_header"))
@@ -1170,21 +1159,13 @@ if st.session_state["page"] == "setup":
                                    help=tr("setup_memory_help"))
 
     # ── Protection / Barriers ─────────────────────────────────────────────
-    if _show_ki or _show_min_return or _show_capprot or _show_one_star:
+    if _show_ki or _show_capprot or _show_one_star:
         _setup_header(5, tr("setup_barriers_header"))
         st.caption(tr("setup_barriers_caption"))
         if _show_ki:
             ki_bar_pct = st.number_input(
                 tr("setup_ki_barrier"), 0.0, 100.0,
                 value=round(base.knock_in_barrier * 100, 4), step=0.5, format="%.2f",
-            )
-            if _is_bonus:
-                st.caption(tr("setup_ki_european_caption"))
-        if _show_min_return:
-            min_return_pct = st.number_input(
-                tr("setup_min_return"), 0.0, 100.0,
-                value=round(getattr(base, "min_return", 0.0) * 100, 4),
-                step=0.5, format="%.2f", help=tr("setup_min_return_help"),
             )
         if _show_capprot:
             # Capital protection is a mutually-exclusive payoff mode: when on,
@@ -1551,10 +1532,9 @@ if st.session_state["page"] == "setup":
                 autocall_step_down      = step_down_pct / 100.0,
                 autocall_floor          = (floor_pct / 100.0) if (step_down_pct > 0 and floor_pct > 0) else None,
                 coupon_at_autocall_only = bool(premium_at_call),
-                # Bonus Certificate / Capital Protected fields — exposed by the
-                # Bonus / Capital-Protected templates; default to a no-op for the
-                # Phoenix family so plain notes are unaffected.
-                min_return              = min_return_pct / 100.0,
+                # Capital Protected fields — exposed by the Capital-Protected
+                # template; default to a no-op for the Phoenix family so plain
+                # notes are unaffected.
                 capital_guarantee       = capital_guarantee,
                 upside_cap              = upside_cap,
                 tickers               = selected_tickers,

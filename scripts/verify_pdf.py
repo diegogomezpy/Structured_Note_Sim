@@ -2,7 +2,7 @@
 Standalone verification harness for app/pdf_report.py.
 
 Runs a minimal calibration -> simulation -> price_note pipeline (replicating
-app.py's run block) on the PUENTE Bonus Certificate config, builds the REAL
+app.py's run block) on a sample note config, builds the REAL
 app/charts.py figures per language (so the verification exercises the actual
 chart palette, branded recolouring and aspect ratios), loads the example
 branding dict, and renders the report once in English and once in Spanish.
@@ -144,7 +144,7 @@ def render_pages(pdf_path: str, out_prefix: str, dpi: int = 120) -> list[str]:
 
 
 def main():
-    cfg_path = ROOT / "note_configs" / "puente_mayo_bonus_meli_orcl_meta.json"
+    cfg_path = ROOT / "note_configs" / "hsbc_xs3287776739.json"
     terms = NoteTerms.from_json(cfg_path.read_text())
 
     branding = json.loads((ROOT / "branding" / "branding_example.json").read_text())
@@ -156,7 +156,7 @@ def main():
     logo_urls = {name: f"https://assets.parqet.com/logos/symbol/{sym}?format=png"
                  for sym, name in terms.tickers.items()}
     logo_tickers = {name: sym for sym, name in terms.tickers.items()}
-    issuer_logo_url = None  # PUENTE favicon 404s; exercise the missing-logo path
+    issuer_logo_url = None  # exercise the missing-issuer-logo path
 
     for lang, out in [("en", "/tmp/report_en.pdf"), ("es", "/tmp/report_es.pdf")]:
         print(f"== Generating {lang} -> {out} ==")

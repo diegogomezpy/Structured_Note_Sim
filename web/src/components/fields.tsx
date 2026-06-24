@@ -32,10 +32,10 @@ export function Slider({
 /** Numeric input. When `percent`, the stored value is a fraction but the field
     shows/accepts a percentage (e.g. 0.5 ↔ "50"). */
 export function NumberField({
-  label, value, onChange, min, max, step = 0.5, percent, suffix,
+  label, value, onChange, min, max, step = 0.5, percent, suffix, hint,
 }: {
   label: string; value: number; onChange: (v: number) => void
-  min?: number; max?: number; step?: number; percent?: boolean; suffix?: string
+  min?: number; max?: number; step?: number; percent?: boolean; suffix?: string; hint?: string
 }) {
   const disp = percent ? Math.round(value * 1000) / 10 : value
   return (
@@ -46,6 +46,7 @@ export function NumberField({
                const v = parseFloat(e.target.value)
                if (!Number.isNaN(v)) onChange(percent ? v / 100 : v)
              }} />
+      {hint && <div style={{ fontSize: 11, color: 'var(--text-faint)', marginTop: 5, lineHeight: 1.45 }}>{hint}</div>}
     </div>
   )
 }

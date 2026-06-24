@@ -31,7 +31,7 @@ export const S: Dict = {
   sec_schedule_coupon: { en: 'Schedule & coupon', es: 'Programa y cupón' },
   sec_basket:       { en: 'Basket & overlays', es: 'Cesta y overlays' },
   sec_autocall:     { en: 'Autocall schedule', es: 'Programa de autocancelación' },
-  sec_protection:   { en: 'Protection', es: 'Protección' },
+  sec_protection:   { en: 'Protection & redemption', es: 'Protección y redención' },
   sec_metadata:     { en: 'Issuer & dates', es: 'Emisor y fechas' },
   sec_engine:       { en: 'Engine', es: 'Motor' },
 
@@ -46,7 +46,6 @@ export const S: Dict = {
   step_down:        { en: 'Step-down per period', es: 'Reducción por periodo' },
   autocall_floor:   { en: 'Autocall floor', es: 'Suelo de autocancelación' },
   premium_at_call:  { en: 'Premium at call only', es: 'Prima solo al llamar' },
-  min_return:       { en: 'Minimum return', es: 'Retorno mínimo' },
   capital_protected:{ en: 'Capital protection', es: 'Protección de capital' },
   capital_guarantee:{ en: 'Capital guarantee', es: 'Garantía de capital' },
   cap_upside:       { en: 'Cap the upside', es: 'Limitar la subida' },

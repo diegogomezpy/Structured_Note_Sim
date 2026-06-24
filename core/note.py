@@ -255,8 +255,6 @@ class NoteTerms:
     autocall_step_down:      float       = 0.0    # per-period decrement of autocall barrier (0 = constant)
     autocall_floor:          float | None = None  # minimum autocall barrier when stepping down
     coupon_at_autocall_only: bool        = False  # True = no periodic coupon; accrued premium paid as a lump at autocall
-    # ── Bonus Certificate extension (default = no-op → plain Phoenix) ────────
-    min_return:              float       = 0.0    # minimum return floor at maturity when KI not breached (e.g. 0.29 = 29%)
     # ── Capital Protected Note extension (default = None → plain Phoenix) ─────
     capital_guarantee:       float | None = None  # guaranteed minimum redemption (e.g. 1.00 or 0.95); activates CP branch
     upside_cap:              float | None = None  # maximum redemption above par (e.g. 0.15 = 15% above par → 1.15 max)
@@ -375,7 +373,6 @@ class NoteTerms:
             "autocall_step_down":     self.autocall_step_down,
             "autocall_floor":         self.autocall_floor,
             "coupon_at_autocall_only": self.coupon_at_autocall_only,
-            "min_return":             self.min_return,
             "capital_guarantee":      self.capital_guarantee,
             "upside_cap":             self.upside_cap,
             "issuer_description":     self.issuer_description,
@@ -785,21 +782,14 @@ def price_note(
 
     # Capital loss: cash-equivalent physical delivery = worst-of final performance.
     # Otherwise: principal_protection (100%) regardless of basket level (no upside
-    # participation in a Phoenix).
-    #
-    # Bonus Certificate extension (min_return > 0):
-    # When KI not breached, redemption = max(worst-of performance, 1 + min_return).
-    # This gives full upside participation with a guaranteed floor return.
-    # When KI is breached (capital_loss), standard 1:1 downside applies regardless.
-    if terms.min_return > 0.0:
-        protected_redemption = np.maximum(worst_final, 1.0 + terms.min_return)
-    else:
-        protected_redemption = np.full(n_paths, terms.principal_protection)
+    # participation in a Phoenix). When KI is breached (capital_loss), standard
+    # 1:1 downside applies regardless.
+    protected_redemption = np.full(n_paths, terms.principal_protection)
 
     maturity_principal = np.where(
         capital_loss,
         worst_final,                       # cash equiv. of physical delivery
-        protected_redemption,              # floor-enhanced or par redemption
+        protected_redemption,              # par redemption
     )
 
     # Combine

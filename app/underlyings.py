@@ -163,7 +163,6 @@ _ISSUER_DOMAINS = {
     "Citigroup":         "citi.com",
     "HSBC":              "hsbc.com",
     "Santander":         "santander.com",
-    "PUENTE":            "puentenet.com",
 }
 ISSUER_LOGOS: dict[str, str] = {
     name: _GF.format(domain=dom) for name, dom in _ISSUER_DOMAINS.items()

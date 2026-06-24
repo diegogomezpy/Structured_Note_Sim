@@ -85,8 +85,6 @@ export default function SettingsOverlay({
         <Grid>
           <NumberField label={t('knock_in_barrier')} value={terms.knock_in_barrier} percent suffix="%" min={0} max={100} step={0.5}
                        onChange={(v) => set('knock_in_barrier', v)} />
-          <NumberField label={t('min_return')} value={terms.min_return ?? 0} percent suffix="%" min={0} max={100} step={0.5}
-                       onChange={(v) => set('min_return', v)} />
         </Grid>
         <Grid>
           <div>

@@ -33,7 +33,6 @@ export interface NoteTerms {
   autocall_step_down: number | null
   autocall_floor: number | null
   coupon_at_autocall_only: boolean
-  min_return: number
   capital_guarantee: number
   upside_cap: number | null
   principal_protection: number
