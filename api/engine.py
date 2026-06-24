@@ -1,0 +1,208 @@
+"""
+api/engine.py
+-------------
+The compute flows behind the API, factored out of the old Streamlit run block.
+Reuses the pure-quant core (core/, data/) and the Streamlit-free chart builders
+(app/charts.py) — nothing numeric is reimplemented. Each flow returns plain,
+JSON-serialisable dicts (figures as Plotly JSON via go.Figure.to_json()).
+
+Full run results are kept in an in-memory store keyed by run_id so the path
+explorer can fetch/filter individual paths later without re-simulating.
+"""
+from __future__ import annotations
+
+import json
+import sys
+import uuid
+import time
+from collections import OrderedDict
+from pathlib import Path
+
+import numpy as np
+import pandas as pd
+
+_REPO = Path(__file__).resolve().parent.parent
+# app/ holds the reusable (Streamlit-free) chart + i18n + ticker modules, which
+# import each other by bare name (e.g. `from translations import Translator`), so
+# app/ must be on sys.path for those to resolve — same as when Streamlit runs.
+sys.path.insert(0, str(_REPO))
+sys.path.insert(0, str(_REPO / "app"))
+
+from core.note import NoteTerms, price_note                       # noqa: E402
+from core.calibrator import HestonCalibrator                      # noqa: E402
+from core.simulator import HestonMultiSimulator                   # noqa: E402
+from core.backtest import run_backtest                            # noqa: E402
+from data.loader import (load_prices, load_dividends,             # noqa: E402
+                          build_dividend_schedule)
+import charts            # noqa: E402  (app/charts.py)
+import translations      # noqa: E402  (app/translations.py)
+
+_PCTS = [1, 5, 25, 50, 75, 95, 99]
+
+# ── In-memory run store (bounded) ─────────────────────────────────────────────
+# Keeps the compact per-path arrays for the explorer. LRU-evicted so a long-lived
+# server can't grow without bound; a production multi-instance deploy would back
+# this with Redis instead.
+_RUNS: "OrderedDict[str, dict]" = OrderedDict()
+_MAX_RUNS = 8
+
+
+def _store_run(payload: dict) -> str:
+    run_id = uuid.uuid4().hex[:12]
+    _RUNS[run_id] = {"created": time.time(), **payload}
+    while len(_RUNS) > _MAX_RUNS:
+        _RUNS.popitem(last=False)
+    return run_id
+
+
+def get_run(run_id: str) -> dict | None:
+    return _RUNS.get(run_id)
+
+
+# ── helpers ───────────────────────────────────────────────────────────────────
+def _fig(fig) -> dict:
+    """Plotly figure → plain dict (numpy-safe via Plotly's own JSON encoder)."""
+    return json.loads(fig.to_json())
+
+
+def _f(x) -> float | None:
+    try:
+        v = float(x)
+        return v if np.isfinite(v) else None
+    except (TypeError, ValueError):
+        return None
+
+
+# ── simulation flow ────────────────────────────────────────────────────────────
+def run_simulation(terms: NoteTerms, *, n_paths: int = 10000, seed: int = 42,
+                   calib_years: float = 5.0, history_years: float | None = None,
+                   engine: str = "numpy", lang: str = "en") -> dict:
+    """Load → calibrate → simulate → price, then build the Monte Carlo figures.
+    Mirrors the old Streamlit run block; returns summary stats + Plotly-JSON
+    figures + a run_id (full paths cached server-side for the explorer)."""
+    tickers = dict(terms.tickers)
+    tr = translations.Translator(lang)
+
+    # Calibrate on adjusted closes (total-return dynamics); barriers/S0/dividends
+    # live in raw price space.
+    prices_adj = load_prices(source="yfinance", tickers=tickers,
+                             years=history_years, field="adj_close")
+    prices_raw = load_prices(source="yfinance", tickers=tickers,
+                             years=history_years, field="close")
+    cal_result = HestonCalibrator(prices_df=prices_adj, calib_years=calib_years).calibrate()
+
+    raw_last = prices_raw.iloc[-1]
+    for p in cal_result.params:
+        if p.name in raw_last.index:
+            p.S0 = float(raw_last[p.name])
+
+    # Trading-day grid to maturity.
+    anchor   = prices_raw.index[-1]
+    mat_date = pd.offsets.BDay().rollforward(
+        anchor + pd.DateOffset(months=round(terms.maturity * 12)))
+    grid     = pd.bdate_range(anchor, mat_date)
+    dt_grid  = np.diff(grid.values).astype("timedelta64[D]").astype(float) / 365.0
+    N        = len(grid) - 1
+    obs_steps = [min(int(grid.searchsorted(d)), N) for d in terms.obs_calendar_dates(anchor)]
+    obs_times = [(grid[s] - grid[0]).days / 365.0 for s in obs_steps]
+
+    # Pre-programmed dividend jumps (graceful if the pull fails).
+    try:
+        divs = load_dividends(tickers)
+    except Exception:
+        divs = {}
+    div_sched = build_dividend_schedule(
+        [divs.get(p.name, pd.Series(dtype=float)) for p in cal_result.params],
+        [p.S0 for p in cal_result.params], grid)
+
+    sim = HestonMultiSimulator(
+        params=cal_result.params, corr_SS=cal_result.corr_SS,
+        corr_VV=cal_result.corr_VV, corr_SV=cal_result.corr_SV,
+        n_paths=n_paths, seed=seed, t_dof=cal_result.t_dof,
+        dt_grid=dt_grid, div_schedule=div_sched)
+    eng_used = engine
+    try:
+        sim_results = sim.run(engine=engine)
+    except ImportError:
+        eng_used = "numpy"
+        sim_results = sim.run(engine="numpy")
+
+    n_assets   = len(cal_result.params)
+    sim_prices = np.stack(sim_results["S_paths"], axis=2)
+    S0_vec     = np.array([p.S0 for p in cal_result.params]).reshape(1, 1, n_assets)
+    perf_paths = sim_prices / S0_vec
+    wof_paths  = perf_paths.min(axis=2)
+
+    note = price_note(perf_paths, terms, seed=seed + 1,
+                      obs_steps=obs_steps, obs_times=obs_times)
+
+    wof_bands   = np.percentile(wof_paths, _PCTS, axis=0)
+    asset_bands = np.stack([np.percentile(sim_prices[:, :, i], _PCTS, axis=0)
+                            for i in range(n_assets)])
+    t_grid      = np.concatenate([[0.0], np.cumsum(dt_grid)])
+    obs_pairs   = [(f"P{i+1}", t) for i, t in enumerate(obs_times)]
+    asset_names = list(tickers.values())
+
+    figures = {
+        "irr_dist": _fig(charts.build_irr_distribution(
+            note["annualized_returns"], note.get("total_returns"),
+            note["autocall_events"], note["expected_irr"], terms.coupon_pa, tr)),
+        "wof_fan": _fig(charts.build_wof_fan(
+            None, t_grid, terms.knock_in_barrier, obs_pairs, tr,
+            autocall_barrier=terms.autocall_barrier, bands=wof_bands)),
+        "asset_fans": [
+            {"name": nm, "fig": _fig(charts.build_fan_chart(
+                None, nm, t_grid, obs_pairs, tr, bands=asset_bands[i]))}
+            for i, nm in enumerate(asset_names)
+        ],
+        "corr_input":    _fig(charts.build_corr_heatmap(
+            cal_result.corr_SS, asset_names, tr("corr_input"))),
+        "corr_realized": _fig(charts.build_corr_heatmap(
+            sim_results["realized_corr"], asset_names, tr("corr_realized"))),
+    }
+
+    summary = {k: _f(note.get(k)) for k in (
+        "expected_irr", "expected_total_return", "expected_coupon",
+        "prob_autocall", "prob_knock_in_total", "expected_nominal_payout",
+        "loss_given_knock_in")}
+    summary["n_paths"] = int(len(note["annualized_returns"]))   # 2×n_paths (antithetic)
+    summary["engine"]  = eng_used
+    summary["assets"]  = asset_names
+
+    # Cache compact arrays for the path explorer (Phase 3).
+    run_id = _store_run({
+        "perf_paths": perf_paths.astype(np.float16),
+        "wof_bands":  wof_bands.astype(np.float32),
+        "obs_steps":  obs_steps,
+        "obs_times":  obs_times,
+        "t_grid":     t_grid,
+        "asset_names": asset_names,
+        "terms":      terms.to_dict(),
+        "note":       {k: np.asarray(v) for k, v in note.items()
+                       if isinstance(v, np.ndarray) and v.ndim <= 2},
+    })
+    return {"run_id": run_id, "summary": summary, "figures": figures}
+
+
+# ── backtest flow ───────────────────────────────────────────────────────────────
+def run_backtest_api(terms: NoteTerms, *, history_years: float | None = None) -> dict:
+    """Historical backtest over realized prices — summary metrics + outcome data."""
+    prices = load_prices(source="yfinance", tickers=dict(terms.tickers),
+                         years=history_years, field="close")
+    bt, summary = run_backtest(prices, terms)
+    if bt.empty:
+        return {"summary": {}, "n_issues": 0, "issues": []}
+    out_summary = {k: _f(v) for k, v in summary.items()
+                   if not isinstance(v, (list, np.ndarray))}
+    out_summary["n_issues"] = int(len(bt))
+    return {
+        "summary": out_summary,
+        "issues": [
+            {"issue_date": d.strftime("%Y-%m-%d"),
+             "call_quarter": int(cq), "knock_in": bool(ki),
+             "irr": _f(irr), "outcome": str(oc)}
+            for d, cq, ki, irr, oc in zip(
+                bt["Issue Date"], bt["Call Quarter"], bt["Knock-in"],
+                bt["IRR"], bt.get("Outcome", bt["Call Quarter"]))
+        ],
+    }
