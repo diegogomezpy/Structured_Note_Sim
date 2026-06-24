@@ -3,10 +3,11 @@ import { useI18n } from '../i18n/I18nProvider'
 import Panel from './Panel'
 import Figure from './Figure'
 import Tabs from './Tabs'
+import Icon from './Icon'
 import TickerLogo from './TickerLogo'
 import BacktestPathExplorer from './BacktestPathExplorer'
 import { pct, pctSigned } from '../lib/format'
-import type { BacktestIssue, BacktestResult, NoteTerms } from '../api/types'
+import type { BacktestIssue, BacktestResult, BtRange, NoteTerms } from '../api/types'
 
 type Kind = 'ac' | 'mat' | 'ki'
 const KIND_COLOR: Record<Kind, string> = { ac: 'var(--accent)', mat: 'var(--green)', ki: 'var(--red)' }
@@ -25,10 +26,15 @@ function MiniStat({ label, value, tone }: { label: string; value: string; tone?:
   )
 }
 
-export default function BacktestPanel({ result, terms }: { result: BacktestResult; terms: NoteTerms }) {
+export default function BacktestPanel({ result, terms, range, onApplyRange }: {
+  result: BacktestResult; terms: NoteTerms; range: BtRange; onApplyRange: (r: BtRange) => void
+}) {
   const { t } = useI18n()
   const [sub, setSub] = useState('outcomes')
+  const [start, setStart] = useState(range.start ?? '')
+  const [end, setEnd] = useState(range.end ?? '')
   const { summary, issues, figures } = result
+  const rangeDirty = (start || null) !== range.start || (end || null) !== range.end
 
   const nameToSym: Record<string, string> = {}
   for (const [sym, name] of Object.entries(terms.tickers ?? {})) nameToSym[name] = sym
@@ -77,6 +83,25 @@ export default function BacktestPanel({ result, terms }: { result: BacktestResul
         <MiniStat label={t('bt_called_rate')} value={pct(summary.prob_called, 0)} />
         <MiniStat label={t('bt_ki_rate')} value={pct(summary.prob_knock_in, 0)}
                   tone={(summary.prob_knock_in ?? 0) <= 0.15 ? 'var(--green)' : 'var(--red)'} />
+      </div>
+
+      <div style={{ display: 'flex', alignItems: 'flex-end', gap: 12, flexWrap: 'wrap' }}>
+        <div>
+          <label style={{ fontSize: 11, color: 'var(--text-muted)', display: 'block', marginBottom: 5 }}>{t('bt_from')}</label>
+          <input type="date" value={start} onChange={(e) => setStart(e.target.value)} style={{ width: 'auto' }} />
+        </div>
+        <div>
+          <label style={{ fontSize: 11, color: 'var(--text-muted)', display: 'block', marginBottom: 5 }}>{t('bt_to')}</label>
+          <input type="date" value={end} onChange={(e) => setEnd(e.target.value)} style={{ width: 'auto' }} />
+        </div>
+        <button className="btn btn--primary" style={{ padding: '8px 14px' }} disabled={!rangeDirty}
+                onClick={() => onApplyRange({ start: start || null, end: end || null })}>
+          <Icon name="refresh" size={14} /> {t('bt_apply')}
+        </button>
+        {(range.start || range.end) && (
+          <button className="btn" style={{ padding: '8px 14px' }}
+                  onClick={() => { setStart(''); setEnd(''); onApplyRange({ start: null, end: null }) }}>{t('bt_clear')}</button>
+        )}
       </div>
 
       <Tabs tabs={[{ id: 'outcomes', label: t('bt_sub_outcomes') }, { id: 'prices', label: t('bt_sub_prices') }, { id: 'explorer', label: t('bt_sub_explorer') }]} active={sub} onChange={setSub} />
@@ -156,7 +181,7 @@ export default function BacktestPanel({ result, terms }: { result: BacktestResul
         </Panel>
       )}
 
-      {sub === 'explorer' && <BacktestPathExplorer terms={terms} />}
+      {sub === 'explorer' && <BacktestPathExplorer terms={terms} range={range} />}
     </div>
   )
 }

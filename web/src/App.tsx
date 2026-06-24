@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { api } from './api/client'
-import type { BacktestResult, ConfigMeta, LiveResult, NoteTerms, SimResult } from './api/types'
+import type { BacktestResult, BtRange, ConfigMeta, LiveResult, NoteTerms, SimResult } from './api/types'
 import { useI18n } from './i18n/I18nProvider'
 import Header from './components/Header'
 import SetupRail, { type RunOpts } from './components/SetupRail'
@@ -44,6 +44,7 @@ export default function App() {
   const [btSig, setBtSig] = useState('')
   const [btStatus, setBtStatus] = useState<Status>('idle')
   const [btError, setBtError] = useState('')
+  const [btRange, setBtRange] = useState<BtRange>({ start: null, end: null })
   // Current-performance (live) is likewise fetched lazily, keyed on terms.
   const [liveResult, setLiveResult] = useState<LiveResult | null>(null)
   const [liveSig, setLiveSig] = useState('')
@@ -68,6 +69,7 @@ export default function App() {
     setRunSig('')
     setBtResult(null)
     setBtSig('')
+    setBtRange({ start: null, end: null })
     setLiveResult(null)
     setLiveSig('')
   }, [])
@@ -81,29 +83,32 @@ export default function App() {
       setConfigFile('')
       setTerms(tm)
       setResult(null); setRunSig('')
-      setBtResult(null); setBtSig('')
+      setBtResult(null); setBtSig(''); setBtRange({ start: null, end: null })
       setLiveResult(null); setLiveSig('')
     } catch (e) {
       setErrorMsg(String(e instanceof Error ? e.message : e))
     }
   }, [])
 
-  const fetchBacktest = useCallback(async () => {
+  const btSigOf = (r: BtRange) => JSON.stringify({ t: terms, r })
+  const fetchBacktest = useCallback(async (range: BtRange = btRange) => {
     if (!terms) return
     setBtStatus('running')
     setBtError('')
     try {
-      const r = await api.backtest(terms, lang)
+      const r = await api.backtest(terms, lang, range)
       setBtResult(r)
-      setBtSig(JSON.stringify(terms))
+      setBtSig(JSON.stringify({ t: terms, r: range }))
       setBtStatus('idle')
     } catch (e) {
       setBtError(String(e instanceof Error ? e.message : e))
       setBtStatus('error')
     }
-  }, [terms, lang])
+  }, [terms, lang, btRange])
 
-  const btStale = !!btResult && !!terms && JSON.stringify(terms) !== btSig
+  const applyBtRange = useCallback((r: BtRange) => { setBtRange(r); fetchBacktest(r) }, [fetchBacktest])
+
+  const btStale = !!btResult && !!terms && btSigOf(btRange) !== btSig
 
   const fetchLive = useCallback(async () => {
     if (!terms) return
@@ -126,7 +131,7 @@ export default function App() {
   // no longer matches the current terms. Term edits while already on the tab show
   // a stale affordance instead of refetching on every keystroke.
   useEffect(() => {
-    if (tab === 'bt' && terms && btStatus !== 'running' && JSON.stringify(terms) !== btSig) {
+    if (tab === 'bt' && terms && btStatus !== 'running' && btSigOf(btRange) !== btSig) {
       fetchBacktest()
     }
     if (tab === 'live' && terms && liveStatus !== 'running' && JSON.stringify(terms) !== liveSig) {
@@ -257,7 +262,7 @@ export default function App() {
                 }}>
                   <Icon name="refresh" size={16} />
                   <span style={{ flex: 1 }}>{t('stale_banner')}</span>
-                  <button className="btn" onClick={fetchBacktest} style={{ padding: '6px 12px' }}>{t('rerun')}</button>
+                  <button className="btn" onClick={() => fetchBacktest()} style={{ padding: '6px 12px' }}>{t('rerun')}</button>
                 </div>
               )}
               {btStatus === 'running' && (
@@ -270,7 +275,9 @@ export default function App() {
               {btStatus === 'error' && (
                 <Panel><div style={{ color: 'var(--red)', fontSize: 13 }}><strong>{t('error')}.</strong> {btError}</div></Panel>
               )}
-              {btStatus !== 'running' && btResult && terms && <BacktestPanel result={btResult} terms={terms} />}
+              {btStatus !== 'running' && btResult && terms && (
+                <BacktestPanel result={btResult} terms={terms} range={btRange} onApplyRange={applyBtRange} />
+              )}
             </>
           )}
 

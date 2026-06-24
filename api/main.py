@@ -55,6 +55,8 @@ class BacktestRequest(BaseModel):
     terms: dict
     history_years: float | None = None
     lang: str = "en"
+    bt_start: str | None = None   # ISO date — restrict issue-date window
+    bt_end: str | None = None
 
 
 class LiveRequest(BaseModel):
@@ -82,6 +84,8 @@ class BacktestInspectRequest(BaseModel):
     randomize: bool = False
     history_years: float | None = None
     lang: str = "en"
+    bt_start: str | None = None
+    bt_end: str | None = None
 
 
 class ReportRequest(BaseModel):
@@ -194,7 +198,8 @@ def backtest(req: BacktestRequest):
     except Exception as e:
         raise HTTPException(400, f"invalid note terms: {e}")
     try:
-        return engine.run_backtest_api(terms, history_years=req.history_years, lang=req.lang)
+        return engine.run_backtest_api(terms, history_years=req.history_years, lang=req.lang,
+                                       bt_start=req.bt_start, bt_end=req.bt_end)
     except Exception as e:
         raise HTTPException(500, f"backtest failed: {e}")
 
@@ -235,7 +240,8 @@ def backtest_path_explorer(req: BacktestRequest, sample: int = 400, seed: int = 
         raise HTTPException(400, f"invalid note terms: {e}")
     try:
         return engine.backtest_paths(terms, history_years=req.history_years,
-                                     sample=max(50, min(sample, 800)), seed=seed)
+                                     sample=max(50, min(sample, 800)), seed=seed,
+                                     bt_start=req.bt_start, bt_end=req.bt_end)
     except Exception as e:
         raise HTTPException(500, f"backtest paths failed: {e}")
 
@@ -251,7 +257,8 @@ def backtest_inspect(req: BacktestInspectRequest):
     try:
         return engine.backtest_inspect(terms, lang=req.lang, filters=req.filters,
                                        position=req.position, randomize=req.randomize,
-                                       history_years=req.history_years)
+                                       history_years=req.history_years,
+                                       bt_start=req.bt_start, bt_end=req.bt_end)
     except Exception as e:
         raise HTTPException(500, f"backtest inspect failed: {e}")
 

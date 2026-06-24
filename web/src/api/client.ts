@@ -1,5 +1,5 @@
 import type {
-  BacktestResult, ConfigMeta, ExplorerData, Health, InspectFilters, InspectResult,
+  BacktestResult, BtRange, ConfigMeta, ExplorerData, Health, InspectFilters, InspectResult,
   LiveResult, LogoData, NoteTerms, ReportRequest, SimResult, SimulateRequest,
   UnderlyingMetric, UnderlyingOption,
 } from './types'
@@ -32,8 +32,8 @@ export const api = {
   parseConfig: (config: unknown) => jpost<NoteTerms>('/api/configs/parse', { config }),
   logos: () => jget<LogoData>('/api/logos'),
   simulate: (req: SimulateRequest) => jpost<SimResult>('/api/simulate', req),
-  backtest: (terms: NoteTerms, lang = 'en', history_years: number | null = null) =>
-    jpost<BacktestResult>('/api/backtest', { terms, history_years, lang }),
+  backtest: (terms: NoteTerms, lang = 'en', range?: BtRange) =>
+    jpost<BacktestResult>('/api/backtest', { terms, lang, bt_start: range?.start ?? null, bt_end: range?.end ?? null }),
   live: (terms: NoteTerms, lang = 'en') =>
     jpost<LiveResult>('/api/live', { terms, lang }),
   underlyingMetrics: (tickers: Record<string, string>, lang = 'en') =>
@@ -53,10 +53,10 @@ export const api = {
   },
   runPaths: (runId: string, sample = 400) =>
     jget<ExplorerData>(`/api/runs/${runId}/paths?sample=${sample}`),
-  backtestPaths: (terms: NoteTerms, seed = 7, sample = 400) =>
-    jpost<ExplorerData>(`/api/backtest/paths?sample=${sample}&seed=${seed}`, { terms }),
+  backtestPaths: (terms: NoteTerms, seed = 7, sample = 400, range?: BtRange) =>
+    jpost<ExplorerData>(`/api/backtest/paths?sample=${sample}&seed=${seed}`, { terms, bt_start: range?.start ?? null, bt_end: range?.end ?? null }),
   inspectRun: (runId: string, body: { filters?: InspectFilters; position?: number; randomize?: boolean; title?: string | null; lang?: string }) =>
     jpost<InspectResult>(`/api/runs/${runId}/inspect`, body),
-  backtestInspect: (terms: NoteTerms, body: { filters?: InspectFilters; position?: number; randomize?: boolean; lang?: string }) =>
-    jpost<InspectResult>('/api/backtest/inspect', { terms, ...body }),
+  backtestInspect: (terms: NoteTerms, body: { filters?: InspectFilters; position?: number; randomize?: boolean; lang?: string }, range?: BtRange) =>
+    jpost<InspectResult>('/api/backtest/inspect', { terms, ...body, bt_start: range?.start ?? null, bt_end: range?.end ?? null }),
 }

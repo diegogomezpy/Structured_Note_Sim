@@ -527,13 +527,19 @@ def _lerp_hex(c1: str, c2: str, t: float) -> str:
     return "#%02x%02x%02x" % tuple(round(a[k] + (b[k] - a[k]) * t) for k in range(3))
 
 
+def _ts(s: str | None):
+    return pd.Timestamp(s) if s else None
+
+
 def run_backtest_api(terms: NoteTerms, *, history_years: float | None = None,
-                     lang: str = "en") -> dict:
+                     lang: str = "en", bt_start: str | None = None,
+                     bt_end: str | None = None) -> dict:
     """Historical backtest over realized prices — summary metrics, per-issue rows,
-    and the outcome/scatter/pie/price figures (mirrors the Streamlit backtest)."""
+    and the outcome/scatter/pie/price figures (mirrors the Streamlit backtest).
+    bt_start/bt_end restrict the issue-date window (ISO strings)."""
     tr = translations.Translator(lang)
     prices = _prices(dict(terms.tickers), years=history_years, field="close")
-    bt, summary = run_backtest(prices, terms)
+    bt, summary = run_backtest(prices, terms, bt_start=_ts(bt_start), bt_end=_ts(bt_end))
     if bt.empty:
         return {"summary": {}, "issues": [], "figures": None}
 
@@ -577,14 +583,15 @@ def run_backtest_api(terms: NoteTerms, *, history_years: float | None = None,
 
 
 def backtest_paths(terms: NoteTerms, *, history_years: float | None = None,
-                   sample: int = 400, seed: int = 7) -> dict:
+                   sample: int = 400, seed: int = 7, bt_start: str | None = None,
+                   bt_end: str | None = None) -> dict:
     """Per-issue worst-of trajectories for the backtest path explorer — the same
     ExplorerData shape as the Monte Carlo sample_paths, but the "paths" are real
     historical issues (worst-of at each observation, in note-relative time) tagged
     with their outcome (autocall period / knock-in / IRR). Lets the client overlay
     and filter them exactly like the MC fan."""
     prices = _prices(dict(terms.tickers), years=history_years, field="close")
-    bt, summary = run_backtest(prices, terms)
+    bt, summary = run_backtest(prices, terms, bt_start=_ts(bt_start), bt_end=_ts(bt_end))
     barriers = {"knock_in": _f(terms.knock_in_barrier),
                 "autocall": _f(terms.autocall_barrier),
                 "coupon":   _f(terms.coupon_barrier)}
@@ -618,17 +625,18 @@ def backtest_paths(terms: NoteTerms, *, history_years: float | None = None,
     }
 
 
-def _cached_backtest(terms: NoteTerms, history_years: float | None):
+def _cached_backtest(terms: NoteTerms, history_years: float | None,
+                     bt_start: str | None = None, bt_end: str | None = None):
     """(prices, bt, summary) for the backtest inspector, memoised so filter/nav
     reuse one backtest run. prices come from the shared price cache; bt is cached
-    here keyed on tickers + terms."""
+    here keyed on tickers + terms + issue-date window."""
     prices = _prices(dict(terms.tickers), years=history_years, field="close")
-    key = (tuple(sorted(terms.tickers.items())), terms.to_json(), history_years)
+    key = (tuple(sorted(terms.tickers.items())), terms.to_json(), history_years, bt_start, bt_end)
     now = time.time()
     hit = _BT_CACHE.get(key)
     if hit is not None and now - hit[0] < _BT_TTL:
         return prices, hit[1], hit[2]
-    bt, summary = run_backtest(prices, terms)
+    bt, summary = run_backtest(prices, terms, bt_start=_ts(bt_start), bt_end=_ts(bt_end))
     _BT_CACHE[key] = (now, bt, summary)
     while len(_BT_CACHE) > _BT_MAX:
         _BT_CACHE.popitem(last=False)
@@ -637,13 +645,14 @@ def _cached_backtest(terms: NoteTerms, history_years: float | None):
 
 def backtest_inspect(terms: NoteTerms, *, lang: str = "en", filters: dict | None = None,
                      position: int = 0, randomize: bool = False,
-                     history_years: float | None = None) -> dict:
+                     history_years: float | None = None,
+                     bt_start: str | None = None, bt_end: str | None = None) -> dict:
     """One historical issue in full detail for the backtest single-path inspector —
     the same InspectResult shape as inspect_run, so the React <PathInspector> is
     shared. Builds the issue's daily worst-of + per-asset window and replays its
     observations (replay_note) for the event markers."""
     tr = translations.Translator(lang)
-    prices, bt, summary = _cached_backtest(terms, history_years)
+    prices, bt, summary = _cached_backtest(terms, history_years, bt_start, bt_end)
     tickers = dict(terms.tickers)
     asset_names = list(tickers.values())
     n_obs = terms.n_obs

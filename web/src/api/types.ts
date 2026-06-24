@@ -111,6 +111,9 @@ export interface SimulateRequest {
   lang?: 'en' | 'es'
 }
 
+/** Optional issue-date window for the backtest (ISO dates, null = unbounded). */
+export interface BtRange { start: string | null; end: string | null }
+
 export interface BacktestIssue {
   issue_date: string
   call_quarter: number

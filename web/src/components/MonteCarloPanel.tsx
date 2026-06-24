@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useCallback, useState } from 'react'
 import { api } from '../api/client'
 import { useI18n } from '../i18n/I18nProvider'
 import Panel from './Panel'
@@ -18,6 +18,9 @@ export default function MonteCarloPanel({ result, terms }: { result: SimResult; 
   const { t } = useI18n()
   const { summary, figures } = result
   const [sub, setSub] = useState('summary')
+  const inspectFetcher = useCallback(
+    (body: Parameters<typeof api.inspectRun>[1]) => api.inspectRun(result.run_id, body),
+    [result.run_id])
 
   // Invert tickers ({sym: name}) so each fan's display name resolves to a logo.
   const nameToSym: Record<string, string> = {}
@@ -79,7 +82,7 @@ export default function MonteCarloPanel({ result, terms }: { result: SimResult; 
         <div style={{ display: 'flex', flexDirection: 'column', gap: 22 }} className="fade-up">
           <PathExplorer runId={result.run_id} />
           <div style={{ borderTop: '1px solid var(--border)' }} />
-          <PathInspector terms={terms} fetcher={(body) => api.inspectRun(result.run_id, body)} />
+          <PathInspector terms={terms} fetcher={inspectFetcher} />
         </div>
       )}
 
