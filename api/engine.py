@@ -363,6 +363,48 @@ def run_backtest_api(terms: NoteTerms, *, history_years: float | None = None,
     }
 
 
+def backtest_paths(terms: NoteTerms, *, history_years: float | None = None,
+                   sample: int = 400, seed: int = 7) -> dict:
+    """Per-issue worst-of trajectories for the backtest path explorer — the same
+    ExplorerData shape as the Monte Carlo sample_paths, but the "paths" are real
+    historical issues (worst-of at each observation, in note-relative time) tagged
+    with their outcome (autocall period / knock-in / IRR). Lets the client overlay
+    and filter them exactly like the MC fan."""
+    prices = _prices(dict(terms.tickers), years=history_years, field="close")
+    bt, summary = run_backtest(prices, terms)
+    barriers = {"knock_in": _f(terms.knock_in_barrier),
+                "autocall": _f(terms.autocall_barrier),
+                "coupon":   _f(terms.coupon_barrier)}
+    if bt.empty or "wof_obs" not in summary:
+        return {"t": [], "paths": [], "n_total": 0, "obs_times": [], "barriers": barriers}
+
+    wof = np.asarray(summary["wof_obs"])            # (n_issues, n_obs+1)
+    t   = [float(x) for x in summary["obs_times_rel"]]
+    ap  = bt["Call Quarter"].to_numpy()
+    ki  = bt["Knock-in"].to_numpy()
+    irr = bt["IRR"].to_numpy()
+    dates = bt["Issue Date"]
+
+    P = wof.shape[0]
+    rng = np.random.default_rng(seed)
+    k = min(int(sample), P)
+    idx = np.sort(rng.choice(P, size=k, replace=False))
+
+    paths = [{
+        "wof": [round(float(wof[i, c]), 4) for c in range(wof.shape[1])],
+        "ap":  int(ap[i]), "ki": bool(ki[i]), "irr": _f(irr[i]),
+        "issue_date": dates.iloc[i].strftime("%Y-%m-%d"),
+    } for i in idx]
+
+    return {
+        "t":         [round(x, 4) for x in t],
+        "paths":     paths,
+        "n_total":   int(P),
+        "obs_times": [round(x, 4) for x in t[1:]],
+        "barriers":  barriers,
+    }
+
+
 # ── live / current-performance flow ─────────────────────────────────────────────
 def run_live_api(terms: NoteTerms, *, lang: str = "en", for_pdf: bool = False) -> dict:
     """Current-performance replay of a partially-elapsed note (the Streamlit

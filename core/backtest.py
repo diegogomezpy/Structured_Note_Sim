@@ -166,6 +166,11 @@ def run_backtest(
         # `bt` (bt is built from `res` in this same order). Powers the path
         # explorer's "coupon paid at period t" filter over historical issues.
         "coupon_amounts":        res["coupon_amounts"],
+        # Per-issue worst-of trajectory at each observation column (incl. the
+        # t=0 fixing), in note-relative time. Row-aligned with `bt`. Powers the
+        # backtest path explorer's overlaid worst-of fan.
+        "wof_obs":               perf.min(axis=2),                 # (n_issues, n_obs+1)
+        "obs_times_rel":         [0.0] + list(terms.obs_times()),  # years since issue
     }
 
     return bt, summary

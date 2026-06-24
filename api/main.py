@@ -175,6 +175,21 @@ def live(req: LiveRequest):
         raise HTTPException(500, f"current performance failed: {e}")
 
 
+@app.post("/api/backtest/paths")
+def backtest_path_explorer(req: BacktestRequest, sample: int = 400, seed: int = 7):
+    """Per-issue worst-of trajectories for the backtest path explorer (same shape
+    as the MC explorer; see engine.backtest_paths)."""
+    try:
+        terms = NoteTerms.from_dict(req.terms)
+    except Exception as e:
+        raise HTTPException(400, f"invalid note terms: {e}")
+    try:
+        return engine.backtest_paths(terms, history_years=req.history_years,
+                                     sample=max(50, min(sample, 800)), seed=seed)
+    except Exception as e:
+        raise HTTPException(500, f"backtest paths failed: {e}")
+
+
 @app.post("/api/underlyings/metrics")
 def underlying_metrics(req: MetricsRequest):
     """Per-underlying breakdown cards (market cap, IV/vol, last price, RSI, summary,

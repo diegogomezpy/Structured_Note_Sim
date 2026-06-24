@@ -26,29 +26,28 @@ function group(paths: ExplorerPath[], t: number[], color: string, name: string) 
   return { x, y, type: 'scattergl', mode: 'lines', name, line: { color, width: 1 }, opacity: 0.22, hoverinfo: 'skip' }
 }
 
-export default function PathExplorer({ runId }: { runId: string }) {
+/** Shared worst-of fan: overlaid trajectories coloured by outcome, with outcome
+    filter chips, barrier reference lines, and a resample control. Used by both the
+    Monte Carlo and the historical-backtest path explorers. */
+export function PathFan({
+  data, intro, onResample, xLabel, sampledNoun,
+}: {
+  data: ExplorerData
+  intro: string
+  onResample: () => void
+  xLabel?: string
+  sampledNoun?: string
+}) {
   const { t } = useI18n()
-  const [data, setData] = useState<ExplorerData | null>(null)
-  const [status, setStatus] = useState<'loading' | 'ok' | 'error'>('loading')
-  const [seedKey, setSeedKey] = useState(0)
   const [filter, setFilter] = useState<'all' | Kind>('all')
-
-  useEffect(() => {
-    let alive = true
-    setStatus('loading')
-    api.runPaths(runId).then((d) => { if (alive) { setData(d); setStatus('ok') } })
-      .catch(() => { if (alive) setStatus('error') })
-    return () => { alive = false }
-  }, [runId, seedKey])
 
   const counts = useMemo(() => {
     const c = { ac: 0, mat: 0, ki: 0 }
-    data?.paths.forEach((p) => { c[classify(p)] += 1 })
+    data.paths.forEach((p) => { c[classify(p)] += 1 })
     return c
   }, [data])
 
   const fig = useMemo(() => {
-    if (!data) return null
     const groups: { kind: Kind; label: string }[] = [
       { kind: 'ac', label: t('autocalled_at') },
       { kind: 'mat', label: t('held_to_mat') },
@@ -73,7 +72,7 @@ export default function PathExplorer({ runId }: { runId: string }) {
     return {
       data: traces,
       layout: {
-        xaxis: { title: { text: t('chart_time_years') }, range: [x0, x1], zeroline: false },
+        xaxis: { title: { text: xLabel ?? t('chart_time_years') }, range: [x0, x1], zeroline: false },
         yaxis: { title: { text: t('chart_wof') }, tickformat: '.0%', zeroline: false },
         shapes,
         showlegend: true,
@@ -81,14 +80,7 @@ export default function PathExplorer({ runId }: { runId: string }) {
         hovermode: 'closest',
       },
     }
-  }, [data, filter, t])
-
-  if (status === 'error') {
-    return <Panel pad={40}><div style={{ textAlign: 'center', color: 'var(--text-muted)', fontSize: 14 }}>{t('explorer_expired')}</div></Panel>
-  }
-  if (status === 'loading' || !data || !fig) {
-    return <Panel pad={40}><div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 10, color: 'var(--text-muted)', fontSize: 14 }}><Icon name="spinner" size={18} /> {t('loading')}</div></Panel>
-  }
+  }, [data, filter, t, xLabel])
 
   const shown = filter === 'all' ? data.paths.length : counts[filter]
   const chips: { id: 'all' | Kind; label: string; n: number; color?: string }[] = [
@@ -100,7 +92,7 @@ export default function PathExplorer({ runId }: { runId: string }) {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }} className="fade-up">
-      <div style={{ fontSize: 12.5, color: 'var(--text-muted)' }}>{t('explorer_intro')}</div>
+      <div style={{ fontSize: 12.5, color: 'var(--text-muted)' }}>{intro}</div>
 
       <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8 }}>
         {chips.map((c) => {
@@ -120,14 +112,41 @@ export default function PathExplorer({ runId }: { runId: string }) {
             </button>
           )
         })}
-        <button className="btn btn--ghost" style={{ marginLeft: 'auto', padding: '6px 12px' }} onClick={() => setSeedKey((k) => k + 1)}>
+        <button className="btn btn--ghost" style={{ marginLeft: 'auto', padding: '6px 12px' }} onClick={onResample}>
           <Icon name="refresh" size={14} /> {t('explorer_resample')}
         </button>
       </div>
 
-      <Panel pad={14} right={`${t('explorer_showing')} ${shown.toLocaleString()} ${t('explorer_of')} ${data.n_total.toLocaleString()} ${t('explorer_sampled')}`}>
+      <Panel pad={14} right={`${t('explorer_showing')} ${shown.toLocaleString()} ${t('explorer_of')} ${data.n_total.toLocaleString()} ${sampledNoun ?? t('explorer_sampled')}`}>
         <div style={{ height: 440 }}><Figure fig={fig} /></div>
       </Panel>
     </div>
   )
+}
+
+function Loader() {
+  const { t } = useI18n()
+  return <Panel pad={40}><div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 10, color: 'var(--text-muted)', fontSize: 14 }}><Icon name="spinner" size={18} /> {t('loading')}</div></Panel>
+}
+
+/** Monte Carlo path explorer — samples worst-of trajectories from a cached run. */
+export default function PathExplorer({ runId }: { runId: string }) {
+  const { t } = useI18n()
+  const [data, setData] = useState<ExplorerData | null>(null)
+  const [status, setStatus] = useState<'loading' | 'ok' | 'error'>('loading')
+  const [seedKey, setSeedKey] = useState(0)
+
+  useEffect(() => {
+    let alive = true
+    setStatus('loading')
+    api.runPaths(runId).then((d) => { if (alive) { setData(d); setStatus('ok') } })
+      .catch(() => { if (alive) setStatus('error') })
+    return () => { alive = false }
+  }, [runId, seedKey])
+
+  if (status === 'error') {
+    return <Panel pad={40}><div style={{ textAlign: 'center', color: 'var(--text-muted)', fontSize: 14 }}>{t('explorer_expired')}</div></Panel>
+  }
+  if (status === 'loading' || !data) return <Loader />
+  return <PathFan data={data} intro={t('explorer_intro')} onResample={() => setSeedKey((k) => k + 1)} />
 }

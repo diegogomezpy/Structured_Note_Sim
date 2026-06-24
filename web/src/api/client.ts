@@ -51,4 +51,6 @@ export const api = {
   },
   runPaths: (runId: string, sample = 400) =>
     jget<ExplorerData>(`/api/runs/${runId}/paths?sample=${sample}`),
+  backtestPaths: (terms: NoteTerms, seed = 7, sample = 400) =>
+    jpost<ExplorerData>(`/api/backtest/paths?sample=${sample}&seed=${seed}`, { terms }),
 }

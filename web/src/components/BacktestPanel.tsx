@@ -4,6 +4,7 @@ import Panel from './Panel'
 import Figure from './Figure'
 import Tabs from './Tabs'
 import TickerLogo from './TickerLogo'
+import BacktestPathExplorer from './BacktestPathExplorer'
 import { pct, pctSigned } from '../lib/format'
 import type { BacktestIssue, BacktestResult, NoteTerms } from '../api/types'
 
@@ -78,7 +79,7 @@ export default function BacktestPanel({ result, terms }: { result: BacktestResul
                   tone={(summary.prob_knock_in ?? 0) <= 0.15 ? 'var(--green)' : 'var(--red)'} />
       </div>
 
-      <Tabs tabs={[{ id: 'outcomes', label: t('bt_sub_outcomes') }, { id: 'prices', label: t('bt_sub_prices') }]} active={sub} onChange={setSub} />
+      <Tabs tabs={[{ id: 'outcomes', label: t('bt_sub_outcomes') }, { id: 'prices', label: t('bt_sub_prices') }, { id: 'explorer', label: t('bt_sub_explorer') }]} active={sub} onChange={setSub} />
 
       {sub === 'outcomes' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }} className="fade-up">
@@ -154,6 +155,8 @@ export default function BacktestPanel({ result, terms }: { result: BacktestResul
           <div style={{ height: 440 }}><Figure fig={figures.prices} /></div>
         </Panel>
       )}
+
+      {sub === 'explorer' && <BacktestPathExplorer terms={terms} />}
     </div>
   )
 }

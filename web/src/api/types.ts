@@ -148,6 +148,7 @@ export interface ExplorerPath {
   ap: number       // autocall period (0 = none)
   ki: boolean
   irr: number | null
+  issue_date?: string   // backtest explorer only — the historical issue date
 }
 
 export interface ExplorerData {
