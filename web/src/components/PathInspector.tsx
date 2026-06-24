@@ -1,15 +1,79 @@
 import { useEffect, useMemo, useState } from 'react'
-import { api } from '../api/client'
 import { useI18n } from '../i18n/I18nProvider'
 import Panel from './Panel'
 import Figure from './Figure'
 import Icon from './Icon'
 import TickerLogo from './TickerLogo'
 import { pct, pctSigned, num } from '../lib/format'
-import type { InspectResult, NoteTerms } from '../api/types'
+import type { InspectFilters, InspectResult, NoteTerms, PathData } from '../api/types'
 
 type Outcome = 'any' | 'autocalled' | 'maturity' | 'loss'
 type KiChoice = 'any' | 'yes' | 'no'
+
+/** A panel fetches its detail through this — MC hits /runs/{id}/inspect, the
+    backtest hits /backtest/inspect, both returning the same InspectResult. */
+export type InspectFetcher = (body: {
+  filters?: InspectFilters; position?: number; randomize?: boolean; lang?: string
+}) => Promise<InspectResult>
+
+const ASSET_COLORS = ['#2563eb', '#0891b2', '#7c3aed', '#0d9488', '#d97706']
+const MARKER_STYLE: Record<string, { symbol: string; color: string; size: number }> = {
+  call_coupon: { symbol: 'star', color: '#2563eb', size: 13 },
+  call:        { symbol: 'star', color: '#2563eb', size: 13 },
+  coupon:      { symbol: 'circle', color: '#22c55e', size: 9 },
+  missed:      { symbol: 'circle', color: '#f59e0b', size: 9 },
+  knock_in:    { symbol: 'x', color: '#ef4444', size: 11 },
+}
+
+/** Build the single-path figure client-side, in the app's chart aesthetic
+    (transparent bg + horizontal top legend via the shared Figure theming);
+    observation markers carry their status as hover text rather than a long
+    right-hand legend. */
+function buildPathFig(path: PathData, labels: { x: string; y: string; wof: string }) {
+  const traces: any[] = []
+  path.series.forEach((s, i) => traces.push({
+    x: path.t, y: s.perf, mode: 'lines', name: s.name, type: 'scatter',
+    line: { color: ASSET_COLORS[i % ASSET_COLORS.length], width: 1.2, dash: 'dot' }, opacity: 0.6,
+  }))
+  traces.push({ x: path.t, y: path.wof, mode: 'lines', name: labels.wof, type: 'scatter', line: { color: '#1a2e4a', width: 2.6 } })
+
+  const byKind: Record<string, typeof path.markers> = {}
+  path.markers.forEach((m) => { (byKind[m.kind] ||= []).push(m) })
+  Object.entries(byKind).forEach(([kind, ms]) => {
+    const st = MARKER_STYLE[kind] ?? MARKER_STYLE.coupon
+    traces.push({
+      x: ms.map((m) => m.x), y: ms.map((m) => m.y), text: ms.map((m) => m.text),
+      mode: 'markers', type: 'scatter', showlegend: false,
+      marker: { symbol: st.symbol, color: st.color, size: st.size, line: { color: '#fff', width: 1.5 } },
+      hovertemplate: '%{text}<extra></extra>',
+    })
+  })
+
+  const x0 = 0, x1 = path.x_max
+  const hline = (y: number | null, color: string, dash: string) => y == null ? null : ({ type: 'line', x0, x1, y0: y, y1: y, line: { color, width: 1, dash } })
+  const shapes: any[] = [hline(1, '#94a3b8', 'dot'), hline(path.barriers.knock_in, '#ef4444', 'dash')]
+  const sched = path.barriers.autocall_schedule
+  if (sched) {
+    const s = sched.filter(([step]) => step <= x1)
+    if (s.length) traces.push({
+      x: [0, ...s.map((p) => p[0])], y: [s[0][1], ...s.map((p) => p[1])],
+      mode: 'lines', type: 'scatter', showlegend: false, hoverinfo: 'skip',
+      line: { color: '#94a3b8', dash: 'dot', width: 1.4, shape: 'hv' },
+    })
+  } else if (path.barriers.autocall != null && path.barriers.autocall !== 1) {
+    shapes.push(hline(path.barriers.autocall, '#94a3b8', 'dash'))
+  }
+
+  return {
+    data: traces,
+    layout: {
+      xaxis: { title: { text: labels.x }, range: [x0, x1], zeroline: false },
+      yaxis: { title: { text: labels.y }, tickformat: '.0%', zeroline: false },
+      shapes: shapes.filter(Boolean), showlegend: true,
+      legend: { orientation: 'h', y: 1.08, x: 0 }, hovermode: 'closest',
+    },
+  }
+}
 
 /** Dual-thumb range slider (return band). Two overlaid range inputs; CSS keeps
     only the thumbs interactive (see .range-dual in index.css). */
@@ -97,8 +161,8 @@ function Metric({ label, value }: { label: string; value: string }) {
   )
 }
 
-function InspectorPanel({ runId, terms, label, onRemove }: {
-  runId: string; terms: NoteTerms; label: string; onRemove?: () => void
+function InspectorPanel({ fetcher, terms, label, onRemove }: {
+  fetcher: InspectFetcher; terms: NoteTerms; label: string; onRemove?: () => void
 }) {
   const { t, lang } = useI18n()
   const nameToSym = useMemo(() => {
@@ -108,7 +172,6 @@ function InspectorPanel({ runId, terms, label, onRemove }: {
   }, [terms])
 
   const [title, setTitle] = useState('')
-  const [debTitle, setDebTitle] = useState('')
   const [outcome, setOutcome] = useState<Outcome>('any')
   const [acPeriods, setAcPeriods] = useState<number[]>([])
   const [ki, setKi] = useState<KiChoice>('any')
@@ -120,32 +183,27 @@ function InspectorPanel({ runId, terms, label, onRemove }: {
   const [filtersOpen, setFiltersOpen] = useState(false)
 
   const nObs = data?.n_obs ?? 0
-  // Debounce the title so typing doesn't refetch on every keystroke.
-  useEffect(() => { const id = setTimeout(() => setDebTitle(title), 500); return () => clearTimeout(id) }, [title])
-
   const filterKey = JSON.stringify({ outcome, acPeriods, ki, couponPeriods, band, atBounds: !bounds })
+
+  const filters = (): InspectFilters => {
+    const lo = band && bounds && band[0] > bounds[0] ? band[0] : null
+    const hi = band && bounds && band[1] < bounds[1] ? band[1] : null
+    return { outcome, ac_periods: outcome === 'autocalled' ? acPeriods : [], ki_choice: ki, ret_lo: lo, ret_hi: hi, coupon_periods: couponPeriods }
+  }
 
   // Reset to the first match whenever the filter query changes.
   useEffect(() => { setPosition(0) /* eslint-disable-next-line */ }, [filterKey])
 
   useEffect(() => {
     let alive = true
-    const lo = band && bounds && band[0] > bounds[0] ? band[0] : null
-    const hi = band && bounds && band[1] < bounds[1] ? band[1] : null
-    api.inspectRun(runId, {
-      filters: {
-        outcome, ac_periods: outcome === 'autocalled' ? acPeriods : [],
-        ki_choice: ki, ret_lo: lo, ret_hi: hi, coupon_periods: couponPeriods,
-      },
-      position, title: debTitle || null, lang,
-    }).then((d) => {
+    fetcher({ filters: filters(), position, lang }).then((d) => {
       if (!alive) return
       if (bounds == null && d.ret_range) { setBounds(d.ret_range); setBand(d.ret_range) }
       setData(d)
     }).catch(() => {})
     return () => { alive = false }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [runId, filterKey, position, debTitle, lang])
+  }, [fetcher, filterKey, position, lang])
 
   const M = data?.n_matched ?? 0
   const o = data?.outcome
@@ -153,6 +211,10 @@ function InspectorPanel({ runId, terms, label, onRemove }: {
     o.autocall_q > 0 ? t('insp_autocalled', { q: o.autocall_q, t: num(o.call_time, 2) })
     : o.knock_in ? t('insp_mat_ki', { wof: pct(o.worst_final, 1) })
     : t('insp_mat_ok', { wof: pct(o.worst_final, 1) })
+
+  const fig = useMemo(() => data?.path
+    ? buildPathFig(data.path, { x: t('insp_time_step'), y: t('chart_wof'), wof: t('insp_wof_name') })
+    : null, [data, t])
 
   return (
     <Panel>
@@ -212,7 +274,7 @@ function InspectorPanel({ runId, terms, label, onRemove }: {
 
       {/* Match nav */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12, flexWrap: 'wrap' }}>
-        <button className="btn" style={{ padding: '6px 12px' }} onClick={() => api.inspectRun(runId, { filters: buildFilters(), randomize: true, title: debTitle || null, lang }).then(setData)}>
+        <button className="btn" style={{ padding: '6px 12px' }} onClick={() => fetcher({ filters: filters(), randomize: true, lang }).then(setData).catch(() => {})}>
           <Icon name="refresh" size={13} /> {t('insp_random')}
         </button>
         <button className="btn" style={{ padding: '6px 12px' }} disabled={(data?.position ?? 0) <= 0} onClick={() => setPosition((p) => Math.max(0, p - 1))}>{t('insp_prev')}</button>
@@ -226,9 +288,10 @@ function InspectorPanel({ runId, terms, label, onRemove }: {
 
       {M === 0 ? (
         <div style={{ padding: '24px 0', textAlign: 'center', color: 'var(--text-muted)', fontSize: 13 }}>{t('insp_no_matches')}</div>
-      ) : data?.figure ? (
+      ) : fig ? (
         <>
-          <div style={{ height: 360 }}><Figure fig={data.figure} /></div>
+          {title && <div style={{ fontSize: 13.5, fontWeight: 600, marginBottom: 6 }}>{title}</div>}
+          <div style={{ height: 360 }}><Figure fig={fig} /></div>
           {outcomeLine && <div style={{ fontSize: 13, color: 'var(--text-muted)', margin: '8px 0 12px' }}>{outcomeLine}</div>}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12, marginBottom: 12 }}>
             <Metric label={t('insp_m_principal')} value={pct(data.metrics?.principal, 2)} />
@@ -254,17 +317,12 @@ function InspectorPanel({ runId, terms, label, onRemove }: {
       ) : null}
     </Panel>
   )
-
-  function buildFilters() {
-    const lo = band && bounds && band[0] > bounds[0] ? band[0] : null
-    const hi = band && bounds && band[1] < bounds[1] ? band[1] : null
-    return { outcome, ac_periods: outcome === 'autocalled' ? acPeriods : [], ki_choice: ki, ret_lo: lo, ret_hi: hi, coupon_periods: couponPeriods }
-  }
 }
 
 /** Single-path inspector — 1 to 3 comparison panels, each filtering the run's
-    paths and stepping through the matches. Sits below the worst-of fan. */
-export default function PathInspector({ runId, terms }: { runId: string; terms: NoteTerms }) {
+    paths and stepping through the matches. Sits below the worst-of fan; the
+    `fetcher` decides whether it inspects MC paths or backtest issues. */
+export default function PathInspector({ fetcher, terms }: { fetcher: InspectFetcher; terms: NoteTerms }) {
   const { t } = useI18n()
   const [ids, setIds] = useState<number[]>([0])
 
@@ -276,7 +334,7 @@ export default function PathInspector({ runId, terms }: { runId: string; terms: 
       </div>
       <div style={{ display: 'grid', gridTemplateColumns: ids.length > 1 ? 'repeat(auto-fit, minmax(440px, 1fr))' : '1fr', gap: 16 }}>
         {ids.map((id, i) => (
-          <InspectorPanel key={id} runId={runId} terms={terms} label={String.fromCharCode(65 + i)}
+          <InspectorPanel key={id} fetcher={fetcher} terms={terms} label={String.fromCharCode(65 + i)}
             onRemove={i === 0 ? undefined : () => setIds((s) => s.filter((x) => x !== id))} />
         ))}
       </div>

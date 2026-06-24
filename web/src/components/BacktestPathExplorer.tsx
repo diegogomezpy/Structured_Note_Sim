@@ -4,6 +4,7 @@ import { useI18n } from '../i18n/I18nProvider'
 import Panel from './Panel'
 import Icon from './Icon'
 import { PathFan } from './PathExplorer'
+import PathInspector from './PathInspector'
 import type { ExplorerData, NoteTerms } from '../api/types'
 
 /** Historical-backtest path explorer — overlays every issue's worst-of trajectory
@@ -31,9 +32,13 @@ export default function BacktestPathExplorer({ terms }: { terms: NoteTerms }) {
     return <Panel pad={40}><div style={{ textAlign: 'center', color: 'var(--text-muted)', fontSize: 14 }}>{t('bt_explorer_empty')}</div></Panel>
   }
   return (
-    <PathFan data={data} intro={t('bt_explorer_intro')}
-             onResample={() => setSeed((s) => s + 1)}
-             xLabel={t('chart_years_since_issue')}
-             sampledNoun={t('bt_explorer_issues')} />
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 22 }}>
+      <PathFan data={data} intro={t('bt_explorer_intro')}
+               onResample={() => setSeed((s) => s + 1)}
+               xLabel={t('chart_years_since_issue')}
+               sampledNoun={t('bt_explorer_issues')} />
+      <div style={{ borderTop: '1px solid var(--border)' }} />
+      <PathInspector terms={terms} fetcher={(body) => api.backtestInspect(terms, body)} />
+    </div>
   )
 }

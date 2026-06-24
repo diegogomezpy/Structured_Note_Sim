@@ -239,6 +239,17 @@ export interface InspectFilters {
   coupon_periods?: number[]
 }
 
+export interface PathMarker { x: number; y: number; text: string; kind: string }
+
+export interface PathData {
+  t: number[]
+  series: { name: string; perf: number[] }[]
+  wof: number[]
+  markers: PathMarker[]
+  x_max: number
+  barriers: { knock_in: number | null; autocall: number | null; autocall_schedule: [number, number][] | null }
+}
+
 export interface InspectResult {
   n_total: number
   n_matched: number
@@ -247,7 +258,7 @@ export interface InspectResult {
   coupon_available: boolean
   position: number
   path_index: number | null
-  figure: any
+  path?: PathData
   outcome?: { autocall_q: number; call_time: number | null; knock_in: boolean; worst_final: number | null }
   metrics?: { principal: number | null; coupons: number | null; irr: number | null; total_return: number | null }
   assets?: { name: string; final: number | null }[]

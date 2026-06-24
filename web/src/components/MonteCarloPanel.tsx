@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { api } from '../api/client'
 import { useI18n } from '../i18n/I18nProvider'
 import Panel from './Panel'
 import Figure from './Figure'
@@ -78,7 +79,7 @@ export default function MonteCarloPanel({ result, terms }: { result: SimResult; 
         <div style={{ display: 'flex', flexDirection: 'column', gap: 22 }} className="fade-up">
           <PathExplorer runId={result.run_id} />
           <div style={{ borderTop: '1px solid var(--border)' }} />
-          <PathInspector runId={result.run_id} terms={terms} />
+          <PathInspector terms={terms} fetcher={(body) => api.inspectRun(result.run_id, body)} />
         </div>
       )}
 

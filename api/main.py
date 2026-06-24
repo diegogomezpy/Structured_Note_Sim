@@ -75,6 +75,15 @@ class InspectRequest(BaseModel):
     lang: str = "en"
 
 
+class BacktestInspectRequest(BaseModel):
+    terms: dict
+    filters: dict = Field(default_factory=dict)
+    position: int = 0
+    randomize: bool = False
+    history_years: float | None = None
+    lang: str = "en"
+
+
 class ReportRequest(BaseModel):
     terms: dict
     sections: list[str] = Field(default_factory=list)  # mc/calibration/backtest/live; empty = all
@@ -207,6 +216,22 @@ def backtest_path_explorer(req: BacktestRequest, sample: int = 400, seed: int = 
                                      sample=max(50, min(sample, 800)), seed=seed)
     except Exception as e:
         raise HTTPException(500, f"backtest paths failed: {e}")
+
+
+@app.post("/api/backtest/inspect")
+def backtest_inspect(req: BacktestInspectRequest):
+    """One historical issue in detail for the backtest single-path inspector
+    (same shape as /runs/{id}/inspect; see engine.backtest_inspect)."""
+    try:
+        terms = NoteTerms.from_dict(req.terms)
+    except Exception as e:
+        raise HTTPException(400, f"invalid note terms: {e}")
+    try:
+        return engine.backtest_inspect(terms, lang=req.lang, filters=req.filters,
+                                       position=req.position, randomize=req.randomize,
+                                       history_years=req.history_years)
+    except Exception as e:
+        raise HTTPException(500, f"backtest inspect failed: {e}")
 
 
 @app.post("/api/underlyings/metrics")

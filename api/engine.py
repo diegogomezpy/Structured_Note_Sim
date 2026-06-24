@@ -31,7 +31,7 @@ sys.path.insert(0, str(_REPO / "app"))
 from core.note import NoteTerms, price_note, replay_note          # noqa: E402
 from core.calibrator import HestonCalibrator                      # noqa: E402
 from core.simulator import HestonMultiSimulator                   # noqa: E402
-from core.backtest import run_backtest                            # noqa: E402
+from core.backtest import run_backtest, snapped_obs_dates         # noqa: E402
 from data.loader import (load_prices, load_dividends,             # noqa: E402
                           build_dividend_schedule, load_underlying_metrics)
 import charts            # noqa: E402  (app/charts.py)
@@ -78,6 +78,12 @@ def _prices(tickers: dict, *, years: float | None, field: str = "close") -> pd.D
 # this with Redis instead.
 _RUNS: "OrderedDict[str, dict]" = OrderedDict()
 _MAX_RUNS = 8
+
+# Backtest results cache (keyed on tickers + terms) so the backtest inspector's
+# filter/nav clicks reuse one run instead of re-backtesting every issue each time.
+_BT_CACHE: "OrderedDict[tuple, tuple[float, object, dict]]" = OrderedDict()
+_BT_TTL = 1800.0
+_BT_MAX = 6
 
 
 def _store_run(payload: dict) -> str:
@@ -232,6 +238,45 @@ def _build_path_marker_info(rows, autocall_q, n_obs, wof_levels, knock_in, terms
     return info
 
 
+def _path_payload(worst_path, asset_paths, asset_names, obs_steps, autocall_q,
+                  marker_info, terms) -> dict:
+    """Raw single-path data for the React inspector chart — per-asset + worst-of
+    trajectories (truncated at the call, time-downsampled) plus observation markers
+    and barriers. The client renders it in the app's own chart aesthetic, so the
+    inspector matches the rest of the UI instead of the Streamlit chart palette."""
+    worst_path  = np.asarray(worst_path)
+    asset_paths = np.asarray(asset_paths)
+    N1  = len(worst_path)
+    cut = int(obs_steps[autocall_q - 1]) if autocall_q > 0 else N1 - 1
+    step = max(1, (cut + 1) // 150)
+    cols = list(range(0, cut + 1, step))
+    if cols[-1] != cut:
+        cols.append(cut)
+
+    series = [{"name": nm, "perf": [round(float(asset_paths[c, i]), 4) for c in cols]}
+              for i, nm in enumerate(asset_names)]
+    wof = [round(float(worst_path[c]), 4) for c in cols]
+
+    markers = []
+    n_live = autocall_q if autocall_q > 0 else len(obs_steps)
+    for i in range(min(n_live, len(marker_info))):
+        s = int(obs_steps[i])
+        if s > cut:
+            break
+        markers.append({"x": s, "y": round(float(worst_path[s]), 4),
+                        "text": marker_info[i]["text"], "kind": marker_info[i]["kind"]})
+
+    ac_sched = ([[int(s), float(lv)]
+                 for s, lv in zip(obs_steps, terms.autocall_barrier_schedule())]
+                if terms.autocall_step_down else None)
+    return {
+        "t": cols, "series": series, "wof": wof, "markers": markers, "x_max": cut,
+        "barriers": {"knock_in": _f(terms.knock_in_barrier),
+                     "autocall": _f(terms.autocall_barrier),
+                     "autocall_schedule": ac_sched},
+    }
+
+
 def inspect_run(run_id: str, *, lang: str = "en", filters: dict | None = None,
                 position: int = 0, randomize: bool = False, title: str | None = None) -> dict | None:
     """One Monte-Carlo path in full detail for the single-path inspector: the
@@ -287,19 +332,12 @@ def inspect_run(run_id: str, *, lang: str = "en", filters: dict | None = None,
     wof_levels  = [float(worst_path[s]) for s in obs_steps]
     marker_info = _build_path_marker_info(rows, autocall_q, n_obs, wof_levels, ki_pn, terms, tr)
 
-    ac_sched = (list(zip(obs_steps, terms.autocall_barrier_schedule()))
-                if terms.autocall_step_down else None)
-    fig = charts.build_path_wof_chart(
-        worst_path, autocall_q, obs_steps, obs_labels, terms.knock_in_barrier, pn, tr,
-        asset_paths=asset_paths, asset_names=asset_names,
-        autocall_barrier=terms.autocall_barrier, autocall_schedule=ac_sched,
-        marker_info=marker_info, title=title or None)
-
     return {
         **base,
         "position":   position,
         "path_index": pn,
-        "figure":     _fig(fig),
+        "path":       _path_payload(worst_path, asset_paths, asset_names,
+                                    obs_steps, autocall_q, marker_info, terms),
         "outcome": {
             "autocall_q":   autocall_q,
             "call_time":    _f(obs_times[autocall_q - 1]) if autocall_q > 0 else None,
@@ -577,6 +615,109 @@ def backtest_paths(terms: NoteTerms, *, history_years: float | None = None,
         "n_total":   int(P),
         "obs_times": [round(x, 4) for x in t[1:]],
         "barriers":  barriers,
+    }
+
+
+def _cached_backtest(terms: NoteTerms, history_years: float | None):
+    """(prices, bt, summary) for the backtest inspector, memoised so filter/nav
+    reuse one backtest run. prices come from the shared price cache; bt is cached
+    here keyed on tickers + terms."""
+    prices = _prices(dict(terms.tickers), years=history_years, field="close")
+    key = (tuple(sorted(terms.tickers.items())), terms.to_json(), history_years)
+    now = time.time()
+    hit = _BT_CACHE.get(key)
+    if hit is not None and now - hit[0] < _BT_TTL:
+        return prices, hit[1], hit[2]
+    bt, summary = run_backtest(prices, terms)
+    _BT_CACHE[key] = (now, bt, summary)
+    while len(_BT_CACHE) > _BT_MAX:
+        _BT_CACHE.popitem(last=False)
+    return prices, bt, summary
+
+
+def backtest_inspect(terms: NoteTerms, *, lang: str = "en", filters: dict | None = None,
+                     position: int = 0, randomize: bool = False,
+                     history_years: float | None = None) -> dict:
+    """One historical issue in full detail for the backtest single-path inspector —
+    the same InspectResult shape as inspect_run, so the React <PathInspector> is
+    shared. Builds the issue's daily worst-of + per-asset window and replays its
+    observations (replay_note) for the event markers."""
+    tr = translations.Translator(lang)
+    prices, bt, summary = _cached_backtest(terms, history_years)
+    tickers = dict(terms.tickers)
+    asset_names = list(tickers.values())
+    n_obs = terms.n_obs
+    obs_times_rel = [0.0] + list(terms.obs_times())
+
+    base = {"n_total": int(len(bt)), "n_matched": 0, "ret_range": [0.0, 0.0],
+            "n_obs": int(n_obs), "coupon_available": False}
+    if bt.empty:
+        return {**base, "position": 0, "path_index": None, "path": None}
+
+    ac    = bt["Call Quarter"].to_numpy()
+    ki    = bt["Knock-in"].to_numpy()
+    irr   = bt["IRR"].to_numpy()              # backtest return band uses IRR (per app.py)
+    coupon_m = summary.get("coupon_amounts")  # (n_issues, n_obs), row-aligned with bt
+    base["ret_range"] = [float(np.min(irr)), float(np.max(irr))]
+    base["coupon_available"] = coupon_m is not None
+
+    f = filters or {}
+    matches = _path_filter_matches(
+        ac, ki, irr, coupon_m,
+        outcome=f.get("outcome", "any"), ac_periods=f.get("ac_periods"),
+        ki_choice=f.get("ki_choice", "any"),
+        ret_lo=f.get("ret_lo"), ret_hi=f.get("ret_hi"),
+        coupon_periods=f.get("coupon_periods"))
+    M = int(len(matches))
+    base["n_matched"] = M
+    if M == 0:
+        return {**base, "position": 0, "path_index": None, "path": None}
+
+    if randomize:
+        position = int(np.random.default_rng().integers(0, M))
+    position = max(0, min(int(position), M - 1))
+    row_i = int(matches[position])
+    row = bt.iloc[row_i]
+    issue_date = row["Issue Date"]
+    autocall_q = int(row["Call Quarter"])
+    ki_pn = bool(row["Knock-in"])
+
+    # Daily worst-of window: issue → maturity, snapped to trading days.
+    anchor, obs_dates = snapped_obs_dates(prices, terms, issue_date)
+    a_loc   = int(prices.index.searchsorted(anchor))
+    mat_loc = int(prices.index.searchsorted(obs_dates[-1]))
+    window  = prices.iloc[a_loc:mat_loc + 1]
+    S0      = window.iloc[0].values.astype(float)
+    perf_daily = window.values.astype(float) / S0
+    worst_path = perf_daily.min(axis=1)
+    obs_steps  = [int(window.index.searchsorted(d)) for d in obs_dates]
+    obs_steps  = [min(s, len(window) - 1) for s in obs_steps]
+
+    perf_obs    = perf_daily[obs_steps, :]
+    rows        = replay_note(perf_obs, terms)["rows"]
+    wof_levels  = [float(worst_path[s]) for s in obs_steps]
+    marker_info = _build_path_marker_info(rows, autocall_q, n_obs, wof_levels, ki_pn, terms, tr)
+
+    return {
+        **base,
+        "position":   position,
+        "path_index": row_i,
+        "path":       _path_payload(worst_path, perf_daily, asset_names,
+                                    obs_steps, autocall_q, marker_info, terms),
+        "outcome": {
+            "autocall_q":  autocall_q,
+            "call_time":   _f(obs_times_rel[autocall_q]) if autocall_q > 0 else None,
+            "knock_in":    ki_pn,
+            "worst_final": _f(float(worst_path[-1])),
+        },
+        "metrics": {
+            "principal":    _f(row["Principal"]),
+            "coupons":      _f(row["Total Coupons"]),
+            "irr":          _f(row["IRR"]),
+            "total_return": _f(row["IRR"]),
+        },
+        "assets": [{"name": nm, "final": _f(float(perf_daily[-1, i]))}
+                   for i, nm in enumerate(asset_names)],
     }
 
 

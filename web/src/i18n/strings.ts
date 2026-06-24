@@ -220,6 +220,8 @@ export const S: Dict = {
   insp_prev:        { en: 'Prev', es: 'Anterior' },
   insp_next:        { en: 'Next', es: 'Siguiente' },
   insp_add_panel:   { en: 'Add comparison panel', es: 'Añadir panel de comparación' },
+  insp_time_step:   { en: 'Time step', es: 'Paso temporal' },
+  insp_wof_name:    { en: 'Worst-of', es: 'Peor de' },
   insp_m_principal: { en: 'Capital', es: 'Capital' },
   insp_m_coupons:   { en: 'Coupons', es: 'Cupones' },
   insp_m_irr:       { en: 'IRR p.a.', es: 'TIR anual' },

@@ -56,4 +56,6 @@ export const api = {
     jpost<ExplorerData>(`/api/backtest/paths?sample=${sample}&seed=${seed}`, { terms }),
   inspectRun: (runId: string, body: { filters?: InspectFilters; position?: number; randomize?: boolean; title?: string | null; lang?: string }) =>
     jpost<InspectResult>(`/api/runs/${runId}/inspect`, body),
+  backtestInspect: (terms: NoteTerms, body: { filters?: InspectFilters; position?: number; randomize?: boolean; lang?: string }) =>
+    jpost<InspectResult>('/api/backtest/inspect', { terms, ...body }),
 }
