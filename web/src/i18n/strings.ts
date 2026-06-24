@@ -233,7 +233,9 @@ export const S: Dict = {
   insp_mat_ki:      { en: 'Held to maturity · knocked in (worst-of {wof})', es: 'A vencimiento · knock-in (peor de {wof})' },
   insp_mat_ok:      { en: 'Held to maturity · redeemed at par (worst-of {wof})', es: 'A vencimiento · redimida a la par (peor de {wof})' },
 
-  // underlying breakdown cards
+  // issuer + underlying breakdown
+  issuer_section:   { en: 'Issuer', es: 'Emisor' },
+  issuer_no_desc:   { en: 'No issuer description on file.', es: 'Sin descripción del emisor.' },
   ul_breakdown:     { en: 'Underlying breakdown', es: 'Análisis de subyacentes' },
   ul_market_cap:    { en: 'Market cap', es: 'Capitalización' },
   ul_iv_3m:         { en: '3M implied vol', es: 'Vol. implícita 3M' },

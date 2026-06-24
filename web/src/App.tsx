@@ -6,6 +6,7 @@ import Header from './components/Header'
 import SetupRail, { type RunOpts } from './components/SetupRail'
 import NoteTimeline from './components/NoteTimeline'
 import ObservationSchedule from './components/ObservationSchedule'
+import IssuerCard from './components/IssuerCard'
 import UnderlyingCards from './components/UnderlyingCards'
 import Panel from './components/Panel'
 import Tabs from './components/Tabs'
@@ -201,6 +202,7 @@ export default function App() {
             <Panel title={t('note_structure')} right={t('live_updates')}>
               <NoteTimeline terms={terms} />
               <ObservationSchedule terms={terms} />
+              <IssuerCard terms={terms} />
               <UnderlyingCards terms={terms} />
             </Panel>
           )}
