@@ -308,6 +308,8 @@ export interface Branding {
   cover_overlay_opacity?: string | number  // 0..1
   title_font?: string             // headings font (fonts/brand/<Name>-Bold.ttf)
   body_font?: string              // body font
+  title_font_files?: Record<string, string>  // {Style: base64 TTF} embedded in the config
+  body_font_files?: Record<string, string>
   [k: string]: unknown        // presets carry extra keys we pass straight through
 }
 

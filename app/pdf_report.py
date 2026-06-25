@@ -59,10 +59,12 @@ green-ramp hue derived from the accent — see _rebrand_figure.
 from __future__ import annotations
 
 import io
+import os
 import re
 import base64
 import colorsys
 import datetime
+import tempfile
 import urllib.request
 import warnings
 import numpy as np
@@ -111,6 +113,8 @@ _KNOWN_BRANDING_KEYS = {
     "cover_overlay_color",  # NEW — colour of the overlay drawn over the cover/back photo
     "cover_overlay_opacity",# NEW — 0..1 opacity of that overlay
     "title_font", "body_font",  # NEW — custom report fonts (see _register_brand_fonts)
+    "title_font_files", "body_font_files",  # NEW — embedded {Style: base64 TTF} so
+                                            # fonts travel with an uploaded config
 }
 _HEX_KEYS = ("primary_color", "accent_color", "chart_secondary_color",
              "section_rule_color", "panel_color", "sidebar_bar_color",
@@ -625,9 +629,12 @@ def _register_ibm_plex(pdf: FPDF) -> bool:
 
 def _register_brand_fonts(pdf, branding: dict | None) -> None:
     """Route the report's title / body type to custom brand fonts when the brand
-    provides them and the files exist. The branding keys `title_font` / `body_font`
-    name a font (e.g. "Neulis Alt", "Galanti"); the TTF files are looked up as
-    fonts/brand/<AlnumName>-<Style>.ttf (Style in Regular/Bold/Italic/BoldItalic).
+    provides them. The branding keys `title_font` / `body_font` name a font (e.g.
+    "Neulis Alt", "Gantari"); the TTF for each weight comes from EITHER an embedded
+    base64 blob in `title_font_files` / `body_font_files` ({Style: base64 TTF}, so
+    the fonts travel with an uploaded config and work on the deploy) OR the local
+    file fonts/brand/<AlnumName>-<Style>.ttf (Style in Regular/Bold/Italic/
+    BoldItalic). Embedded data wins; the local file is the fallback.
 
     Title type is the bold/semibold (heading) weights; body type is regular/light/
     italic. Anything that can't be loaded silently keeps the IBM Plex mapping, so
@@ -638,29 +645,53 @@ def _register_brand_fonts(pdf, branding: dict | None) -> None:
     if not (b.get("title_font") or b.get("body_font")):
         return
 
-    def _register(font_name: str | None, styles: list[tuple[str, str]]):
+    def _tmp_font(raw: bytes, alnum: str, suffix: str) -> str:
+        # Write an embedded TTF to a temp dir tied to the pdf's lifetime (cleaned
+        # when the pdf is GC'd, i.e. after output()), so fpdf can read/embed it.
+        d = getattr(pdf, "_brand_font_tmp", None)
+        if d is None:
+            d = pdf._brand_font_tmp = tempfile.TemporaryDirectory(prefix="brandfont_")
+        path = os.path.join(d.name, f"{alnum}-{suffix}.ttf")
+        with open(path, "wb") as fh:
+            fh.write(raw)
+        return path
+
+    def _register(font_name: str | None, files: dict | None, styles: list[tuple[str, str]]):
         if not font_name:
             return None
-        fam = "Brand" + "".join(c for c in str(font_name) if c.isalnum())
+        alnum = "".join(c for c in str(font_name) if c.isalnum())
+        fam = "Brand" + alnum
+        files = files if isinstance(files, dict) else {}
         loaded: set[str] = set()
         for code, suffix in styles:
-            for cand in (_FONT_DIR / "brand" / f"{''.join(c for c in font_name if c.isalnum())}-{suffix}.ttf",):
-                if cand.exists():
-                    try:
-                        pdf.add_font(fam, code, str(cand), uni=True)
-                        loaded.add(code)
-                    except Exception as e:
-                        print(f"[PDF font] {font_name} {suffix} failed: {e}")
-                    break
+            path = None
+            # 1) embedded base64 (keyed by Style name, or the fpdf style code)
+            blob = files.get(suffix) or files.get(code)
+            if blob:
+                try:
+                    _pl = blob.split(",", 1)[1] if str(blob).strip().startswith("data:") else blob
+                    path = _tmp_font(base64.b64decode(_pl), alnum, suffix)
+                except Exception as e:
+                    print(f"[PDF font] {font_name} {suffix} embedded decode failed: {e}")
+                    path = None
+            # 2) local file fallback
+            if path is None:
+                cand = _FONT_DIR / "brand" / f"{alnum}-{suffix}.ttf"
+                path = str(cand) if cand.exists() else None
+            if path:
+                try:
+                    pdf.add_font(fam, code, path, uni=True)
+                    loaded.add(code)
+                except Exception as e:
+                    print(f"[PDF font] {font_name} {suffix} failed: {e}")
         if "" not in loaded:
-            if font_name:
-                print(f"[PDF font] brand font '{font_name}' not found in fonts/brand/ — using IBM Plex")
+            print(f"[PDF font] brand font '{font_name}' has no usable regular weight — using IBM Plex")
             return None
         print(f"[PDF font] brand font '{font_name}' registered ({sorted(loaded)})")
         return fam, loaded
 
-    title = _register(b.get("title_font"), [("", "Bold")])
-    body  = _register(b.get("body_font"),
+    title = _register(b.get("title_font"), b.get("title_font_files"), [("", "Bold")])
+    body  = _register(b.get("body_font"), b.get("body_font_files"),
                       [("", "Regular"), ("B", "Bold"), ("I", "Italic"), ("BI", "BoldItalic")])
     if title:
         tfam, _ = title

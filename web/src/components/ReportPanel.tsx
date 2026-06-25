@@ -81,6 +81,8 @@ export default function ReportPanel({ terms, opts }: { terms: NoteTerms; opts: R
   const sigilRef = useRef<HTMLInputElement>(null)
   const backImgRef = useRef<HTMLInputElement>(null)
   const brandCfgRef = useRef<HTMLInputElement>(null)
+  const titleFontRef = useRef<HTMLInputElement>(null)
+  const bodyFontRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => { api.brandingList().then(setPresets).catch(() => {}) }, [])
 
@@ -127,6 +129,33 @@ export default function ReportPanel({ terms, opts }: { terms: NoteTerms; opts: R
     if (!file) return
     const r = new FileReader(); r.onload = () => setBrandField(field, String(r.result)); r.readAsDataURL(file)
   }
+  // Embed TTF/OTF font files (base64, keyed by inferred style) into the config so
+  // the fonts travel with it and render on the deploy. Style is read off the
+  // filename (…Bold, …Italic, …BoldItalic, else Regular) — same convention as
+  // fonts/brand/<Name>-<Style>.ttf.
+  const styleOf = (name: string) => {
+    const n = name.toLowerCase().replace(/[^a-z]/g, '')
+    if (n.includes('bold') && n.includes('italic')) return 'BoldItalic'
+    if (n.includes('italic')) return 'Italic'
+    if (n.includes('bold')) return 'Bold'
+    return 'Regular'
+  }
+  const onFontFiles = (field: 'title_font_files' | 'body_font_files', files: FileList | null) => {
+    if (!files || !files.length) return
+    const acc: Record<string, string> = { ...((brand[field] as Record<string, string>) ?? {}) }
+    let pending = files.length
+    Array.from(files).forEach((f) => {
+      const r = new FileReader()
+      r.onload = () => {
+        const s = String(r.result)
+        acc[styleOf(f.name)] = s.includes(',') ? s.split(',')[1] : s
+        if (--pending === 0) setBrand((b) => ({ ...b, [field]: acc }))
+      }
+      r.readAsDataURL(f)
+    })
+  }
+  const fontCount = (field: 'title_font_files' | 'body_font_files') =>
+    Object.keys((brand[field] as Record<string, string>) ?? {}).length
 
   const generate = async () => {
     setStatus('running'); setError('')
@@ -240,8 +269,24 @@ export default function ReportPanel({ terms, opts }: { terms: NoteTerms; opts: R
             <div>
               <SubHead>{t('brand_typography')}</SubHead>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 14 }}>
-                <Field label={t('brand_title_font')}><input type="text" placeholder="IBM Plex Sans" value={brand.title_font ?? ''} onChange={(e) => setBrandField('title_font', e.target.value)} /></Field>
-                <Field label={t('brand_body_font')}><input type="text" placeholder="IBM Plex Sans" value={brand.body_font ?? ''} onChange={(e) => setBrandField('body_font', e.target.value)} /></Field>
+                <Field label={t('brand_title_font')}>
+                  <input type="text" placeholder="IBM Plex Sans" value={brand.title_font ?? ''} onChange={(e) => setBrandField('title_font', e.target.value)} />
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 6, flexWrap: 'wrap' }}>
+                    <button className="btn" style={{ padding: '6px 10px', fontSize: 11.5 }} onClick={() => titleFontRef.current?.click()}><Icon name="upload" size={12} /> {t('brand_embed_fonts')}</button>
+                    {fontCount('title_font_files') > 0 && <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>{t('brand_fonts_n', { n: fontCount('title_font_files') })}</span>}
+                    {fontCount('title_font_files') > 0 && <button className="btn btn--ghost" style={{ padding: '4px 8px', fontSize: 11 }} onClick={() => setBrand((b) => ({ ...b, title_font_files: undefined }))}>{t('det_reset_logo')}</button>}
+                    <input ref={titleFontRef} type="file" accept=".ttf,.otf" multiple style={{ display: 'none' }} onChange={(e) => { onFontFiles('title_font_files', e.target.files); e.target.value = '' }} />
+                  </div>
+                </Field>
+                <Field label={t('brand_body_font')}>
+                  <input type="text" placeholder="IBM Plex Sans" value={brand.body_font ?? ''} onChange={(e) => setBrandField('body_font', e.target.value)} />
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 6, flexWrap: 'wrap' }}>
+                    <button className="btn" style={{ padding: '6px 10px', fontSize: 11.5 }} onClick={() => bodyFontRef.current?.click()}><Icon name="upload" size={12} /> {t('brand_embed_fonts')}</button>
+                    {fontCount('body_font_files') > 0 && <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>{t('brand_fonts_n', { n: fontCount('body_font_files') })}</span>}
+                    {fontCount('body_font_files') > 0 && <button className="btn btn--ghost" style={{ padding: '4px 8px', fontSize: 11 }} onClick={() => setBrand((b) => ({ ...b, body_font_files: undefined }))}>{t('det_reset_logo')}</button>}
+                    <input ref={bodyFontRef} type="file" accept=".ttf,.otf" multiple style={{ display: 'none' }} onChange={(e) => { onFontFiles('body_font_files', e.target.files); e.target.value = '' }} />
+                  </div>
+                </Field>
               </div>
               <div style={{ fontSize: 11, color: 'var(--text-faint)', marginTop: 5 }}>{t('brand_font_hint')}</div>
             </div>
