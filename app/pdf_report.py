@@ -2482,15 +2482,13 @@ def _full_bleed_disclaimer(pdf: _NotePDF, lang: str, text: str, website: str = "
             body_h = H * 0.42   # generous fallback if measurement isn't available
         ptop, pbot = 37.0, min(54.0 + body_h + 6.0, H - 26.0)
         pdf.set_fill_color(*_blend(pdf.primary_color, (0, 0, 0), 0.68))   # near-black green
-        pdf.set_draw_color(*pdf.section_rule_color)                       # accent border
-        pdf.set_line_width(0.6)
         try:
             with pdf.local_context(fill_opacity=0.86):
                 pdf.rect(pdf.l_margin - 6, ptop, inner + 12, pbot - ptop,
-                         style="DF", round_corners=True, corner_radius=4)
+                         style="F", round_corners=True, corner_radius=4)
         except Exception:
             try:
-                pdf.rect(pdf.l_margin - 6, ptop, inner + 12, pbot - ptop, style="DF")
+                pdf.rect(pdf.l_margin - 6, ptop, inner + 12, pbot - ptop, style="F")
             except Exception:
                 pass
 
