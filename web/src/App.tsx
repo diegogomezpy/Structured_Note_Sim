@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { api } from './api/client'
+import { blankNote } from './lib/blankNote'
 import type { BacktestResult, BtRange, ConfigMeta, LiveResult, NoteTerms, SimResult } from './api/types'
 import { useI18n } from './i18n/I18nProvider'
 import Header from './components/Header'
@@ -52,13 +53,16 @@ export default function App() {
   const [liveStatus, setLiveStatus] = useState<Status>('idle')
   const [liveError, setLiveError] = useState('')
 
-  // Bootstrap: engine availability + config list + default term sheet.
+  // Bootstrap: engine availability + config list. Start on a blank note rather
+  // than auto-loading a bundled term sheet.
   useEffect(() => {
-    api.health().then((h) => setCppAvailable(h.cpp_engine)).catch(() => {})
-    api.configs().then((cs) => {
-      setConfigs(cs)
-      if (cs.length) loadConfig(cs[0].file)
-    }).catch((e) => setErrorMsg(String(e)))
+    const checkHealth = (retry = true) =>
+      api.health()
+        .then((h) => { setCppAvailable(h.cpp_engine); if (!h.cpp_engine && retry) setTimeout(() => checkHealth(false), 1500) })
+        .catch(() => { if (retry) setTimeout(() => checkHealth(false), 1500) })
+    checkHealth()
+    api.configs().then(setConfigs).catch((e) => setErrorMsg(String(e)))
+    setTerms(blankNote())
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 

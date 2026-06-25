@@ -108,6 +108,11 @@ export default function AddNoteHelp() {
           </div>
 
           <div style={{ fontSize: 12, color: 'var(--text-faint)', lineHeight: 1.55, background: 'var(--surface-2)', borderRadius: 9, padding: '10px 13px' }}>{t('addnote_tip')}</div>
+
+          <div style={{ marginTop: 16, paddingTop: 16, borderTop: '1px solid var(--border)' }}>
+            <div style={{ fontSize: 12.5, fontWeight: 600, marginBottom: 6 }}>{t('addnote_auto_h')}</div>
+            <div style={{ fontSize: 12.5, color: 'var(--text-muted)', lineHeight: 1.6 }}>{t('addnote_auto')}</div>
+          </div>
         </Modal>
       )}
     </>

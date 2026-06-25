@@ -1,4 +1,5 @@
 import { useEffect, type ReactNode } from 'react'
+import { createPortal } from 'react-dom'
 import Icon from './Icon'
 
 /** Centered modal overlay. Closes on Escape or backdrop click; locks body
@@ -14,11 +15,11 @@ export default function Modal({
     return () => { document.removeEventListener('keydown', onKey); document.body.style.overflow = prev }
   }, [onClose])
 
-  return (
+  return createPortal((
     <div
       onMouseDown={(e) => { if (e.target === e.currentTarget) onClose() }}
       style={{
-        position: 'fixed', inset: 0, zIndex: 60, background: 'rgba(6, 10, 18, 0.55)',
+        position: 'fixed', inset: 0, zIndex: 1000, background: 'rgba(6, 10, 18, 0.55)',
         display: 'flex', alignItems: 'flex-start', justifyContent: 'center',
         padding: '4vh 16px', overflow: 'auto',
       }}>
@@ -47,5 +48,5 @@ export default function Modal({
         )}
       </div>
     </div>
-  )
+  ), document.body)
 }

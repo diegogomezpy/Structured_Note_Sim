@@ -65,6 +65,15 @@ export default function SetupRail({
     if (fileRef.current) fileRef.current.value = ''
   }
 
+  const downloadConfig = () => {
+    const blob = new Blob([JSON.stringify(terms, null, 2)], { type: 'application/json' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    const safe = (terms.name || 'note').replace(/[^A-Za-z0-9_.-]+/g, '_').slice(0, 60)
+    a.href = url; a.download = `${safe || 'note'}.json`
+    document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url)
+  }
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
       <div>
@@ -72,16 +81,20 @@ export default function SetupRail({
           <label style={{ fontSize: 12, color: 'var(--text-muted)' }}>{t('config_label')}</label>
           <div style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
             <AddNoteHelp />
-            <button className="btn btn--ghost" style={{ padding: '3px 8px', fontSize: 11.5 }}
-                    onClick={() => fileRef.current?.click()} title={t('upload_config_hint')}>
-              <Icon name="upload" size={13} /> {t('upload_config')}
+            <button className="btn btn--ghost" style={{ padding: '3px 7px' }}
+                    onClick={downloadConfig} title={t('download_config_hint')} aria-label={t('download_config')}>
+              <Icon name="download" size={14} />
+            </button>
+            <button className="btn btn--ghost" style={{ padding: '3px 7px' }}
+                    onClick={() => fileRef.current?.click()} title={t('upload_config_hint')} aria-label={t('upload_config')}>
+              <Icon name="upload" size={14} />
             </button>
           </div>
           <input ref={fileRef} type="file" accept="application/json,.json" style={{ display: 'none' }}
                  onChange={(e) => onFile(e.target.files?.[0])} />
         </div>
         <select value={configFile} onChange={(e) => onSelectConfig(e.target.value)}>
-          {configFile === '' && <option value="">{t('uploaded_config')}</option>}
+          {configFile === '' && <option value="">{t('blank_note')}</option>}
           {configs.map((c) => <option key={c.file} value={c.file}>{c.name}</option>)}
         </select>
         {uploadErr && <div style={{ fontSize: 11.5, color: 'var(--red)', marginTop: 5 }}>{uploadErr}</div>}

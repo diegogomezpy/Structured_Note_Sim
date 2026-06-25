@@ -31,6 +31,10 @@ export const S: Dict = {
   done:             { en: 'Done', es: 'Listo' },
   current_terms:    { en: 'Current terms', es: 'Términos actuales' },
 
+  blank_note:       { en: '— New note —', es: '— Nota nueva —' },
+  download_config:  { en: 'Download config', es: 'Descargar configuración' },
+  download_config_hint: { en: 'Download this note as a JSON config', es: 'Descargar esta nota como JSON' },
+
   // add-note tutorial
   addnote_trigger:  { en: 'How to add a note', es: 'Cómo añadir una nota' },
   addnote_title:    { en: 'Add your own note', es: 'Añade tu propia nota' },
@@ -44,6 +48,8 @@ export const S: Dict = {
   addnote_copy:     { en: 'Copy', es: 'Copiar' },
   addnote_copied:   { en: 'Copied', es: 'Copiado' },
   addnote_tip:      { en: 'Tip: tickers map a Yahoo Finance symbol to a display name, e.g. {"AAPL": "Apple"}. Barriers are fractions of the initial level (0.70 = 70%).', es: 'Consejo: los tickers asocian un símbolo de Yahoo Finance a un nombre, p. ej. {"AAPL": "Apple"}. Las barreras son fracciones del nivel inicial (0,70 = 70%).' },
+  addnote_auto_h:   { en: 'Auto-detect (self-hosting)', es: 'Detección automática (autoalojado)' },
+  addnote_auto:     { en: 'Running your own copy? Drop JSON files into the project’s note_configs/ folder — every .json there is detected automatically on startup and listed in the dropdown, no upload needed. (Use the download button next to the dropdown to export the current note as a starting file.)', es: '¿Ejecutas tu propia copia? Coloca archivos JSON en la carpeta note_configs/ del proyecto — cada .json se detecta automáticamente al iniciar y aparece en el menú, sin subir nada. (Usa el botón de descarga junto al menú para exportar la nota actual como archivo inicial.)' },
 
   // underlying & issuer detail editor
   sec_details:      { en: 'Issuer & underlying detail', es: 'Detalle de emisor y subyacentes' },

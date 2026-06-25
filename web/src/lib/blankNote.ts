@@ -1,0 +1,34 @@
+import type { NoteTerms } from '../api/types'
+
+/** A sensible empty note the app opens on, so it never starts pinned to a bundled
+    term sheet. The user builds from here, loads a bundled config, or uploads one. */
+export function blankNote(): NoteTerms {
+  return {
+    name: 'New note',
+    issuer: '',
+    maturity: 1.0,
+    payment_freq: 'quarterly',
+    coupon_pa: 0.10,
+    coupon_barrier: 0.70,
+    autocall_barrier: 1.0,
+    autocall_start_period: 1,
+    knock_in_barrier: 0.60,
+    memory: true,
+    coupon_basket: 'worst_of',
+    autocall_basket: 'worst_of',
+    one_star_level: null,
+    autocall_step_down: null,
+    autocall_floor: null,
+    coupon_at_autocall_only: false,
+    capital_guarantee: 0,
+    upside_cap: null,
+    principal_protection: 1.0,
+    issuer_description: '',
+    issuer_rating_sp: '',
+    issuer_rating_moody: '',
+    issuer_rating_fitch: '',
+    tickers: { '^GSPC': 'S&P 500' },
+    issue_date: null,
+    underlyings: {},
+  }
+}

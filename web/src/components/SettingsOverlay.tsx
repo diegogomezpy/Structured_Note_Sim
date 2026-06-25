@@ -182,8 +182,8 @@ export default function SettingsOverlay({
                        options={PATH_PRESETS.map((p) => ({ value: String(p), label: p.toLocaleString() }))}
                        onChange={(v) => onOptsChange({ ...opts, n_paths: parseInt(v) })} />
           <SelectField label={t('engine')} value={opts.engine}
-                       options={[{ value: 'numpy', label: 'numpy' }, { value: 'cpp', label: cppAvailable ? 'C++' : 'C++ (n/a)' }]}
-                       onChange={(v) => onOptsChange({ ...opts, engine: (v === 'cpp' && cppAvailable ? 'cpp' : 'numpy') })} />
+                       options={[{ value: 'numpy', label: 'numpy' }, { value: 'cpp', label: cppAvailable ? 'C++' : 'C++ (auto-fallback)' }]}
+                       onChange={(v) => onOptsChange({ ...opts, engine: v === 'cpp' ? 'cpp' : 'numpy' })} />
           <NumberField label={t('seed')} value={opts.seed} step={1} min={0} onChange={(v) => onOptsChange({ ...opts, seed: Math.round(v) })} />
           <SelectField label={t('calib_window')} value={String(opts.calib_years)}
                        options={CALIB_YEARS.map((y) => ({ value: String(y), label: `${y} ${t('calib_years')}` }))}
