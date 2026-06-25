@@ -4,7 +4,6 @@ import { useI18n } from '../i18n/I18nProvider'
 import Panel from './Panel'
 import Figure from './Figure'
 import HeroMetrics from './HeroMetrics'
-import OutcomeWaterfall from './OutcomeWaterfall'
 import PathExplorer from './PathExplorer'
 import PathInspector from './PathInspector'
 import { AutocallByPeriodTable, CalibrationTable } from './MCTables'
@@ -44,8 +43,8 @@ export default function MonteCarloPanel({ result, terms }: { result: SimResult; 
 
       {sub === 'summary' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }} className="fade-up">
-          <Panel title={t('outcomes')} right={`${summary.n_paths.toLocaleString()} ${t('paths').toLowerCase()} · ${summary.engine}`}>
-            <OutcomeWaterfall summary={summary} />
+          <Panel title={t('outcomes')} right={`${summary.n_paths.toLocaleString()} ${t('paths').toLowerCase()} · ${summary.engine}`} pad={14}>
+            <div style={{ height: 210 }}><Figure fig={figures.outcome} name="outcome_breakdown" /></div>
           </Panel>
           <Panel title={t('irr_distribution')} pad={14}>
             <div style={{ height: CHART_H }}><Figure fig={figures.irr_dist} name="irr_distribution" /></div>

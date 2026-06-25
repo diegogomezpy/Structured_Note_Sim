@@ -64,6 +64,11 @@ _STRINGS: dict[str, tuple[str, str]] = {
     "leg_accruing":             ("premium accruing",                "prima acumulándose"),
     "leg_one_star":             ("★ one-star rescue",               "★ rescate one-star"),
     "leg_redeemed_par":         ("redeemed at par",                 "reembolso a la par"),
+    "outcome_breakdown":        ("Outcome breakdown",               "Distribución de resultados"),
+    "outcome_axis":             ("Share of paths",                  "Proporción de trayectorias"),
+    "redeemed_at_par":          ("Redeemed at par",                 "Reembolso a la par"),
+    "knocked_in":               ("Knocked in",                      "Knock-in"),
+    "autocalled_p":             ("Autocalled P{p}",                 "Autocancelado P{p}"),
     "explorer_panel_name":      ("Panel name (chart title)",        "Nombre del panel (título)"),
     "explorer_panel_name_ph":   ("e.g. Best autocall scenario",     "p. ej. Mejor escenario de autocall"),
 

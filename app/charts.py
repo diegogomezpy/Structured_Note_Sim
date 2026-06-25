@@ -534,6 +534,53 @@ def build_corr_heatmap(
 # Backtest — outcome bar chart
 # ---------------------------------------------------------------------------
 
+def build_outcome_breakdown(
+    autocall_by_period,
+    prob_maturity: float,
+    prob_knock_in_total: float,
+    tr: Translator,
+) -> go.Figure:
+    """How 100% of paths resolve, as one horizontal stacked bar: autocalled at
+    each period (blue ramp) → redeemed at par (green) → knocked in (red).
+    Mirrors the web Outcome-breakdown waterfall so the report carries the graph."""
+    abp = [float(x) for x in (autocall_by_period or [])]
+    n = len(abp)
+    redeemed = max(0.0, float(prob_maturity or 0.0) - float(prob_knock_in_total or 0.0))
+    ki = float(prob_knock_in_total or 0.0)
+    blues = ["#1e3a8a", "#1d4ed8", "#2563eb", "#3b82f6", "#60a5fa", "#93c5fd"]
+
+    fig = go.Figure()
+
+    def _seg(name, frac, color):
+        if frac <= 0.002:
+            return
+        fig.add_trace(go.Bar(
+            y=["_"], x=[frac], orientation="h", name=name, marker_color=color,
+            marker_line_width=0,
+            text=[f"{frac:.0%}"] if frac > 0.06 else [""],
+            textposition="inside", insidetextanchor="middle",
+            textfont=dict(color="#ffffff", size=12),
+            hovertemplate=f"{name}: %{{x:.1%}}<extra></extra>",
+        ))
+
+    for i, f in enumerate(abp):
+        _seg(tr("autocalled_p").format(p=i + 1), f, blues[min(i, len(blues) - 1)])
+    _seg(tr("redeemed_at_par"), redeemed, "#16a34a")
+    _seg(tr("knocked_in"), ki, "#dc2626")
+
+    fig.update_layout(
+        title=tr("outcome_breakdown"),
+        barmode="stack", bargap=0.4,
+        xaxis=dict(title=tr("outcome_axis"), tickformat=".0%", range=[0, 1]),
+        yaxis=dict(showticklabels=False, showgrid=False, zeroline=False),
+        legend=dict(orientation="h", yanchor="top", y=-0.25, xanchor="center", x=0.5,
+                    font=dict(size=10), bgcolor="rgba(0,0,0,0)"),
+    )
+    _apply_theme(fig)
+    fig.update_layout(margin=dict(l=24, r=24, t=50, b=64))
+    return fig
+
+
 def build_backtest_outcome_bar(
     bt:         pd.DataFrame,
     color_map:  dict[str, str],

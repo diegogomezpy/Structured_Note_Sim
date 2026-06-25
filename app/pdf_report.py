@@ -274,6 +274,7 @@ _LABELS: dict[str, dict[str, str]] = {
     "loss_given_ki":         {"en": "Loss given knock-in",               "es": "Pérdida dado knock-in"},
     "n_paths":               {"en": "Simulated paths",                   "es": "Caminos simulados"},
     "autocall_by_period":    {"en": "Autocall Probability by Period",    "es": "Probabilidad de Autocall por Período"},
+    "fig_outcome":           {"en": "Outcome breakdown",                 "es": "Distribución de resultados"},
     "period":                {"en": "Period",                            "es": "Período"},
     "time_y":                {"en": "Time (yrs)",                        "es": "Tiempo (años)"},
     "p_autocall":            {"en": "P(autocall)",                       "es": "P(autocall)"},
@@ -3261,7 +3262,7 @@ def _build_pdf_report(
         # The Model & Methodology callout describes the Heston Monte Carlo engine,
         # so it is included only when the report actually carries MC output. A
         # Note-details / backtest / live-only report (sim skipped) omits it.
-        _mc_keys = {"mc_metrics", "mc_irr", "mc_autocall", "mc_wof",
+        _mc_keys = {"mc_metrics", "mc_outcome", "mc_irr", "mc_autocall", "mc_wof",
                     "mc_single_wof", "calib_table", "calib_corr"}
         _mc_keys |= {f"mc_fan_{i}" for i in range(len(asset_names or []))}
         if any(_inc(k) for k in _mc_keys):
@@ -3398,6 +3399,10 @@ def _build_pdf_report(
             (_t("loss_given_ki",      lang), _lgki_str),
             (_t("n_paths",            lang), f"{n_paths_val:,}"),
         ])
+    if _inc("mc_outcome") and figures.get("outcome") is not None:
+        _sec()
+        pdf.figure(_fig_to_png(figures.get("outcome"), width=900, height=300, **_kw),
+                   _t("fig_outcome", lang), src_mc)
     if _inc("mc_irr"):
         _sec()
         pdf.figure(_fig_to_png(figures.get("irr_dist"), **_kw), _t("fig_irr", lang), src_mc)

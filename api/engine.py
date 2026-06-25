@@ -496,6 +496,9 @@ def run_simulation(terms: NoteTerms, *, n_paths: int = 10000, seed: int = 42,
     obs_pairs, asset_names, eng_used = sf["obs_pairs"], sf["asset_names"], sf["eng_used"]
 
     figures = {
+        "outcome": _fig(charts.build_outcome_breakdown(
+            note.get("prob_autocall_by_period"), note.get("prob_maturity"),
+            note.get("prob_knock_in_total"), tr)),
         "irr_dist": _fig(charts.build_irr_distribution(
             note["annualized_returns"], note.get("total_returns"),
             note["autocall_events"], note["expected_irr"], terms.coupon_pa, tr)),
@@ -1134,6 +1137,9 @@ def build_report_pdf(terms: NoteTerms, *, sections: list[str] | None = None, lan
         wof_bands, asset_bands = sf["wof_bands"], sf["asset_bands"]
         results = {**note, "params": cal_result.params, "corr_SS": cal_result.corr_SS}
         figures = {
+            "outcome": charts.build_outcome_breakdown(
+                note.get("prob_autocall_by_period"), note.get("prob_maturity"),
+                note.get("prob_knock_in_total"), tr),
             "irr_dist": charts.build_irr_distribution(
                 note["annualized_returns"], note.get("total_returns"),
                 note["autocall_events"], note["expected_irr"], terms.coupon_pa, tr),

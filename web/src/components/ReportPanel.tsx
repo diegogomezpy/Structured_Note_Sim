@@ -22,6 +22,7 @@ const TREE: Group[] = [
   ] },
   { key: 'mc', en: 'Monte Carlo', es: 'Monte Carlo', items: [
     ['mc_metrics', 'Summary & metrics', 'Resumen y métricas'],
+    ['mc_outcome', 'Outcome breakdown', 'Distribución de resultados'],
     ['mc_autocall', 'Autocall by period', 'Autocall por período'],
     ['mc_irr', 'IRR distribution', 'Distribución de TIR'],
     ['mc_wof', 'Worst-of fan chart', 'Abanico del peor de'],

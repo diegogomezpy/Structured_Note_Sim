@@ -88,6 +88,7 @@ export interface AssetFan {
 }
 
 export interface SimFigures {
+  outcome: any
   irr_dist: any
   wof_fan: any
   asset_fans: AssetFan[]
