@@ -256,13 +256,19 @@ def _build_path_marker_info(rows, autocall_q, n_obs, wof_levels, knock_in, terms
         if reached_mat:
             parts.append(tr("leg_knock_in") if knock_in else tr("leg_redeemed_par"))
 
+        # Number of coupons released at this observation (>1 when memory pays out
+        # accrued coupons in a lump) — drives the stacked-dot marker on the client.
+        released = round(amt / rate) if (rate and amt > 0) else (1 if amt > 0 else 0)
+
         if reached_mat and knock_in:
             kind = "knock_in"
+        elif reached_mat:
+            kind = "redeem"                       # matured at par, not knocked in
         elif called:
             kind = "call_coupon" if amt > 0 else "call"
         else:
             kind = "coupon" if amt > 0 else "missed"
-        info.append({"text": " · ".join(parts), "kind": kind})
+        info.append({"text": " · ".join(parts), "kind": kind, "n": int(released)})
     return info
 
 
@@ -292,7 +298,8 @@ def _path_payload(worst_path, asset_paths, asset_names, obs_steps, autocall_q,
         if s > cut:
             break
         markers.append({"x": s, "y": round(float(worst_path[s]), 4),
-                        "text": marker_info[i]["text"], "kind": marker_info[i]["kind"]})
+                        "text": marker_info[i]["text"], "kind": marker_info[i]["kind"],
+                        "n": int(marker_info[i].get("n", 1))})
 
     ac_sched = ([[int(s), float(lv)]
                  for s, lv in zip(obs_steps, terms.autocall_barrier_schedule())]

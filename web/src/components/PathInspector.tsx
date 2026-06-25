@@ -24,11 +24,15 @@ const MARKER_STYLE: Record<string, { symbol: string; color: string; size: number
   call:     { symbol: 'diamond', color: '#2563eb', size: 11 },
   coupon:   { symbol: 'circle', color: '#16a34a', size: 9 },
   missed:   { symbol: 'circle-open', color: '#d97706', size: 9 },
+  redeem:   { symbol: 'star', color: '#16a34a', size: 13 },
   knock_in: { symbol: 'x', color: '#dc2626', size: 11 },
 }
 // 'call_coupon' (autocall that also paid a coupon) shares the autocall marker.
 const normKind = (k: string) => (k === 'call_coupon' ? 'call' : k)
-const KIND_ORDER = ['coupon', 'missed', 'call', 'knock_in']
+const KIND_ORDER = ['coupon', 'missed', 'call', 'redeem', 'knock_in']
+// Vertical spacing (perf units) between the dots when a memory release pays
+// several coupons at once — drawn as a small stack.
+const STACK_DY = 0.03
 
 interface PathLabels {
   x: string; y: string; wof: string
@@ -69,14 +73,20 @@ function buildPathFig(path: PathData, labels: PathLabels) {
   }
 
   // Event markers — one named trace per kind present, ordered for a tidy legend.
+  // A memory payout (m.n > 1) is drawn as a small vertical stack of dots so you
+  // can see how many accrued coupons were released at that observation.
   const byKind: Record<string, typeof path.markers> = {}
   path.markers.forEach((m) => { (byKind[normKind(m.kind)] ||= []).push(m) })
   Object.keys(byKind).sort((a, b) => KIND_ORDER.indexOf(a) - KIND_ORDER.indexOf(b)).forEach((kind) => {
     const ms = byKind[kind]
     const st = MARKER_STYLE[kind] ?? MARKER_STYLE.coupon
+    const xs: number[] = [], ys: number[] = [], text: string[] = []
+    ms.forEach((m) => {
+      const stacks = Math.max(1, m.n ?? 1)
+      for (let j = 0; j < stacks; j++) { xs.push(m.x); ys.push(m.y + j * STACK_DY); text.push(m.text) }
+    })
     traces.push({
-      x: ms.map((m) => m.x), y: ms.map((m) => m.y), text: ms.map((m) => m.text),
-      mode: 'markers', type: 'scatter', name: labels.ev[kind] ?? kind,
+      x: xs, y: ys, text, mode: 'markers', type: 'scatter', name: labels.ev[kind] ?? kind,
       marker: { symbol: st.symbol, color: st.color, size: st.size, line: { color: '#fff', width: 1.5 } },
       hovertemplate: '%{text}<extra></extra>',
     })
@@ -236,7 +246,7 @@ function InspectorPanel({ fetcher, terms, label, onRemove }: {
     ? buildPathFig(data.path, {
         x: t('insp_time_step'), y: t('chart_wof'), wof: t('insp_wof_name'),
         par: t('insp_lvl_par'), ki: t('insp_lvl_ki'), ac: t('insp_lvl_autocall'),
-        ev: { coupon: t('insp_ev_coupon'), missed: t('insp_ev_missed'), call: t('insp_ev_call'), knock_in: t('insp_ev_knock_in') },
+        ev: { coupon: t('insp_ev_coupon'), missed: t('insp_ev_missed'), call: t('insp_ev_call'), redeem: t('insp_ev_redeem'), knock_in: t('insp_ev_knock_in') },
       })
     : null, [data, t])
 

@@ -259,7 +259,7 @@ export interface InspectFilters {
   coupon_periods?: number[]
 }
 
-export interface PathMarker { x: number; y: number; text: string; kind: string }
+export interface PathMarker { x: number; y: number; text: string; kind: string; n?: number }
 
 export interface PathData {
   t: number[]

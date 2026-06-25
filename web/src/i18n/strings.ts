@@ -179,8 +179,16 @@ export const S: Dict = {
   diag_lgd_onestar: { en: 'One-Star — a single underlying at or above {lvl} on its own satisfies the coupon, autocall and capital conditions.', es: 'One-Star — un único subyacente en o por encima de {lvl} basta por sí solo para cumplir cupón, autocancelación y capital.' },
 
   // hero metrics
-  expected_irr:     { en: 'Expected IRR', es: 'TIR esperada' },
-  p_autocall:       { en: 'P(autocall)', es: 'P(autocancelación)' },
+  expected_irr:     { en: 'Expected IRR p.a. (simple)', es: 'TIR esperada anual (simple)' },
+  expected_total_return: { en: 'Expected total return', es: 'Retorno total esperado' },
+  expected_coupon:  { en: 'Expected coupon', es: 'Cupón esperado' },
+  loss_given_ki:    { en: 'Loss given knock-in', es: 'Pérdida dado knock-in' },
+  hero_return:      { en: 'Expected return', es: 'Retorno esperado' },
+  hero_risk:        { en: 'Risk & protection', es: 'Riesgo y protección' },
+  tip_expected_total_return: { en: 'Mean total return across all paths (capital + coupons − any loss), not annualised.', es: 'Retorno total medio sobre todas las trayectorias (capital + cupones − pérdidas), sin anualizar.' },
+  tip_expected_coupon: { en: 'Mean total coupons collected per path, as a fraction of nominal.', es: 'Cupones totales medios cobrados por trayectoria, como fracción del nominal.' },
+  tip_loss_given_ki: { en: 'Mean return on the paths that knocked in — the average outcome when capital is at risk.', es: 'Retorno medio en las trayectorias con knock-in — el resultado medio cuando el capital está en riesgo.' },
+  p_autocall:       { en: 'P(autocalled)', es: 'P(autocancelación)' },
   p_knock_in:       { en: 'P(knock-in)', es: 'P(knock-in)' },
   exp_payout:       { en: 'Expected payout', es: 'Pago esperado' },
   per_100:          { en: 'per 100 nominal', es: 'por 100 nominal' },
