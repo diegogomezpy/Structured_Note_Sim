@@ -81,7 +81,12 @@ export default function ReportPanel({ terms, opts }: { terms: NoteTerms; opts: R
     try {
       const b = await api.branding(file) as Record<string, any>
       const flat = (v: unknown) => (v && typeof v === 'object' ? ((v as any)[lang] ?? (v as any).en ?? '') : v)
-      setBrand({ ...b, report_title: flat(b.report_title), footer_note: flat(b.footer_note) } as Branding)
+      setBrand({
+        ...b,
+        report_title: flat(b.report_title),
+        footer_note: flat(b.footer_note),
+        disclaimer_body: flat(b.disclaimer_body),
+      } as Branding)
     } catch { /* ignore */ }
   }
 
@@ -166,24 +171,46 @@ export default function ReportPanel({ terms, opts }: { terms: NoteTerms; opts: R
           </div>
         )}
         {brandOpen && (
-          <div style={{ padding: '0 16px 18px', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 14 }}>
-            <Field label={t('brand_firm')}><input type="text" value={brand.firm_name ?? ''} onChange={(e) => setBrandField('firm_name', e.target.value)} /></Field>
-            <Field label={t('brand_title')}><input type="text" value={brand.report_title ?? ''} onChange={(e) => setBrandField('report_title', e.target.value)} /></Field>
-            <Field label={t('brand_footer')}><input type="text" value={brand.footer_note ?? ''} onChange={(e) => setBrandField('footer_note', e.target.value)} /></Field>
-            <Field label={t('brand_primary')}>
-              <input type="color" value={brand.primary_color ?? '#1a2e4a'} onChange={(e) => setBrandField('primary_color', e.target.value)} style={{ height: 38, padding: 3 }} />
-            </Field>
-            <Field label={t('brand_accent')}>
-              <input type="color" value={brand.accent_color ?? '#2563eb'} onChange={(e) => setBrandField('accent_color', e.target.value)} style={{ height: 38, padding: 3 }} />
-            </Field>
-            <Field label={t('brand_logo')}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <button className="btn" style={{ padding: '7px 12px' }} onClick={() => logoRef.current?.click()}><Icon name="upload" size={13} /> {t('det_upload_logo')}</button>
-                {brand.logo_base64 && <img src={brand.logo_base64} alt="logo" style={{ height: 26, borderRadius: 5 }} />}
-                {brand.logo_base64 && <button className="btn btn--ghost" style={{ padding: '4px 8px', fontSize: 11.5 }} onClick={() => setBrandField('logo_base64', '')}>{t('det_reset_logo')}</button>}
-                <input ref={logoRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={(e) => onLogo(e.target.files?.[0])} />
+          <div style={{ padding: '0 16px 18px', display: 'flex', flexDirection: 'column', gap: 18 }}>
+            {/* Identity */}
+            <div>
+              <SubHead>{t('brand_identity')}</SubHead>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 14 }}>
+                <Field label={t('brand_firm')}><input type="text" value={brand.firm_name ?? ''} onChange={(e) => setBrandField('firm_name', e.target.value)} /></Field>
+                <Field label={t('brand_title')}><input type="text" value={brand.report_title ?? ''} onChange={(e) => setBrandField('report_title', e.target.value)} /></Field>
+                <Field label={t('brand_website')}><input type="text" placeholder="www.firm.com" value={brand.website ?? ''} onChange={(e) => setBrandField('website', e.target.value)} /></Field>
+                <Field label={t('brand_contact')}><input type="text" placeholder="research@firm.com" value={brand.contact ?? ''} onChange={(e) => setBrandField('contact', e.target.value)} /></Field>
+                <Field label={t('brand_logo')}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <button className="btn" style={{ padding: '7px 12px' }} onClick={() => logoRef.current?.click()}><Icon name="upload" size={13} /> {t('det_upload_logo')}</button>
+                    {brand.logo_base64 && <img src={brand.logo_base64} alt="logo" style={{ height: 26, borderRadius: 5 }} />}
+                    {brand.logo_base64 && <button className="btn btn--ghost" style={{ padding: '4px 8px', fontSize: 11.5 }} onClick={() => setBrandField('logo_base64', '')}>{t('det_reset_logo')}</button>}
+                    <input ref={logoRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={(e) => onLogo(e.target.files?.[0])} />
+                  </div>
+                </Field>
               </div>
-            </Field>
+            </div>
+
+            {/* Colours */}
+            <div>
+              <SubHead>{t('brand_colors')}</SubHead>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 14 }}>
+                <Swatch label={t('brand_primary')}   value={brand.primary_color} fallback="#1a2e4a" onChange={(v) => setBrandField('primary_color', v)} />
+                <Swatch label={t('brand_accent')}    value={brand.accent_color} fallback="#2563eb" onChange={(v) => setBrandField('accent_color', v)} />
+                <Swatch label={t('brand_secondary')} value={brand.chart_secondary_color} fallback="#c69426" onChange={(v) => setBrandField('chart_secondary_color', v)} />
+                <Swatch label={t('brand_rule')}      value={brand.section_rule_color} fallback="#2563eb" onChange={(v) => setBrandField('section_rule_color', v)} />
+                <Swatch label={t('brand_panel')}     value={brand.panel_color} fallback="#eaf1f8" onChange={(v) => setBrandField('panel_color', v)} />
+              </div>
+            </div>
+
+            {/* Legal text */}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 14 }}>
+              <Field label={t('brand_footer')}><input type="text" value={brand.footer_note ?? ''} onChange={(e) => setBrandField('footer_note', e.target.value)} /></Field>
+              <Field label={t('brand_disclaimer')}>
+                <textarea value={brand.disclaimer_body ?? ''} onChange={(e) => setBrandField('disclaimer_body', e.target.value)}
+                  style={{ width: '100%', minHeight: 84, resize: 'vertical', fontFamily: 'inherit', fontSize: 12.5, lineHeight: 1.5, padding: '9px 11px', borderRadius: 9, border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--text)' }} />
+              </Field>
+            </div>
           </div>
         )}
       </Panel>
@@ -207,5 +234,26 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
       <label style={{ fontSize: 11.5, color: 'var(--text-muted)', display: 'block', marginBottom: 6 }}>{label}</label>
       {children}
     </div>
+  )
+}
+
+function SubHead({ children }: { children: React.ReactNode }) {
+  return (
+    <div style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: '0.07em', textTransform: 'uppercase', color: 'var(--text-faint)', marginBottom: 10 }}>{children}</div>
+  )
+}
+
+/** Colour field: a swatch that opens the native picker + a hex readout. */
+function Swatch({ label, value, fallback, onChange }: { label: string; value?: string; fallback: string; onChange: (v: string) => void }) {
+  const v = value ?? fallback
+  return (
+    <Field label={label}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <input type="color" value={v} onChange={(e) => onChange(e.target.value)}
+          style={{ height: 34, width: 44, padding: 3, flexShrink: 0, cursor: 'pointer' }} />
+        <input type="text" value={value ?? ''} placeholder={fallback} onChange={(e) => onChange(e.target.value)}
+          className="mono" style={{ fontSize: 12, padding: '7px 9px' }} />
+      </div>
+    </Field>
   )
 }

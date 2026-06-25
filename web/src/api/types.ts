@@ -290,9 +290,15 @@ export interface Branding {
   report_title?: string
   primary_color?: string
   accent_color?: string
-  logo_base64?: string
+  chart_secondary_color?: string
+  section_rule_color?: string
+  panel_color?: string
+  website?: string
+  contact?: string
   footer_note?: string
-  [k: string]: unknown        // presets carry extra keys (panel/rule colours, website…)
+  disclaimer_body?: string
+  logo_base64?: string
+  [k: string]: unknown        // presets carry extra keys we pass straight through
 }
 
 export interface ReportRequest {

@@ -1,10 +1,11 @@
-import { useEffect, useRef, useState } from 'react'
-import { toPng } from 'html-to-image'
+import { useEffect, useState } from 'react'
 import { api } from '../api/client'
 import { useI18n } from '../i18n/I18nProvider'
+import { useLogos } from '../lib/logos'
+import { renderUnderlyingCard } from '../lib/cardImage'
 import Figure from './Figure'
 import Icon from './Icon'
-import TickerLogo, { LogoImg } from './TickerLogo'
+import TickerLogo, { LogoImg, proxify, tickerFallbacks } from './TickerLogo'
 import { SENTIMENT_COLOR } from './UnderlyingDetails'
 import { marketCap, price, pct, num } from '../lib/format'
 import type { NoteTerms, UnderlyingMetric, UnderlyingOverride } from '../api/types'
@@ -39,43 +40,50 @@ function Description({ text }: { text: string }) {
 
 function Card({ m, override }: { m: UnderlyingMetric; override: UnderlyingOverride }) {
   const { t } = useI18n()
+  const logos = useLogos()
   const sub = [m.type, m.sector].filter(Boolean).join(' · ') || '—'
   const ivRealized = m.iv_source === 'realized'
   const desc = override.description || m.business_summary
   const a = override.analyst
   const total = a ? (a.buy + a.hold + a.sell) : 0
-  const cardRef = useRef<HTMLDivElement>(null)
   const [hover, setHover] = useState(false)
+  const [saving, setSaving] = useState(false)
 
+  // Download the whole card as a PNG. The image is composited on a <canvas>
+  // (lib/cardImage) — header, metrics, analyst bar, the report-styled 1Y chart,
+  // and a trimmed description — rather than snapshotting the live DOM (which can't
+  // rasterise the nested Plotly SVG). Deterministic and always the report palette.
   const downloadCard = async () => {
-    if (!cardRef.current) return
-    const bg = getComputedStyle(cardRef.current).backgroundColor
+    setSaving(true)
     try {
-      // fontEmbedCSS:'' short-circuits html-to-image's cross-origin read of the
-      // Google Fonts stylesheet (which otherwise throws a SecurityError); the
-      // snapshot captures the rendered DOM as-is.
-      const url = await toPng(cardRef.current, {
-        pixelRatio: 2, backgroundColor: bg, skipFonts: true, fontEmbedCSS: '',
-        filter: (n) => !(n as HTMLElement).dataset?.noCapture,
+      const logoUrls = override.logo
+        ? [override.logo]
+        : [proxify(logos.ticker(m.symbol)), ...tickerFallbacks(m.symbol).map(proxify)]
+      const url = await renderUnderlyingCard(m, override, logoUrls, {
+        marketCap: t('ul_market_cap'), iv: t('ul_iv_3m'), vol: t('ul_vol_3m'),
+        lastPrice: t('ul_last_price'), rsi: t('ul_rsi'), analyst: t('ul_analyst'),
+        buy: t('sent_buy'), hold: t('sent_hold'), sell: t('sent_sell'),
       })
       const link = document.createElement('a')
       link.href = url; link.download = `${m.name.replace(/[^A-Za-z0-9]+/g, '_')}.png`
       document.body.appendChild(link); link.click(); link.remove()
     } catch (e) {
-      console.warn('card capture failed', e)
+      console.warn('card export failed', e)
+    } finally {
+      setSaving(false)
     }
   }
 
   return (
-    <div ref={cardRef} className="card" style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 13, position: 'relative' }}
+    <div className="card" style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 13, position: 'relative' }}
          onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)}>
-      <button data-no-capture onClick={downloadCard} title={t('ul_download_card')} aria-label={t('ul_download_card')}
+      <button onClick={downloadCard} disabled={saving} title={t('ul_download_card')} aria-label={t('ul_download_card')}
         style={{
-          position: 'absolute', top: 10, right: 10, zIndex: 2, padding: 6, borderRadius: 8, cursor: 'pointer',
+          position: 'absolute', top: 10, right: 10, zIndex: 2, padding: 6, borderRadius: 8, cursor: saving ? 'default' : 'pointer',
           background: 'var(--surface)', border: '1px solid var(--border)', color: 'var(--text-muted)',
-          opacity: hover ? 0.95 : 0, transition: 'opacity .15s ease',
+          opacity: hover || saving ? 0.95 : 0, transition: 'opacity .15s ease',
         }}>
-        <Icon name="download" size={14} />
+        <Icon name={saving ? 'spinner' : 'download'} size={14} />
       </button>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
         {override.logo ? <LogoImg url={override.logo} name={m.name} size={28} /> : <TickerLogo symbol={m.symbol} name={m.name} size={28} />}

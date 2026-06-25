@@ -21,13 +21,32 @@ export default function Figure({ fig, height, name = 'chart', noDownload }: { fi
   const gd = useRef<any>(null)
   const [hover, setHover] = useState(false)
 
-  const download = () => {
-    if (!gd.current) return
-    const rect = gd.current.getBoundingClientRect?.() ?? { width: 1000, height: 560 }
-    Plotly.downloadImage(gd.current, {
-      format: 'png', filename: name,
-      width: Math.max(900, Math.round(rect.width)), height: Math.max(500, Math.round(rect.height)), scale: 2,
-    })
+  // Export a clean, report-styled PNG: re-theme to the light palette (matching
+  // the PDF charts) on a solid white canvas with generous margins, regardless of
+  // the active UI mode — a dark-mode screen export would otherwise look nothing
+  // like the report. Renders off-screen via toImage so the on-screen chart is
+  // untouched.
+  const download = async () => {
+    const W = 1120, H = 640
+    const light = themeFigure(fig, 'light')
+    const hasTitle = !!light.layout?.title?.text
+    const layout = {
+      ...light.layout,
+      paper_bgcolor: '#ffffff', plot_bgcolor: '#ffffff',
+      width: W, height: H,
+      margin: { l: 70, r: 32, t: hasTitle ? 66 : 36, b: 60 },
+    }
+    try {
+      const url = await Plotly.toImage(
+        { data: light.data, layout, config: { staticPlot: true } } as any,
+        { format: 'png', width: W, height: H, scale: 2 },
+      )
+      const a = document.createElement('a')
+      a.href = url; a.download = `${name}.png`
+      document.body.appendChild(a); a.click(); a.remove()
+    } catch (e) {
+      console.warn('chart download failed', e)
+    }
   }
 
   return (

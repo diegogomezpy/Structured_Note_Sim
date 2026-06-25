@@ -68,7 +68,8 @@ export default function App() {
 
   const loadConfig = useCallback(async (file: string) => {
     setConfigFile(file)
-    const tm = await api.config(file)
+    // Empty selection = the blank-note starting point (no backend fetch).
+    const tm = file ? await api.config(file) : blankNote()
     setTerms(tm)
     setResult(null)
     setRunSig('')

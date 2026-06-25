@@ -127,6 +127,58 @@ def logos():
             "issuers": underlyings.ISSUER_LOGOS}
 
 
+# Same-origin logo proxy. The client routes every remote logo through here so the
+# images are (a) same-origin — letting the "download card as image" capture embed
+# them without a cross-origin canvas-taint / fetch failure — and (b) resilient to
+# CDNs that block hot-linking. Restricted to a host allowlist (no open SSRF), with
+# a small in-memory byte cache. A miss returns 404 so the client's <img> onError
+# advances to the next fallback source (and ultimately the monogram).
+from collections import OrderedDict as _OD            # noqa: E402
+import urllib.parse as _uparse                        # noqa: E402
+import urllib.request as _ureq                        # noqa: E402
+
+_LOGO_PROXY_CACHE: "_OD[str, tuple[bytes, str]]" = _OD()
+_LOGO_PROXY_MAX = 512
+_LOGO_ALLOW_HOSTS = {
+    "assets.parqet.com", "www.google.com", "s2.googleusercontent.com",
+    "financialmodelingprep.com", "logo.clearbit.com", "img.logo.dev",
+}
+
+
+@app.get("/api/logo")
+def logo_proxy(u: str):
+    """Fetch a remote logo (allowlisted hosts only) and stream it back same-origin.
+    Returns 404 on any failure so the client falls through to its next source."""
+    try:
+        parsed = _uparse.urlparse(u)
+        if parsed.scheme not in ("http", "https") or parsed.hostname not in _LOGO_ALLOW_HOSTS:
+            raise ValueError("host not allowed")
+    except Exception:
+        raise HTTPException(status_code=400, detail="bad logo url")
+
+    hit = _LOGO_PROXY_CACHE.get(u)
+    if hit is not None:
+        _LOGO_PROXY_CACHE.move_to_end(u)
+        body, ctype = hit
+        return Response(body, media_type=ctype, headers={"Cache-Control": "public, max-age=86400"})
+
+    try:
+        req = _ureq.Request(u, headers={"User-Agent": "Mozilla/5.0 (StructuredNoteSim logo proxy)"})
+        with _ureq.urlopen(req, timeout=6) as resp:
+            body = resp.read(2_000_000)                # cap at 2 MB
+            ctype = resp.headers.get("Content-Type", "image/png").split(";")[0].strip() or "image/png"
+    except Exception:
+        raise HTTPException(status_code=404, detail="logo unavailable")
+
+    if not body or not ctype.startswith("image/"):
+        raise HTTPException(status_code=404, detail="not an image")
+
+    _LOGO_PROXY_CACHE[u] = (body, ctype)
+    if len(_LOGO_PROXY_CACHE) > _LOGO_PROXY_MAX:
+        _LOGO_PROXY_CACHE.popitem(last=False)
+    return Response(body, media_type=ctype, headers={"Cache-Control": "public, max-age=86400"})
+
+
 @app.get("/api/configs")
 def list_configs():
     """Bundled note term-sheet configs."""

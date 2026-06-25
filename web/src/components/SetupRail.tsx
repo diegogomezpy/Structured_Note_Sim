@@ -94,7 +94,7 @@ export default function SetupRail({
                  onChange={(e) => onFile(e.target.files?.[0])} />
         </div>
         <select value={configFile} onChange={(e) => onSelectConfig(e.target.value)}>
-          {configFile === '' && <option value="">{t('blank_note')}</option>}
+          <option value="">{t('blank_note')}</option>
           {configs.map((c) => <option key={c.file} value={c.file}>{c.name}</option>)}
         </select>
         {uploadErr && <div style={{ fontSize: 11.5, color: 'var(--red)', marginTop: 5 }}>{uploadErr}</div>}

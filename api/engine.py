@@ -34,7 +34,8 @@ from core.simulator import HestonMultiSimulator                   # noqa: E402
 from core.backtest import run_backtest, snapped_obs_dates         # noqa: E402
 from data.loader import (load_prices, load_dividends,             # noqa: E402
                           build_dividend_schedule, load_underlying_metrics,
-                          fetch_business_summary, resolve_issuer_summary)
+                          fetch_business_summary, resolve_issuer_summary,
+                          translate_text)
 import charts            # noqa: E402  (app/charts.py)
 import translations      # noqa: E402  (app/translations.py)
 import underlyings       # noqa: E402  (app/underlyings.py)
@@ -71,6 +72,32 @@ def _prices(tickers: dict, *, years: float | None, field: str = "close") -> pd.D
             oldest = min(_PRICE_CACHE.items(), key=lambda kv: kv[1][0])[0]
             _PRICE_CACHE.pop(oldest, None)
     return df
+
+
+# ── Translation cache ─────────────────────────────────────────────────────────
+# Machine translation (translate_text) is a network round-trip; the underlying
+# cards re-fetch metrics on every language switch, so cache by (text, lang) to
+# avoid re-translating the same Yahoo summary repeatedly.
+_TR_CACHE: "OrderedDict[tuple, str]" = OrderedDict()
+_TR_MAX = 256
+_TR_LOCK = threading.Lock()
+
+
+def _translated(text: str | None, lang: str) -> str | None:
+    """Cached translate_text. Returns text unchanged for English/blank input."""
+    if not text or not text.strip() or lang in (None, "", "en"):
+        return text
+    key = (text, lang)
+    with _TR_LOCK:
+        if key in _TR_CACHE:
+            _TR_CACHE.move_to_end(key)
+            return _TR_CACHE[key]
+    out = translate_text(text, lang) or text
+    with _TR_LOCK:
+        _TR_CACHE[key] = out
+        if len(_TR_CACHE) > _TR_MAX:
+            _TR_CACHE.popitem(last=False)
+    return out
 
 
 # ── In-memory run store (bounded) ─────────────────────────────────────────────
@@ -980,7 +1007,7 @@ def run_underlying_metrics(tickers: dict, *, lang: str = "en") -> list[dict]:
             "iv_source":  m.get("iv_source"),
             "last_price": _f(m.get("last_price")),
             "rsi_14":     _f(m.get("rsi_14")),
-            "business_summary": m.get("business_summary"),
+            "business_summary": _translated(m.get("business_summary"), lang),
             "figure":     fig,
         })
     return out
@@ -1004,14 +1031,11 @@ def run_describe(*, issuer: str | None = None, symbols: list[str] | None = None,
         except Exception as e:
             print(f"[describe] summary for {sym} failed: {e}")
             out["underlyings"][sym] = None
-    if lang == "es":
+    if lang and lang != "en":
         try:
-            from data.loader import translate_text
-            if out["issuer_description"]:
-                out["issuer_description"] = translate_text(out["issuer_description"], "es") or out["issuer_description"]
+            out["issuer_description"] = _translated(out["issuer_description"], lang)
             for k, v in list(out["underlyings"].items()):
-                if v:
-                    out["underlyings"][k] = translate_text(v, "es") or v
+                out["underlyings"][k] = _translated(v, lang)
         except Exception as e:
             print(f"[describe] translation skipped: {e}")
     return out
