@@ -201,7 +201,7 @@ def _resolve_palette(branding: dict | None) -> tuple[
 # ──────────────────────────────────────────────────────────────────────────────
 _LABELS: dict[str, dict[str, str]] = {
     "series_title":          {"en": "Structured Note Analytics",         "es": "Análisis de Nota Estructurada"},
-    "report_eyebrow":        {"en": "STRUCTURED NOTE ANALYTICS",         "es": "ANÁLISIS DE NOTA ESTRUCTURADA"},
+    "report_eyebrow":        {"en": "STRUCTURED NOTE",                   "es": "NOTA ESTRUCTURADA"},
     "generated":             {"en": "Publication date",                  "es": "Fecha de publicación"},
     "underlyings":           {"en": "UNDERLYINGS",                       "es": "SUBYACENTES"},
     "key_terms":             {"en": "KEY TERMS",                         "es": "TÉRMINOS CLAVE"},
@@ -2355,14 +2355,14 @@ def _front_cover_page(pdf: _NotePDF, terms, lang: str, report_title: str, websit
 
     # Eyebrow ("NOTA ESTRUCTURADA"), letter-spaced, white.
     eb = (report_title or _t("report_eyebrow", lang)).upper()
-    pdf.set_xy(0, H * 0.17 + 30)
-    pdf._sf(15, "light")
+    pdf.set_xy(0, H * 0.17 + 29)
+    pdf._sf(22, "light")
     pdf.set_text_color(255, 255, 255)
     try:
-        pdf.set_char_spacing(3.2)
+        pdf.set_char_spacing(3.0)
     except Exception:
         pass
-    pdf.cell(W, 8, _safe(eb), align="C")
+    pdf.cell(W, 11, _safe(eb), align="C")
     try:
         pdf.set_char_spacing(0)
     except Exception:
@@ -2460,14 +2460,40 @@ def _full_bleed_disclaimer(pdf: _NotePDF, lang: str, text: str, website: str = "
     pdf.set_line_width(0.8)
     pdf.line(pdf.l_margin, 33, W - pdf.r_margin, 33)
 
+    inner = W - pdf.l_margin - pdf.r_margin
+    _paras = (text or "").split("\n\n")
+
+    # Backing panel behind the title + body so the white legal text stays legible
+    # over the photo (which can be light in places). A darkened brand-colour card,
+    # semi-opaque and rounded like the figure cards — measured to fit the text.
+    if _paras and _paras[0]:
+        body_h = 0.0
+        try:
+            from fpdf.enums import MethodReturnValue as _MRV
+            for _i, _para in enumerate(_paras):
+                pdf._sf(7.6, "bold" if _i == len(_paras) - 1 else "regular")
+                body_h += pdf.multi_cell(inner, 4.0, _safe(_para), align="J",
+                                         dry_run=True, output=_MRV.HEIGHT) + 2.6
+        except Exception:
+            body_h = H * 0.42   # generous fallback if measurement isn't available
+        ptop, pbot = 37.0, min(54.0 + body_h + 6.0, H - 26.0)
+        pdf.set_fill_color(*_blend(pdf.primary_color, (0, 0, 0), 0.5))
+        try:
+            with pdf.local_context(fill_opacity=0.6):
+                pdf.rect(pdf.l_margin - 5, ptop, inner + 10, pbot - ptop,
+                         style="F", round_corners=True, corner_radius=4)
+        except Exception:
+            try:
+                pdf.rect(pdf.l_margin - 5, ptop, inner + 10, pbot - ptop, style="F")
+            except Exception:
+                pass
+
     pdf.set_xy(pdf.l_margin, 41)
     pdf._sf(16, "bold")
     pdf.set_text_color(255, 255, 255)
     pdf.cell(0, 8, _safe(_t("disclaimer_title", lang)), new_x="LMARGIN", new_y="NEXT")
 
     pdf.set_xy(pdf.l_margin, 54)
-    inner = W - pdf.l_margin - pdf.r_margin
-    _paras = (text or "").split("\n\n")
     for _i, _para in enumerate(_paras):
         pdf.set_x(pdf.l_margin)
         pdf._sf(7.6, "bold" if _i == len(_paras) - 1 else "regular")

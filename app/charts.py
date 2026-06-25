@@ -557,14 +557,18 @@ def build_sample_paths(
     if P > n_show:
         idx = np.random.default_rng(0).choice(P, size=n_show, replace=False)
     kind = np.where(ki[idx], "ki", np.where(ap[idx] > 0, "ac", "mat"))
+    # Draw order matters: the dominant autocalled mass goes at the BACK (so it
+    # doesn't blend everything into an indistinct teal), with held-to-maturity and
+    # the rarer knocked-in paths on top, each in a clearly saturated colour and a
+    # slightly heavier weight so individual trajectories stay distinguishable.
     spec = [
-        ("mat", "rgba(22,163,74,0.30)",  tr("sp_held")),
-        ("ac",  "rgba(37,99,235,0.22)",  tr("sp_autocalled")),
-        ("ki",  "rgba(220,38,38,0.40)",  tr("knocked_in")),
+        ("ac",  "rgba(37,99,235,0.40)",  0.7, tr("sp_autocalled")),
+        ("mat", "rgba(22,163,74,0.65)",  0.8, tr("sp_held")),
+        ("ki",  "rgba(220,38,38,0.80)",  1.0, tr("knocked_in")),
     ]
     tg = list(np.asarray(t_grid))
     fig = go.Figure()
-    for code, col, name in spec:
+    for code, col, w, name in spec:
         sel = idx[kind == code]
         if len(sel) == 0:
             continue
@@ -573,7 +577,7 @@ def build_sample_paths(
             xs.extend(tg); xs.append(None)
             ys.extend(list(wof[i])); ys.append(None)
         fig.add_trace(go.Scatter(x=xs, y=ys, mode="lines", name=name,
-                                 line=dict(color=col, width=0.6), hoverinfo="skip"))
+                                 line=dict(color=col, width=w), hoverinfo="skip"))
     fig.add_hline(y=autocall_barrier, line_dash="dash", line_color=_BLUE,
                   annotation_text=tr("chart_autocall_barrier_lvl", lvl=f"{autocall_barrier:.0%}"),
                   annotation_position="right")
