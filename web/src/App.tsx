@@ -193,7 +193,7 @@ export default function App() {
   ]
 
   return (
-    <div style={{ minHeight: '100%', display: 'flex', flexDirection: 'column' }}>
+    <div className="ground" style={{ minHeight: '100%', display: 'flex', flexDirection: 'column' }}>
       <Header terms={terms} run={runMeta} />
 
       <div className="app-layout">

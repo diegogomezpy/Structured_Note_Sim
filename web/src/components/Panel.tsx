@@ -18,7 +18,7 @@ export default function Panel({
     <div className={`card ${className ?? ''}`} style={{ padding: pad }}>
       {(title || right) && (
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16, gap: 12, ...(flush ? { padding: '18px 18px 0' } : null) }}>
-          {title && <div className="section-label">{title}</div>}
+          {title && <div className="panel-title">{title}</div>}
           {right && <div style={{ fontSize: 11, color: 'var(--text-faint)' }}>{right}</div>}
         </div>
       )}

@@ -1,72 +1,102 @@
 /* ────────────────────────────────────────────────────────────────────────
-   Design system — Structured Note Simulator
-   Brand: IBM Plex Sans/Mono, navy #1a2e4a / blue #2563eb. Light + dark.
-   Theme is driven by [data-theme] on <html> (see ThemeProvider).
+   Mercator — Structured Products design system
+   Institutional. Three voices: Source Serif 4 (titles) + Hanken Grotesk (UI)
+   + IBM Plex Mono (ALL figures/data). Warm paper + ink, deep viridian accent,
+   on a faint graph-paper ground. Light-primary, dark-secondary.
+   Theme driven by [data-theme] on <html> (keep the existing ThemeProvider).
+
+   THE REGISTER (the core rule): every numeral, ticker, code, unit, and
+   eyebrow label is set in IBM Plex Mono, tabular. Serif carries titles only;
+   sans carries body + controls. Direction is signed and coloured (viridian up
+   / rust down); units are split (number large, unit small + muted); tables are
+   ruled ledgers (heavy header rule + hairline rows + vertical rules).
+
+   The CSS variable NAMES are unchanged from the old file, so components compile
+   unchanged. The app-specific blocks the design bundle omits (native range
+   sliders, .range-dual, .pill, .app-layout, a couple of keyframes) are kept at
+   the bottom, restyled onto the Mercator tokens.
    ──────────────────────────────────────────────────────────────────────── */
+
 :root,
 :root[data-theme='light'] {
-  --bg:            #f5f8fc;
-  --bg-elev:       #eef3fa;
-  --surface:       #ffffff;
-  --surface-2:     #f1f5fb;
-  --surface-hover: #e9f0f9;
-  --text:          #1a2e4a;
-  --text-muted:    #5a6b85;
-  --text-faint:    #8a99b3;
-  --border:        #e3e9f2;
-  --border-strong: #cfd9e8;
-  --accent:        #2563eb;
-  --accent-hover:  #1d4ed8;
-  --accent-weak:   #e7f0fe;
-  --accent-text:   #1d4ed8;
-  --navy:          #1a2e4a;
-  --green:         #16a34a;
-  --green-weak:    #e7f6ec;
-  --red:           #dc2626;
-  --red-weak:      #fdecec;
-  --amber:         #d97706;
-  --amber-weak:    #fcf0dd;
-  --ring:          rgba(37, 99, 235, 0.35);
-  --shadow:        0 1px 2px rgba(16, 33, 60, 0.05), 0 10px 26px -14px rgba(16, 33, 60, 0.18);
-  --header-bg:     #ffffff;
+  /* surfaces */
+  --bg:            #f7f5ef;   /* warm paper */
+  --bg-elev:       #f1eee4;
+  --surface:       #fffefb;
+  --surface-2:     #f1eee4;
+  --surface-hover: #efece3;
+  /* ink */
+  --text:          #1c241f;
+  --text-muted:    #5c635b;
+  --text-faint:    #8c9189;
+  /* lines */
+  --border:        #e6e1d5;
+  --border-strong: #d4cdbd;
+  --hairline:      #ece8dd;   /* NEW — faint in-card rules */
+  /* accent (deep viridian) */
+  --accent:        #15694e;
+  --accent-hover:  #114e3a;
+  --accent-weak:   #e4efe9;
+  --accent-text:   #15694e;
+  /* semantic — calm, not alarm */
+  --green:         #15694e;   /* positive uses the viridian family */
+  --green-weak:    #e4efe9;
+  --red:           #9c3b30;   /* claret, for losses / negatives */
+  --red-weak:      #f5e6e3;
+  --amber:         #9a6b1a;   /* ochre, for "stale / changed" notices */
+  --amber-weak:    #f5edd9;
+  /* misc */
+  --ring:          rgba(21, 105, 78, 0.28);
+  --shadow:        0 1px 2px rgba(40, 35, 20, 0.05), 0 12px 30px -20px rgba(40, 35, 20, 0.18);
+  --header-bg:     #fffefb;
+
+  /* NEW TOKENS — type */
+  --font-serif:    'Source Serif 4', Georgia, 'Times New Roman', serif;
+  --font-sans:     'Hanken Grotesk', system-ui, -apple-system, sans-serif;
+  --font-mono:     'IBM Plex Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+
+  /* graph-paper ground — apply to the app shell via .ground */
+  --grid-minor:    #e7e0cf;
+  --grid-major:    #ddd4bf;
 }
 
 :root[data-theme='dark'] {
-  --bg:            #070b14;
-  --bg-elev:       #0a111e;
-  --surface:       #111c31;
-  --surface-2:     #1a2842;
-  --surface-hover: #223251;
-  --text:          #eaf1fc;
-  --text-muted:    #9db0cf;
-  --text-faint:    #67799a;
-  --border:        #2a3a57;
-  --border-strong: #3c4f74;
-  --accent:        #4f8cf7;
-  --accent-hover:  #74a4f9;
-  --accent-weak:   #15294c;
-  --accent-text:   #8fbcff;
-  --navy:          #cbd8ec;
-  --green:         #34d399;
-  --green-weak:    #0f3a2d;
-  --red:           #f87171;
-  --red-weak:      #3f2128;
-  --amber:         #fbbf24;
-  --amber-weak:    #3a2c14;
-  --ring:          rgba(79, 140, 247, 0.45);
-  --shadow:        0 1px 0 rgba(255,255,255,0.04) inset, 0 1px 3px rgba(0,0,0,0.5), 0 14px 36px -18px rgba(0,0,0,0.75);
-  --header-bg:     #0a121f;
+  --bg:            #0e1310;
+  --bg-elev:       #121712;
+  --surface:       #161c17;
+  --surface-2:     #1e261f;
+  --surface-hover: #232c24;
+  --text:          #eef1ea;
+  --text-muted:    #9aa49b;
+  --text-faint:    #6b756c;
+  --border:        #2a332c;
+  --border-strong: #3a453c;
+  --hairline:      #232c24;
+  --accent:        #3fae86;
+  --accent-hover:  #5cc09c;
+  --accent-weak:   #143026;
+  --accent-text:   #6ec9a6;
+  --green:         #3fae86;
+  --green-weak:    #143026;
+  --red:           #d97a6e;
+  --red-weak:      #3a2420;
+  --amber:         #d2a24e;
+  --amber-weak:    #352a16;
+  --ring:          rgba(63, 174, 134, 0.35);
+  --shadow:        0 1px 3px rgba(0,0,0,0.5), 0 14px 36px -18px rgba(0,0,0,0.7);
+  --header-bg:     #121712;
+  --grid-minor:    #1c241d;
+  --grid-major:    #232c24;
 }
 
 * { box-sizing: border-box; }
-
 html, body, #root { height: 100%; }
 
 body {
   margin: 0;
-  font-family: 'IBM Plex Sans', system-ui, -apple-system, sans-serif;
+  font-family: var(--font-sans);
   font-size: 14px;
-  line-height: 1.5;
+  line-height: 1.55;
   color: var(--text);
   background: var(--bg);
   -webkit-font-smoothing: antialiased;
@@ -74,9 +104,55 @@ body {
   transition: background 0.2s ease, color 0.2s ease;
 }
 
-h1, h2, h3 { font-weight: 600; color: var(--text); margin: 0; }
+/* Headings + display use the serif (titles ONLY — never figures). */
+h1, h2, h3 { font-family: var(--font-serif); font-weight: 600; color: var(--text); margin: 0; letter-spacing: -0.01em; }
 
-.mono { font-family: 'IBM Plex Mono', ui-monospace, monospace; font-variant-numeric: tabular-nums; }
+/* THE REGISTER — all figures are monospaced + tabular.
+   `.mono` is kept (the app already uses it) and now maps to IBM Plex Mono;
+   `.fig` is the same thing for new code. */
+.mono, .figure, .fig {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: 'tnum' 1;
+}
+.tnum { font-variant-numeric: tabular-nums; }
+
+/* Split unit — wrap the unit glyph (%, bps, y, €) so it sits smaller + muted
+   beside the figure:  <span class="fig">8.25<i class="fig-unit">%</i></span> */
+.fig-unit { font-style: normal; font-size: 0.55em; color: var(--text-faint); margin-left: 1px; }
+
+/* Signed P&L — direction carries the colour (viridian up / rust down). */
+.delta-pos { color: var(--accent); font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+.delta-neg { color: var(--red);    font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+
+/* Eyebrow / overline + caption labels — mono uppercase, NOT sans. */
+.eyebrow, .section-label {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+/* Serif panel/section title (the mock's panel headers). */
+.panel-title {
+  font-family: var(--font-serif);
+  font-weight: 600;
+  font-size: 14.5px;
+  letter-spacing: -0.01em;
+  color: var(--text);
+}
+.section-rule {            /* divider: label + hairline + optional caption */
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+.section-rule::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--border);
+}
 
 a { color: var(--accent-text); text-decoration: none; }
 
@@ -88,51 +164,129 @@ a { color: var(--accent-text); text-decoration: none; }
 .card {
   background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: 14px;
+  border-radius: 8px;          /* tighter, more institutional than 14px */
   box-shadow: var(--shadow);
 }
 
 .btn {
-  font-family: inherit;
+  font-family: var(--font-sans);
   font-size: 13px;
   font-weight: 500;
   color: var(--text);
   background: var(--surface);
   border: 1px solid var(--border-strong);
-  border-radius: 9px;
-  padding: 8px 14px;
+  border-radius: 5px;          /* squarer */
+  padding: 9px 16px;
   cursor: pointer;
   display: inline-flex;
   align-items: center;
   gap: 7px;
-  transition: background 0.12s ease, border-color 0.12s ease, transform 0.05s ease;
+  transition: background 0.12s ease, border-color 0.12s ease;
 }
 .btn:hover { background: var(--surface-hover); }
-.btn:active { transform: scale(0.985); }
 .btn:disabled { opacity: 0.5; cursor: not-allowed; }
-.btn--primary {
-  color: #fff;
-  background: var(--accent);
-  border-color: var(--accent);
-}
+.btn--primary { color: #fffefb; background: var(--accent); border-color: var(--accent); }
 .btn--primary:hover { background: var(--accent-hover); border-color: var(--accent-hover); }
-
 .btn--ghost { background: transparent; border-color: transparent; }
 .btn--ghost:hover { background: var(--surface-hover); }
+/* Text-link action (e.g. "Re-run", "View report") */
+.btn--link {
+  background: none; border: none; padding: 0;
+  color: var(--accent); font-weight: 600;
+  border-bottom: 1.5px solid var(--accent); border-radius: 0;
+}
 
 input, select {
-  font-family: inherit;
+  font-family: var(--font-sans);
   font-size: 13px;
   color: var(--text);
   background: var(--surface);
   border: 1px solid var(--border-strong);
-  border-radius: 9px;
+  border-radius: 5px;
   padding: 8px 10px;
   width: 100%;
   transition: border-color 0.12s ease, box-shadow 0.12s ease;
 }
 input:focus, select:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--ring); }
 
+/* Tag / pill — flat, low-chroma, square corners. */
+.tag {
+  font-family: var(--font-sans);
+  font-size: 11.5px;
+  font-weight: 500;
+  border-radius: 4px;
+  padding: 4px 10px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.tag--accent  { color: var(--accent); background: var(--accent-weak); }
+.tag--warn    { color: var(--amber);  background: var(--amber-weak); }
+.tag--neutral { color: var(--text-muted); background: var(--surface-2); }
+.tag--outline { color: var(--text); border: 1px solid var(--border-strong); }
+
+/* ── animations ─────────────────────────────────────────────────────────── */
+@keyframes fadeUp { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+.fade-up { animation: fadeUp 0.3s ease both; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.skeleton {
+  border-radius: 6px;
+  background: linear-gradient(90deg, var(--surface-2) 25%, var(--surface-hover) 37%, var(--surface-2) 63%);
+  background-size: 800px 100%;
+  animation: shimmer 1.4s linear infinite;
+}
+@keyframes shimmer { 0% { background-position: -400px 0; } 100% { background-position: 400px 0; } }
+
+/* ── graph-paper ground ───────────────────────────────────────────────────
+   Apply to the app shell (the element behind the panels) so the faint grid
+   shows in the gutters. Panels stay opaque (var(--surface)). */
+.ground {
+  background-color: var(--bg-elev);
+  background-image:
+    linear-gradient(var(--grid-minor) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid-minor) 1px, transparent 1px),
+    linear-gradient(var(--grid-major) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid-major) 1px, transparent 1px);
+  background-size: 26px 26px, 26px 26px, 130px 130px, 130px 130px;
+  background-position: -1px -1px;
+}
+
+/* ── ledger table ─────────────────────────────────────────────────────────
+   Heavy header rule, hairline row + vertical rules, right-aligned mono cells. */
+.ledger { width: 100%; border-collapse: collapse; }
+.ledger th {
+  font-family: var(--font-mono);
+  font-size: 9.5px; font-weight: 500;
+  letter-spacing: 0.06em; text-transform: uppercase;
+  color: var(--text-faint);
+  padding: 9px 12px;
+  border-bottom: 1.5px solid var(--text);   /* heavy header rule */
+}
+.ledger td {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 13px; color: var(--text);
+  padding: 9px 12px;
+  border-bottom: 1px solid var(--hairline);
+}
+.ledger th + th, .ledger td + td { border-left: 1px solid var(--hairline); }
+.ledger td.num, .ledger th.num { text-align: right; }
+.ledger tr:last-child td { border-bottom: none; }
+
+/* ── focus ring (shared by every focusable control) ──────────────────────── */
+:where(button, [tabindex], a):focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--ring);
+  border-radius: 5px;
+}
+
+/* ════════════════════════════════════════════════════════════════════════
+   App-specific blocks the design bundle omits — kept, on the Mercator tokens.
+   ════════════════════════════════════════════════════════════════════════ */
+
+/* Native range sliders (SetupRail quick-edit, SettingsOverlay). 4px track,
+   14px viridian-ringed knob. */
 input[type='range'] {
   -webkit-appearance: none;
   appearance: none;
@@ -148,15 +302,19 @@ input[type='range']:focus { box-shadow: none; }
 input[type='range']::-webkit-slider-thumb {
   -webkit-appearance: none;
   appearance: none;
-  width: 16px;
-  height: 16px;
+  width: 14px;
+  height: 14px;
   border-radius: 50%;
-  background: var(--accent);
-  border: 2px solid var(--surface);
+  background: var(--surface);
+  border: 2px solid var(--accent);
   box-shadow: 0 0 0 1px var(--accent);
   transition: transform 0.08s ease;
 }
 input[type='range']::-webkit-slider-thumb:hover { transform: scale(1.15); }
+input[type='range']::-moz-range-thumb {
+  width: 14px; height: 14px; border-radius: 50%;
+  background: var(--surface); border: 2px solid var(--accent); cursor: pointer;
+}
 
 /* Dual-thumb range (path-inspector return band): two range inputs overlaid;
    only the thumbs receive pointer events so both stay draggable. */
@@ -170,7 +328,9 @@ input[type='range']::-webkit-slider-thumb:hover { transform: scale(1.15); }
 .range-dual .range-track { position: absolute; top: 50%; left: 0; right: 0; height: 4px; background: var(--border-strong); border-radius: 999px; transform: translateY(-50%); }
 .range-dual .range-fill { position: absolute; top: 50%; height: 4px; background: var(--accent); border-radius: 999px; transform: translateY(-50%); }
 
+/* Status / dot pill (header run-status, Feller, sentiment). */
 .pill {
+  font-family: var(--font-sans);
   font-size: 12px;
   font-weight: 500;
   border-radius: 999px;
@@ -180,14 +340,14 @@ input[type='range']::-webkit-slider-thumb:hover { transform: scale(1.15); }
   gap: 5px;
 }
 
-/* ── app layout ─────────────────────────────────────────────────────────── */
+/* App shell grid: sticky setup rail + fluid main. */
 .app-layout {
   display: grid;
   grid-template-columns: 330px minmax(0, 1fr);
   gap: 20px;
   align-items: start;
-  padding: 18px clamp(14px, 1.6vw, 28px);
-  width: 100%;          /* fill the flex column; without this, auto margins shrink it to content */
+  padding: 20px clamp(14px, 1.6vw, 28px);
+  width: 100%;
   max-width: 2560px;
   margin: 0 auto;
 }
@@ -195,43 +355,4 @@ input[type='range']::-webkit-slider-thumb:hover { transform: scale(1.15); }
 @media (max-width: 1000px) {
   .app-layout { grid-template-columns: 1fr; padding: 14px; }
   .app-rail { position: static; }
-}
-
-/* Small-caps section label with a leading accent tick — gives panels a
-   "structuring desk" identity instead of generic card titles. */
-.section-label {
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.07em;
-  text-transform: uppercase;
-  color: var(--text-muted);
-}
-.section-label::before {
-  content: '';
-  width: 3px;
-  height: 13px;
-  border-radius: 2px;
-  background: var(--accent);
-}
-
-/* ── animations ─────────────────────────────────────────────────────────── */
-@keyframes fadeUp { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
-@keyframes shimmer { 0% { background-position: -400px 0; } 100% { background-position: 400px 0; } }
-@keyframes spin { to { transform: rotate(360deg); } }
-@keyframes pulseRing {
-  0%   { box-shadow: 0 0 0 0 var(--ring); }
-  70%  { box-shadow: 0 0 0 6px rgba(0,0,0,0); }
-  100% { box-shadow: 0 0 0 0 rgba(0,0,0,0); }
-}
-.btn--pulse { animation: pulseRing 1.9s ease-out infinite; }
-.fade-up { animation: fadeUp 0.35s ease both; }
-
-.skeleton {
-  border-radius: 10px;
-  background: linear-gradient(90deg, var(--surface-2) 25%, var(--surface-hover) 37%, var(--surface-2) 63%);
-  background-size: 800px 100%;
-  animation: shimmer 1.4s linear infinite;
 }

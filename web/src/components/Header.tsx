@@ -23,20 +23,15 @@ export default function Header({ terms, run }: { terms: NoteTerms | null; run: R
       borderBottom: '1px solid var(--border)', boxShadow: 'var(--shadow)', position: 'relative', zIndex: 5,
     }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 16, minWidth: 0 }}>
-        {/* brand */}
+        {/* brand — Mercator wordmark + meridian mark */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 11, flexShrink: 0 }}>
           <div style={{
-            width: 38, height: 38, borderRadius: 11, background: 'var(--accent)',
-            display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff',
+            width: 32, height: 32, borderRadius: 7, background: 'var(--accent)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fffefb',
           }}>
-            <BrandMark size={22} />
+            <BrandMark size={20} />
           </div>
-          <div style={{ lineHeight: 1.15 }}>
-            <div style={{ fontSize: 10, fontWeight: 600, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--text-faint)' }}>
-              Structured products
-            </div>
-            <div style={{ fontSize: 15, fontWeight: 600, letterSpacing: '-0.01em' }}>{t('app_title')}</div>
-          </div>
+          <span style={{ fontFamily: 'var(--font-serif)', fontSize: 19, fontWeight: 600, letterSpacing: '-0.01em' }}>Mercator</span>
         </div>
 
         {/* active instrument readout */}
