@@ -14,6 +14,19 @@ RUN npm ci
 COPY web/ ./
 RUN npm run build          # → /web/dist (tsc -b && vite build)
 
+# ── stage 1b: build the optional C++ Heston engine (portable wheel) ───────────
+# Clang is the intended compiler (the CMakeLists uses -fveclib=libmvec, a Clang
+# flag). HESTON_NATIVE=OFF drops -march=native so the binary is portable across
+# the Cloud Run CPUs. scikit-build-core pulls cmake/ninja/pybind11 in isolation.
+FROM python:3.12-slim AS cpp-build
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        clang build-essential \
+    && rm -rf /var/lib/apt/lists/*
+WORKDIR /src
+COPY cpp ./cpp
+RUN CC=clang CXX=clang++ CMAKE_ARGS="-DHESTON_NATIVE=OFF" \
+        pip wheel --no-deps --no-cache-dir -w /wheels ./cpp
+
 # ── stage 2: python runtime ───────────────────────────────────────────────────
 FROM python:3.12-slim
 
@@ -39,6 +52,13 @@ WORKDIR /app
 COPY requirements.txt ./requirements.txt
 COPY api/requirements.txt ./api-requirements.txt
 RUN pip install --no-cache-dir -r requirements.txt -r api-requirements.txt
+
+# Optional fast path: install the prebuilt heston_cpp wheel so engine="cpp" runs
+# the compiled kernel. Built on the same python:3.12-slim base, so it's ABI-
+# compatible; libstdc++6 / libmvec are present at runtime (chromium pulls the
+# former, glibc the latter). If absent the simulator transparently uses numpy.
+COPY --from=cpp-build /wheels /tmp/wheels
+RUN pip install --no-cache-dir /tmp/wheels/*.whl && rm -rf /tmp/wheels
 
 COPY . .
 # Overlay the built front-end from stage 1 (web/dist is dockerignored from the

@@ -17,10 +17,8 @@ web/dist
 .DS_Store
 .claude
 docs
-# C++ engine is not built into the deploy image — the simulator falls back to the
-# numpy reference when heston_cpp / simulator_cpp are absent.
-cpp
-core/simulator_cpp.py
+# The C++ engine IS built into the deploy now (cpp-build stage compiles a portable
+# wheel; the final image installs it). cpp/ and core/simulator_cpp.py must ship.
 scripts/verify_pdf.py
 scripts/compare_engines.py
 # Local-only branding overrides + commercial brand fonts (the example template and
