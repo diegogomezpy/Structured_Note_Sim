@@ -3,9 +3,10 @@ import { api } from '../api/client'
 import { useI18n } from '../i18n/I18nProvider'
 import Figure from './Figure'
 import Icon from './Icon'
-import TickerLogo from './TickerLogo'
+import TickerLogo, { LogoImg } from './TickerLogo'
+import { SENTIMENT_COLOR } from './UnderlyingDetails'
 import { marketCap, price, pct, num } from '../lib/format'
-import type { NoteTerms, UnderlyingMetric } from '../api/types'
+import type { NoteTerms, UnderlyingMetric, UnderlyingOverride } from '../api/types'
 
 function Metric({ label, value, help }: { label: string; value: string; help?: string }) {
   return (
@@ -35,18 +36,25 @@ function Description({ text }: { text: string }) {
   )
 }
 
-function Card({ m }: { m: UnderlyingMetric }) {
+function Card({ m, override }: { m: UnderlyingMetric; override: UnderlyingOverride }) {
   const { t } = useI18n()
   const sub = [m.type, m.sector].filter(Boolean).join(' · ') || '—'
   const ivRealized = m.iv_source === 'realized'
+  const desc = override.description || m.business_summary
+  const sent = override.sentiment
   return (
     <div className="card" style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 13 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-        <TickerLogo symbol={m.symbol} name={m.name} size={28} />
+        {override.logo ? <LogoImg url={override.logo} name={m.name} size={28} /> : <TickerLogo symbol={m.symbol} name={m.name} size={28} />}
         <div style={{ minWidth: 0 }}>
           <div style={{ fontSize: 14, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{m.long_name}</div>
           <div style={{ fontSize: 11.5, color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{sub}</div>
         </div>
+        {sent && (
+          <span style={{ marginLeft: 'auto', flexShrink: 0, fontSize: 10.5, fontWeight: 700, letterSpacing: '0.04em', textTransform: 'uppercase', color: '#fff', background: SENTIMENT_COLOR[sent], borderRadius: 999, padding: '3px 10px' }}>
+            {t(`sent_${sent}`)}
+          </span>
+        )}
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10 }}>
@@ -56,8 +64,8 @@ function Card({ m }: { m: UnderlyingMetric }) {
         <Metric label={t('ul_rsi')} value={m.rsi_14 != null ? num(m.rsi_14, 0) : '—'} />
       </div>
 
-      {m.business_summary && <Description text={m.business_summary} />}
-      {m.figure && <div style={{ height: 190 }}><Figure fig={m.figure} /></div>}
+      {desc && <Description text={desc} />}
+      {m.figure && <div style={{ height: 190 }}><Figure fig={m.figure} name={`${m.name}_1y`} /></div>}
     </div>
   )
 }
@@ -106,7 +114,7 @@ export default function UnderlyingCards({ terms }: { terms: NoteTerms }) {
           {status === 'error' && <div style={{ color: 'var(--red)', fontSize: 12.5, padding: '8px 0' }}>{t('ul_load_fail')}</div>}
           {rows && status !== 'loading' && (
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 14 }} className="fade-up">
-              {rows.map((m) => <Card key={m.symbol} m={m} />)}
+              {rows.map((m) => <Card key={m.symbol} m={m} override={terms.underlyings?.[m.name] ?? {}} />)}
             </div>
           )}
         </div>

@@ -1,6 +1,6 @@
 import type {
-  BacktestResult, BtRange, ConfigMeta, ExplorerData, Health, InspectFilters, InspectResult,
-  LiveResult, LogoData, NoteTerms, ReportRequest, SimResult, SimulateRequest,
+  BacktestResult, BtRange, ConfigMeta, DescribeResult, ExplorerData, Health, InspectFilters,
+  InspectResult, LiveResult, LogoData, NoteTerms, ReportRequest, SimResult, SimulateRequest,
   UnderlyingMetric, UnderlyingOption,
 } from './types'
 
@@ -38,6 +38,8 @@ export const api = {
     jpost<LiveResult>('/api/live', { terms, lang }),
   underlyingMetrics: (tickers: Record<string, string>, lang = 'en') =>
     jpost<UnderlyingMetric[]>('/api/underlyings/metrics', { tickers, lang }),
+  describe: (issuer: string | null, symbols: string[], lang = 'en') =>
+    jpost<DescribeResult>('/api/describe', { issuer, symbols, lang }),
   report: async (body: ReportRequest): Promise<Response> => {
     const r = await fetch('/api/report', {
       method: 'POST',

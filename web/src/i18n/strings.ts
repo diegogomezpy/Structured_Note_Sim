@@ -45,6 +45,21 @@ export const S: Dict = {
   addnote_copied:   { en: 'Copied', es: 'Copiado' },
   addnote_tip:      { en: 'Tip: tickers map a Yahoo Finance symbol to a display name, e.g. {"AAPL": "Apple"}. Barriers are fractions of the initial level (0.70 = 70%).', es: 'Consejo: los tickers asocian un símbolo de Yahoo Finance a un nombre, p. ej. {"AAPL": "Apple"}. Las barreras son fracciones del nivel inicial (0,70 = 70%).' },
 
+  // underlying & issuer detail editor
+  sec_details:      { en: 'Issuer & underlying detail', es: 'Detalle de emisor y subyacentes' },
+  det_issuer_desc:  { en: 'Issuer description', es: 'Descripción del emisor' },
+  det_prefill:      { en: 'Prefill from Yahoo', es: 'Rellenar desde Yahoo' },
+  det_prefilling:   { en: 'Fetching…', es: 'Obteniendo…' },
+  det_desc:         { en: 'Description', es: 'Descripción' },
+  det_sentiment:    { en: 'Analyst rating', es: 'Recomendación' },
+  det_logo:         { en: 'Logo', es: 'Logo' },
+  det_upload_logo:  { en: 'Upload', es: 'Subir' },
+  det_reset_logo:   { en: 'Reset', es: 'Restablecer' },
+  sent_buy:         { en: 'Buy', es: 'Comprar' },
+  sent_hold:        { en: 'Hold', es: 'Mantener' },
+  sent_sell:        { en: 'Sell', es: 'Vender' },
+  sent_none:        { en: 'None', es: 'Ninguna' },
+
   // note-type presets
   sec_note_type:    { en: 'Note type', es: 'Tipo de nota' },
   nt_hint:          { en: 'Pre-fills the canonical fields for this structure — nothing is hidden, every field stays editable below.', es: 'Rellena los campos canónicos de esta estructura — nada se oculta, todo sigue editable abajo.' },

@@ -5,6 +5,7 @@ import { nObs } from '../lib/terms'
 import Modal from './Modal'
 import Icon from './Icon'
 import UnderlyingPicker from './UnderlyingPicker'
+import UnderlyingDetails from './UnderlyingDetails'
 import { Slider, NumberField, SelectField, ToggleField, TextField } from './fields'
 import { NOTE_TYPES, detectNoteType, applyPreset } from '../lib/noteType'
 import type { RunOpts } from './SetupRail'
@@ -171,7 +172,11 @@ export default function SettingsOverlay({
         </Grid>
       </Group>
 
-      <Group n={6} title={t('sec_engine')}>
+      <Group n={6} title={t('sec_details')}>
+        <UnderlyingDetails terms={terms} onChange={onChange} />
+      </Group>
+
+      <Group n={7} title={t('sec_engine')}>
         <Grid>
           <SelectField label={t('paths')} value={String(opts.n_paths)}
                        options={PATH_PRESETS.map((p) => ({ value: String(p), label: p.toLocaleString() }))}

@@ -43,7 +43,7 @@ export interface NoteTerms {
   issuer_rating_fitch: string
   tickers: Record<string, string>
   issue_date: string | null
-  underlyings: string[] | null
+  underlyings: Record<string, UnderlyingOverride> | null
   [k: string]: unknown
 }
 
@@ -216,6 +216,20 @@ export interface LiveResult {
   assets?: LiveAsset[]
   obs_rows?: LiveObsRow[]
   figure?: any
+}
+
+export type Sentiment = 'buy' | 'hold' | 'sell'
+
+/** Per-underlying overrides stored on terms.underlyings, keyed by display name. */
+export interface UnderlyingOverride {
+  description?: string
+  logo?: string          // data-URL (base64) custom logo
+  sentiment?: Sentiment | null
+}
+
+export interface DescribeResult {
+  issuer_description: string | null
+  underlyings: Record<string, string | null>   // keyed by yfinance symbol
 }
 
 export interface UnderlyingMetric {

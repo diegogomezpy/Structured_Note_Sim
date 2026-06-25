@@ -33,7 +33,8 @@ from core.calibrator import HestonCalibrator                      # noqa: E402
 from core.simulator import HestonMultiSimulator                   # noqa: E402
 from core.backtest import run_backtest, snapped_obs_dates         # noqa: E402
 from data.loader import (load_prices, load_dividends,             # noqa: E402
-                          build_dividend_schedule, load_underlying_metrics)
+                          build_dividend_schedule, load_underlying_metrics,
+                          fetch_business_summary, resolve_issuer_summary)
 import charts            # noqa: E402  (app/charts.py)
 import translations      # noqa: E402  (app/translations.py)
 import underlyings       # noqa: E402  (app/underlyings.py)
@@ -982,6 +983,37 @@ def run_underlying_metrics(tickers: dict, *, lang: str = "en") -> list[dict]:
             "business_summary": m.get("business_summary"),
             "figure":     fig,
         })
+    return out
+
+
+# ── description prefill (Yahoo business summaries) ───────────────────────────────
+def run_describe(*, issuer: str | None = None, symbols: list[str] | None = None,
+                 lang: str = "en") -> dict:
+    """Business-summary prefill for the issuer and/or underlyings (Yahoo). Returns
+    {issuer_description, underlyings: {symbol: description}}; any lookup that fails
+    yields None for that entry. In Spanish mode the summaries are machine-translated."""
+    out: dict = {"issuer_description": None, "underlyings": {}}
+    if issuer:
+        try:
+            out["issuer_description"] = resolve_issuer_summary(issuer)
+        except Exception as e:
+            print(f"[describe] issuer summary failed: {e}")
+    for sym in (symbols or []):
+        try:
+            out["underlyings"][sym] = fetch_business_summary(sym)
+        except Exception as e:
+            print(f"[describe] summary for {sym} failed: {e}")
+            out["underlyings"][sym] = None
+    if lang == "es":
+        try:
+            from data.loader import translate_text
+            if out["issuer_description"]:
+                out["issuer_description"] = translate_text(out["issuer_description"], "es") or out["issuer_description"]
+            for k, v in list(out["underlyings"].items()):
+                if v:
+                    out["underlyings"][k] = translate_text(v, "es") or v
+        except Exception as e:
+            print(f"[describe] translation skipped: {e}")
     return out
 
 

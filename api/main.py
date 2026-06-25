@@ -69,6 +69,12 @@ class MetricsRequest(BaseModel):
     lang: str = "en"
 
 
+class DescribeRequest(BaseModel):
+    issuer: str | None = None
+    symbols: list[str] = Field(default_factory=list)
+    lang: str = "en"
+
+
 class InspectRequest(BaseModel):
     filters: dict = Field(default_factory=dict)   # outcome/ac_periods/ki_choice/ret_lo/ret_hi/coupon_periods
     position: int = 0
@@ -261,6 +267,16 @@ def backtest_inspect(req: BacktestInspectRequest):
                                        bt_start=req.bt_start, bt_end=req.bt_end)
     except Exception as e:
         raise HTTPException(500, f"backtest inspect failed: {e}")
+
+
+@app.post("/api/describe")
+def describe(req: DescribeRequest):
+    """Prefill issuer / underlying descriptions from Yahoo business summaries
+    (see engine.run_describe)."""
+    try:
+        return engine.run_describe(issuer=req.issuer, symbols=req.symbols, lang=req.lang)
+    except Exception as e:
+        raise HTTPException(500, f"describe failed: {e}")
 
 
 @app.post("/api/underlyings/metrics")
