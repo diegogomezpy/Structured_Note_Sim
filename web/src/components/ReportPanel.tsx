@@ -75,6 +75,8 @@ export default function ReportPanel({ terms, opts }: { terms: NoteTerms; opts: R
   const [status, setStatus] = useState<Status>('idle')
   const [error, setError] = useState('')
   const logoRef = useRef<HTMLInputElement>(null)
+  const altLogoRef = useRef<HTMLInputElement>(null)
+  const coverImgRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => { api.brandingList().then(setPresets).catch(() => {}) }, [])
 
@@ -103,9 +105,9 @@ export default function ReportPanel({ terms, opts }: { terms: NoteTerms; opts: R
     setStatus('idle')
   }
   const setBrandField = (k: keyof Branding, v: string) => setBrand((b) => ({ ...b, [k]: v || undefined }))
-  const onLogo = (file: File | undefined) => {
+  const onImage = (field: keyof Branding, file: File | undefined) => {
     if (!file) return
-    const r = new FileReader(); r.onload = () => setBrandField('logo_base64', String(r.result)); r.readAsDataURL(file)
+    const r = new FileReader(); r.onload = () => setBrandField(field, String(r.result)); r.readAsDataURL(file)
   }
 
   const generate = async () => {
@@ -189,7 +191,7 @@ export default function ReportPanel({ terms, opts }: { terms: NoteTerms; opts: R
                     <button className="btn" style={{ padding: '7px 12px' }} onClick={() => logoRef.current?.click()}><Icon name="upload" size={13} /> {t('det_upload_logo')}</button>
                     {brand.logo_base64 && <img src={brand.logo_base64} alt="logo" style={{ height: 26, borderRadius: 5 }} />}
                     {brand.logo_base64 && <button className="btn btn--ghost" style={{ padding: '4px 8px', fontSize: 11.5 }} onClick={() => setBrandField('logo_base64', '')}>{t('det_reset_logo')}</button>}
-                    <input ref={logoRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={(e) => onLogo(e.target.files?.[0])} />
+                    <input ref={logoRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={(e) => onImage('logo_base64', e.target.files?.[0])} />
                   </div>
                 </Field>
               </div>
@@ -204,6 +206,45 @@ export default function ReportPanel({ terms, opts }: { terms: NoteTerms; opts: R
                 <Swatch label={t('brand_secondary')} value={brand.chart_secondary_color} fallback="#c69426" onChange={(v) => setBrandField('chart_secondary_color', v)} />
                 <Swatch label={t('brand_rule')}      value={brand.section_rule_color} fallback="#2563eb" onChange={(v) => setBrandField('section_rule_color', v)} />
                 <Swatch label={t('brand_panel')}     value={brand.panel_color} fallback="#eaf1f8" onChange={(v) => setBrandField('panel_color', v)} />
+              </div>
+            </div>
+
+            {/* Typography */}
+            <div>
+              <SubHead>{t('brand_typography')}</SubHead>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 14 }}>
+                <Field label={t('brand_title_font')}><input type="text" placeholder="IBM Plex Sans" value={brand.title_font ?? ''} onChange={(e) => setBrandField('title_font', e.target.value)} /></Field>
+                <Field label={t('brand_body_font')}><input type="text" placeholder="IBM Plex Sans" value={brand.body_font ?? ''} onChange={(e) => setBrandField('body_font', e.target.value)} /></Field>
+              </div>
+              <div style={{ fontSize: 11, color: 'var(--text-faint)', marginTop: 5 }}>{t('brand_font_hint')}</div>
+            </div>
+
+            {/* Cover */}
+            <div>
+              <SubHead>{t('brand_cover')}</SubHead>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 14 }}>
+                <Field label={t('brand_alt_logo')}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <button className="btn" style={{ padding: '7px 12px' }} onClick={() => altLogoRef.current?.click()}><Icon name="upload" size={13} /> {t('det_upload_logo')}</button>
+                    {brand.cover_logo_base64 && <img src={brand.cover_logo_base64} alt="alt logo" style={{ height: 26, borderRadius: 5, background: brand.primary_color ?? '#1a2e4a', padding: 2 }} />}
+                    {brand.cover_logo_base64 && <button className="btn btn--ghost" style={{ padding: '4px 8px', fontSize: 11.5 }} onClick={() => setBrandField('cover_logo_base64', '')}>{t('det_reset_logo')}</button>}
+                    <input ref={altLogoRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={(e) => onImage('cover_logo_base64', e.target.files?.[0])} />
+                  </div>
+                </Field>
+                <Field label={t('brand_cover_image')}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <button className="btn" style={{ padding: '7px 12px' }} onClick={() => coverImgRef.current?.click()}><Icon name="upload" size={13} /> {t('brand_upload_image')}</button>
+                    {brand.cover_image_base64 && <img src={brand.cover_image_base64} alt="cover" style={{ height: 26, borderRadius: 5 }} />}
+                    {brand.cover_image_base64 && <button className="btn btn--ghost" style={{ padding: '4px 8px', fontSize: 11.5 }} onClick={() => setBrandField('cover_image_base64', '')}>{t('det_reset_logo')}</button>}
+                    <input ref={coverImgRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={(e) => onImage('cover_image_base64', e.target.files?.[0])} />
+                  </div>
+                </Field>
+                <Swatch label={t('brand_overlay_color')} value={brand.cover_overlay_color} fallback={brand.primary_color ?? '#1a2e4a'} onChange={(v) => setBrandField('cover_overlay_color', v)} />
+                <Field label={t('brand_overlay_opacity')}>
+                  <input type="number" min={0} max={1} step={0.05} placeholder="0.55"
+                         value={brand.cover_overlay_opacity != null ? String(brand.cover_overlay_opacity) : ''}
+                         onChange={(e) => setBrandField('cover_overlay_opacity', e.target.value)} />
+                </Field>
               </div>
             </div>
 
