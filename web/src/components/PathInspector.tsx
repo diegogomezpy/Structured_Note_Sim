@@ -18,18 +18,26 @@ export type InspectFetcher = (body: {
 
 const ASSET_COLORS = ['#2563eb', '#0891b2', '#7c3aed', '#0d9488', '#d97706']
 const MARKER_STYLE: Record<string, { symbol: string; color: string; size: number }> = {
-  call_coupon: { symbol: 'star', color: '#2563eb', size: 13 },
-  call:        { symbol: 'star', color: '#2563eb', size: 13 },
-  coupon:      { symbol: 'circle', color: '#22c55e', size: 9 },
-  missed:      { symbol: 'circle', color: '#f59e0b', size: 9 },
-  knock_in:    { symbol: 'x', color: '#ef4444', size: 11 },
+  call:     { symbol: 'diamond', color: '#2563eb', size: 11 },
+  coupon:   { symbol: 'circle', color: '#16a34a', size: 9 },
+  missed:   { symbol: 'circle-open', color: '#d97706', size: 9 },
+  knock_in: { symbol: 'x', color: '#dc2626', size: 11 },
+}
+// 'call_coupon' (autocall that also paid a coupon) shares the autocall marker.
+const normKind = (k: string) => (k === 'call_coupon' ? 'call' : k)
+const KIND_ORDER = ['coupon', 'missed', 'call', 'knock_in']
+
+interface PathLabels {
+  x: string; y: string; wof: string
+  par: string; ki: string; ac: string
+  ev: Record<string, string>
 }
 
-/** Build the single-path figure client-side, in the app's chart aesthetic
-    (transparent bg + horizontal top legend via the shared Figure theming);
-    observation markers carry their status as hover text rather than a long
-    right-hand legend. */
-function buildPathFig(path: PathData, labels: { x: string; y: string; wof: string }) {
+/** Build the single-path figure client-side, in the app's chart aesthetic.
+    Every series — the underlyings, the worst-of, the par / knock-in / autocall
+    reference levels, and each event-marker type — is a named trace so the
+    horizontal top legend fully explains the chart. */
+function buildPathFig(path: PathData, labels: PathLabels) {
   const traces: any[] = []
   path.series.forEach((s, i) => traces.push({
     x: path.t, y: s.perf, mode: 'lines', name: s.name, type: 'scatter',
@@ -37,40 +45,49 @@ function buildPathFig(path: PathData, labels: { x: string; y: string; wof: strin
   }))
   traces.push({ x: path.t, y: path.wof, mode: 'lines', name: labels.wof, type: 'scatter', line: { color: '#1a2e4a', width: 2.6 } })
 
-  const byKind: Record<string, typeof path.markers> = {}
-  path.markers.forEach((m) => { (byKind[m.kind] ||= []).push(m) })
-  Object.entries(byKind).forEach(([kind, ms]) => {
-    const st = MARKER_STYLE[kind] ?? MARKER_STYLE.coupon
-    traces.push({
-      x: ms.map((m) => m.x), y: ms.map((m) => m.y), text: ms.map((m) => m.text),
-      mode: 'markers', type: 'scatter', showlegend: false,
-      marker: { symbol: st.symbol, color: st.color, size: st.size, line: { color: '#fff', width: 1.5 } },
-      hovertemplate: '%{text}<extra></extra>',
-    })
-  })
-
+  // Reference levels as named, non-hovering line traces (so they appear in the legend).
   const x0 = 0, x1 = path.x_max
-  const hline = (y: number | null, color: string, dash: string) => y == null ? null : ({ type: 'line', x0, x1, y0: y, y1: y, line: { color, width: 1, dash } })
-  const shapes: any[] = [hline(1, '#94a3b8', 'dot'), hline(path.barriers.knock_in, '#ef4444', 'dash')]
+  const level = (y: number, name: string, color: string, dash: string) => ({
+    x: [x0, x1], y: [y, y], mode: 'lines', type: 'scatter', name, hoverinfo: 'skip',
+    line: { color, width: 1, dash },
+  })
+  traces.push(level(1, labels.par, '#94a3b8', 'dot'))
+  if (path.barriers.knock_in != null) traces.push(level(path.barriers.knock_in, labels.ki, '#dc2626', 'dash'))
   const sched = path.barriers.autocall_schedule
   if (sched) {
     const s = sched.filter(([step]) => step <= x1)
     if (s.length) traces.push({
       x: [0, ...s.map((p) => p[0])], y: [s[0][1], ...s.map((p) => p[1])],
-      mode: 'lines', type: 'scatter', showlegend: false, hoverinfo: 'skip',
-      line: { color: '#94a3b8', dash: 'dot', width: 1.4, shape: 'hv' },
+      mode: 'lines', type: 'scatter', name: labels.ac, hoverinfo: 'skip',
+      line: { color: '#94a3b8', dash: 'dash', width: 1.3, shape: 'hv' },
     })
   } else if (path.barriers.autocall != null && path.barriers.autocall !== 1) {
-    shapes.push(hline(path.barriers.autocall, '#94a3b8', 'dash'))
+    traces.push(level(path.barriers.autocall, labels.ac, '#94a3b8', 'dash'))
   }
 
+  // Event markers — one named trace per kind present, ordered for a tidy legend.
+  const byKind: Record<string, typeof path.markers> = {}
+  path.markers.forEach((m) => { (byKind[normKind(m.kind)] ||= []).push(m) })
+  Object.keys(byKind).sort((a, b) => KIND_ORDER.indexOf(a) - KIND_ORDER.indexOf(b)).forEach((kind) => {
+    const ms = byKind[kind]
+    const st = MARKER_STYLE[kind] ?? MARKER_STYLE.coupon
+    traces.push({
+      x: ms.map((m) => m.x), y: ms.map((m) => m.y), text: ms.map((m) => m.text),
+      mode: 'markers', type: 'scatter', name: labels.ev[kind] ?? kind,
+      marker: { symbol: st.symbol, color: st.color, size: st.size, line: { color: '#fff', width: 1.5 } },
+      hovertemplate: '%{text}<extra></extra>',
+    })
+  })
+
+  const pad = Math.max(1, x1 * 0.015)
   return {
     data: traces,
     layout: {
-      xaxis: { title: { text: labels.x }, range: [x0, x1], zeroline: false },
+      xaxis: { title: { text: labels.x }, range: [x0 - pad, x1 + pad], zeroline: false },
       yaxis: { title: { text: labels.y }, tickformat: '.0%', zeroline: false },
-      shapes: shapes.filter(Boolean), showlegend: true,
-      legend: { orientation: 'h', y: 1.08, x: 0 }, hovermode: 'closest',
+      showlegend: true, hovermode: 'closest',
+      legend: { orientation: 'h', y: 1.14, x: 0, font: { size: 11 }, itemwidth: 30 },
+      margin: { l: 58, r: 26, t: 50, b: 46 },
     },
   }
 }
@@ -213,7 +230,11 @@ function InspectorPanel({ fetcher, terms, label, onRemove }: {
     : t('insp_mat_ok', { wof: pct(o.worst_final, 1) })
 
   const fig = useMemo(() => data?.path
-    ? buildPathFig(data.path, { x: t('insp_time_step'), y: t('chart_wof'), wof: t('insp_wof_name') })
+    ? buildPathFig(data.path, {
+        x: t('insp_time_step'), y: t('chart_wof'), wof: t('insp_wof_name'),
+        par: t('insp_lvl_par'), ki: t('insp_lvl_ki'), ac: t('insp_lvl_autocall'),
+        ev: { coupon: t('insp_ev_coupon'), missed: t('insp_ev_missed'), call: t('insp_ev_call'), knock_in: t('insp_ev_knock_in') },
+      })
     : null, [data, t])
 
   return (
