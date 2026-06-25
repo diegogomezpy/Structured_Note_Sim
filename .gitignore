@@ -57,3 +57,6 @@ branding/branding_*.json
 
 # ── Data — CSVs are not tracked; data is pulled live from yfinance ──
 data/*.csv
+# Brand fonts are licensed assets — kept local like the branding config
+fonts/brand/*.ttf
+fonts/brand/*.otf

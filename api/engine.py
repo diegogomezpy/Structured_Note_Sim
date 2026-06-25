@@ -483,7 +483,7 @@ def _simulate_full(terms: NoteTerms, *, n_paths: int, seed: int, calib_years: fl
 
 def run_simulation(terms: NoteTerms, *, n_paths: int = 10000, seed: int = 42,
                    calib_years: float = 5.0, history_years: float | None = None,
-                   engine: str = "numpy", lang: str = "en") -> dict:
+                   engine: str = "cpp", lang: str = "en") -> dict:
     """Load → calibrate → simulate → price, then build the Monte Carlo figures.
     Mirrors the old Streamlit run block; returns summary stats + Plotly-JSON
     figures + a run_id (full paths cached server-side for the explorer)."""
@@ -1098,7 +1098,7 @@ def _decode_data_url(s: str | None) -> bytes | None:
 
 def build_report_pdf(terms: NoteTerms, *, sections: list[str] | None = None, lang: str = "en",
                      n_paths: int = 10000, seed: int = 42, calib_years: float = 5.0,
-                     history_years: float | None = None, engine: str = "numpy",
+                     history_years: float | None = None, engine: str = "cpp",
                      branding: dict | None = None) -> bytes:
     """Assemble the institutional PDF report (app/pdf_report.py). `sections` is the
     set of fine-grained item keys to include (empty/None ⇒ everything available);

@@ -59,7 +59,13 @@ export default function App() {
   useEffect(() => {
     const checkHealth = (retry = true) =>
       api.health()
-        .then((h) => { setCppAvailable(h.cpp_engine); if (!h.cpp_engine && retry) setTimeout(() => checkHealth(false), 1500) })
+        .then((h) => {
+          setCppAvailable(h.cpp_engine)
+          // Prefer the C++ engine by default whenever it's available (numpy is the
+          // fallback); the user can still switch back manually in the run options.
+          if (h.cpp_engine) setOpts((o) => (o.engine === 'numpy' ? { ...o, engine: 'cpp' } : o))
+          if (!h.cpp_engine && retry) setTimeout(() => checkHealth(false), 1500)
+        })
         .catch(() => { if (retry) setTimeout(() => checkHealth(false), 1500) })
     checkHealth()
     api.configs().then(setConfigs).catch((e) => setErrorMsg(String(e)))

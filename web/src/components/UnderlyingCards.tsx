@@ -93,7 +93,9 @@ function Card({ m, override }: { m: UnderlyingMetric; override: UnderlyingOverri
         </div>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10 }}>
+      {/* auto-fit so the boxes wrap to 2×2 in a narrow (multi-underlying) card
+          instead of overflowing, and sit 1×4 when the card is wide. */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(116px, 1fr))', gap: 10 }}>
         <Metric label={t('ul_market_cap')} value={marketCap(m.market_cap)} />
         <Metric label={ivRealized ? t('ul_vol_3m') : t('ul_iv_3m')} value={m.iv_3m != null ? pct(m.iv_3m, 1) : '—'} />
         <Metric label={t('ul_last_price')} value={price(m.last_price)} />

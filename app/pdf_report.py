@@ -106,10 +106,13 @@ _KNOWN_BRANDING_KEYS = {
     "disclaimer_body",      # NEW — overrides the full disclaimer body text
     "cover_logo_base64",    # NEW — white knockout logo for the full-bleed cover
     "cover_image_base64",   # NEW — optional full-bleed cover background photo
+    "cover_overlay_color",  # NEW — colour of the overlay drawn over the cover photo
+    "cover_overlay_opacity",# NEW — 0..1 opacity of that overlay
     "title_font", "body_font",  # NEW — custom report fonts (see _register_brand_fonts)
 }
 _HEX_KEYS = ("primary_color", "accent_color", "chart_secondary_color",
-             "section_rule_color", "panel_color", "sidebar_bar_color")
+             "section_rule_color", "panel_color", "sidebar_bar_color",
+             "cover_overlay_color")
 
 
 def _hex_to_rgb(hex_str: str) -> tuple[int, int, int]:
@@ -1433,7 +1436,7 @@ class _NotePDF(FPDF):
         desc_lines = (self.multi_cell(inner_w, 4.3, self._safe(description),
                                       dry_run=True, output="LINES") if description else [])
         desc_h = len(desc_lines) * 4.3
-        analyst_h = 11.0 if analyst else 0.0
+        analyst_h = 12.5 if analyst else 0.0
         box_h = (pad + header_h + chip_h
                  + (3 + analyst_h if analyst else 0)
                  + (3 + desc_h if description else 0)
@@ -1495,34 +1498,51 @@ class _NotePDF(FPDF):
             self.cell(chip_w, 5, self._safe(str(val)), align="C")
             cx += chip_w + gap
         cy += chip_h
-        # Analyst consensus (optional): a stacked buy/hold/sell bar + inline legend.
+        # Analyst consensus (optional): a thin rounded buy/hold/sell pill on a
+        # light track + a dot legend, matching the web card.
         if analyst:
-            cy += 3
+            cy += 3.5
             self.set_xy(x0 + pad, cy)
             self._sf(6.5, "semibold")
             self.set_text_color(*_TEXT_SOFT)
             self.cell(inner_w, 3, self._safe(analyst_title.upper()))
-            cy += 3.8
-            bar_h, bx = 3.0, x0 + pad
-            for _lbl, _frac, _col in analyst:
-                seg = inner_w * max(0.0, _frac)
-                if seg <= 0.05:
-                    continue
+            cy += 4.2
+            bar_h = 2.6
+            rad = bar_h / 2
+            self.set_fill_color(*_blend(_TEXT_SOFT, _WHITE, 0.84))     # rounded track
+            try:
+                self.rect(x0 + pad, cy, inner_w, bar_h, style="F", round_corners=True, corner_radius=rad)
+            except TypeError:
+                self.rect(x0 + pad, cy, inner_w, bar_h, style="F")
+            segs = [(c, inner_w * max(0.0, f)) for (_l, f, c) in analyst if f > 0.001]
+            bx = x0 + pad
+            for _i, (_col, _w) in enumerate(segs):
                 self.set_fill_color(*_col)
-                self.rect(bx, cy, seg, bar_h, style="F")
-                bx += seg
-            cy += bar_h + 1.6
+                _corn = (True if len(segs) == 1 else
+                         ("TOP_LEFT", "BOTTOM_LEFT") if _i == 0 else
+                         ("TOP_RIGHT", "BOTTOM_RIGHT") if _i == len(segs) - 1 else None)
+                try:
+                    if _corn is True:
+                        self.rect(bx, cy, _w, bar_h, style="F", round_corners=True, corner_radius=rad)
+                    elif _corn:
+                        self.rect(bx, cy, _w, bar_h, style="F", round_corners=_corn, corner_radius=rad)
+                    else:
+                        self.rect(bx, cy, _w, bar_h, style="F")
+                except TypeError:
+                    self.rect(bx, cy, _w, bar_h, style="F")
+                bx += _w
+            cy += bar_h + 2.4
             self._sf(7, "regular")
             lx = x0 + pad
             for _lbl, _frac, _col in analyst:
                 self.set_fill_color(*_col)
-                self.ellipse(lx, cy - 1.6, 2.0, 2.0, style="F")
-                self.set_xy(lx + 3, cy - 2.4)
+                self.ellipse(lx, cy - 1.9, 1.8, 1.8, style="F")
+                self.set_xy(lx + 2.8, cy - 2.6)
                 self.set_text_color(*_TEXT_SOFT)
                 _txt = f"{_lbl} {_frac:.0%}"
                 self.cell(self.get_string_width(_txt) + 1, 3.2, self._safe(_txt))
-                lx += 3 + self.get_string_width(_txt) + 6
-            cy += 3.2
+                lx += 2.8 + self.get_string_width(_txt) + 6
+            cy += 3.0
         # Company description (optional — blank hides it, like the issuer blurb).
         if description:
             self.set_xy(x0 + pad, cy + 3)
@@ -2173,6 +2193,41 @@ def _term_rows(terms, lang: str) -> list[tuple[str, str]]:
     return rows
 
 
+def _about_this_report(lang, inc, results, bt_summary, live_data, n_assets) -> str:
+    """An 'About this report' blurb that names the parts actually included, rather
+    than a fixed sentence (a terms-only report no longer claims a backtest etc.)."""
+    es = (lang == "es")
+    parts: list[str] = []
+    if any(inc(k) for k in ("note_terms", "note_diagram", "obs_schedule",
+                            "underlying_breakdown", "issuer_info", "note_description")):
+        parts.append("los términos y la estructura de la nota" if es
+                     else "the note's terms and structure")
+    _any_fan = any(inc(f"mc_fan_{i}") for i in range(n_assets))
+    if results and any(inc(k) for k in ("mc_metrics", "mc_irr", "mc_autocall",
+                                        "mc_wof", "mc_single_wof", "mc_sample")) or _any_fan:
+        parts.append("resultados de la simulación de Monte Carlo" if es
+                     else "Monte Carlo simulation results")
+    if results and (inc("calib_table") or inc("calib_corr")):
+        parts.append("la calibración del modelo" if es else "model calibration")
+    if bt_summary and any(inc(k) for k in ("bt_metrics", "bt_outcome", "bt_pie",
+                                           "bt_irr", "bt_prices", "bt_sample")):
+        parts.append("un backtest histórico" if es else "a historical backtest")
+    if live_data and any(inc(k) for k in ("live_metrics", "live_asset_table",
+                                          "live_obs_table", "live_chart")):
+        parts.append("el seguimiento en vivo de la nota" if es
+                     else "live tracking of the current note")
+    if not parts:
+        parts.append("los términos de la nota" if es else "the note's terms")
+    if len(parts) == 1:
+        body = parts[0]
+    else:
+        conj = "y" if es else "and"
+        body = ", ".join(parts[:-1]) + f" {conj} " + parts[-1]
+    lead = ("Este informe presenta un análisis cuantitativo de la nota estructurada y cubre "
+            if es else "This report presents a quantitative analysis of the structured note and covers ")
+    return lead + body + "."
+
+
 def _exec_bullets(terms, results, bt_summary, live_data, lang: str) -> list[str]:
     b = []
     # Monte Carlo bullets only when the sim actually ran (a report of just
@@ -2238,7 +2293,8 @@ def _front_cover_page(pdf: _NotePDF, terms, lang: str, report_title: str, websit
     W, H = pdf.w, pdf.h
     cx = W / 2
 
-    # Full-bleed background: brand primary colour, with an optional photo on top.
+    # Full-bleed background: brand primary colour, or an optional photo with a
+    # colour overlay at the configured opacity (so text stays legible over it).
     pdf.set_fill_color(*pdf.primary_color)
     pdf.rect(0, 0, W, H, style="F")
     if getattr(pdf, "cover_image_bytes", None):
@@ -2246,6 +2302,14 @@ def _front_cover_page(pdf: _NotePDF, terms, lang: str, report_title: str, websit
             pdf.image(io.BytesIO(pdf.cover_image_bytes), x=0, y=0, w=W, h=H)
         except Exception:
             pass
+        _op = getattr(pdf, "cover_overlay_opacity", 0.0)
+        if _op and _op > 0:
+            pdf.set_fill_color(*getattr(pdf, "cover_overlay_color", pdf.primary_color))
+            try:
+                with pdf.local_context(fill_opacity=_op):
+                    pdf.rect(0, 0, W, H, style="F")
+            except Exception:
+                pass
 
     # Logo (white wordmark), centred in the upper third. A brand may supply a
     # white knockout logo (`cover_logo_base64`) for the coloured cover; otherwise
@@ -2313,6 +2377,56 @@ def _front_cover_page(pdf: _NotePDF, terms, lang: str, report_title: str, websit
             pdf.set_char_spacing(0)
         except Exception:
             pass
+    pdf._is_cover = False
+
+
+def _full_bleed_disclaimer(pdf: _NotePDF, lang: str, text: str, website: str = ""):
+    """Disclaimer as a branded full-bleed back page — white text on the brand
+    colour with the logo header and a footer, pairing the branded front cover."""
+    pdf.set_auto_page_break(auto=False)
+    pdf._is_cover = True
+    pdf.add_page()
+    pdf._cover_pages.add(pdf.page_no())
+    W, H = pdf.w, pdf.h
+    pdf.set_fill_color(*pdf.primary_color)
+    pdf.rect(0, 0, W, H, style="F")
+
+    logo_b = getattr(pdf, "cover_logo_bytes", None) or pdf.firm_logo_bytes
+    if logo_b:
+        try:
+            lh = 12.0
+            lw = min(lh * pdf.firm_logo_aspect, 58.0)
+            pdf.image(io.BytesIO(logo_b), x=pdf.l_margin, y=15, w=lw, h=lh)
+        except Exception:
+            pass
+    pdf.set_draw_color(*pdf.section_rule_color)
+    pdf.set_line_width(0.8)
+    pdf.line(pdf.l_margin, 33, W - pdf.r_margin, 33)
+
+    pdf.set_xy(pdf.l_margin, 41)
+    pdf._sf(16, "bold")
+    pdf.set_text_color(255, 255, 255)
+    pdf.cell(0, 8, _safe(_t("disclaimer_title", lang)), new_x="LMARGIN", new_y="NEXT")
+
+    pdf.set_xy(pdf.l_margin, 54)
+    inner = W - pdf.l_margin - pdf.r_margin
+    _paras = (text or "").split("\n\n")
+    for _i, _para in enumerate(_paras):
+        pdf.set_x(pdf.l_margin)
+        pdf._sf(7.6, "bold" if _i == len(_paras) - 1 else "regular")
+        pdf.set_text_color(255, 255, 255)
+        pdf.multi_cell(inner, 4.0, _safe(_para), align="J")
+        pdf.ln(2.6)
+
+    if website:
+        pdf.set_xy(0, H - 22)
+        pdf._sf(8.5, "regular")
+        pdf.set_text_color(255, 255, 255)
+        pdf.cell(W, 5, _safe(website), align="C")
+    pdf.set_xy(0, H - 14)
+    pdf._sf(7, "light")
+    pdf.set_text_color(*_blend(pdf.primary_color, _WHITE, 0.65))
+    pdf.cell(W, 4, _safe(f"© {datetime.date.today().year} {pdf.firm_name} — All Rights Reserved."), align="C")
     pdf._is_cover = False
 
 
@@ -2613,7 +2727,8 @@ def _cover_page(
     pdf.set_x(pdf.l_margin)
     pdf._sf(7.5, "light")
     pdf.set_text_color(*_TEXT_SOFT)
-    pdf.multi_cell(main_w, 4, _safe(_t("about_this_report", lang)))
+    pdf.multi_cell(main_w, 4, _safe(_about_this_report(
+        lang, inc, results, bt_summary, live_data, len(asset_names or []))))
 
     # Contents block
     pdf.ln(3)
@@ -3073,6 +3188,11 @@ def _build_pdf_report(
             return None
     pdf.cover_image_bytes = _decode_b64_img(_b.get("cover_image_base64"))
     pdf.cover_logo_bytes  = _decode_b64_img(_b.get("cover_logo_base64"))
+    pdf.cover_overlay_color = _branding_color(branding, "cover_overlay_color", primary_color)
+    try:
+        pdf.cover_overlay_opacity = float(_b.get("cover_overlay_opacity", 0.55))
+    except Exception:
+        pdf.cover_overlay_opacity = 0.55
 
     # ── 0. Front cover (toggleable, default on) ────────────────────────────
     if _inc("cover"):
@@ -3525,21 +3645,20 @@ def _build_pdf_report(
     pdf.set_text_color(*_TEXT)
 
     # ── 8. Disclaimers (own back page) ─────────────────────────────────────
-    pdf.add_page()
-    pdf.start_section(_t("disclaimer_title", lang), min_room=90.0)
-    pdf.set_text_color(*_TEXT_SOFT)
     _disclaimer_text = (_brand_text(_b.get("disclaimer_body"), lang)
                         or _t("disclaimer_body", lang))
-    _disclaimer_paras = _disclaimer_text.split("\n\n")
-    for idx, para in enumerate(_disclaimer_paras):
-        is_last = (idx == len(_disclaimer_paras) - 1)
-        if is_last:
-            # Last paragraph rendered in bold (e.g. CADIEM legal attribution)
-            pdf._sf(7.5, "bold")
-        else:
-            pdf._sf(7.5, "regular")
-        pdf.multi_cell(0, 3.8, _safe(para))
-        pdf.ln(2.5)
-    pdf.set_text_color(*_TEXT)
+    if _inc("cover"):
+        # Branded full-bleed back page, pairing the branded front cover.
+        _full_bleed_disclaimer(pdf, lang, _disclaimer_text, website)
+    else:
+        pdf.add_page()
+        pdf.start_section(_t("disclaimer_title", lang), min_room=90.0)
+        pdf.set_text_color(*_TEXT_SOFT)
+        _disclaimer_paras = _disclaimer_text.split("\n\n")
+        for idx, para in enumerate(_disclaimer_paras):
+            pdf._sf(7.5, "bold" if idx == len(_disclaimer_paras) - 1 else "regular")
+            pdf.multi_cell(0, 3.8, _safe(para))
+            pdf.ln(2.5)
+        pdf.set_text_color(*_TEXT)
 
     return bytes(pdf.output())

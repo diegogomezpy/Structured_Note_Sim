@@ -48,7 +48,7 @@ class SimulateRequest(BaseModel):
     seed: int = 42
     calib_years: float = 5.0
     history_years: float | None = None
-    engine: str = "numpy"
+    engine: str = "cpp"   # prefer C++; the engine falls back to numpy if unbuilt
     lang: str = "en"
 
 
@@ -102,7 +102,7 @@ class ReportRequest(BaseModel):
     n_paths: int = Field(10000, ge=1000, le=250000)
     seed: int = 42
     calib_years: float = 5.0
-    engine: str = "numpy"
+    engine: str = "cpp"   # prefer C++; the engine falls back to numpy if unbuilt
     branding: dict | None = None
 
 
