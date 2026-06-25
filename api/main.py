@@ -28,6 +28,7 @@ import underlyings                       # noqa: E402  (app/underlyings.py)
 from api import engine                   # noqa: E402
 
 _CONFIG_DIR = _REPO / "note_configs"
+_BRANDING_DIR = _REPO / "branding"
 
 app = FastAPI(title="Structured Note Simulator API", version="1.0")
 
@@ -268,6 +269,31 @@ def backtest_inspect(req: BacktestInspectRequest):
                                        bt_start=req.bt_start, bt_end=req.bt_end)
     except Exception as e:
         raise HTTPException(500, f"backtest inspect failed: {e}")
+
+
+@app.get("/api/branding")
+def list_branding():
+    """Bundled branding presets in branding/ (auto-discovered, like configs)."""
+    out = []
+    for p in sorted(_BRANDING_DIR.glob("*.json")):
+        try:
+            d = json.loads(p.read_text())
+            out.append({"file": p.name, "firm_name": d.get("firm_name", p.stem)})
+        except Exception:
+            continue
+    return out
+
+
+@app.get("/api/branding/{file}")
+def get_branding(file: str):
+    """A single branding preset dict (passed straight to the PDF as `branding`)."""
+    path = _BRANDING_DIR / file
+    if not path.is_file() or path.suffix != ".json":
+        raise HTTPException(404, f"branding '{file}' not found")
+    try:
+        return json.loads(path.read_text())
+    except Exception as e:
+        raise HTTPException(400, f"could not parse branding: {e}")
 
 
 @app.post("/api/describe")

@@ -220,11 +220,14 @@ export interface LiveResult {
 
 export type Sentiment = 'buy' | 'hold' | 'sell'
 
+/** Analyst recommendation split — % of analysts rating buy / hold / sell. */
+export interface AnalystSplit { buy: number; hold: number; sell: number }
+
 /** Per-underlying overrides stored on terms.underlyings, keyed by display name. */
 export interface UnderlyingOverride {
   description?: string
   logo?: string          // data-URL (base64) custom logo
-  sentiment?: Sentiment | null
+  analyst?: AnalystSplit | null
 }
 
 export interface DescribeResult {
@@ -289,6 +292,7 @@ export interface Branding {
   accent_color?: string
   logo_base64?: string
   footer_note?: string
+  [k: string]: unknown        // presets carry extra keys (panel/rule colours, website…)
 }
 
 export interface ReportRequest {

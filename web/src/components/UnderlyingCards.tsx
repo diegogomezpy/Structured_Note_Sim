@@ -41,7 +41,8 @@ function Card({ m, override }: { m: UnderlyingMetric; override: UnderlyingOverri
   const sub = [m.type, m.sector].filter(Boolean).join(' · ') || '—'
   const ivRealized = m.iv_source === 'realized'
   const desc = override.description || m.business_summary
-  const sent = override.sentiment
+  const a = override.analyst
+  const total = a ? (a.buy + a.hold + a.sell) : 0
   return (
     <div className="card" style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 13 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -50,11 +51,6 @@ function Card({ m, override }: { m: UnderlyingMetric; override: UnderlyingOverri
           <div style={{ fontSize: 14, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{m.long_name}</div>
           <div style={{ fontSize: 11.5, color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{sub}</div>
         </div>
-        {sent && (
-          <span style={{ marginLeft: 'auto', flexShrink: 0, fontSize: 10.5, fontWeight: 700, letterSpacing: '0.04em', textTransform: 'uppercase', color: '#fff', background: SENTIMENT_COLOR[sent], borderRadius: 999, padding: '3px 10px' }}>
-            {t(`sent_${sent}`)}
-          </span>
-        )}
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10 }}>
@@ -64,15 +60,34 @@ function Card({ m, override }: { m: UnderlyingMetric; override: UnderlyingOverri
         <Metric label={t('ul_rsi')} value={m.rsi_14 != null ? num(m.rsi_14, 0) : '—'} />
       </div>
 
+      {a && total > 0 && (
+        <div>
+          <div style={{ fontSize: 9.5, fontWeight: 600, letterSpacing: '0.05em', textTransform: 'uppercase', color: 'var(--text-muted)', marginBottom: 6 }}>{t('ul_analyst')}</div>
+          <div style={{ display: 'flex', height: 8, borderRadius: 5, overflow: 'hidden', background: 'var(--surface-2)' }}>
+            {(['buy', 'hold', 'sell'] as const).map((k) => a[k] > 0 && (
+              <div key={k} title={`${t(`sent_${k}`)} ${a[k]}%`} style={{ flex: `${a[k]} 0 0`, background: SENTIMENT_COLOR[k] }} />
+            ))}
+          </div>
+          <div style={{ display: 'flex', gap: 14, marginTop: 6, fontSize: 11 }}>
+            {(['buy', 'hold', 'sell'] as const).map((k) => (
+              <span key={k} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, color: 'var(--text-muted)' }}>
+                <span style={{ width: 8, height: 8, borderRadius: 2, background: SENTIMENT_COLOR[k] }} />
+                {t(`sent_${k}`)} <span className="mono" style={{ color: 'var(--text)' }}>{Math.round((a[k] / total) * 100)}%</span>
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+
       {desc && <Description text={desc} />}
       {m.figure && <div style={{ height: 190 }}><Figure fig={m.figure} name={`${m.name}_1y`} /></div>}
     </div>
   )
 }
 
-/** Lazy-loaded per-underlying breakdown (Yahoo metrics + 1Y chart). Collapsed by
-    default — the data pull is slow, so it fetches on first expand and caches per
-    ticker set. */
+/** Per-underlying breakdown (Yahoo metrics + 1Y chart). Prefetches on note load
+    (debounced for inline ticker edits) so the data is ready the moment the section
+    is opened. Collapsed by default to keep the panel compact. */
 export default function UnderlyingCards({ terms }: { terms: NoteTerms }) {
   const { t, lang } = useI18n()
   const [open, setOpen] = useState(false)
@@ -80,17 +95,18 @@ export default function UnderlyingCards({ terms }: { terms: NoteTerms }) {
   const [status, setStatus] = useState<'idle' | 'loading' | 'error'>('idle')
   const sig = JSON.stringify(terms.tickers)
 
-  // Refetch when the underlying set changes (only while open).
+  // Preload the moment the underlying set changes (note load / edit), debounced.
   useEffect(() => {
-    if (!open) return
     let cancelled = false
     setStatus('loading')
-    api.underlyingMetrics(terms.tickers, lang)
-      .then((r) => { if (!cancelled) { setRows(r); setStatus('idle') } })
-      .catch(() => { if (!cancelled) setStatus('error') })
-    return () => { cancelled = true }
+    const id = setTimeout(() => {
+      api.underlyingMetrics(terms.tickers, lang)
+        .then((r) => { if (!cancelled) { setRows(r); setStatus('idle') } })
+        .catch(() => { if (!cancelled) setStatus('error') })
+    }, 450)
+    return () => { cancelled = true; clearTimeout(id) }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, sig, lang])
+  }, [sig, lang])
 
   return (
     <div style={{ borderTop: '1px solid var(--border)' }}>
@@ -100,7 +116,10 @@ export default function UnderlyingCards({ terms }: { terms: NoteTerms }) {
           background: 'transparent', border: 'none', cursor: 'pointer', fontFamily: 'inherit',
           padding: '13px 0 11px', color: 'var(--text)',
         }}>
-        <span style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--text-muted)' }}>{t('ul_breakdown')}</span>
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+          <span style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--text-muted)' }}>{t('ul_breakdown')}</span>
+          {status === 'loading' && !open && <Icon name="spinner" size={12} />}
+        </span>
         <span style={{ transition: 'transform 0.15s ease', transform: open ? 'rotate(90deg)' : 'none', color: 'var(--text-faint)', fontSize: 13 }}>›</span>
       </button>
 

@@ -40,6 +40,8 @@ export const api = {
     jpost<UnderlyingMetric[]>('/api/underlyings/metrics', { tickers, lang }),
   describe: (issuer: string | null, symbols: string[], lang = 'en') =>
     jpost<DescribeResult>('/api/describe', { issuer, symbols, lang }),
+  brandingList: () => jget<{ file: string; firm_name: string }[]>('/api/branding'),
+  branding: (file: string) => jget<Record<string, unknown>>(`/api/branding/${file}`),
   report: async (body: ReportRequest): Promise<Response> => {
     const r = await fetch('/api/report', {
       method: 'POST',

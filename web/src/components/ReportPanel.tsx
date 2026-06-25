@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { api } from '../api/client'
 import { useI18n } from '../i18n/I18nProvider'
 import Panel from './Panel'
@@ -67,9 +67,23 @@ export default function ReportPanel({ terms, opts }: { terms: NoteTerms; opts: R
   const [sel, setSel] = useState<Set<string>>(() => new Set(allKeys))
   const [brandOpen, setBrandOpen] = useState(false)
   const [brand, setBrand] = useState<Branding>({})
+  const [presets, setPresets] = useState<{ file: string; firm_name: string }[]>([])
   const [status, setStatus] = useState<Status>('idle')
   const [error, setError] = useState('')
   const logoRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => { api.brandingList().then(setPresets).catch(() => {}) }, [])
+
+  // Load a bundled branding preset; flatten {en,es} title/footer to the active lang
+  // for the editable fields while keeping every other key (colours, logo, website).
+  const loadPreset = async (file: string) => {
+    if (!file) return
+    try {
+      const b = await api.branding(file) as Record<string, any>
+      const flat = (v: unknown) => (v && typeof v === 'object' ? ((v as any)[lang] ?? (v as any).en ?? '') : v)
+      setBrand({ ...b, report_title: flat(b.report_title), footer_note: flat(b.footer_note) } as Branding)
+    } catch { /* ignore */ }
+  }
 
   const lab = (en: string, es: string) => (lang === 'es' ? es : en)
   const toggle = (k: string) => { setSel((p) => { const n = new Set(p); n.has(k) ? n.delete(k) : n.add(k); return n }); setStatus('idle') }
@@ -141,6 +155,16 @@ export default function ReportPanel({ terms, opts }: { terms: NoteTerms; opts: R
           <span style={{ fontSize: 13, fontWeight: 600 }}>{t('rep_branding')}</span>
           <span style={{ fontSize: 11.5, color: 'var(--text-faint)', marginLeft: 8 }}>{t('rep_branding_opt')}</span>
         </button>
+        {brandOpen && presets.length > 0 && (
+          <div style={{ padding: '0 16px 12px' }}>
+            <Field label={t('brand_preset')}>
+              <select defaultValue="" onChange={(e) => loadPreset(e.target.value)}>
+                <option value="">{t('brand_preset_ph')}</option>
+                {presets.map((p) => <option key={p.file} value={p.file}>{p.firm_name}</option>)}
+              </select>
+            </Field>
+          </div>
+        )}
         {brandOpen && (
           <div style={{ padding: '0 16px 18px', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 14 }}>
             <Field label={t('brand_firm')}><input type="text" value={brand.firm_name ?? ''} onChange={(e) => setBrandField('firm_name', e.target.value)} /></Field>

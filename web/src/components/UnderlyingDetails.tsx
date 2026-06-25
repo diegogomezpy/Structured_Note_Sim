@@ -3,10 +3,10 @@ import { api } from '../api/client'
 import { useI18n } from '../i18n/I18nProvider'
 import Icon from './Icon'
 import TickerLogo, { LogoImg } from './TickerLogo'
-import type { NoteTerms, Sentiment, UnderlyingOverride } from '../api/types'
+import type { AnalystSplit, NoteTerms, Sentiment, UnderlyingOverride } from '../api/types'
 
 const SENTIMENTS: Sentiment[] = ['buy', 'hold', 'sell']
-export const SENTIMENT_COLOR: Record<Sentiment, string> = { buy: 'var(--green)', hold: 'var(--amber)', sell: 'var(--red)' }
+export const SENTIMENT_COLOR: Record<Sentiment, string> = { buy: '#16a34a', hold: '#f59e0b', sell: '#dc2626' }
 
 /** Editor for the per-underlying overrides (description, custom logo, analyst
     rating) and the issuer description — with a Prefill-from-Yahoo button that
@@ -94,19 +94,22 @@ export default function UnderlyingDetails({ terms, onChange }: {
               <textarea style={ta} value={o.description ?? ''}
                         onChange={(e) => setOverride(name, { description: e.target.value })} />
 
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 10 }}>
-                <span style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>{t('det_sentiment')}</span>
-                <div style={{ display: 'inline-flex', gap: 4, background: 'var(--surface-2)', borderRadius: 9, padding: 3 }}>
+              <div style={{ marginTop: 12 }}>
+                <div style={{ fontSize: 11.5, color: 'var(--text-muted)', marginBottom: 6 }}>{t('det_sentiment')}</div>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10 }}>
                   {SENTIMENTS.map((sv) => {
-                    const on = o.sentiment === sv
+                    const a = o.analyst ?? { buy: 0, hold: 0, sell: 0 }
                     return (
-                      <button key={sv} onClick={() => setOverride(name, { sentiment: on ? null : sv })}
-                        style={{
-                          fontFamily: 'inherit', fontSize: 12, fontWeight: 600, padding: '4px 12px', borderRadius: 7,
-                          border: 'none', cursor: 'pointer',
-                          background: on ? SENTIMENT_COLOR[sv] : 'transparent',
-                          color: on ? '#fff' : 'var(--text-muted)',
-                        }}>{t(`sent_${sv}`)}</button>
+                      <div key={sv}>
+                        <label style={{ fontSize: 10.5, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em', color: SENTIMENT_COLOR[sv], display: 'block', marginBottom: 4 }}>{t(`sent_${sv}`)} %</label>
+                        <input type="number" min={0} max={100} step={1} value={a[sv] || ''}
+                               onChange={(e) => {
+                                 const v = Math.max(0, Math.min(100, Number(e.target.value) || 0))
+                                 const next: AnalystSplit = { ...a, [sv]: v }
+                                 const empty = !next.buy && !next.hold && !next.sell
+                                 setOverride(name, { analyst: empty ? null : next })
+                               }} />
+                      </div>
                     )
                   })}
                 </div>
