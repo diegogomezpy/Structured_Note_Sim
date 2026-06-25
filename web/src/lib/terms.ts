@@ -2,6 +2,7 @@
    the timeline can render before any simulation. Derived values are never
    stored — recomputed from the human-readable fields, same as the backend. */
 import type { NoteTerms } from '../api/types'
+import { pct } from './format'
 
 const FREQ_TO_PERIODS: Record<string, number> = {
   monthly: 12, quarterly: 4, 'semi-annual': 2, annual: 1,
@@ -49,4 +50,14 @@ export function autocallSchedule(t: NoteTerms): number[] {
 /** True when the autocall barrier steps down over the schedule. */
 export function hasStepDown(t: NoteTerms): boolean {
   return (t.autocall_step_down ?? 0) > 0
+}
+
+/** One-line plain-language summary of the coupon schedule, e.g.
+    "4 × Quarterly · 10.0% coupon p.a. · +2.50%/period · memory coupons".
+    `tr` is the i18n lookup; only plain keys are used (no interpolation vars). */
+export function noteSummary(terms: NoteTerms, tr: (k: string) => string): string {
+  const n = nObs(terms)
+  const cper = couponRate(terms)
+  const couponNote = cper > 0 ? ` · +${pct(cper, 2)}/${tr('per_period')}` : ''
+  return `${n} × ${tr(`freq_${terms.payment_freq}`)} · ${pct(terms.coupon_pa, 1)} ${tr('coupon_pa').toLowerCase()}${couponNote}${terms.memory ? ` · ${tr('memory').toLowerCase()}` : ''}`
 }

@@ -78,23 +78,40 @@ export default function ReportPanel({ terms, opts }: { terms: NoteTerms; opts: R
   const logoRef = useRef<HTMLInputElement>(null)
   const altLogoRef = useRef<HTMLInputElement>(null)
   const coverImgRef = useRef<HTMLInputElement>(null)
+  const sigilRef = useRef<HTMLInputElement>(null)
+  const backImgRef = useRef<HTMLInputElement>(null)
+  const brandCfgRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => { api.brandingList().then(setPresets).catch(() => {}) }, [])
 
-  // Load a bundled branding preset; flatten {en,es} title/footer to the active lang
-  // for the editable fields while keeping every other key (colours, logo, website).
+  // Apply a branding config dict; flatten {en,es} title/footer/disclaimer to the
+  // active lang for the editable fields while keeping every other key (colours,
+  // logo, website, cover images, fonts). Shared by the preset picker and the
+  // manual JSON upload.
+  const applyBranding = (b: Record<string, any>) => {
+    const flat = (v: unknown) => (v && typeof v === 'object' ? ((v as any)[lang] ?? (v as any).en ?? '') : v)
+    setBrand({
+      ...b,
+      report_title: flat(b.report_title),
+      footer_note: flat(b.footer_note),
+      disclaimer_body: flat(b.disclaimer_body),
+    } as Branding)
+  }
+  // Load a bundled branding preset auto-discovered from the branding/ folder.
   const loadPreset = async (file: string) => {
     if (!file) return
-    try {
-      const b = await api.branding(file) as Record<string, any>
-      const flat = (v: unknown) => (v && typeof v === 'object' ? ((v as any)[lang] ?? (v as any).en ?? '') : v)
-      setBrand({
-        ...b,
-        report_title: flat(b.report_title),
-        footer_note: flat(b.footer_note),
-        disclaimer_body: flat(b.disclaimer_body),
-      } as Branding)
-    } catch { /* ignore */ }
+    try { applyBranding(await api.branding(file) as Record<string, any>) } catch { /* ignore */ }
+  }
+  // Manual fallback: upload a branding config JSON when it isn't auto-detected
+  // (e.g. a local/gitignored brand config that never shipped with the app).
+  const onUploadBranding = (file: File | undefined) => {
+    if (!file) return
+    const r = new FileReader()
+    r.onload = () => {
+      try { applyBranding(JSON.parse(String(r.result))); setError('') }
+      catch { setError(t('brand_upload_bad')) }
+    }
+    r.readAsText(file)
   }
 
   const lab = (en: string, es: string) => (lang === 'es' ? es : en)
@@ -167,13 +184,22 @@ export default function ReportPanel({ terms, opts }: { terms: NoteTerms; opts: R
           <span style={{ fontSize: 13, fontWeight: 600 }}>{t('rep_branding')}</span>
           <span style={{ fontSize: 11.5, color: 'var(--text-faint)', marginLeft: 8 }}>{t('rep_branding_opt')}</span>
         </button>
-        {brandOpen && presets.length > 0 && (
-          <div style={{ padding: '0 16px 12px' }}>
-            <Field label={t('brand_preset')}>
-              <select defaultValue="" onChange={(e) => loadPreset(e.target.value)}>
-                <option value="">{t('brand_preset_ph')}</option>
-                {presets.map((p) => <option key={p.file} value={p.file}>{p.firm_name}</option>)}
-              </select>
+        {brandOpen && (
+          <div style={{ padding: '0 16px 12px', display: 'flex', gap: 14, flexWrap: 'wrap', alignItems: 'flex-end' }}>
+            {presets.length > 0 && (
+              <Field label={t('brand_preset')}>
+                <select defaultValue="" onChange={(e) => loadPreset(e.target.value)}>
+                  <option value="">{t('brand_preset_ph')}</option>
+                  {presets.map((p) => <option key={p.file} value={p.file}>{p.firm_name}</option>)}
+                </select>
+              </Field>
+            )}
+            <Field label={t('brand_upload_cfg')}>
+              <button className="btn" style={{ padding: '7px 12px' }} onClick={() => brandCfgRef.current?.click()}>
+                <Icon name="upload" size={13} /> {t('brand_upload_cfg_btn')}
+              </button>
+              <input ref={brandCfgRef} type="file" accept="application/json,.json" style={{ display: 'none' }}
+                     onChange={(e) => { onUploadBranding(e.target.files?.[0]); e.target.value = '' }} />
             </Field>
           </div>
         )}
@@ -232,12 +258,28 @@ export default function ReportPanel({ terms, opts }: { terms: NoteTerms; opts: R
                     <input ref={altLogoRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={(e) => onImage('cover_logo_base64', e.target.files?.[0])} />
                   </div>
                 </Field>
+                <Field label={t('brand_cover_sigil')}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <button className="btn" style={{ padding: '7px 12px' }} onClick={() => sigilRef.current?.click()}><Icon name="upload" size={13} /> {t('det_upload_logo')}</button>
+                    {brand.cover_sigil_base64 && <img src={brand.cover_sigil_base64} alt="sigil" style={{ height: 26, borderRadius: 5, background: brand.primary_color ?? '#1a2e4a', padding: 2 }} />}
+                    {brand.cover_sigil_base64 && <button className="btn btn--ghost" style={{ padding: '4px 8px', fontSize: 11.5 }} onClick={() => setBrandField('cover_sigil_base64', '')}>{t('det_reset_logo')}</button>}
+                    <input ref={sigilRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={(e) => onImage('cover_sigil_base64', e.target.files?.[0])} />
+                  </div>
+                </Field>
                 <Field label={t('brand_cover_image')}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                     <button className="btn" style={{ padding: '7px 12px' }} onClick={() => coverImgRef.current?.click()}><Icon name="upload" size={13} /> {t('brand_upload_image')}</button>
                     {brand.cover_image_base64 && <img src={brand.cover_image_base64} alt="cover" style={{ height: 26, borderRadius: 5 }} />}
                     {brand.cover_image_base64 && <button className="btn btn--ghost" style={{ padding: '4px 8px', fontSize: 11.5 }} onClick={() => setBrandField('cover_image_base64', '')}>{t('det_reset_logo')}</button>}
                     <input ref={coverImgRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={(e) => onImage('cover_image_base64', e.target.files?.[0])} />
+                  </div>
+                </Field>
+                <Field label={t('brand_back_image')}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <button className="btn" style={{ padding: '7px 12px' }} onClick={() => backImgRef.current?.click()}><Icon name="upload" size={13} /> {t('brand_upload_image')}</button>
+                    {brand.back_image_base64 && <img src={brand.back_image_base64} alt="back" style={{ height: 26, borderRadius: 5 }} />}
+                    {brand.back_image_base64 && <button className="btn btn--ghost" style={{ padding: '4px 8px', fontSize: 11.5 }} onClick={() => setBrandField('back_image_base64', '')}>{t('det_reset_logo')}</button>}
+                    <input ref={backImgRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={(e) => onImage('back_image_base64', e.target.files?.[0])} />
                   </div>
                 </Field>
                 <Swatch label={t('brand_overlay_color')} value={brand.cover_overlay_color} fallback={brand.primary_color ?? '#1a2e4a'} onChange={(v) => setBrandField('cover_overlay_color', v)} />

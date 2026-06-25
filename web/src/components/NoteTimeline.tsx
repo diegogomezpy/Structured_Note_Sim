@@ -102,9 +102,6 @@ export default function NoteTimeline({ terms }: { terms: NoteTerms }) {
   if (osLevel != null) entries.push({ target: mapY(osLevel), color: C_ONESTAR, name: t('one_star'), value: pct(osLevel, 0), desc: t('diag_lgd_onestar', { lvl: pct(osLevel, 0) }) })
   const adjY = declutter(entries.map((e) => e.target), 14, Y_TOP + 2, Y_BOT)
 
-  const couponNote = couponPer > 0 ? ` · +${pct(couponPer, 2)}/${t('per_period')}` : ''
-  const summary = `${n} × ${t(`freq_${terms.payment_freq}`)} · ${pct(terms.coupon_pa, 1)} ${t('coupon_pa').toLowerCase()}${couponNote}${terms.memory ? ` · ${t('memory').toLowerCase()}` : ''}`
-
   // y-axis ticks at round levels inside the domain
   const yTicks = [0, 0.5, 1.0].filter((l) => l <= DOMAIN)
 
@@ -222,8 +219,6 @@ export default function NoteTimeline({ terms }: { terms: NoteTerms }) {
         {/* issue marker on the par line */}
         <Dot x={X0} r={4.5} fill="var(--accent)" stroke="var(--accent)" />
       </svg>
-
-      <div style={{ fontSize: 11, color: 'var(--text-faint)', marginTop: 6, paddingTop: 8, borderTop: '1px solid var(--border)' }}>{summary}</div>
     </div>
   )
 }

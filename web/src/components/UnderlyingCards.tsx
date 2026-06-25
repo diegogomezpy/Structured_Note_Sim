@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { api } from '../api/client'
 import { useI18n } from '../i18n/I18nProvider'
 import { useLogos } from '../lib/logos'
@@ -38,7 +38,7 @@ function Description({ text }: { text: string }) {
   )
 }
 
-function Card({ m, override }: { m: UnderlyingMetric; override: UnderlyingOverride }) {
+function Card({ m, override, chart = true }: { m: UnderlyingMetric; override: UnderlyingOverride; chart?: boolean }) {
   const { t } = useI18n()
   const logos = useLogos()
   const sub = [m.type, m.sector].filter(Boolean).join(' · ') || '—'
@@ -122,7 +122,7 @@ function Card({ m, override }: { m: UnderlyingMetric; override: UnderlyingOverri
       )}
 
       {desc && <Description text={desc} />}
-      {m.figure && <div style={{ height: 190 }}><Figure fig={m.figure} name={`${m.name}_1y`} noDownload /></div>}
+      {chart && m.figure && <div style={{ height: 190 }}><Figure fig={m.figure} name={`${m.name}_1y`} noDownload /></div>}
     </div>
   )
 }
@@ -135,20 +135,55 @@ export default function UnderlyingCards({ terms }: { terms: NoteTerms }) {
   const [open, setOpen] = useState(false)
   const [rows, setRows] = useState<UnderlyingMetric[] | null>(null)
   const [status, setStatus] = useState<'idle' | 'loading' | 'error'>('idle')
+  const [forceCharts, setForceCharts] = useState(false)
   const sig = JSON.stringify(terms.tickers)
+  const rowsRef = useRef<UnderlyingMetric[] | null>(null)
+  rowsRef.current = rows
+  const langRef = useRef(lang)
 
-  // Preload the moment the underlying set changes (note load / edit), debounced.
+  // Keep the breakdown in sync with the underlying set WITHOUT recomputing the
+  // ones that didn't change: removing an underlying just drops its card, adding
+  // one fetches only that ticker, and a rename is a no-op (metrics are keyed on
+  // symbol). A language change refetches everything (the metrics carry translated
+  // text). Debounced for inline ticker edits.
   useEffect(() => {
     let cancelled = false
-    setStatus('loading')
+    const tickers = terms.tickers ?? {}
+    const syms = Object.keys(tickers)
+    const langChanged = langRef.current !== lang
+    langRef.current = lang
+    const existing = (!langChanged && rowsRef.current) ? rowsRef.current : []
+    const have = existing.filter((r) => syms.includes(r.symbol))
+    const haveSyms = new Set(have.map((r) => r.symbol))
+    const missing = syms.filter((s) => !haveSyms.has(s))
+    const order = (list: UnderlyingMetric[]) =>
+      syms.map((s) => list.find((m) => m.symbol === s)).filter(Boolean) as UnderlyingMetric[]
+
+    // Nothing new to fetch (a removal, a rename, or a no-op): keep what we have.
+    if (missing.length === 0) {
+      const kept = order(have)
+      setRows(kept.length ? kept : null)
+      setStatus('idle')
+      return
+    }
+    // Full-section spinner only on a cold load; when cards already exist, keep
+    // them visible while the new ticker's metrics stream in.
+    if (have.length === 0) setStatus('loading')
+    const subset: Record<string, string> = {}
+    missing.forEach((s) => { subset[s] = tickers[s] })
     const id = setTimeout(() => {
-      api.underlyingMetrics(terms.tickers, lang)
-        .then((r) => { if (!cancelled) { setRows(r); setStatus('idle') } })
-        .catch(() => { if (!cancelled) setStatus('error') })
+      api.underlyingMetrics(subset, lang)
+        .then((r) => { if (!cancelled) { setRows(order([...have, ...r])); setStatus('idle') } })
+        .catch(() => { if (!cancelled) setStatus(have.length ? 'idle' : 'error') })
     }, 450)
     return () => { cancelled = true; clearTimeout(id) }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sig, lang])
+
+  // Past three underlyings the per-card 1Y charts dominate and the section gets
+  // cluttered — collapse them to compact metric cards by default, with a toggle.
+  const many = (rows?.length ?? 0) > 3
+  const showCharts = !many || forceCharts
 
   return (
     <div style={{ borderTop: '1px solid var(--border)' }}>
@@ -174,9 +209,19 @@ export default function UnderlyingCards({ terms }: { terms: NoteTerms }) {
           )}
           {status === 'error' && <div style={{ color: 'var(--red)', fontSize: 12.5, padding: '8px 0' }}>{t('ul_load_fail')}</div>}
           {rows && status !== 'loading' && (
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 14 }} className="fade-up">
-              {rows.map((m) => <Card key={m.symbol} m={m} override={terms.underlyings?.[m.name] ?? {}} />)}
-            </div>
+            <>
+              {many && (
+                <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 8 }}>
+                  <button className="btn btn--ghost" style={{ padding: '4px 10px', fontSize: 11.5 }}
+                          onClick={() => setForceCharts((v) => !v)}>
+                    {showCharts ? t('ul_hide_charts') : t('ul_show_charts')}
+                  </button>
+                </div>
+              )}
+              <div style={{ display: 'grid', gridTemplateColumns: `repeat(auto-fit, minmax(${many ? 250 : 300}px, 1fr))`, gap: 14 }} className="fade-up">
+                {rows.map((m) => <Card key={m.symbol} m={m} override={terms.underlyings?.[m.name] ?? {}} chart={showCharts} />)}
+              </div>
+            </>
           )}
         </div>
       )}

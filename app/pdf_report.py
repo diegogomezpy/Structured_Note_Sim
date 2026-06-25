@@ -105,8 +105,10 @@ _KNOWN_BRANDING_KEYS = {
     "sidebar_bar_color",    # NEW — solid bar across the top of the cover sidebar
     "disclaimer_body",      # NEW — overrides the full disclaimer body text
     "cover_logo_base64",    # NEW — white knockout logo for the full-bleed cover
+    "cover_sigil_base64",   # NEW — optional emblem/sigil shown on the cover (≠ wordmark)
     "cover_image_base64",   # NEW — optional full-bleed cover background photo
-    "cover_overlay_color",  # NEW — colour of the overlay drawn over the cover photo
+    "back_image_base64",    # NEW — optional full-bleed photo for the disclaimer back page
+    "cover_overlay_color",  # NEW — colour of the overlay drawn over the cover/back photo
     "cover_overlay_opacity",# NEW — 0..1 opacity of that overlay
     "title_font", "body_font",  # NEW — custom report fonts (see _register_brand_fonts)
 }
@@ -246,7 +248,7 @@ _LABELS: dict[str, dict[str, str]] = {
     "backtest":              {"en": "Historical Backtest",               "es": "Backtest Histórico"},
     "live":                  {"en": "Current Performance",               "es": "Rendimiento Actual"},
     "glossary_title":        {"en": "Glossary of Terms",                 "es": "Glosario de Términos"},
-    "disclaimer_title":      {"en": "Important Information",             "es": "Información Importante"},
+    "disclaimer_title":      {"en": "Disclaimer",                        "es": "Aviso legal"},
     "maturity":              {"en": "Maturity",                          "es": "Vencimiento"},
     "freq":                  {"en": "Payment frequency",                 "es": "Frecuencia de pago"},
     "coupon_pa":             {"en": "Coupon p.a.",                       "es": "Cupón anual"},
@@ -825,17 +827,12 @@ class _NotePDF(FPDF):
             except Exception:
                 logo_w = 0.0
 
-        # ── Firm name (left) + Note name (right) ─────────────────────
-        # Vertically centre the text row on the logo's centreline: the logo sits
-        # at y=8 with height 6 (centre y=11); a 4.5mm-tall text cell is centred
-        # there at y = 11 - 4.5/2 = 8.75. (Was 9.5, which sat 0.75mm low.)
+        # ── Note name (right) ────────────────────────────────────────
+        # The firm name is intentionally NOT printed here — the logo alone
+        # identifies the firm (printing both is redundant). Keep the note name on
+        # the right, vertically centred on the logo's centreline (logo at y=8,
+        # height 6 → centre y=11; a 4.5mm cell centres at y = 11 - 4.5/2 = 8.75).
         _row_y = 8.75
-        self.set_xy(self.l_margin + logo_w, _row_y)
-        self._sf(7.5, "semibold")
-        self.set_text_color(*self.primary_color)
-        firm_label = self._safe(self.firm_name.upper())
-        self.cell(100, 4.5, firm_label)
-
         self._sf(7, "light")
         self.set_text_color(*_TEXT_SOFT)
         self.set_xy(self.w - self.r_margin - 85, _row_y)
@@ -2344,6 +2341,17 @@ def _front_cover_page(pdf: _NotePDF, terms, lang: str, report_title: str, websit
     pdf.set_line_width(0.9)
     pdf.line(cx - 38, H * 0.17 + 46, cx + 38, H * 0.17 + 46)
 
+    # Optional emblem / sigil — a brand mark distinct from the wordmark logo,
+    # centred in the middle band between the eyebrow and the note name.
+    sig_b = getattr(pdf, "cover_sigil_bytes", None)
+    if sig_b:
+        try:
+            sh = 40.0
+            sw = sh * _logo_aspect(sig_b, default=1.0)
+            pdf.image(io.BytesIO(sig_b), x=cx - sw / 2, y=H * 0.37, w=sw, h=sh)
+        except Exception:
+            pass
+
     # Note name — split into a bold title + an optional subtitle on a separator.
     _parts = re.split(r"\s+[—\-/:]\s+", terms.name or "", maxsplit=1)
     _title = _safe((_parts[0] or "").upper())
@@ -2392,6 +2400,22 @@ def _full_bleed_disclaimer(pdf: _NotePDF, lang: str, text: str, website: str = "
     W, H = pdf.w, pdf.h
     pdf.set_fill_color(*pdf.primary_color)
     pdf.rect(0, 0, W, H, style="F")
+
+    # Optional full-bleed photo with a colour overlay (mirrors the front cover) so
+    # the back page matches the cover treatment.
+    if getattr(pdf, "back_image_bytes", None):
+        try:
+            pdf.image(io.BytesIO(pdf.back_image_bytes), x=0, y=0, w=W, h=H)
+        except Exception:
+            pass
+        _op = getattr(pdf, "cover_overlay_opacity", 0.0)
+        if _op and _op > 0:
+            pdf.set_fill_color(*getattr(pdf, "cover_overlay_color", pdf.primary_color))
+            try:
+                with pdf.local_context(fill_opacity=_op):
+                    pdf.rect(0, 0, W, H, style="F")
+            except Exception:
+                pass
 
     logo_b = getattr(pdf, "cover_logo_bytes", None) or pdf.firm_logo_bytes
     if logo_b:
@@ -3190,6 +3214,10 @@ def _build_pdf_report(
             return None
     pdf.cover_image_bytes = _decode_b64_img(_b.get("cover_image_base64"))
     pdf.cover_logo_bytes  = _decode_b64_img(_b.get("cover_logo_base64"))
+    pdf.cover_sigil_bytes = _decode_b64_img(_b.get("cover_sigil_base64"))
+    # Back (disclaimer) page photo — falls back to the cover photo when not set
+    # separately, so a brand can supply one image for both faces.
+    pdf.back_image_bytes  = _decode_b64_img(_b.get("back_image_base64")) or pdf.cover_image_bytes
     pdf.cover_overlay_color = _branding_color(branding, "cover_overlay_color", primary_color)
     try:
         pdf.cover_overlay_opacity = float(_b.get("cover_overlay_opacity", 0.55))

@@ -301,8 +301,10 @@ export interface Branding {
   disclaimer_body?: string
   logo_base64?: string
   cover_logo_base64?: string      // white knockout logo for the cover
+  cover_sigil_base64?: string     // emblem/sigil shown on the cover (≠ wordmark)
   cover_image_base64?: string     // full-bleed cover background photo
-  cover_overlay_color?: string    // overlay colour over the cover photo
+  back_image_base64?: string      // full-bleed photo for the disclaimer back page
+  cover_overlay_color?: string    // overlay colour over the cover/back photo
   cover_overlay_opacity?: string | number  // 0..1
   title_font?: string             // headings font (fonts/brand/<Name>-Bold.ttf)
   body_font?: string              // body font

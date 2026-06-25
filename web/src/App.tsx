@@ -6,6 +6,7 @@ import { useI18n } from './i18n/I18nProvider'
 import Header from './components/Header'
 import SetupRail, { type RunOpts } from './components/SetupRail'
 import NoteTimeline from './components/NoteTimeline'
+import { noteSummary } from './lib/terms'
 import NoteDescription from './components/NoteDescription'
 import ObservationSchedule from './components/ObservationSchedule'
 import IssuerCard from './components/IssuerCard'
@@ -223,6 +224,9 @@ export default function App() {
                 {diagramOpen ? t('hide_diagram') : t('show_diagram')}
               </button>
             }>
+              <div style={{ fontSize: 12.5, color: 'var(--text-muted)', marginTop: -6, marginBottom: 14 }}>
+                {noteSummary(terms, t)}
+              </div>
               {diagramOpen && <NoteTimeline terms={terms} />}
               <NoteDescription terms={terms} />
               <ObservationSchedule terms={terms} />
