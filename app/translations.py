@@ -1146,6 +1146,9 @@ _STRINGS: dict[str, tuple[str, str]] = {
     "chart_marker_premium":      (" · Premium {v}",                    " · Prima {v}"),
     "chart_marker_coupon":       ("{label}: Coupon {v}",               "{label}: Cupón {v}"),
     "chart_marker_coupon_missed":("{label}: Coupon missed",            "{label}: Cupón no pagado"),
+    "chart_ev_coupon":           ("Coupon paid",                       "Cupón pagado"),
+    "chart_ev_missed":           ("Coupon missed",                     "Cupón no pagado"),
+    "chart_ev_call":             ("Autocall",                          "Autocancelación"),
 }
 
 

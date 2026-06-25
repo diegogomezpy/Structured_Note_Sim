@@ -873,11 +873,13 @@ def run_live_api(terms: NoteTerms, *, lang: str = "en", for_pdf: bool = False) -
             "coupon": _f(r["coupon_amount"]) if r["coupon_amount"] > 0 else None,
             "cumulative": round(running_total, 6), "upcoming": False,
         })
+        _amt = float(r["coupon_amount"])
+        _released = round(_amt / terms.coupon_rate) if (terms.coupon_rate and _amt > 0) else (1 if _amt > 0 else 0)
         obs_markers.append({
             "date": snap, "label": label, "wof": obs_wof,
             "autocalled": bool(r["autocalled"]),
             "paid": bool(r["coupon_met"] or r["coupon_amount"] > 0),
-            "amount": float(r["coupon_amount"]),
+            "amount": _amt, "released": int(_released),
         })
         if r["autocalled"]:
             break

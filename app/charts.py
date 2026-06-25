@@ -899,25 +899,27 @@ def build_live_performance_chart(
     perf   = slice_.values / S0[np.newaxis, :]
     wof    = perf.min(axis=1)
 
-    asset_colors = [_BLUE, _BLUE_LIGHT, _NAVY, "#f39c12", "#9b59b6"]
+    # Muted, non-blue underlyings so the worst-of (brand accent) is the hero —
+    # matching the Monte-Carlo path explorer.
+    asset_colors = ["#64748b", "#0d9488", "#a855f7", "#d97706", "#0891b2"]
     asset_names  = list(hist_prices.columns)
 
     fig = go.Figure()
 
-    # Per-asset lines
+    # Per-asset lines (recede)
     for i, name in enumerate(asset_names):
         fig.add_trace(go.Scatter(
             x=dates, y=perf[:, i],
             mode="lines", name=name,
-            line=dict(color=asset_colors[i % len(asset_colors)], width=1.2, dash="dot"),
-            opacity=0.65,
+            line=dict(color=asset_colors[i % len(asset_colors)], width=1, dash="dot"),
+            opacity=0.5,
         ))
 
-    # Worst-of line
+    # Worst-of line (brand-accent hero)
     fig.add_trace(go.Scatter(
         x=dates, y=wof,
         mode="lines", name=tr("chart_worst_of"),
-        line=dict(color=_NAVY, width=2.5),
+        line=dict(color="#2563eb", width=2.2),
     ))
 
     # Barriers — KI, coupon (when distinct), and autocall (flat or stepped)
@@ -933,32 +935,44 @@ def build_live_performance_chart(
                       line_width=2,
                       annotation_text=tr("chart_today"), annotation_position="top left")
 
-    # Past observation markers (status precomputed by replay_note)
+    # Past observation markers — grouped by kind into one named legend entry each
+    # (matching the path explorer), with memory payouts shown as a stack of dots.
+    # ISO-string x (not a raw Timestamp): kaleido serialises to JSON for the PDF
+    # and a Timestamp x raises "not JSON serializable", silently dropping the chart.
+    _ev_style = {
+        "call":   dict(symbol="diamond", color="#2563eb", size=11),
+        "coupon": dict(symbol="circle", color="#16a34a", size=9),
+        "missed": dict(symbol="circle-open", color="#d97706", size=9),
+    }
+    _ev_name = {"call": tr("chart_ev_call"), "coupon": tr("chart_ev_coupon"), "missed": tr("chart_ev_missed")}
+    _groups: dict[str, list] = {"call": [], "coupon": [], "missed": []}
     for m in obs_markers:
-        if m["autocalled"]:
-            tip = tr("chart_marker_autocalled", label=m["label"]) + (
-                tr("chart_marker_premium", v=f"{m['amount']:.4%}") if m["amount"] > 0 else "")
-            color, symbol, size = _BLUE, "star", 12
-        elif m["paid"]:
-            tip = tr("chart_marker_coupon", label=m["label"], v=f"{m['amount']:.4%}")
-            color, symbol, size = _BLUE, "circle", 9
-        else:
-            tip = tr("chart_marker_coupon_missed", label=m["label"])
-            color, symbol, size = _RED, "circle", 9
-        fig.add_trace(go.Scatter(
-            # ISO string, not a raw Timestamp: kaleido serialises the figure to
-            # JSON to render the PDF and a Timestamp x raises "Type is not JSON
-            # serializable" — the chart then silently drops from the report
-            # (it renders fine in the browser, which is why it was easy to miss).
-            x=[pd.Timestamp(m["date"]).isoformat()], y=[m["wof"]],
-            mode="markers",
-            marker=dict(size=size, color=color, symbol=symbol,
-                        line=dict(width=1.5, color="white")),
-            name=tip, showlegend=True,
-            hovertemplate=f"{tip}<br>{tr('chart_worst_of')}: {m['wof']:.1%}<extra></extra>",
-        ))
+        kind = "call" if m["autocalled"] else ("coupon" if m["paid"] else "missed")
+        _groups[kind].append(m)
         fig.add_vline(x=pd.Timestamp(m["date"]).isoformat(), line_dash="dot", line_color="#cccccc",
                       annotation_text=m["label"], annotation_position="top")
+    for kind, ms in _groups.items():
+        if not ms:
+            continue
+        st = _ev_style[kind]
+        xs, ys, texts = [], [], []
+        for m in ms:
+            if kind == "call":
+                tip = tr("chart_marker_autocalled", label=m["label"]) + (
+                    tr("chart_marker_premium", v=f"{m['amount']:.4%}") if m["amount"] > 0 else "")
+            elif kind == "coupon":
+                tip = tr("chart_marker_coupon", label=m["label"], v=f"{m['amount']:.4%}")
+            else:
+                tip = tr("chart_marker_coupon_missed", label=m["label"])
+            x_iso = pd.Timestamp(m["date"]).isoformat()
+            for j in range(max(1, int(m.get("released", 1)))):
+                xs.append(x_iso); ys.append(m["wof"] + j * 0.03); texts.append(tip)
+        fig.add_trace(go.Scatter(
+            x=xs, y=ys, mode="markers", name=_ev_name[kind], showlegend=True,
+            marker=dict(size=st["size"], color=st["color"], symbol=st["symbol"],
+                        line=dict(width=1.5, color="white")),
+            text=texts, hovertemplate="%{text}<extra></extra>",
+        ))
 
     # Future observation reference lines (calendar dates)
     for label, obs_date in future_obs:

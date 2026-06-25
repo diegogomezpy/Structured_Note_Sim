@@ -1,0 +1,210 @@
+/* ────────────────────────────────────────────────────────────────────────
+   Mercator — Structured Products design system
+   Editorial / institutional. Source Serif 4 + Hanken Grotesk.
+   Warm paper + ink, deep viridian accent. Light-primary, dark-secondary.
+   Theme driven by [data-theme] on <html> (keep the existing ThemeProvider).
+
+   This is a DROP-IN replacement for src/index.css. The CSS variable NAMES
+   are unchanged from the current file, so most components need no edits —
+   only the additions noted under "NEW TOKENS" require touch-ups (figures
+   move from monospace to serif; headings use the serif stack).
+   ──────────────────────────────────────────────────────────────────────── */
+
+:root,
+:root[data-theme='light'] {
+  /* surfaces */
+  --bg:            #f7f5ef;   /* warm paper */
+  --bg-elev:       #f1eee4;
+  --surface:       #fffefb;
+  --surface-2:     #f1eee4;
+  --surface-hover: #efece3;
+  /* ink */
+  --text:          #1c241f;
+  --text-muted:    #5c635b;
+  --text-faint:    #8c9189;
+  /* lines */
+  --border:        #e6e1d5;
+  --border-strong: #d4cdbd;
+  --hairline:      #ece8dd;   /* NEW — faint in-card rules */
+  /* accent (deep viridian) */
+  --accent:        #15694e;
+  --accent-hover:  #114e3a;
+  --accent-weak:   #e4efe9;
+  --accent-text:   #15694e;
+  /* semantic — calm, not alarm */
+  --green:         #15694e;   /* positive uses the viridian family */
+  --green-weak:    #e4efe9;
+  --red:           #9c3b30;   /* claret, for losses / negatives */
+  --red-weak:      #f5e6e3;
+  --amber:         #9a6b1a;   /* ochre, for "stale / changed" notices */
+  --amber-weak:    #f5edd9;
+  /* misc */
+  --ring:          rgba(21, 105, 78, 0.28);
+  --shadow:        0 1px 2px rgba(40, 35, 20, 0.05), 0 12px 30px -20px rgba(40, 35, 20, 0.18);
+  --header-bg:     #fffefb;
+
+  /* NEW TOKENS — type */
+  --font-serif:    'Source Serif 4', Georgia, 'Times New Roman', serif;
+  --font-sans:     'Hanken Grotesk', system-ui, -apple-system, sans-serif;
+}
+
+:root[data-theme='dark'] {
+  --bg:            #0e1310;
+  --bg-elev:       #121712;
+  --surface:       #161c17;
+  --surface-2:     #1e261f;
+  --surface-hover: #232c24;
+  --text:          #eef1ea;
+  --text-muted:    #9aa49b;
+  --text-faint:    #6b756c;
+  --border:        #2a332c;
+  --border-strong: #3a453c;
+  --hairline:      #232c24;
+  --accent:        #3fae86;
+  --accent-hover:  #5cc09c;
+  --accent-weak:   #143026;
+  --accent-text:   #6ec9a6;
+  --green:         #3fae86;
+  --green-weak:    #143026;
+  --red:           #d97a6e;
+  --red-weak:      #3a2420;
+  --amber:         #d2a24e;
+  --amber-weak:    #352a16;
+  --ring:          rgba(63, 174, 134, 0.35);
+  --shadow:        0 1px 3px rgba(0,0,0,0.5), 0 14px 36px -18px rgba(0,0,0,0.7);
+  --header-bg:     #121712;
+}
+
+* { box-sizing: border-box; }
+html, body, #root { height: 100%; }
+
+body {
+  margin: 0;
+  font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: 1.55;
+  color: var(--text);
+  background: var(--bg);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  transition: background 0.2s ease, color 0.2s ease;
+}
+
+/* Headings + display use the serif. */
+h1, h2, h3 { font-family: var(--font-serif); font-weight: 600; color: var(--text); margin: 0; letter-spacing: -0.01em; }
+
+/* Figures: large numbers read in the serif with tabular lining figures.
+   Replaces the old `.mono` numeric treatment. */
+.figure {
+  font-family: var(--font-serif);
+  font-variant-numeric: tabular-nums lining-nums;
+  letter-spacing: -0.01em;
+}
+/* Small data values inside tables/labels that still want even columns
+   but at body size — sans with tabular figures. */
+.tnum { font-variant-numeric: tabular-nums; }
+
+/* Small-caps section label. No accent tick (that was the terminal look);
+   pair with a hairline rule instead — see .section-rule. */
+.section-label {
+  font-family: var(--font-sans);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.section-rule {            /* divider: label + hairline + optional caption */
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+.section-rule::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--border);
+}
+
+a { color: var(--accent-text); text-decoration: none; }
+
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: 6px; border: 2px solid transparent; background-clip: padding-box; }
+::-webkit-scrollbar-track { background: transparent; }
+
+/* ── primitives ─────────────────────────────────────────────────────────── */
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;          /* tighter, more institutional than 14px */
+  box-shadow: var(--shadow);
+}
+
+.btn {
+  font-family: var(--font-sans);
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: 5px;          /* squarer */
+  padding: 9px 16px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  transition: background 0.12s ease, border-color 0.12s ease;
+}
+.btn:hover { background: var(--surface-hover); }
+.btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.btn--primary { color: #fffefb; background: var(--accent); border-color: var(--accent); }
+.btn--primary:hover { background: var(--accent-hover); border-color: var(--accent-hover); }
+.btn--ghost { background: transparent; border-color: transparent; }
+.btn--ghost:hover { background: var(--surface-hover); }
+/* Text-link action (e.g. "Re-run", "View report") */
+.btn--link {
+  background: none; border: none; padding: 0;
+  color: var(--accent); font-weight: 600;
+  border-bottom: 1.5px solid var(--accent); border-radius: 0;
+}
+
+input, select {
+  font-family: var(--font-sans);
+  font-size: 13px;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: 5px;
+  padding: 8px 10px;
+  width: 100%;
+  transition: border-color 0.12s ease, box-shadow 0.12s ease;
+}
+input:focus, select:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--ring); }
+
+/* Tag / pill — flat, low-chroma, square corners. */
+.tag {
+  font-family: var(--font-sans);
+  font-size: 11.5px;
+  font-weight: 500;
+  border-radius: 4px;
+  padding: 4px 10px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.tag--accent  { color: var(--accent); background: var(--accent-weak); }
+.tag--warn    { color: var(--amber);  background: var(--amber-weak); }
+.tag--neutral { color: var(--text-muted); background: var(--surface-2); }
+.tag--outline { color: var(--text); border: 1px solid var(--border-strong); }
+
+/* ── animations ─────────────────────────────────────────────────────────── */
+@keyframes fadeUp { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+.fade-up { animation: fadeUp 0.3s ease both; }
+
+.skeleton {
+  border-radius: 6px;
+  background: linear-gradient(90deg, var(--surface-2) 25%, var(--surface-hover) 37%, var(--surface-2) 63%);
+  background-size: 800px 100%;
+  animation: shimmer 1.4s linear infinite;
+}
+@keyframes shimmer { 0% { background-position: -400px 0; } 100% { background-position: 400px 0; } }

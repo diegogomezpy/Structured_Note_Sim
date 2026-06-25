@@ -12,9 +12,10 @@ type Group = { key: string; en: string; es: string; items: Item[] }
 
 const TREE: Group[] = [
   { key: 'note', en: 'Note details', es: 'Detalle de la nota', items: [
+    ['note_diagram', 'Structure diagram', 'Diagrama de la estructura'],
     ['note_terms', 'Note terms', 'Términos'],
     ['obs_schedule', 'Observation schedule', 'Calendario de observaciones'],
-    ['issuer', 'Issuer information', 'Información del emisor'],
+    ['issuer_info', 'Issuer information', 'Información del emisor'],
     ['underlying_breakdown', 'Underlying breakdown', 'Análisis de subyacentes'],
   ] },
   { key: 'mc', en: 'Monte Carlo', es: 'Monte Carlo', items: [

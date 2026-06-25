@@ -202,6 +202,13 @@ _LABELS: dict[str, dict[str, str]] = {
     "rating_moody":          {"en": "Moody's",                           "es": "Moody's"},
     "rating_fitch":          {"en": "Fitch",                             "es": "Fitch"},
     "obs_schedule":          {"en": "Observation Schedule",              "es": "Calendario de Observaciones"},
+    "note_diagram":          {"en": "Structure Diagram",                 "es": "Diagrama de la Estructura"},
+    "diag_autocall":         {"en": "Autocall",                          "es": "Autocall"},
+    "diag_coupon":           {"en": "Coupon",                            "es": "Cupón"},
+    "diag_knockin":          {"en": "Knock-in",                          "es": "Knock-in"},
+    "diag_onestar":          {"en": "One-Star",                          "es": "One-Star"},
+    "diag_issue":            {"en": "issue",                             "es": "emisión"},
+    "diag_maturity":         {"en": "maturity",                          "es": "venc."},
     "sim_summary":           {"en": "Monte Carlo Simulation",            "es": "Simulación Monte Carlo"},
     "model_box_title":       {"en": "Model & Methodology",               "es": "Modelo y Metodología"},
     "model_box_body":        {
@@ -2515,6 +2522,114 @@ def _table_room(n_rows: int, row_h: float = 8.0, head_h: float = 9.0) -> float:
     return min(head_h + n_rows * row_h + 6.0, 130.0)
 
 
+def _draw_note_diagram(pdf, terms, lang: str) -> None:
+    """Draw the note-structure schematic (the React NoteTimeline, server-side):
+    an observation timeline at the autocall level, the coupon / knock-in / One-Star
+    barriers as dashed reference lines, and a floating value label for each. Pure
+    fpdf primitives — wrapped so a drawing glitch can never abort the report."""
+    try:
+        C_COUPON, C_KI, C_OS = (8, 145, 178), (220, 38, 38), (22, 163, 74)
+        usable = pdf.w - pdf.l_margin - pdf.r_margin
+        gutter = 52.0
+        x0 = pdf.l_margin + 2
+        x1 = pdf.l_margin + usable - gutter
+        top = pdf.get_y() + 4
+        plot_h, domain = 26.0, 1.30
+        bottom = top + plot_h
+
+        def mapY(level: float) -> float:
+            return bottom - min(max(level, 0.0), domain) / domain * plot_h
+
+        def mapX(frac: float) -> float:
+            return x0 + frac * (x1 - x0)
+
+        n      = terms.n_obs
+        ac, cp, ki = terms.autocall_barrier, terms.coupon_barrier, terms.knock_in_barrier
+        os_lvl = terms.one_star_level
+        start  = min(max(terms.autocall_start_period, 1), n)
+        line_y = mapY(ac)
+        obs_t  = list(terms.obs_times())
+        T      = obs_t[-1] if obs_t else 1.0
+        fracs  = [t / T for t in obs_t]
+        acX    = mapX((start - 1) / n)
+
+        # autocall window band
+        pdf.set_fill_color(*_blend(pdf.accent_color, _WHITE, 0.84))
+        pdf.rect(acX, line_y - 2.6, max(0.0, x1 - acX), 5.2, style="F")
+
+        # barrier dashed lines
+        pdf.set_line_width(0.3)
+        def _dash(level, color):
+            pdf.set_draw_color(*color)
+            pdf.set_dash_pattern(dash=1.3, gap=1.0)
+            pdf.line(x0, mapY(level), x1, mapY(level))
+            pdf.set_dash_pattern()
+        barriers_equal = abs(cp - ki) < 1e-6
+        _dash(cp, C_COUPON)
+        if not barriers_equal:
+            _dash(ki, C_KI)
+        if os_lvl is not None:
+            _dash(os_lvl, C_OS)
+
+        # observation axis
+        pdf.set_draw_color(150, 162, 180)
+        pdf.set_line_width(0.5)
+        pdf.line(x0, line_y, x1, line_y)
+
+        def _dot(cx, r, fill):
+            pdf.set_fill_color(*fill)
+            pdf.ellipse(cx - r, line_y - r, 2 * r, 2 * r, style="F")
+
+        _dot(x0, 1.7, pdf.accent_color)
+        for i, f in enumerate(fracs):
+            is_mat = (i + 1 == n)
+            is_ac = (i + 1 >= start)
+            col = pdf.primary_color if is_mat else (pdf.accent_color if is_ac else (205, 214, 228))
+            _dot(mapX(f), 1.9 if is_mat else 1.7, col)
+
+        # issue / maturity captions
+        pdf.set_font(pdf._font_family, "", 7)
+        pdf.set_text_color(110, 122, 145)
+        pdf.text(x0 - 2.5, top - 1.5, _t("diag_issue", lang))
+        pdf.text(mapX(1.0) - 8, top - 1.5, _t("diag_maturity", lang))
+
+        # floating barrier value labels (right gutter), nudged apart if close
+        lx = x1 + 4
+        entries = [(line_y, pdf.accent_color, _t("diag_autocall", lang), f"{ac:.0%}")]
+        if barriers_equal:
+            entries.append((mapY(cp), C_COUPON, f"{_t('diag_coupon', lang)} / {_t('diag_knockin', lang)}", f"{cp:.0%}"))
+        else:
+            entries.append((mapY(cp), C_COUPON, _t("diag_coupon", lang), f"{cp:.0%}"))
+            entries.append((mapY(ki), C_KI, _t("diag_knockin", lang), f"{ki:.0%}"))
+        if os_lvl is not None:
+            entries.append((mapY(os_lvl), C_OS, _t("diag_onestar", lang), f"{os_lvl:.0%}"))
+        entries.sort(key=lambda e: e[0])
+        prev_y = -100.0
+        for ty, color, name, val in entries:
+            ly = max(ty, prev_y + 4.2)
+            prev_y = ly
+            pdf.set_draw_color(190, 198, 210)
+            pdf.set_line_width(0.2)
+            pdf.line(x1 + 1, ty, lx - 1, ly)
+            pdf.set_font(pdf._font_family, "", 7.5)
+            pdf.set_text_color(*color)
+            pdf.text(lx, ly + 1.2, name)
+            w = pdf.get_string_width(name + " ")
+            pdf.set_font(pdf._font_family, "B", 7.5)
+            pdf.set_text_color(*pdf.primary_color)
+            pdf.text(lx + w, ly + 1.2, val)
+
+        pdf.set_dash_pattern()
+        pdf.set_line_width(0.2)
+        pdf.set_y(bottom + 3)
+    except Exception as e:                                  # never break the report
+        print(f"[report] note diagram skipped: {e}")
+        try:
+            pdf.set_dash_pattern()
+        except Exception:
+            pass
+
+
 def generate_pdf_report(*args, **kwargs) -> bytes:
     """Public entry point — see _build_pdf_report for the full signature/docs.
 
@@ -2653,9 +2768,14 @@ def _build_pdf_report(
     # callers) every one renders, so existing callers are unaffected.
     _show_terms = _inc("note_terms")
     _show_obs   = _inc("obs_schedule")
-    if _show_terms or _show_obs:
+    _show_diag  = _inc("note_diagram")
+    if _show_terms or _show_obs or _show_diag:
         pdf.add_page()
         usable = pdf.w - pdf.l_margin - pdf.r_margin
+        if _show_diag:
+            pdf.section_title(_t("note_diagram", lang))
+            _draw_note_diagram(pdf, terms, lang)
+            pdf.ln(2)
         if _show_terms:
             pdf.section_title(_t("note_terms", lang))
             _term_data = _term_rows(terms, lang)
