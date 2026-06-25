@@ -1185,6 +1185,19 @@ def build_report_pdf(terms: NoteTerms, *, sections: list[str] | None = None, lan
     logo_overrides = {nm: b for nm, ov in (terms.underlyings or {}).items()
                       if isinstance(ov, dict) and (b := _decode_data_url(ov.get("logo")))}
 
+    # Issuer blurb: mirror the underlying business-summary fallback — when the note
+    # has no curated issuer_description, fetch one so a preloaded issuer still shows
+    # in the report (translated for non-EN).
+    issuer_desc = getattr(terms, "issuer_description", "") or ""
+    want_issuer = all_on or "issuer_info" in keys
+    if want_issuer and not issuer_desc and (getattr(terms, "issuer", "") or ""):
+        try:
+            _s = resolve_issuer_summary(terms.issuer)
+            if _s:
+                issuer_desc = _translated(_s, lang)
+        except Exception as e:
+            print(f"[report] issuer summary fallback skipped: {e}")
+
     return generate_pdf_report(
         terms=terms, results=results, asset_names=asset_names, figures=figures,
         lang=lang, bt_summary=bt_summary, bt_figures=bt_figures,
@@ -1192,4 +1205,4 @@ def build_report_pdf(terms: NoteTerms, *, sections: list[str] | None = None, lan
         logo_urls=logo_urls, issuer_logo_url=issuer_logo, logo_tickers=logo_tickers,
         logo_overrides=logo_overrides or None, branding=branding,
         underlying_metrics=underlying_metrics, underlying_price_figs=underlying_price_figs,
-        include_sections=include_sections)
+        issuer_description=issuer_desc or None, include_sections=include_sections)

@@ -259,6 +259,9 @@ class NoteTerms:
     capital_guarantee:       float | None = None  # guaranteed minimum redemption (e.g. 1.00 or 0.95); activates CP branch
     upside_cap:              float | None = None  # maximum redemption above par (e.g. 0.15 = 15% above par → 1.15 max)
     name:                   str         = "Phoenix Memory Note"
+    # Systematic, terms-driven prose blurb (core.note_description). "" = auto-generate;
+    # a non-empty value is a user override, mirroring issuer/underlying descriptions.
+    note_description:       str         = ""
     issuer:                 str         = ""      # display-only: e.g. "BBVA", "HSBC"
     # ── Issuer information (display-only; powers the PDF "Issuer Information" section) ──
     issuer_description:     str         = ""      # short prose blurb about the issuer
@@ -375,6 +378,7 @@ class NoteTerms:
             "coupon_at_autocall_only": self.coupon_at_autocall_only,
             "capital_guarantee":      self.capital_guarantee,
             "upside_cap":             self.upside_cap,
+            "note_description":       self.note_description,
             "issuer_description":     self.issuer_description,
             "issuer_rating_sp":       self.issuer_rating_sp,
             "issuer_rating_moody":    self.issuer_rating_moody,

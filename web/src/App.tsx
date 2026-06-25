@@ -6,6 +6,7 @@ import { useI18n } from './i18n/I18nProvider'
 import Header from './components/Header'
 import SetupRail, { type RunOpts } from './components/SetupRail'
 import NoteTimeline from './components/NoteTimeline'
+import NoteDescription from './components/NoteDescription'
 import ObservationSchedule from './components/ObservationSchedule'
 import IssuerCard from './components/IssuerCard'
 import UnderlyingCards from './components/UnderlyingCards'
@@ -217,6 +218,7 @@ export default function App() {
               </button>
             }>
               {diagramOpen && <NoteTimeline terms={terms} />}
+              <NoteDescription terms={terms} />
               <ObservationSchedule terms={terms} />
               <IssuerCard terms={terms} />
               <UnderlyingCards terms={terms} />

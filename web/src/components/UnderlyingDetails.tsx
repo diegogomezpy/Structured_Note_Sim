@@ -3,6 +3,7 @@ import { api } from '../api/client'
 import { useI18n } from '../i18n/I18nProvider'
 import Icon from './Icon'
 import TickerLogo, { LogoImg } from './TickerLogo'
+import { noteDescription } from '../lib/noteDescription'
 import type { AnalystSplit, NoteTerms, Sentiment, UnderlyingOverride } from '../api/types'
 
 const SENTIMENTS: Sentiment[] = ['buy', 'hold', 'sell']
@@ -59,6 +60,20 @@ export default function UnderlyingDetails({ terms, onChange }: {
         <button className="btn" style={{ padding: '7px 13px' }} onClick={prefill} disabled={busy}>
           <Icon name={busy ? 'spinner' : 'refresh'} size={14} /> {busy ? t('det_prefilling') : t('det_prefill')}
         </button>
+      </div>
+
+      {/* Note description (systematic; blank = auto-generate from the terms) */}
+      <div style={{ marginBottom: 18 }}>
+        <label style={{ fontSize: 12, color: 'var(--text-muted)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+          <span>{t('note_desc_label')}</span>
+          <button className="btn btn--ghost" style={{ padding: '2px 9px', fontSize: 11 }}
+                  onClick={() => onChange({ ...terms, note_description: noteDescription(terms, lang) })}>
+            {t('note_desc_use_generated')}
+          </button>
+        </label>
+        <textarea style={{ ...ta, minHeight: 96 }} value={terms.note_description ?? ''} placeholder={noteDescription(terms, lang)}
+                  onChange={(e) => onChange({ ...terms, note_description: e.target.value })} />
+        <div style={{ fontSize: 11, color: 'var(--text-faint)', marginTop: 5 }}>{t('note_desc_hint')}</div>
       </div>
 
       {/* Issuer description */}

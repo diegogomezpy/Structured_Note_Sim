@@ -37,6 +37,7 @@ export interface NoteTerms {
   upside_cap: number | null
   principal_protection: number
   // metadata
+  note_description: string
   issuer_description: string
   issuer_rating_sp: string
   issuer_rating_moody: string

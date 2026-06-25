@@ -203,6 +203,7 @@ _LABELS: dict[str, dict[str, str]] = {
     "rating_fitch":          {"en": "Fitch",                             "es": "Fitch"},
     "obs_schedule":          {"en": "Observation Schedule",              "es": "Calendario de Observaciones"},
     "note_diagram":          {"en": "Structure Diagram",                 "es": "Diagrama de la Estructura"},
+    "note_desc_title":       {"en": "Note Description",                  "es": "Descripción de la Nota"},
     "diag_autocall":         {"en": "Autocall",                          "es": "Autocall"},
     "diag_coupon":           {"en": "Coupon",                            "es": "Cupón"},
     "diag_knockin":          {"en": "Knock-in",                          "es": "Knock-in"},
@@ -352,6 +353,10 @@ _LABELS: dict[str, dict[str, str]] = {
     "u_rsi":                 {"en": "RSI (14)",                          "es": "RSI (14)"},
     "u_sector":              {"en": "Sector",                            "es": "Sector"},
     "u_type":                {"en": "Type",                              "es": "Tipo"},
+    "u_analyst":             {"en": "Analyst consensus",                 "es": "Consenso de analistas"},
+    "sent_buy":              {"en": "Buy",                               "es": "Comprar"},
+    "sent_hold":             {"en": "Hold",                              "es": "Mantener"},
+    "sent_sell":             {"en": "Sell",                              "es": "Vender"},
     "fig_u_price":           {"en": "Trailing 12-month price — {name}",
                               "es": "Precio últimos 12 meses — {name}"},
     # Inline fragments that get interpolated into f-strings — kept here so the
@@ -1311,7 +1316,9 @@ class _NotePDF(FPDF):
     def underlying_block(self, long_name: str, logo_bytes: bytes | None,
                          subtitle: str, metrics: list[tuple[str, str]],
                          description: str, chart_png: bytes | None,
-                         chart_caption: str, section_title: str | None = None):
+                         chart_caption: str, section_title: str | None = None,
+                         analyst: list[tuple[str, float, tuple]] | None = None,
+                         analyst_title: str = ""):
         """Self-contained per-underlying card — a tinted rounded panel, like the
         issuer block: logo + name + a type·sector line, the key figures as white
         chips (market cap / 3M IV / last price / RSI), the company description, and
@@ -1337,7 +1344,9 @@ class _NotePDF(FPDF):
         desc_lines = (self.multi_cell(inner_w, 4.3, self._safe(description),
                                       dry_run=True, output="LINES") if description else [])
         desc_h = len(desc_lines) * 4.3
+        analyst_h = 11.0 if analyst else 0.0
         box_h = (pad + header_h + chip_h
+                 + (3 + analyst_h if analyst else 0)
                  + (3 + desc_h if description else 0)
                  + (4 + cap_h + chart_h if chart_png else 0)
                  + pad)
@@ -1397,6 +1406,34 @@ class _NotePDF(FPDF):
             self.cell(chip_w, 5, self._safe(str(val)), align="C")
             cx += chip_w + gap
         cy += chip_h
+        # Analyst consensus (optional): a stacked buy/hold/sell bar + inline legend.
+        if analyst:
+            cy += 3
+            self.set_xy(x0 + pad, cy)
+            self._sf(6.5, "semibold")
+            self.set_text_color(*_TEXT_SOFT)
+            self.cell(inner_w, 3, self._safe(analyst_title.upper()))
+            cy += 3.8
+            bar_h, bx = 3.0, x0 + pad
+            for _lbl, _frac, _col in analyst:
+                seg = inner_w * max(0.0, _frac)
+                if seg <= 0.05:
+                    continue
+                self.set_fill_color(*_col)
+                self.rect(bx, cy, seg, bar_h, style="F")
+                bx += seg
+            cy += bar_h + 1.6
+            self._sf(7, "regular")
+            lx = x0 + pad
+            for _lbl, _frac, _col in analyst:
+                self.set_fill_color(*_col)
+                self.ellipse(lx, cy - 1.6, 2.0, 2.0, style="F")
+                self.set_xy(lx + 3, cy - 2.4)
+                self.set_text_color(*_TEXT_SOFT)
+                _txt = f"{_lbl} {_frac:.0%}"
+                self.cell(self.get_string_width(_txt) + 1, 3.2, self._safe(_txt))
+                lx += 3 + self.get_string_width(_txt) + 6
+            cy += 3.2
         # Company description (optional — blank hides it, like the issuer blurb).
         if description:
             self.set_xy(x0 + pad, cy + 3)
@@ -2535,12 +2572,14 @@ def _draw_note_diagram(pdf, terms, lang: str) -> None:
         from datetime import date, timedelta
         C_COUPON, C_KI, C_OS = (8, 145, 178), (220, 38, 38), (22, 163, 74)
         C_PROT, C_RISK = (22, 163, 74), (220, 38, 38)
-        usable = pdf.w - pdf.l_margin - pdf.r_margin
-        gutter = 52.0
-        x0 = pdf.l_margin + 11           # room for y-axis tick labels
-        x1 = pdf.l_margin + usable - gutter
-        top = pdf.get_y() + 7            # headroom for the y-axis arrow + title
-        plot_h, domain = 36.0, 1.40
+        # Centre the plot box on the page with symmetric side margins (left holds
+        # the y-axis ticks, right holds the floating barrier labels), and make it
+        # tall enough to read as a proper chart rather than a thin strip.
+        side = 23.0
+        x0 = pdf.l_margin + side
+        x1 = pdf.w - pdf.r_margin - side
+        top = pdf.get_y() + 9            # headroom for the y-axis arrow + title
+        plot_h, domain = 54.0, 1.40
         bottom = top + plot_h
 
         def mapY(level: float) -> float:
@@ -2588,13 +2627,13 @@ def _draw_note_diagram(pdf, terms, lang: str) -> None:
         if start <= n:
             pdf.set_fill_color(*_blend(pdf.accent_color, _WHITE, 0.82))
             pdf.rect(acX, top, max(0.0, x1 - acX), max(0.0, ac_y - top), style="F")
-            pdf.set_font(pdf._font_family, "B", 6.5)
+            pdf.set_font(pdf._font_family, "B", 8)
             pdf.set_text_color(*pdf.accent_color)
             _wl = _t("diag_window", lang)
-            pdf.text((acX + x1) / 2 - pdf.get_string_width(_wl) / 2, top + 3.4, _wl)
+            pdf.text((acX + x1) / 2 - pdf.get_string_width(_wl) / 2, top + 4.0, _wl)
 
         # y gridlines + tick labels (0 / 50 / 100%)
-        pdf.set_font(pdf._font_family, "", 6)
+        pdf.set_font(pdf._font_family, "", 6.8)
         for lvl in (0.0, 0.5, 1.0):
             gy = mapY(lvl)
             pdf.set_draw_color(223, 229, 237)
@@ -2605,9 +2644,9 @@ def _draw_note_diagram(pdf, terms, lang: str) -> None:
             pdf.text(x0 - 2 - pdf.get_string_width(_tl), gy + 1.0, _tl)
 
         # zone captions
-        pdf.set_font(pdf._font_family, "B", 6.5)
+        pdf.set_font(pdf._font_family, "B", 8)
         pdf.set_text_color(*C_PROT)
-        pdf.text(x0 + 2, (par_y + ki_y) / 2 + 1.0, _t("diag_zone_protected", lang))
+        pdf.text(x0 + 2.5, (par_y + ki_y) / 2 + 1.0, _t("diag_zone_protected", lang))
         if ki_y < bottom - 2:
             pdf.set_text_color(*C_RISK)
             pdf.text(x0 + 2, (ki_y + bottom) / 2 + 1.0, _t("diag_zone_atrisk", lang))
@@ -2650,30 +2689,31 @@ def _draw_note_diagram(pdf, terms, lang: str) -> None:
             col = pdf.primary_color if is_mat else (pdf.accent_color if is_ac else (205, 214, 228))
             _dot(mapX(f), 1.7 if is_mat else 1.5, col)
             if show_coupon:
-                pdf.set_font(pdf._font_family, "", 5.5)
+                pdf.set_font(pdf._font_family, "", 6.5)
                 pdf.set_text_color(*C_COUPON)
                 _ct = f"+{coupon_per:.2%}"
-                pdf.text(mapX(f) - pdf.get_string_width(_ct) / 2, par_y - 3.0, _ct)
+                pdf.text(mapX(f) - pdf.get_string_width(_ct) / 2, par_y - 3.5, _ct)
             if show_yr_ticks and not is_mat:
                 _yt = (f"{f * _mat_yrs:g}").rstrip(".") + "y"
-                pdf.set_font(pdf._font_family, "", 5.5)
+                pdf.set_font(pdf._font_family, "", 6)
                 pdf.set_text_color(170, 180, 195)
-                pdf.text(mapX(f) - pdf.get_string_width(_yt) / 2, bottom + 4.4, _yt)
+                pdf.text(mapX(f) - pdf.get_string_width(_yt) / 2, bottom + 4.6, _yt)
 
         # issue / maturity captions (below the x-axis) + the real date or tenor
-        pdf.set_font(pdf._font_family, "", 7)
+        pdf.set_font(pdf._font_family, "", 7.5)
         pdf.set_text_color(110, 122, 145)
         _iss, _mat = _t("diag_issue", lang), _t("diag_maturity", lang)
-        pdf.text(x0 - pdf.get_string_width(_iss) / 2, bottom + 4.4, _iss)
-        pdf.text(x1 - pdf.get_string_width(_mat) / 2, bottom + 4.4, _mat)
-        pdf.set_font(pdf._font_family, "", 6)
+        pdf.text(x0 - pdf.get_string_width(_iss) / 2, bottom + 4.6, _iss)
+        pdf.text(x1 - pdf.get_string_width(_mat) / 2, bottom + 4.6, _mat)
+        pdf.set_font(pdf._font_family, "", 6.5)
         pdf.set_text_color(150, 162, 180)
         if issue_lbl:
-            pdf.text(x0 - pdf.get_string_width(issue_lbl) / 2, bottom + 8.2, issue_lbl)
+            pdf.text(x0 - pdf.get_string_width(issue_lbl) / 2, bottom + 8.6, issue_lbl)
         pdf.set_text_color(110, 122, 145)
-        pdf.text(x1 - pdf.get_string_width(mat_lbl) / 2, bottom + 8.2, mat_lbl)
+        pdf.text(x1 - pdf.get_string_width(mat_lbl) / 2, bottom + 8.6, mat_lbl)
 
-        # floating barrier value labels (right gutter), nudged apart if close
+        # floating barrier labels (right gutter): name over value on two lines so
+        # they stay narrow and the plot box can sit centred on the page.
         lx = x1 + 4
         entries = [(ac_y, pdf.accent_color, _t("diag_autocall", lang), f"{ac:.0%}")]
         if barriers_equal:
@@ -2686,18 +2726,17 @@ def _draw_note_diagram(pdf, terms, lang: str) -> None:
         entries.sort(key=lambda e: e[0])
         prev_y = -100.0
         for ty, color, name, val in entries:
-            ly = max(ty, prev_y + 4.2)
+            ly = max(ty, prev_y + 7.4)
             prev_y = ly
             pdf.set_draw_color(190, 198, 210)
             pdf.set_line_width(0.2)
-            pdf.line(x1 + 1, ty, lx - 1, ly)
-            pdf.set_font(pdf._font_family, "", 7.5)
+            pdf.line(x1 + 1, ty, lx - 1, ly - 1.0)
+            pdf.set_font(pdf._font_family, "", 7)
             pdf.set_text_color(*color)
-            pdf.text(lx, ly + 1.2, name)
-            w = pdf.get_string_width(name + " ")
-            pdf.set_font(pdf._font_family, "B", 7.5)
+            pdf.text(lx, ly, name)
+            pdf.set_font(pdf._font_family, "B", 8.5)
             pdf.set_text_color(*pdf.primary_color)
-            pdf.text(lx + w, ly + 1.2, val)
+            pdf.text(lx, ly + 4.0, val)
 
         pdf.set_dash_pattern()
         pdf.set_line_width(0.2)
@@ -2745,6 +2784,7 @@ def _build_pdf_report(
     logo_overrides: dict[str, bytes] | None = None,
     underlying_metrics: dict | None = None,
     underlying_price_figs: dict | None = None,
+    issuer_description: str | None = None,
 ) -> bytes:
     """
     Build the full institutional-style PDF report.
@@ -2849,9 +2889,19 @@ def _build_pdf_report(
     _show_terms = _inc("note_terms")
     _show_obs   = _inc("obs_schedule")
     _show_diag  = _inc("note_diagram")
-    if _show_terms or _show_obs or _show_diag:
+    _show_desc  = _inc("note_description")
+    if _show_terms or _show_obs or _show_diag or _show_desc:
         pdf.add_page()
         usable = pdf.w - pdf.l_margin - pdf.r_margin
+        if _show_desc:
+            # Systematic prose blurb (override or auto-generated from the terms).
+            from core.note_description import describe_note
+            _nd = (getattr(terms, "note_description", "") or "").strip() or describe_note(terms, lang)
+            pdf.section_title(_t("note_desc_title", lang))
+            pdf.set_font(pdf._font_family, "", 9.5)
+            pdf.set_text_color(70, 84, 105)
+            pdf.multi_cell(usable, 5.0, pdf._safe(_nd))
+            pdf.ln(3)
         if _show_diag:
             pdf.section_title(_t("note_diagram", lang))
             _draw_note_diagram(pdf, terms, lang)
@@ -2898,7 +2948,7 @@ def _build_pdf_report(
 
     # ── 2b. Issuer information (toggleable; shown whenever an issuer is set) ──
     if pdf.issuer and _inc("issuer_info"):
-        _issuer_desc = getattr(terms, "issuer_description", "") or ""
+        _issuer_desc = (getattr(terms, "issuer_description", "") or "") or (issuer_description or "")
         _ratings = [
             (_t("rating_sp", lang),    getattr(terms, "issuer_rating_sp", "") or ""),
             (_t("rating_moody", lang), getattr(terms, "issuer_rating_moody", "") or ""),
@@ -2948,9 +2998,21 @@ def _build_pdf_report(
                      or _load_ticker_logo(_nm, (logo_urls or {}).get(_nm, ""),
                                           (logo_tickers or {}).get(_nm)))
             _cap  = _t("fig_u_price", lang).format(name=_long)
+            # Analyst consensus (buy/hold/sell) — only when the user loaded it.
+            _an_ov = _ov.get("analyst")
+            _analyst = None
+            if isinstance(_an_ov, dict):
+                _tot = sum(float(_an_ov.get(k, 0) or 0) for k in ("buy", "hold", "sell"))
+                if _tot > 0:
+                    _analyst = [
+                        (_t("sent_buy",  lang), float(_an_ov.get("buy", 0)  or 0) / _tot, (22, 163, 74)),
+                        (_t("sent_hold", lang), float(_an_ov.get("hold", 0) or 0) / _tot, (245, 158, 11)),
+                        (_t("sent_sell", lang), float(_an_ov.get("sell", 0) or 0) / _tot, (220, 38, 38)),
+                    ]
             pdf.underlying_block(
                 _long, _logo, _sub, _band, _desc, _png, _cap,
-                section_title=(_t("underlying_breakdown", lang) if _ul_first else None))
+                section_title=(_t("underlying_breakdown", lang) if _ul_first else None),
+                analyst=_analyst, analyst_title=_t("u_analyst", lang))
             _ul_first = False
 
     # ── 3. Monte Carlo ─────────────────────────────────────────────────────
