@@ -15,7 +15,7 @@ const Plot = createPlotlyComponent(Plotly)
 
     A hover download button exports the chart as a PNG via Plotly.downloadImage
     (the default modebar stays hidden to keep the chrome clean). */
-export default function Figure({ fig, height, name = 'chart' }: { fig: any; height?: number; name?: string }) {
+export default function Figure({ fig, height, name = 'chart', noDownload }: { fig: any; height?: number; name?: string; noDownload?: boolean }) {
   const { mode } = useTheme()
   const themed = useMemo(() => themeFigure(fig, mode), [fig, mode])
   const gd = useRef<any>(null)
@@ -33,7 +33,7 @@ export default function Figure({ fig, height, name = 'chart' }: { fig: any; heig
   return (
     <div style={{ position: 'relative', width: '100%', height: height ?? '100%', minWidth: 0, overflow: 'hidden' }}
          onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)}>
-      <button onClick={download} title="Download PNG" aria-label="Download chart"
+      {!noDownload && <button onClick={download} title="Download PNG" aria-label="Download chart"
         style={{
           position: 'absolute', top: 6, right: 6, zIndex: 3, display: 'flex', alignItems: 'center',
           padding: 6, borderRadius: 8, cursor: 'pointer', fontFamily: 'inherit',
@@ -41,7 +41,7 @@ export default function Figure({ fig, height, name = 'chart' }: { fig: any; heig
           opacity: hover ? 0.95 : 0, transition: 'opacity .15s ease', boxShadow: 'var(--shadow-sm, 0 1px 2px rgba(0,0,0,0.08))',
         }}>
         <Icon name="download" size={15} />
-      </button>
+      </button>}
       <Plot
         data={themed.data}
         layout={{ ...themed.layout, autosize: true, margin: themed.layout?.margin ?? { l: 48, r: 16, t: 28, b: 40 } }}

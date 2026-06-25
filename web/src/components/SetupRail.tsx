@@ -18,12 +18,12 @@ const FREQS: NoteTerms['payment_freq'][] = ['monthly', 'quarterly', 'semi-annual
 
 /** Compact percentage input (stored as a fraction, edited as a %) for the
     barrier row — narrow enough to sit three-across in the rail. */
-function Barrier({ label, value, onChange, min = 0, max = 300 }: {
-  label: string; value: number; onChange: (v: number) => void; min?: number; max?: number
+function Barrier({ label, value, onChange, min = 0, max = 300, tip }: {
+  label: string; value: number; onChange: (v: number) => void; min?: number; max?: number; tip?: string
 }) {
   return (
     <div>
-      <div style={{ fontSize: 10, fontWeight: 600, letterSpacing: '0.03em', textTransform: 'uppercase', color: 'var(--text-muted)', marginBottom: 5, whiteSpace: 'nowrap' }}>{label}</div>
+      <div title={tip} style={{ fontSize: 10, fontWeight: 600, letterSpacing: '0.03em', textTransform: 'uppercase', color: 'var(--text-muted)', marginBottom: 5, whiteSpace: 'nowrap', cursor: tip ? 'help' : undefined }}>{label}</div>
       <div style={{ position: 'relative' }}>
         <input type="number" value={Math.round(value * 1000) / 10} min={min} max={max} step={0.5}
                onChange={(e) => { const v = parseFloat(e.target.value); if (!Number.isNaN(v)) onChange(v / 100) }}
@@ -108,18 +108,18 @@ export default function SetupRail({
       <div style={{ borderTop: '1px solid var(--border)', paddingTop: 14 }}>
         <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--text-muted)', marginBottom: 12 }}>{t('quick_edit')}</div>
 
-        <Slider label={t('maturity')} value={terms.maturity} min={0.25} max={5} step={0.25}
+        <Slider label={t('maturity')} value={terms.maturity} min={0.25} max={5} step={0.25} tip={t('tip_maturity')}
                 fmt={(v) => `${v.toFixed(2)} y`} onChange={(v) => set('maturity', v)} />
-        <SelectField label={t('frequency')} value={terms.payment_freq}
+        <SelectField label={t('frequency')} value={terms.payment_freq} tip={t('tip_frequency')}
                      options={FREQS.map((f) => ({ value: f, label: t(`freq_${f}`) }))}
                      onChange={(v) => set('payment_freq', v)} />
-        <Slider label={t('coupon_pa')} value={terms.coupon_pa} min={0} max={0.3} step={0.005}
+        <Slider label={t('coupon_pa')} value={terms.coupon_pa} min={0} max={0.3} step={0.005} tip={t('tip_coupon_pa')}
                 fmt={(v) => pct(v, 1)} onChange={(v) => set('coupon_pa', v)} />
 
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, marginTop: 2 }}>
-          <Barrier label={t('coupon_barrier_short')} value={terms.coupon_barrier} onChange={(v) => set('coupon_barrier', v)} />
-          <Barrier label={t('knock_in_short')} value={terms.knock_in_barrier} onChange={(v) => set('knock_in_barrier', v)} />
-          <Barrier label={t('autocall_short')} value={terms.autocall_barrier} min={50} onChange={(v) => set('autocall_barrier', v)} />
+          <Barrier label={t('coupon_barrier_short')} value={terms.coupon_barrier} onChange={(v) => set('coupon_barrier', v)} tip={t('tip_coupon_barrier')} />
+          <Barrier label={t('knock_in_short')} value={terms.knock_in_barrier} onChange={(v) => set('knock_in_barrier', v)} tip={t('tip_knock_in')} />
+          <Barrier label={t('autocall_short')} value={terms.autocall_barrier} min={50} onChange={(v) => set('autocall_barrier', v)} tip={t('tip_autocall')} />
         </div>
       </div>
 

@@ -32,6 +32,18 @@ export const S: Dict = {
   current_terms:    { en: 'Current terms', es: 'Términos actuales' },
 
   blank_note:       { en: '— New note —', es: '— Nota nueva —' },
+
+  // tooltips
+  tip_expected_irr: { en: 'Mean simple annualised return across all simulated paths (coupons + capital), net of any loss.', es: 'Retorno anual simple medio sobre todas las trayectorias simuladas (cupones + capital), neto de pérdidas.' },
+  tip_p_autocall:   { en: 'Probability the note is autocalled (redeemed early) at any observation.', es: 'Probabilidad de que la nota se autocancele (rescate anticipado) en alguna observación.' },
+  tip_p_knock_in:   { en: 'Probability the worst-of breaches the knock-in barrier and capital is at risk at maturity.', es: 'Probabilidad de que el peor de cruce la barrera de knock-in y el capital esté en riesgo al vencimiento.' },
+  tip_exp_payout:   { en: 'Expected total redemption per 100 nominal (capital + coupons).', es: 'Reembolso total esperado por 100 nominal (capital + cupones).' },
+  tip_maturity:     { en: 'Note tenor in years.', es: 'Plazo de la nota en años.' },
+  tip_frequency:    { en: 'How often coupons are observed/paid.', es: 'Frecuencia de observación/pago de cupones.' },
+  tip_coupon_pa:    { en: 'Annual coupon rate (paid pro-rata each period).', es: 'Cupón anual (pagado a prorrata cada período).' },
+  tip_coupon_barrier: { en: 'Worst-of level at/above which the coupon is paid.', es: 'Nivel del peor de en/por encima del cual se paga el cupón.' },
+  tip_knock_in:     { en: 'Worst-of level below which capital is no longer protected at maturity.', es: 'Nivel del peor de por debajo del cual el capital deja de estar protegido al vencimiento.' },
+  tip_autocall:     { en: 'Worst-of level at/above which the note is autocalled.', es: 'Nivel del peor de en/por encima del cual la nota se autocancela.' },
   download_config:  { en: 'Download config', es: 'Descargar configuración' },
   download_config_hint: { en: 'Download this note as a JSON config', es: 'Descargar esta nota como JSON' },
 
@@ -59,6 +71,7 @@ export const S: Dict = {
   det_desc:         { en: 'Description', es: 'Descripción' },
   det_sentiment:    { en: 'Analyst recommendation (% of analysts)', es: 'Recomendación de analistas (% de analistas)' },
   ul_analyst:       { en: 'Analyst recommendation', es: 'Recomendación de analistas' },
+  ul_download_card: { en: 'Download this card as an image', es: 'Descargar esta tarjeta como imagen' },
   det_logo:         { en: 'Logo', es: 'Logo' },
   det_upload_logo:  { en: 'Upload', es: 'Subir' },
   det_reset_logo:   { en: 'Reset', es: 'Restablecer' },

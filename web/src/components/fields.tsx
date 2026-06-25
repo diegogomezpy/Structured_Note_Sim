@@ -3,11 +3,11 @@ import { useState, type ReactNode } from 'react'
 const labelStyle: React.CSSProperties = { fontSize: 12, color: 'var(--text-muted)', display: 'block', marginBottom: 6 }
 
 /** Label + right-aligned value readout above a control (used by sliders). */
-export function Field({ label, value, children }: { label: string; value?: ReactNode; children: ReactNode }) {
+export function Field({ label, value, children, tip }: { label: string; value?: ReactNode; children: ReactNode; tip?: string }) {
   return (
     <div style={{ marginBottom: 14 }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
-        <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>{label}</span>
+        <span title={tip} style={{ fontSize: 12, color: 'var(--text-muted)', cursor: tip ? 'help' : undefined }}>{label}</span>
         {value != null && <span className="mono" style={{ fontSize: 12, color: 'var(--text)' }}>{value}</span>}
       </div>
       {children}
@@ -16,13 +16,13 @@ export function Field({ label, value, children }: { label: string; value?: React
 }
 
 export function Slider({
-  label, value, min, max, step, fmt, onChange, disabled,
+  label, value, min, max, step, fmt, onChange, disabled, tip,
 }: {
   label: string; value: number; min: number; max: number; step: number
-  fmt: (n: number) => string; onChange: (v: number) => void; disabled?: boolean
+  fmt: (n: number) => string; onChange: (v: number) => void; disabled?: boolean; tip?: string
 }) {
   return (
-    <Field label={label} value={fmt(value)}>
+    <Field label={label} value={fmt(value)} tip={tip}>
       <input type="range" min={min} max={max} step={step} value={value} disabled={disabled}
              onChange={(e) => onChange(parseFloat(e.target.value))} style={disabled ? { opacity: 0.4 } : undefined} />
     </Field>
@@ -52,11 +52,11 @@ export function NumberField({
 }
 
 export function SelectField<T extends string>({
-  label, value, options, onChange,
-}: { label: string; value: T; options: { value: T; label: string }[]; onChange: (v: T) => void }) {
+  label, value, options, onChange, tip,
+}: { label: string; value: T; options: { value: T; label: string }[]; onChange: (v: T) => void; tip?: string }) {
   return (
     <div style={{ marginBottom: 14 }}>
-      <label style={labelStyle}>{label}</label>
+      <label style={{ ...labelStyle, cursor: tip ? 'help' : undefined }} title={tip}>{label}</label>
       <select value={value} onChange={(e) => onChange(e.target.value as T)}>
         {options.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
       </select>

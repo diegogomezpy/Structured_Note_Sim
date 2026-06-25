@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import { toPng } from 'html-to-image'
 import { api } from '../api/client'
 import { useI18n } from '../i18n/I18nProvider'
 import Figure from './Figure'
@@ -43,8 +44,39 @@ function Card({ m, override }: { m: UnderlyingMetric; override: UnderlyingOverri
   const desc = override.description || m.business_summary
   const a = override.analyst
   const total = a ? (a.buy + a.hold + a.sell) : 0
+  const cardRef = useRef<HTMLDivElement>(null)
+  const [hover, setHover] = useState(false)
+
+  const downloadCard = async () => {
+    if (!cardRef.current) return
+    const bg = getComputedStyle(cardRef.current).backgroundColor
+    try {
+      // fontEmbedCSS:'' short-circuits html-to-image's cross-origin read of the
+      // Google Fonts stylesheet (which otherwise throws a SecurityError); the
+      // snapshot captures the rendered DOM as-is.
+      const url = await toPng(cardRef.current, {
+        pixelRatio: 2, backgroundColor: bg, skipFonts: true, fontEmbedCSS: '',
+        filter: (n) => !(n as HTMLElement).dataset?.noCapture,
+      })
+      const link = document.createElement('a')
+      link.href = url; link.download = `${m.name.replace(/[^A-Za-z0-9]+/g, '_')}.png`
+      document.body.appendChild(link); link.click(); link.remove()
+    } catch (e) {
+      console.warn('card capture failed', e)
+    }
+  }
+
   return (
-    <div className="card" style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 13 }}>
+    <div ref={cardRef} className="card" style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 13, position: 'relative' }}
+         onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)}>
+      <button data-no-capture onClick={downloadCard} title={t('ul_download_card')} aria-label={t('ul_download_card')}
+        style={{
+          position: 'absolute', top: 10, right: 10, zIndex: 2, padding: 6, borderRadius: 8, cursor: 'pointer',
+          background: 'var(--surface)', border: '1px solid var(--border)', color: 'var(--text-muted)',
+          opacity: hover ? 0.95 : 0, transition: 'opacity .15s ease',
+        }}>
+        <Icon name="download" size={14} />
+      </button>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
         {override.logo ? <LogoImg url={override.logo} name={m.name} size={28} /> : <TickerLogo symbol={m.symbol} name={m.name} size={28} />}
         <div style={{ minWidth: 0 }}>
@@ -80,7 +112,7 @@ function Card({ m, override }: { m: UnderlyingMetric; override: UnderlyingOverri
       )}
 
       {desc && <Description text={desc} />}
-      {m.figure && <div style={{ height: 190 }}><Figure fig={m.figure} name={`${m.name}_1y`} /></div>}
+      {m.figure && <div style={{ height: 190 }}><Figure fig={m.figure} name={`${m.name}_1y`} noDownload /></div>}
     </div>
   )
 }

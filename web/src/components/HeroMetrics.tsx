@@ -8,6 +8,7 @@ interface Card {
   value: number
   format: (n: number) => string
   hint: string
+  tip: string
   tone: 'accent' | 'plain' | 'good' | 'bad'
 }
 
@@ -35,6 +36,7 @@ export default function HeroMetrics({ summary }: { summary: SimSummary }) {
       value: irr,
       format: (n) => pct(n, 1),
       hint: `${t('vs_coupon')} ${pct(summary.coupon_pa, 1)}`,
+      tip: t('tip_expected_irr'),
       tone: irr >= 0 ? 'accent' : 'bad',
     },
     {
@@ -42,6 +44,7 @@ export default function HeroMetrics({ summary }: { summary: SimSummary }) {
       value: summary.prob_autocall ?? 0,
       format: (n) => pct(n, 0),
       hint: peakIdx >= 0 ? `${t('period')} P${peakIdx + 1}` : '—',
+      tip: t('tip_p_autocall'),
       tone: 'plain',
     },
     {
@@ -49,6 +52,7 @@ export default function HeroMetrics({ summary }: { summary: SimSummary }) {
       value: ki,
       format: (n) => pct(n, ki < 0.1 ? 2 : 1),
       hint: `${t('knocked_in')} ${pct(summary.loss_given_knock_in, 0)}`,
+      tip: t('tip_p_knock_in'),
       tone: ki <= 0.15 ? 'good' : 'bad',
     },
     {
@@ -56,6 +60,7 @@ export default function HeroMetrics({ summary }: { summary: SimSummary }) {
       value: summary.expected_nominal_payout ?? 0,
       format: (n) => per100(n, 1),
       hint: t('per_100'),
+      tip: t('tip_exp_payout'),
       tone: 'plain',
     },
   ]
@@ -63,7 +68,7 @@ export default function HeroMetrics({ summary }: { summary: SimSummary }) {
   return (
     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 14 }}>
       {cards.map((c) => (
-        <div key={c.label} className="card fade-up" style={{ padding: '18px 20px' }}>
+        <div key={c.label} className="card fade-up" title={c.tip} style={{ padding: '18px 20px', cursor: 'help' }}>
           <div style={{ fontSize: 10.5, fontWeight: 600, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--text-muted)', marginBottom: 12 }}>
             {c.label}
           </div>
