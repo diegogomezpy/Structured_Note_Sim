@@ -12,6 +12,7 @@ type Group = { key: string; en: string; es: string; items: Item[] }
 
 const TREE: Group[] = [
   { key: 'note', en: 'Note details', es: 'Detalle de la nota', items: [
+    ['cover', 'Cover page', 'Portada'],
     ['note_description', 'Note description', 'Descripción de la nota'],
     ['note_diagram', 'Structure diagram', 'Diagrama de la estructura'],
     ['note_terms', 'Note terms', 'Términos'],

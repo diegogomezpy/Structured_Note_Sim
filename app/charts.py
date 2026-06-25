@@ -331,9 +331,16 @@ def build_fan_chart(
         xaxis=dict(title=tr("time_years"), tickformat=".2f"),
         yaxis=dict(title=tr("price")),
         hovermode="x unified",
-        legend=dict(x=0.01, y=0.99),
     )
-    return _apply_theme(fig)
+    _apply_theme(fig)
+    # Legend below the plot (horizontal) so the percentile bands / median key
+    # never sit on top of the chart itself.
+    fig.update_layout(
+        legend=dict(orientation="h", yanchor="top", y=-0.18, xanchor="center", x=0.5,
+                    font=dict(size=10), bgcolor="rgba(0,0,0,0)", bordercolor="rgba(0,0,0,0)"),
+        margin=dict(l=60, r=30, t=50, b=78),
+    )
+    return fig
 
 
 # ---------------------------------------------------------------------------
@@ -394,9 +401,16 @@ def build_wof_fan(
         xaxis=dict(title=tr("time_years"), tickformat=".2f"),
         yaxis=dict(title=tr("perf_vs_initial"), tickformat=".0%"),
         hovermode="x unified",
-        legend=dict(x=0.01, y=0.01),
     )
-    return _apply_theme(fig)
+    _apply_theme(fig)
+    # Legend below the plot (horizontal) so the percentile bands / median key
+    # never sit on top of the chart itself.
+    fig.update_layout(
+        legend=dict(orientation="h", yanchor="top", y=-0.18, xanchor="center", x=0.5,
+                    font=dict(size=10), bgcolor="rgba(0,0,0,0)", bordercolor="rgba(0,0,0,0)"),
+        margin=dict(l=60, r=30, t=50, b=78),
+    )
+    return fig
 
 
 def build_path_wof_chart(

@@ -12,7 +12,7 @@ import type { NoteTerms, UnderlyingMetric, UnderlyingOverride } from '../api/typ
 
 function Metric({ label, value, help }: { label: string; value: string; help?: string }) {
   return (
-    <div title={help}>
+    <div title={help} style={{ background: 'var(--surface-2)', border: '1px solid var(--border)', borderRadius: 9, padding: '9px 11px' }}>
       <div style={{ fontSize: 9.5, fontWeight: 600, letterSpacing: '0.05em', textTransform: 'uppercase', color: 'var(--text-muted)', marginBottom: 4 }}>{label}</div>
       <div className="mono" style={{ fontSize: 16, fontWeight: 600 }}>{value}</div>
     </div>

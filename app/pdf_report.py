@@ -104,6 +104,9 @@ _KNOWN_BRANDING_KEYS = {
     "panel_color",          # NEW — fill of the cover sidebar + figure/callout/issuer cards
     "sidebar_bar_color",    # NEW — solid bar across the top of the cover sidebar
     "disclaimer_body",      # NEW — overrides the full disclaimer body text
+    "cover_logo_base64",    # NEW — white knockout logo for the full-bleed cover
+    "cover_image_base64",   # NEW — optional full-bleed cover background photo
+    "title_font", "body_font",  # NEW — custom report fonts (see _register_brand_fonts)
 }
 _HEX_KEYS = ("primary_color", "accent_color", "chart_secondary_color",
              "section_rule_color", "panel_color", "sidebar_bar_color")
@@ -480,6 +483,37 @@ _GLOSSARY: dict[str, list[tuple[str, str]]] = {
     ],
 }
 
+# Which report content each glossary term explains — index-aligned with the en/es
+# lists above (both have the same 23 entries in the same order; index 11 is the
+# One-Star / best-of-redemption clause in either language). A term only prints
+# when the content that needs it is in the report. "core" = always relevant when
+# there is a note at all.
+_GLOSSARY_TAGS: list[set[str]] = [
+    {"core"},        # 0  Autocallable note
+    {"core"},        # 1  Autocall barrier
+    {"core"},        # 2  Autocall observation
+    {"core"},        # 3  Coupon (p.a.)
+    {"core"},        # 4  Coupon barrier
+    {"mem"},         # 5  Memory coupon
+    {"core"},        # 6  Knock-in barrier
+    {"core"},        # 7  Knock-in
+    {"core"},        # 8  Capital loss
+    {"core"},        # 9  Worst-of
+    {"core"},        # 10 Phoenix
+    {"os"},          # 11 One Star / Redención final
+    {"core"},        # 12 Strike / initial fixing
+    {"mc", "bt"},    # 13 Total return
+    {"mc", "bt"},    # 14 IRR (simple, p.a.)
+    {"mc"},          # 15 Heston model
+    {"mc"},          # 16 Student-t copula
+    {"mc", "ul"},    # 17 Volatility (σ)
+    {"ul"},          # 18 Implied volatility (ATM, 3M)
+    {"ul"},          # 19 Realized volatility
+    {"ul"},          # 20 Moneyness / ATM
+    {"mc"},          # 21 Monte Carlo simulation
+    {"bt"},          # 22 Backtest
+]
+
 
 def _t(key: str, lang: str) -> str:
     return _LABELS.get(key, {}).get(lang, _LABELS.get(key, {}).get("en", key))
@@ -508,6 +542,13 @@ def _fmt_long_date(d: datetime.date, lang: str) -> str:
     if lang == "es":
         return f"{d.day} de {_ES_MONTHS[d.month]} de {d.year}"
     return d.strftime("%-d %B %Y")
+
+
+def _fmt_month_year(d: datetime.date, lang: str) -> str:
+    """Month + year (e.g. 'JUNIO 2026' / 'June 2026') for the cover."""
+    if lang == "es":
+        return f"{_ES_MONTHS[d.month]} {d.year}"
+    return d.strftime("%B %Y")
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -575,6 +616,60 @@ def _register_ibm_plex(pdf: FPDF) -> bool:
         return False
 
 
+def _register_brand_fonts(pdf, branding: dict | None) -> None:
+    """Route the report's title / body type to custom brand fonts when the brand
+    provides them and the files exist. The branding keys `title_font` / `body_font`
+    name a font (e.g. "Neulis Alt", "Galanti"); the TTF files are looked up as
+    fonts/brand/<AlnumName>-<Style>.ttf (Style in Regular/Bold/Italic/BoldItalic).
+
+    Title type is the bold/semibold (heading) weights; body type is regular/light/
+    italic. Anything that can't be loaded silently keeps the IBM Plex mapping, so
+    a brand that only ships some weights — or none — never breaks the report."""
+    if getattr(pdf, "_font_family", "") != "IBMPlexSans":   # need the unicode TTF path
+        return
+    b = branding or {}
+    if not (b.get("title_font") or b.get("body_font")):
+        return
+
+    def _register(font_name: str | None, styles: list[tuple[str, str]]):
+        if not font_name:
+            return None
+        fam = "Brand" + "".join(c for c in str(font_name) if c.isalnum())
+        loaded: set[str] = set()
+        for code, suffix in styles:
+            for cand in (_FONT_DIR / "brand" / f"{''.join(c for c in font_name if c.isalnum())}-{suffix}.ttf",):
+                if cand.exists():
+                    try:
+                        pdf.add_font(fam, code, str(cand), uni=True)
+                        loaded.add(code)
+                    except Exception as e:
+                        print(f"[PDF font] {font_name} {suffix} failed: {e}")
+                    break
+        if "" not in loaded:
+            if font_name:
+                print(f"[PDF font] brand font '{font_name}' not found in fonts/brand/ — using IBM Plex")
+            return None
+        print(f"[PDF font] brand font '{font_name}' registered ({sorted(loaded)})")
+        return fam, loaded
+
+    title = _register(b.get("title_font"), [("", "Bold")])
+    body  = _register(b.get("body_font"),
+                      [("", "Regular"), ("B", "Bold"), ("I", "Italic"), ("BI", "BoldItalic")])
+    if title:
+        tfam, _ = title
+        pdf._sf_map["bold"] = (tfam, "")
+        pdf._sf_map["semibold"] = (tfam, "")
+    if body:
+        bfam, bl = body
+        pdf._sf_map["regular"] = (bfam, "")
+        pdf._sf_map["light"]   = (bfam, "")
+        pdf._sf_map["italic"]  = (bfam, "I" if "I" in bl else "")
+        pdf._sf_map["bold_italic"] = (bfam, "BI" if "BI" in bl else ("I" if "I" in bl else ""))
+        if not title and "B" in bl:   # no title font → body bold also carries headings
+            pdf._sf_map["bold"] = (bfam, "B")
+            pdf._sf_map["semibold"] = (bfam, "B")
+
+
 # ──────────────────────────────────────────────────────────────────────────────
 # FPDF subclass
 # ──────────────────────────────────────────────────────────────────────────────
@@ -625,7 +720,7 @@ class _NotePDF(FPDF):
         # Aspect ratio so a wide wordmark isn't squashed into a square box.
         self.firm_logo_aspect = _logo_aspect(firm_logo_bytes, default=1.0)
         self._is_cover     = False
-        self._cover_page_no = None   # page number that holds the cover (no running footer)
+        self._cover_pages  = set()   # page numbers with no running header/footer (covers)
         self._fig_no       = 0
         # Locale-neutral numeric timestamp so the footer never shows an English
         # month abbreviation in a Spanish report.
@@ -637,24 +732,7 @@ class _NotePDF(FPDF):
         if _register_ibm_plex(self):
             self._font_family = "IBMPlexSans"
             self._use_unicode = True
-            print("[PDF font] Using IBM Plex Sans")
-        else:
-            self._font_family = "Helvetica"
-            self._use_unicode = False
-            print("[PDF font] Using Helvetica fallback")
-
-    # ------------------------------------------------------------------
-    # Font helpers
-    # ------------------------------------------------------------------
-    def _sf(self, size: float, weight: str = "regular") -> None:
-        """Set font by semantic weight.
-
-        Dispatches to IBM Plex Sans or Helvetica depending on which was
-        successfully registered at construction time.
-        """
-        ff = self._font_family
-        if ff == "IBMPlexSans":
-            _map = {
+            self._sf_map = {
                 "regular":     ("IBMPlexSans",      ""),
                 "bold":        ("IBMPlexSans",      "B"),
                 "bold_italic": ("IBMPlexSans",      "BI"),
@@ -662,9 +740,11 @@ class _NotePDF(FPDF):
                 "semibold":    ("IBMPlexSansSB",    ""),
                 "light":       ("IBMPlexSansLight", ""),
             }
-            family, style = _map.get(weight, ("IBMPlexSans", ""))
+            print("[PDF font] Using IBM Plex Sans")
         else:
-            _hmap = {
+            self._font_family = "Helvetica"
+            self._use_unicode = False
+            self._sf_map = {
                 "regular":     ("Helvetica", ""),
                 "bold":        ("Helvetica", "B"),
                 "bold_italic": ("Helvetica", "BI"),
@@ -672,7 +752,16 @@ class _NotePDF(FPDF):
                 "semibold":    ("Helvetica", "B"),
                 "light":       ("Helvetica", ""),
             }
-            family, style = _hmap.get(weight, ("Helvetica", ""))
+            print("[PDF font] Using Helvetica fallback")
+
+    # ------------------------------------------------------------------
+    # Font helpers
+    # ------------------------------------------------------------------
+    def _sf(self, size: float, weight: str = "regular") -> None:
+        """Set font by semantic weight via the active font map — IBM Plex Sans
+        (or Helvetica) by default, overridden by custom brand fonts when a brand
+        registers them (see _register_brand_fonts)."""
+        family, style = self._sf_map.get(weight, self._sf_map["regular"])
         self.set_font(family, style, size)
 
     def _fit_font(self, text: str, max_w: float, size: float,
@@ -759,7 +848,7 @@ class _NotePDF(FPDF):
         # The cover renders its own self-contained bottom disclaimer band; the
         # running footer (rule + footer_line + page number) would print on top of
         # it, producing the garbled overlap seen at the bottom of page 1. Skip it.
-        if self._is_cover or self.page_no() == self._cover_page_no:
+        if self._is_cover or self.page_no() in self._cover_pages:
             return
         # ── Thin rule above footer ────────────────────────────────────
         self.set_draw_color(*_HAIRLINE)
@@ -2136,6 +2225,97 @@ def _exec_bullets(terms, results, bt_summary, live_data, lang: str) -> list[str]
     return b
 
 
+def _front_cover_page(pdf: _NotePDF, terms, lang: str, report_title: str, website: str):
+    """Full-bleed branded cover (page 1, toggleable): brand-colour background, the
+    centred firm logo, a 'Nota Estructurada' eyebrow, the note name and the report
+    month — modelled on the CADIEM cover. Uses the brand palette + logo; a brand
+    may also supply `cover_image_base64` for a full-bleed background photo."""
+    import re
+    pdf.set_auto_page_break(auto=False)
+    pdf._is_cover = True
+    pdf.add_page()
+    pdf._cover_pages.add(pdf.page_no())
+    W, H = pdf.w, pdf.h
+    cx = W / 2
+
+    # Full-bleed background: brand primary colour, with an optional photo on top.
+    pdf.set_fill_color(*pdf.primary_color)
+    pdf.rect(0, 0, W, H, style="F")
+    if getattr(pdf, "cover_image_bytes", None):
+        try:
+            pdf.image(io.BytesIO(pdf.cover_image_bytes), x=0, y=0, w=W, h=H)
+        except Exception:
+            pass
+
+    # Logo (white wordmark), centred in the upper third. A brand may supply a
+    # white knockout logo (`cover_logo_base64`) for the coloured cover; otherwise
+    # the normal logo is used (which may be low-contrast on a brand background).
+    logo_b = getattr(pdf, "cover_logo_bytes", None) or pdf.firm_logo_bytes
+    if logo_b:
+        try:
+            lh = 22.0
+            lw = min(lh * pdf.firm_logo_aspect, 96.0)
+            pdf.image(io.BytesIO(logo_b), x=cx - lw / 2, y=H * 0.17, w=lw, h=lh)
+        except Exception:
+            pass
+
+    # Eyebrow ("NOTA ESTRUCTURADA"), letter-spaced, white.
+    eb = (report_title or _t("report_eyebrow", lang)).upper()
+    pdf.set_xy(0, H * 0.17 + 30)
+    pdf._sf(15, "light")
+    pdf.set_text_color(255, 255, 255)
+    try:
+        pdf.set_char_spacing(3.2)
+    except Exception:
+        pass
+    pdf.cell(W, 8, _safe(eb), align="C")
+    try:
+        pdf.set_char_spacing(0)
+    except Exception:
+        pass
+    # Accent rule under the eyebrow.
+    pdf.set_draw_color(*pdf.section_rule_color)
+    pdf.set_line_width(0.9)
+    pdf.line(cx - 38, H * 0.17 + 46, cx + 38, H * 0.17 + 46)
+
+    # Note name — split into a bold title + an optional subtitle on a separator.
+    _parts = re.split(r"\s+[—\-/:]\s+", terms.name or "", maxsplit=1)
+    _title = _safe((_parts[0] or "").upper())
+    _subt  = _safe((_parts[1] if len(_parts) > 1 else "").upper())
+    pdf.set_xy(0, H * 0.64)
+    pdf._sf(21, "bold")
+    pdf.set_text_color(255, 255, 255)
+    pdf.cell(W, 9, _title, align="C", new_x="LMARGIN", new_y="NEXT")
+    if _subt:
+        pdf.set_x(0)
+        pdf._sf(12, "semibold")
+        pdf.cell(W, 6, _subt, align="C", new_x="LMARGIN", new_y="NEXT")
+
+    # Report month (accent colour).
+    pdf.ln(7)
+    pdf.set_x(0)
+    pdf._sf(14, "bold")
+    pdf.set_text_color(*pdf.section_rule_color)
+    pdf.cell(W, 8, _safe(_fmt_month_year(datetime.date.today(), lang).upper()),
+             align="C", new_x="LMARGIN", new_y="NEXT")
+
+    # Website at the foot.
+    if website:
+        pdf.set_xy(0, H - 20)
+        pdf._sf(9, "regular")
+        pdf.set_text_color(255, 255, 255)
+        try:
+            pdf.set_char_spacing(1.6)
+        except Exception:
+            pass
+        pdf.cell(W, 5, _safe(website), align="C")
+        try:
+            pdf.set_char_spacing(0)
+        except Exception:
+            pass
+    pdf._is_cover = False
+
+
 def _cover_page(
     pdf: _NotePDF,
     terms,
@@ -2162,7 +2342,7 @@ def _cover_page(
     # Remember which page is the cover so footer() suppresses the running footer
     # there even after _is_cover is reset (footer fires lazily on the next
     # add_page, by which point _is_cover is already False).
-    pdf._cover_page_no = pdf.page_no()
+    pdf._cover_pages.add(pdf.page_no())
 
     # ── Clean header — the real logo on white, no colored band ────────────
     # A full-width brand band forced a white-knockout of the logo, which flattens
@@ -2383,30 +2563,33 @@ def _cover_page(
              pdf.l_margin + main_w, pdf.get_y() + 1)
     pdf.ln(5)
 
-    # Executive summary bullets
-    pdf._sf(8.5, "semibold")
-    pdf.set_text_color(*pdf.primary_color)
-    try:
-        pdf.set_char_spacing(0.4)
-    except Exception:
-        pass
-    pdf.cell(main_w, 5, _t("exec_summary", lang).upper(), new_x="LMARGIN", new_y="NEXT")
-    try:
-        pdf.set_char_spacing(0)
-    except Exception:
-        pass
-    pdf.set_draw_color(*pdf.accent_color)
-    pdf.set_line_width(0.25)
-    pdf.line(pdf.l_margin, pdf.get_y(), pdf.l_margin + main_w, pdf.get_y())
-    pdf.ln(2.5)
+    # Executive summary bullets — only when there ARE bullets (e.g. a terms-only
+    # report has no simulation results, so the title would otherwise sit empty).
+    _exec = list(_exec_bullets(terms, results, bt_summary, live_data, lang))
+    if _exec:
+        pdf._sf(8.5, "semibold")
+        pdf.set_text_color(*pdf.primary_color)
+        try:
+            pdf.set_char_spacing(0.4)
+        except Exception:
+            pass
+        pdf.cell(main_w, 5, _t("exec_summary", lang).upper(), new_x="LMARGIN", new_y="NEXT")
+        try:
+            pdf.set_char_spacing(0)
+        except Exception:
+            pass
+        pdf.set_draw_color(*pdf.accent_color)
+        pdf.set_line_width(0.25)
+        pdf.line(pdf.l_margin, pdf.get_y(), pdf.l_margin + main_w, pdf.get_y())
+        pdf.ln(2.5)
 
-    for txt in _exec_bullets(terms, results, bt_summary, live_data, lang):
-        pdf.set_x(pdf.l_margin)
-        pdf._sf(8.5, "regular")
-        pdf.set_text_color(*_TEXT)
-        pdf.cell(5, 5.5, "•" if pdf._use_unicode else chr(149))
-        pdf.multi_cell(main_w - 5, 5.5, _safe(txt), align="J")
-        pdf.ln(2)
+        for txt in _exec:
+            pdf.set_x(pdf.l_margin)
+            pdf._sf(8.5, "regular")
+            pdf.set_text_color(*_TEXT)
+            pdf.cell(5, 5.5, "•" if pdf._use_unicode else chr(149))
+            pdf.multi_cell(main_w - 5, 5.5, _safe(txt), align="J")
+            pdf.ln(2)
 
     # About this report blurb
     pdf.ln(3)
@@ -2871,12 +3054,31 @@ def _build_pdf_report(
         panel_color     = panel_color,             # NEW
         sidebar_bar_color = sidebar_bar_color,     # NEW
     )
+    # Custom brand typography (title_font / body_font) — no-op + IBM Plex fallback
+    # when the brand ships no fonts or the TTF files are absent.
+    _register_brand_fonts(pdf, branding)
     # Usable content width — a page-geometry constant used by every table. Defined
     # here (not inside the Note-Terms block) so later sections never hit an unbound
     # `usable` when Note details is toggled off.
     usable = pdf.w - pdf.l_margin - pdf.r_margin
+    # Optional full-bleed background photo for the branded cover (base64 / data URI).
+    def _decode_b64_img(_v):
+        if not _v:
+            return None
+        try:
+            _pl = _v.split(",", 1)[1] if _v.strip().startswith("data:") else _v
+            return _to_embeddable_png(base64.b64decode(_pl))
+        except Exception as _e:
+            print(f"[PDF cover] image skipped: {_e}")
+            return None
+    pdf.cover_image_bytes = _decode_b64_img(_b.get("cover_image_base64"))
+    pdf.cover_logo_bytes  = _decode_b64_img(_b.get("cover_logo_base64"))
 
-    # ── 1. Cover ───────────────────────────────────────────────────────────
+    # ── 0. Front cover (toggleable, default on) ────────────────────────────
+    if _inc("cover"):
+        _front_cover_page(pdf, terms, lang, report_title, website)
+
+    # ── 1. Summary / contents page ─────────────────────────────────────────
     _cover_page(pdf, terms, results, asset_names, bt_summary, live_data, lang,
                 logo_urls, issuer_logo_bytes, logo_tickers, inc=_inc,
                 logo_overrides=_logo_ovr)
@@ -3297,7 +3499,20 @@ def _build_pdf_report(
     # reference block is never stranded a few lines below an unrelated chart.
     pdf.add_page()
     pdf.start_section(_t("glossary_title", lang), min_room=70.0)
-    for _term, _defn in _GLOSSARY.get(lang, _GLOSSARY["en"]):
+    # Only print terms whose content is actually in this report (memory/one-star
+    # only when the note uses them; MC/backtest/underlying/vol terms only when
+    # those sections are present); "core" note mechanics always print.
+    _g_active = {"core"}
+    if getattr(terms, "memory", False):                 _g_active.add("mem")
+    if getattr(terms, "one_star_level", None) is not None: _g_active.add("os")
+    if results:                                         _g_active.add("mc")
+    if bt_summary:                                      _g_active.add("bt")
+    if underlying_metrics:                              _g_active.add("ul")
+    _glos = _GLOSSARY.get(lang, _GLOSSARY["en"])
+    for _i, (_term, _defn) in enumerate(_glos):
+        _tags = _GLOSSARY_TAGS[_i] if _i < len(_GLOSSARY_TAGS) else {"core"}
+        if _g_active.isdisjoint(_tags):
+            continue
         if pdf.get_y() > pdf.h - 34:
             pdf.add_page()
         pdf._sf(8, "semibold")
@@ -3309,10 +3524,8 @@ def _build_pdf_report(
         pdf.ln(6.2)
     pdf.set_text_color(*_TEXT)
 
-    # ── 8. Disclaimers ─────────────────────────────────────────────────────
-    # The full legal block is ~80mm tall; only break if it would otherwise be
-    # split awkwardly. Flowing it after the previous section avoids a near-empty
-    # page before the disclaimer.
+    # ── 8. Disclaimers (own back page) ─────────────────────────────────────
+    pdf.add_page()
     pdf.start_section(_t("disclaimer_title", lang), min_room=90.0)
     pdf.set_text_color(*_TEXT_SOFT)
     _disclaimer_text = (_brand_text(_b.get("disclaimer_body"), lang)
