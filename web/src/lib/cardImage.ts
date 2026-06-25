@@ -112,7 +112,9 @@ export async function renderUnderlyingCard(
   // ── measure description ───────────────────────────────────────────────────
   const measure = document.createElement('canvas').getContext('2d')!
   measure.font = `400 13px ${FONT}`
-  const descLines = desc ? wrap(measure, desc, innerW, 5) : []
+  // The download is a standalone artifact — render the full description (no
+  // on-screen "show more" clamp), letting the card grow to fit.
+  const descLines = desc ? wrap(measure, desc, innerW, 40) : []
 
   // ── compute layout heights ────────────────────────────────────────────────
   let y = pad

@@ -221,6 +221,7 @@ export const S: Dict = {
   sub_summary:      { en: 'Summary', es: 'Resumen' },
   sub_fans:         { en: 'Distributions', es: 'Distribuciones' },
   sub_correlation:  { en: 'Correlation', es: 'Correlación' },
+  sub_sample:       { en: 'Sample paths', es: 'Trayectorias' },
   sub_explorer:     { en: 'Path explorer', es: 'Explorador' },
 
   // backtest
@@ -241,6 +242,7 @@ export const S: Dict = {
   run_backtest:     { en: 'Run backtest', es: 'Ejecutar backtest' },
   bt_sub_outcomes:  { en: 'Outcomes', es: 'Resultados' },
   bt_sub_prices:    { en: 'Prices', es: 'Precios' },
+  bt_sub_sample:    { en: 'Sample paths', es: 'Trayectorias' },
   bt_sub_explorer:  { en: 'Path explorer', es: 'Explorador' },
   bt_from:          { en: 'Issues from', es: 'Emisiones desde' },
   bt_to:            { en: 'to', es: 'hasta' },

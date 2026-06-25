@@ -16,7 +16,10 @@ export type InspectFetcher = (body: {
   filters?: InspectFilters; position?: number; randomize?: boolean; lang?: string
 }) => Promise<InspectResult>
 
-const ASSET_COLORS = ['#2563eb', '#0891b2', '#7c3aed', '#0d9488', '#d97706']
+// Underlyings recede to muted, non-blue tones so the worst-of (brand accent) reads
+// as the hero rather than competing.
+const ASSET_COLORS = ['#64748b', '#0d9488', '#a855f7', '#d97706', '#0891b2']
+const WOF_COLOR = '#2563eb'
 const MARKER_STYLE: Record<string, { symbol: string; color: string; size: number }> = {
   call:     { symbol: 'diamond', color: '#2563eb', size: 11 },
   coupon:   { symbol: 'circle', color: '#16a34a', size: 9 },
@@ -41,9 +44,9 @@ function buildPathFig(path: PathData, labels: PathLabels) {
   const traces: any[] = []
   path.series.forEach((s, i) => traces.push({
     x: path.t, y: s.perf, mode: 'lines', name: s.name, type: 'scatter',
-    line: { color: ASSET_COLORS[i % ASSET_COLORS.length], width: 1.2, dash: 'dot' }, opacity: 0.6,
+    line: { color: ASSET_COLORS[i % ASSET_COLORS.length], width: 1, dash: 'dot' }, opacity: 0.5,
   }))
-  traces.push({ x: path.t, y: path.wof, mode: 'lines', name: labels.wof, type: 'scatter', line: { color: '#1a2e4a', width: 2.6 } })
+  traces.push({ x: path.t, y: path.wof, mode: 'lines', name: labels.wof, type: 'scatter', line: { color: WOF_COLOR, width: 2 } })
 
   // Reference levels as named, non-hovering line traces (so they appear in the legend).
   const x0 = 0, x1 = path.x_max

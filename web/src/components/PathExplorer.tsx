@@ -129,8 +129,14 @@ function Loader() {
   return <Panel pad={40}><div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 10, color: 'var(--text-muted)', fontSize: 14 }}><Icon name="spinner" size={18} /> {t('loading')}</div></Panel>
 }
 
+/** A representative fraction of the calculated paths (not a flat 400), clamped
+    for render performance. */
+export function sampleSize(total: number): number {
+  return Math.max(400, Math.min(2000, Math.round(total * 0.1)))
+}
+
 /** Monte Carlo path explorer — samples worst-of trajectories from a cached run. */
-export default function PathExplorer({ runId }: { runId: string }) {
+export default function PathExplorer({ runId, total }: { runId: string; total: number }) {
   const { t } = useI18n()
   const [data, setData] = useState<ExplorerData | null>(null)
   const [status, setStatus] = useState<'loading' | 'ok' | 'error'>('loading')
@@ -139,10 +145,10 @@ export default function PathExplorer({ runId }: { runId: string }) {
   useEffect(() => {
     let alive = true
     setStatus('loading')
-    api.runPaths(runId).then((d) => { if (alive) { setData(d); setStatus('ok') } })
+    api.runPaths(runId, sampleSize(total)).then((d) => { if (alive) { setData(d); setStatus('ok') } })
       .catch(() => { if (alive) setStatus('error') })
     return () => { alive = false }
-  }, [runId, seedKey])
+  }, [runId, total, seedKey])
 
   if (status === 'error') {
     return <Panel pad={40}><div style={{ textAlign: 'center', color: 'var(--text-muted)', fontSize: 14 }}>{t('explorer_expired')}</div></Panel>

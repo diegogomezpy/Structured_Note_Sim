@@ -104,7 +104,7 @@ export default function BacktestPanel({ result, terms, range, onApplyRange }: {
         )}
       </div>
 
-      <Tabs tabs={[{ id: 'outcomes', label: t('bt_sub_outcomes') }, { id: 'prices', label: t('bt_sub_prices') }, { id: 'explorer', label: t('bt_sub_explorer') }]} active={sub} onChange={setSub} />
+      <Tabs tabs={[{ id: 'outcomes', label: t('bt_sub_outcomes') }, { id: 'prices', label: t('bt_sub_prices') }, { id: 'sample', label: t('bt_sub_sample') }, { id: 'explorer', label: t('bt_sub_explorer') }]} active={sub} onChange={setSub} />
 
       {sub === 'outcomes' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }} className="fade-up">
@@ -181,7 +181,8 @@ export default function BacktestPanel({ result, terms, range, onApplyRange }: {
         </Panel>
       )}
 
-      {sub === 'explorer' && <BacktestPathExplorer terms={terms} range={range} />}
+      {sub === 'sample' && <div className="fade-up"><BacktestPathExplorer terms={terms} range={range} view="sample" /></div>}
+      {sub === 'explorer' && <div className="fade-up"><BacktestPathExplorer terms={terms} range={range} view="explorer" /></div>}
     </div>
   )
 }

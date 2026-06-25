@@ -29,6 +29,7 @@ export default function MonteCarloPanel({ result, terms }: { result: SimResult; 
   const subTabs = [
     { id: 'summary', label: t('sub_summary') },
     { id: 'fans', label: t('sub_fans') },
+    { id: 'sample', label: t('sub_sample') },
     { id: 'explorer', label: t('sub_explorer') },
     { id: 'correlation', label: t('sub_correlation') },
   ]
@@ -78,10 +79,14 @@ export default function MonteCarloPanel({ result, terms }: { result: SimResult; 
         </div>
       )}
 
+      {sub === 'sample' && (
+        <div className="fade-up">
+          <PathExplorer runId={result.run_id} total={summary.n_paths} />
+        </div>
+      )}
+
       {sub === 'explorer' && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 22 }} className="fade-up">
-          <PathExplorer runId={result.run_id} />
-          <div style={{ borderTop: '1px solid var(--border)' }} />
+        <div className="fade-up">
           <PathInspector terms={terms} fetcher={inspectFetcher} />
         </div>
       )}

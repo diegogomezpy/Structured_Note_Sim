@@ -245,7 +245,7 @@ def simulate(req: SimulateRequest):
 @app.get("/api/runs/{run_id}/paths")
 def run_paths(run_id: str, sample: int = 400):
     """Sampled worst-of trajectories for the path explorer (see engine.sample_paths)."""
-    data = engine.sample_paths(run_id, sample=max(50, min(sample, 800)))
+    data = engine.sample_paths(run_id, sample=max(50, min(sample, 2000)))
     if data is None:
         raise HTTPException(404, "run not found or expired — re-run the simulation")
     return data
@@ -300,7 +300,7 @@ def backtest_path_explorer(req: BacktestRequest, sample: int = 400, seed: int = 
         raise HTTPException(400, f"invalid note terms: {e}")
     try:
         return engine.backtest_paths(terms, history_years=req.history_years,
-                                     sample=max(50, min(sample, 800)), seed=seed,
+                                     sample=max(50, min(sample, 2000)), seed=seed,
                                      bt_start=req.bt_start, bt_end=req.bt_end)
     except Exception as e:
         raise HTTPException(500, f"backtest paths failed: {e}")
