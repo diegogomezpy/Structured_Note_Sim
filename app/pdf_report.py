@@ -209,6 +209,10 @@ _LABELS: dict[str, dict[str, str]] = {
     "diag_onestar":          {"en": "One-Star",                          "es": "One-Star"},
     "diag_issue":            {"en": "issue",                             "es": "emisión"},
     "diag_maturity":         {"en": "maturity",                          "es": "venc."},
+    "diag_window":           {"en": "Autocall window",                   "es": "Ventana de autocancelación"},
+    "diag_zone_protected":   {"en": "Capital protected",                 "es": "Capital protegido"},
+    "diag_zone_atrisk":      {"en": "Capital at risk",                   "es": "Capital en riesgo"},
+    "diag_axis_level":       {"en": "Worst-of level",                    "es": "Nivel del peor de"},
     "sim_summary":           {"en": "Monte Carlo Simulation",            "es": "Simulación Monte Carlo"},
     "model_box_title":       {"en": "Model & Methodology",               "es": "Modelo y Metodología"},
     "model_box_body":        {
@@ -2528,13 +2532,15 @@ def _draw_note_diagram(pdf, terms, lang: str) -> None:
     barriers as dashed reference lines, and a floating value label for each. Pure
     fpdf primitives — wrapped so a drawing glitch can never abort the report."""
     try:
+        from datetime import date, timedelta
         C_COUPON, C_KI, C_OS = (8, 145, 178), (220, 38, 38), (22, 163, 74)
+        C_PROT, C_RISK = (22, 163, 74), (220, 38, 38)
         usable = pdf.w - pdf.l_margin - pdf.r_margin
         gutter = 52.0
-        x0 = pdf.l_margin + 2
+        x0 = pdf.l_margin + 11           # room for y-axis tick labels
         x1 = pdf.l_margin + usable - gutter
-        top = pdf.get_y() + 4
-        plot_h, domain = 26.0, 1.30
+        top = pdf.get_y() + 7            # headroom for the y-axis arrow + title
+        plot_h, domain = 36.0, 1.40
         bottom = top + plot_h
 
         def mapY(level: float) -> float:
@@ -2547,15 +2553,64 @@ def _draw_note_diagram(pdf, terms, lang: str) -> None:
         ac, cp, ki = terms.autocall_barrier, terms.coupon_barrier, terms.knock_in_barrier
         os_lvl = terms.one_star_level
         start  = min(max(terms.autocall_start_period, 1), n)
-        line_y = mapY(ac)
+        par_y, ac_y, ki_y = mapY(1.0), mapY(ac), mapY(ki)
         obs_t  = list(terms.obs_times())
         T      = obs_t[-1] if obs_t else 1.0
         fracs  = [t / T for t in obs_t]
         acX    = mapX((start - 1) / n)
+        coupon_per  = terms.coupon_pa / max(1, terms.periods_per_year)
+        show_coupon = (n <= 8 and coupon_per > 0)
+        show_yr_ticks = (n <= 6)
+        barriers_equal = abs(cp - ki) < 1e-6
 
-        # autocall window band
-        pdf.set_fill_color(*_blend(pdf.accent_color, _WHITE, 0.84))
-        pdf.rect(acX, line_y - 2.6, max(0.0, x1 - acX), 5.2, style="F")
+        # x-axis time: real dates when the note has an issue date, else the tenor
+        _mat_yrs = terms.maturity
+        _tenor = (f"{int(round(_mat_yrs * 12)) // 12}y" if round(_mat_yrs * 12) % 12 == 0
+                  else f"{int(round(_mat_yrs * 12))}m")
+        issue_iso = getattr(terms, "issue_date", None)
+        issue_lbl, mat_lbl = None, _tenor
+        if issue_iso:
+            try:
+                _y, _m, _d = (int(v) for v in str(issue_iso).split("-")[:3])
+                _id = date(_y, _m, _d)
+                issue_lbl = _id.strftime("%b %Y")
+                mat_lbl = (_id + timedelta(days=round(_mat_yrs * 365.25))).strftime("%b %Y")
+            except Exception:
+                issue_lbl, mat_lbl = None, _tenor
+
+        # payoff zones: protected (>= knock-in) green, at-risk (< knock-in) red
+        pdf.set_fill_color(*_blend(C_PROT, _WHITE, 0.90))
+        pdf.rect(x0, top, x1 - x0, max(0.0, ki_y - top), style="F")
+        pdf.set_fill_color(*_blend(C_RISK, _WHITE, 0.90))
+        pdf.rect(x0, ki_y, x1 - x0, max(0.0, bottom - ki_y), style="F")
+
+        # autocall window: above the autocall barrier, over the callable periods
+        if start <= n:
+            pdf.set_fill_color(*_blend(pdf.accent_color, _WHITE, 0.82))
+            pdf.rect(acX, top, max(0.0, x1 - acX), max(0.0, ac_y - top), style="F")
+            pdf.set_font(pdf._font_family, "B", 6.5)
+            pdf.set_text_color(*pdf.accent_color)
+            _wl = _t("diag_window", lang)
+            pdf.text((acX + x1) / 2 - pdf.get_string_width(_wl) / 2, top + 3.4, _wl)
+
+        # y gridlines + tick labels (0 / 50 / 100%)
+        pdf.set_font(pdf._font_family, "", 6)
+        for lvl in (0.0, 0.5, 1.0):
+            gy = mapY(lvl)
+            pdf.set_draw_color(223, 229, 237)
+            pdf.set_line_width(0.2)
+            pdf.line(x0, gy, x1, gy)
+            pdf.set_text_color(150, 162, 180)
+            _tl = f"{lvl:.0%}"
+            pdf.text(x0 - 2 - pdf.get_string_width(_tl), gy + 1.0, _tl)
+
+        # zone captions
+        pdf.set_font(pdf._font_family, "B", 6.5)
+        pdf.set_text_color(*C_PROT)
+        pdf.text(x0 + 2, (par_y + ki_y) / 2 + 1.0, _t("diag_zone_protected", lang))
+        if ki_y < bottom - 2:
+            pdf.set_text_color(*C_RISK)
+            pdf.text(x0 + 2, (ki_y + bottom) / 2 + 1.0, _t("diag_zone_atrisk", lang))
 
         # barrier dashed lines
         pdf.set_line_width(0.3)
@@ -2564,43 +2619,68 @@ def _draw_note_diagram(pdf, terms, lang: str) -> None:
             pdf.set_dash_pattern(dash=1.3, gap=1.0)
             pdf.line(x0, mapY(level), x1, mapY(level))
             pdf.set_dash_pattern()
-        barriers_equal = abs(cp - ki) < 1e-6
-        _dash(cp, C_COUPON)
-        if not barriers_equal:
+        if barriers_equal:
+            _dash(ki, C_KI)
+        else:
+            _dash(cp, C_COUPON)
             _dash(ki, C_KI)
         if os_lvl is not None:
             _dash(os_lvl, C_OS)
 
-        # observation axis
+        # axes — extended past the data with arrowheads so it doesn't end abruptly
         pdf.set_draw_color(150, 162, 180)
-        pdf.set_line_width(0.5)
-        pdf.line(x0, line_y, x1, line_y)
+        pdf.set_line_width(0.4)
+        pdf.line(x0, bottom, x0, top - 4)
+        pdf.line(x0, bottom, x1 + 6, bottom)
+        pdf.set_fill_color(150, 162, 180)
+        pdf.polygon([(x0 - 1.4, top - 3), (x0 + 1.4, top - 3), (x0, top - 6)], style="F")
+        pdf.polygon([(x1 + 4, bottom - 1.4), (x1 + 4, bottom + 1.4), (x1 + 7, bottom)], style="F")
+        pdf.set_font(pdf._font_family, "B", 6.5)
+        pdf.set_text_color(150, 162, 180)
+        pdf.text(x0 - 3, top - 5.5, _t("diag_axis_level", lang))
 
+        # observation dots on the par line + per-period coupon above
         def _dot(cx, r, fill):
             pdf.set_fill_color(*fill)
-            pdf.ellipse(cx - r, line_y - r, 2 * r, 2 * r, style="F")
-
-        _dot(x0, 1.7, pdf.accent_color)
+            pdf.ellipse(cx - r, par_y - r, 2 * r, 2 * r, style="F")
+        _dot(x0, 1.5, pdf.accent_color)
         for i, f in enumerate(fracs):
             is_mat = (i + 1 == n)
             is_ac = (i + 1 >= start)
             col = pdf.primary_color if is_mat else (pdf.accent_color if is_ac else (205, 214, 228))
-            _dot(mapX(f), 1.9 if is_mat else 1.7, col)
+            _dot(mapX(f), 1.7 if is_mat else 1.5, col)
+            if show_coupon:
+                pdf.set_font(pdf._font_family, "", 5.5)
+                pdf.set_text_color(*C_COUPON)
+                _ct = f"+{coupon_per:.2%}"
+                pdf.text(mapX(f) - pdf.get_string_width(_ct) / 2, par_y - 3.0, _ct)
+            if show_yr_ticks and not is_mat:
+                _yt = (f"{f * _mat_yrs:g}").rstrip(".") + "y"
+                pdf.set_font(pdf._font_family, "", 5.5)
+                pdf.set_text_color(170, 180, 195)
+                pdf.text(mapX(f) - pdf.get_string_width(_yt) / 2, bottom + 4.4, _yt)
 
-        # issue / maturity captions
+        # issue / maturity captions (below the x-axis) + the real date or tenor
         pdf.set_font(pdf._font_family, "", 7)
         pdf.set_text_color(110, 122, 145)
-        pdf.text(x0 - 2.5, top - 1.5, _t("diag_issue", lang))
-        pdf.text(mapX(1.0) - 8, top - 1.5, _t("diag_maturity", lang))
+        _iss, _mat = _t("diag_issue", lang), _t("diag_maturity", lang)
+        pdf.text(x0 - pdf.get_string_width(_iss) / 2, bottom + 4.4, _iss)
+        pdf.text(x1 - pdf.get_string_width(_mat) / 2, bottom + 4.4, _mat)
+        pdf.set_font(pdf._font_family, "", 6)
+        pdf.set_text_color(150, 162, 180)
+        if issue_lbl:
+            pdf.text(x0 - pdf.get_string_width(issue_lbl) / 2, bottom + 8.2, issue_lbl)
+        pdf.set_text_color(110, 122, 145)
+        pdf.text(x1 - pdf.get_string_width(mat_lbl) / 2, bottom + 8.2, mat_lbl)
 
         # floating barrier value labels (right gutter), nudged apart if close
         lx = x1 + 4
-        entries = [(line_y, pdf.accent_color, _t("diag_autocall", lang), f"{ac:.0%}")]
+        entries = [(ac_y, pdf.accent_color, _t("diag_autocall", lang), f"{ac:.0%}")]
         if barriers_equal:
-            entries.append((mapY(cp), C_COUPON, f"{_t('diag_coupon', lang)} / {_t('diag_knockin', lang)}", f"{cp:.0%}"))
+            entries.append((ki_y, C_COUPON, f"{_t('diag_coupon', lang)} / {_t('diag_knockin', lang)}", f"{cp:.0%}"))
         else:
             entries.append((mapY(cp), C_COUPON, _t("diag_coupon", lang), f"{cp:.0%}"))
-            entries.append((mapY(ki), C_KI, _t("diag_knockin", lang), f"{ki:.0%}"))
+            entries.append((ki_y, C_KI, _t("diag_knockin", lang), f"{ki:.0%}"))
         if os_lvl is not None:
             entries.append((mapY(os_lvl), C_OS, _t("diag_onestar", lang), f"{os_lvl:.0%}"))
         entries.sort(key=lambda e: e[0])
@@ -2621,7 +2701,7 @@ def _draw_note_diagram(pdf, terms, lang: str) -> None:
 
         pdf.set_dash_pattern()
         pdf.set_line_width(0.2)
-        pdf.set_y(bottom + 3)
+        pdf.set_y(bottom + 12)
     except Exception as e:                                  # never break the report
         print(f"[report] note diagram skipped: {e}")
         try:
@@ -2856,7 +2936,9 @@ def _build_pdf_report(
                 (_t("u_last_price", lang), _fmt_num(_g("last_price"))),
                 (_t("u_rsi",        lang), _fmt_rsi(_g("rsi_14"))),
             ]
-            _desc = _ov.get("description") or ""
+            # Fall back to the auto-pulled business summary (what the web card
+            # shows) when the user never saved an explicit per-underlying override.
+            _desc = _ov.get("description") or _m.get("business_summary") or ""
             _fig  = (underlying_price_figs or {}).get(_nm)
             _png  = (_fig_to_png(_fig, width=900, height=360,
                                  primary_color=primary_color, accent_color=accent_color,

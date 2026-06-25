@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, type ReactNode } from 'react'
 import { useI18n } from '../i18n/I18nProvider'
 import Panel from './Panel'
 import Figure from './Figure'
@@ -17,11 +17,22 @@ function classify(i: BacktestIssue): Kind {
   return i.knock_in ? 'ki' : 'mat'
 }
 
-function MiniStat({ label, value, tone }: { label: string; value: string; tone?: string }) {
+function MiniStat({ label, value, tone, tip }: { label: string; value: string; tone?: string; tip?: string }) {
   return (
-    <div className="card" style={{ padding: '14px 16px' }}>
-      <div style={{ fontSize: 10.5, fontWeight: 600, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--text-muted)', marginBottom: 8 }}>{label}</div>
+    <div className="card" style={{ padding: '14px 16px', cursor: tip ? 'help' : undefined }} title={tip}>
+      <div style={{ fontSize: 10.5, fontWeight: 600, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--text-muted)', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 5 }}>
+        {label}{tip && <span style={{ color: 'var(--text-faint)', fontWeight: 400 }}>ⓘ</span>}
+      </div>
       <div className="mono" style={{ fontSize: 24, fontWeight: 600, color: tone ?? 'var(--text)', lineHeight: 1 }}>{value}</div>
+    </div>
+  )
+}
+
+function StatGroup({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <div>
+      <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-muted)', marginBottom: 10 }}>{title}</div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 14 }}>{children}</div>
     </div>
   )
 }
@@ -76,13 +87,31 @@ export default function BacktestPanel({ result, terms, range, onApplyRange }: {
     <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }} className="fade-up">
       <div style={{ fontSize: 12.5, color: 'var(--text-muted)' }}>{t('bt_intro')}</div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 14 }}>
-        <MiniStat label={t('bt_issues')} value={String(summary.n_issues)} />
-        <MiniStat label={t('bt_mean_irr')} value={pct(summary.mean_irr, 1)}
-                  tone={(summary.mean_irr ?? 0) >= 0 ? 'var(--accent-text)' : 'var(--red)'} />
-        <MiniStat label={t('bt_called_rate')} value={pct(summary.prob_called, 0)} />
-        <MiniStat label={t('bt_ki_rate')} value={pct(summary.prob_knock_in, 0)}
-                  tone={(summary.prob_knock_in ?? 0) <= 0.15 ? 'var(--green)' : 'var(--red)'} />
+      <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+        {t('bt_sample_caption', { n: summary.n_issues })}
+        {summary.median_irr != null && <> · {t('bt_median_caption', { v: pct(summary.median_irr, 2) })}</>}
+      </div>
+
+      {/* Same 6-metric / two-group layout as the Monte-Carlo summary so the tabs
+          read in parallel (returns row, then risk row). Median IRR sits in the
+          caption above rather than as its own card. */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+        <StatGroup title={t('bt_realised')}>
+          <MiniStat label={t('bt_mean_irr')} value={pct(summary.mean_irr, 2)} tip={t('bt_tip_mean_irr')}
+                    tone={(summary.mean_irr ?? 0) >= 0 ? 'var(--accent-text)' : 'var(--red)'} />
+          <MiniStat label={t('bt_total_return')} value={pct(summary.expected_total_return, 2)} tip={t('bt_tip_total_return')}
+                    tone={(summary.expected_total_return ?? 0) >= 0 ? 'var(--text)' : 'var(--red)'} />
+          <MiniStat label={t('bt_coupon_income')} value={pct(summary.expected_coupon, 2)} tip={t('bt_tip_coupon')} />
+        </StatGroup>
+        <StatGroup title={t('hero_risk')}>
+          <MiniStat label={t('bt_called_rate')} value={pct(summary.prob_called, 1)} tip={t('bt_tip_called')} />
+          <MiniStat label={t('bt_ki_rate')} value={pct(summary.prob_knock_in, 1)} tip={t('bt_tip_ki')}
+                    tone={(summary.prob_knock_in ?? 0) <= 0.15 ? 'var(--green)' : 'var(--red)'} />
+          <MiniStat label={t('loss_given_ki')}
+                    value={(summary.prob_knock_in ?? 0) > 0 && summary.loss_given_knock_in != null ? pct(summary.loss_given_knock_in, 2) : '—'}
+                    tip={t('bt_tip_lgki')}
+                    tone={(summary.loss_given_knock_in ?? 0) < 0 ? 'var(--red)' : 'var(--text)'} />
+        </StatGroup>
       </div>
 
       <div style={{ display: 'flex', alignItems: 'flex-end', gap: 12, flexWrap: 'wrap' }}>

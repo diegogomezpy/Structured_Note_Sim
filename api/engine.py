@@ -1166,6 +1166,13 @@ def build_report_pdf(terms: NoteTerms, *, sections: list[str] | None = None, lan
             px_1y = _prices(tickers, years=1.0, field="close")
             closes = {nm: px_1y[nm] for nm in px_1y.columns}
             underlying_metrics = load_underlying_metrics(tickers, closes=closes)
+            # The web card shows `business_summary` as the description even when the
+            # user never saved a per-underlying override; mirror that in the PDF by
+            # translating the auto-pulled blurb so the fallback there is localized.
+            if lang != "en" and underlying_metrics:
+                for _rec in underlying_metrics.values():
+                    if _rec.get("business_summary"):
+                        _rec["business_summary"] = _translated(_rec["business_summary"], lang)
             underlying_price_figs = {nm: charts.build_underlying_price_chart(px_1y[nm], nm, tr)
                                      for nm in asset_names if nm in px_1y.columns}
         except Exception as e:

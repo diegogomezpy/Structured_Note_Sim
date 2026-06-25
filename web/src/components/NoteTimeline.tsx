@@ -4,16 +4,20 @@ import { nObs, obsFractions, autocallSchedule, hasStepDown } from '../lib/terms'
 import { pct } from '../lib/format'
 import type { NoteTerms } from '../api/types'
 
-const VIEW_W = 720
-const X0 = 40
-const X1 = 470        // axis right end — leaves a gutter for the floating labels
-const VIEW_H = 118
-const Y_TOP = 30
-const Y_BOT = 104
-const DOMAIN = 1.30   // level mapped to the top of the plot
-const LABEL_X = X1 + 30
+// Payoff-zone schematic: a proper little chart with a worst-of level axis (y) and
+// a time axis (x). Performance regions are shaded — green "capital protected"
+// above the knock-in, red "capital at risk" below it — and the autocall window is
+// drawn as a labelled band. Barrier reference lines carry their precise level in
+// the right gutter. Pure function of the terms.
+const VIEW_W = 760
+const VIEW_H = 214
+const X0 = 92          // plot left (room for y-axis tick labels)
+const X1 = 548         // plot right (room for the gutter labels)
+const Y_TOP = 26       // maps to DOMAIN (top of the level axis)
+const Y_BOT = 178      // maps to 0%
+const DOMAIN = 1.35    // top of the level axis
+const LABEL_X = X1 + 14
 
-// Distinct, colour-matched so each dashed barrier and its floating label agree.
 const C_COUPON = '#0891b2'
 const C_KNOCKIN = 'var(--red)'
 const C_ONESTAR = '#16a34a'
@@ -23,6 +27,11 @@ const PPY: Record<string, number> = { monthly: 12, quarterly: 4, 'semi-annual': 
 
 const mapY = (level: number) => Y_BOT - (Math.min(Math.max(level, 0), DOMAIN) / DOMAIN) * (Y_BOT - Y_TOP)
 const mapX = (frac: number) => X0 + frac * (X1 - X0)
+
+const fmtMonthYear = (iso: string) => { const d = new Date(`${iso}T00:00:00`); return Number.isNaN(d.getTime()) ? '' : d.toLocaleDateString('en-US', { month: 'short', year: 'numeric' }) }
+const addYears = (iso: string, yrs: number) => { const d = new Date(`${iso}T00:00:00`); d.setDate(d.getDate() + Math.round(yrs * 365.25)); return d.toISOString().slice(0, 10) }
+const tenorLabel = (years: number) => { const m = Math.round(years * 12); return m % 12 === 0 ? `${m / 12}y` : `${m}m` }
+const yrTick = (y: number) => `${Number.isInteger(y) ? y : +y.toFixed(2)}y`
 
 /** Greedily separate label y-positions by at least `gap`, kept inside [minY,maxY],
     returned in the original order — so each label clears its neighbours. */
@@ -40,9 +49,6 @@ function declutter(ys: number[], gap: number, minY: number, maxY: number): numbe
 
 interface GutterEntry { target: number; color: string; name: string; value: string; desc: string }
 
-/** Live schematic of the note: observation timeline + autocall window + the
-    barrier reference lines, with floating value labels (joined to each line by a
-    neutral pointer; hover for the full mechanic). Pure function of the terms. */
 export default function NoteTimeline({ terms }: { terms: NoteTerms }) {
   const { t } = useI18n()
   const uid = useId().replace(/:/g, '')
@@ -54,12 +60,20 @@ export default function NoteTimeline({ terms }: { terms: NoteTerms }) {
   const cpLevel = terms.coupon_barrier
   const kiLevel = terms.knock_in_barrier
   const osLevel = terms.one_star_level
-  const lineY = mapY(acLevel)
+  const parY = mapY(1.0)
+  const acY = mapY(acLevel)
+  const kiY = mapY(kiLevel)
   const acX = mapX((start - 1) / n)
   const couponPer = terms.coupon_pa / (PPY[terms.payment_freq] ?? 4)
 
   const barriersEqual = Math.abs(cpLevel - kiLevel) < 1e-6
   const showCoupon = n <= 8 && couponPer > 0
+  const showYrTicks = n <= 6
+
+  // x-axis time: real dates when the note has an issue date, else the tenor
+  const issueIso = terms.issue_date || null
+  const issueDateLabel = issueIso ? fmtMonthYear(issueIso) : null
+  const matDateLabel = issueIso ? fmtMonthYear(addYears(issueIso, terms.maturity)) : tenorLabel(terms.maturity)
 
   const stepped = hasStepDown(terms)
   const sched = stepped ? autocallSchedule(terms) : null
@@ -74,75 +88,116 @@ export default function NoteTimeline({ terms }: { terms: NoteTerms }) {
   const cpDesc = t('diag_lgd_coupon', { cpn: pct(terms.coupon_pa, 1), lvl: pct(cpLevel, 0), mem: terms.memory ? t('diag_lgd_coupon_mem') : '' })
   const kiDesc = t('diag_lgd_knockin', { lvl: pct(kiLevel, 0) })
 
-  // ── floating gutter labels (de-collided; hover = full mechanic) ──────────────
+  // ── gutter labels: precise barrier level, de-collided, hover = full mechanic ──
   const entries: GutterEntry[] = [{
-    target: lineY, color: C_AUTOCALL, name: t('autocall_barrier'),
+    target: acY, color: C_AUTOCALL, name: t('autocall_barrier'),
     value: stepped ? `${pct(acLevel, 0)} → ${pct(minAc, 0)}` : pct(acLevel, 0), desc: acDesc,
   }]
   if (barriersEqual) {
-    entries.push({ target: mapY(cpLevel), color: C_COUPON, name: `${t('coupon_barrier')} · ${t('knock_in_barrier')}`, value: pct(cpLevel, 0), desc: `${cpDesc} ${kiDesc}` })
+    entries.push({ target: kiY, color: C_COUPON, name: `${t('coupon_barrier')} · ${t('knock_in_barrier')}`, value: pct(cpLevel, 0), desc: `${cpDesc} ${kiDesc}` })
   } else {
     entries.push({ target: mapY(cpLevel), color: C_COUPON, name: t('coupon_barrier'), value: pct(cpLevel, 0), desc: cpDesc })
-    entries.push({ target: mapY(kiLevel), color: C_KNOCKIN, name: t('knock_in_barrier'), value: pct(kiLevel, 0), desc: kiDesc })
+    entries.push({ target: kiY, color: C_KNOCKIN, name: t('knock_in_barrier'), value: pct(kiLevel, 0), desc: kiDesc })
   }
   if (osLevel != null) entries.push({ target: mapY(osLevel), color: C_ONESTAR, name: t('one_star'), value: pct(osLevel, 0), desc: t('diag_lgd_onestar', { lvl: pct(osLevel, 0) }) })
-  const adjY = declutter(entries.map((e) => e.target), 15, Y_TOP + 2, Y_BOT + 8)
+  const adjY = declutter(entries.map((e) => e.target), 14, Y_TOP + 2, Y_BOT)
 
   const couponNote = couponPer > 0 ? ` · +${pct(couponPer, 2)}/${t('per_period')}` : ''
   const summary = `${n} × ${t(`freq_${terms.payment_freq}`)} · ${pct(terms.coupon_pa, 1)} ${t('coupon_pa').toLowerCase()}${couponNote}${terms.memory ? ` · ${t('memory').toLowerCase()}` : ''}`
 
+  // y-axis ticks at round levels inside the domain
+  const yTicks = [0, 0.5, 1.0].filter((l) => l <= DOMAIN)
+
   const Dot = ({ x, r, fill, stroke }: { x: number; r: number; fill: string; stroke: string }) => (
     <>
-      <circle cx={x} cy={lineY} r={r + 1.8} fill="var(--surface)" />
-      <circle cx={x} cy={lineY} r={r} fill={fill} stroke={stroke} strokeWidth="1.6" />
+      <circle cx={x} cy={parY} r={r + 1.8} fill="var(--surface)" />
+      <circle cx={x} cy={parY} r={r} fill={fill} stroke={stroke} strokeWidth="1.6" />
     </>
   )
+
+  // labels for the shaded zones — placed in clear space, left-aligned inside the plot
+  const protTextY = (parY + kiY) / 2 + 3
+  const riskTextY = (kiY + Y_BOT) / 2 + 3
 
   return (
     <div>
       <svg viewBox={`0 0 ${VIEW_W} ${VIEW_H}`} width="100%" style={{ display: 'block', fontFamily: 'IBM Plex Sans, sans-serif' }}
-           role="img" aria-label="Note structure timeline">
-        {/* autocall window band */}
-        <rect x={acX} y={lineY - 9} width={X1 - acX} height={18} rx={6} fill="var(--accent-weak)" />
+           role="img" aria-label="Note payoff structure">
+        <title>{t('diag_how_to_read')}</title>
+        <defs>
+          <clipPath id={`plot-${uid}`}><rect x={X0} y={Y_TOP} width={X1 - X0} height={Y_BOT - Y_TOP} /></clipPath>
+        </defs>
 
-        {/* barrier reference lines (values float in the gutter) */}
+        {/* payoff zones: protected (≥ knock-in) green, at-risk (< knock-in) red */}
+        <rect x={X0} y={Y_TOP} width={X1 - X0} height={Math.max(0, kiY - Y_TOP)} fill="rgba(22,163,74,0.07)" />
+        <rect x={X0} y={kiY} width={X1 - X0} height={Math.max(0, Y_BOT - kiY)} fill="rgba(220,38,38,0.07)" />
+
+        {/* autocall window: above the autocall barrier, over the callable periods */}
+        {start <= n && (
+          <g clipPath={`url(#plot-${uid})`}>
+            <rect x={acX} y={Y_TOP} width={X1 - acX} height={Math.max(0, acY - Y_TOP)} fill="var(--accent-weak)" />
+            <line x1={acX} y1={Y_TOP} x2={acX} y2={acY} stroke="var(--accent-text)" strokeWidth="0.8" strokeDasharray="2 2" opacity="0.5" />
+            <text x={(acX + X1) / 2} y={Y_TOP + 12} fontSize="9" fontWeight={600} fill="var(--accent-text)" textAnchor="middle" opacity="0.9">{t('diag_window')}</text>
+          </g>
+        )}
+
+        {/* y gridlines + tick labels */}
+        {yTicks.map((l) => (
+          <g key={l}>
+            <line x1={X0} y1={mapY(l)} x2={X1} y2={mapY(l)} stroke="var(--border)" strokeWidth="0.7" opacity="0.6" />
+            <text x={X0 - 7} y={mapY(l) + 3} fontSize="8.5" className="mono" fill="var(--text-faint)" textAnchor="end">{pct(l, 0)}</text>
+          </g>
+        ))}
+
+        {/* zone captions */}
+        <text x={X0 + 7} y={protTextY} fontSize="9" fontWeight={600} fill="#16a34a" opacity="0.85">{t('diag_zone_protected')}</text>
+        {kiY < Y_BOT - 8 && (
+          <text x={X0 + 7} y={riskTextY} fontSize="9" fontWeight={600} fill="var(--red)" opacity="0.8">{t('diag_zone_atrisk')}</text>
+        )}
+
+        {/* barrier reference lines (precise value floats in the gutter) */}
         {barriersEqual ? (
-          <line x1={X0} y1={mapY(cpLevel)} x2={X1} y2={mapY(cpLevel)} stroke={C_COUPON} strokeWidth="1.3" strokeDasharray="5 3" strokeLinecap="round" opacity="0.85" />
+          <line x1={X0} y1={kiY} x2={X1} y2={kiY} stroke={C_KNOCKIN} strokeWidth="1.4" strokeDasharray="5 3" strokeLinecap="round" opacity="0.85" />
         ) : (
           <>
             <line x1={X0} y1={mapY(cpLevel)} x2={X1} y2={mapY(cpLevel)} stroke={C_COUPON} strokeWidth="1.3" strokeDasharray="5 3" strokeLinecap="round" opacity="0.85" />
-            <line x1={X0} y1={mapY(kiLevel)} x2={X1} y2={mapY(kiLevel)} stroke={C_KNOCKIN} strokeWidth="1.3" strokeDasharray="5 3" strokeLinecap="round" opacity="0.85" />
+            <line x1={X0} y1={kiY} x2={X1} y2={kiY} stroke={C_KNOCKIN} strokeWidth="1.4" strokeDasharray="5 3" strokeLinecap="round" opacity="0.9" />
           </>
         )}
         {osLevel != null && (
           <line x1={X0} y1={mapY(osLevel)} x2={X1} y2={mapY(osLevel)} stroke={C_ONESTAR} strokeWidth="1.3" strokeDasharray="5 3" strokeLinecap="round" opacity="0.8" />
         )}
         {stepPath && (
-          <path d={stepPath} fill="none" stroke="var(--text-muted)" strokeWidth="1.4" strokeDasharray="4 3" strokeLinecap="round" opacity="0.85" />
+          <path d={stepPath} fill="none" stroke="var(--accent-text)" strokeWidth="1.4" strokeDasharray="4 3" strokeLinecap="round" opacity="0.85" />
         )}
 
-        {/* floating labels: neutral solid leader + anchor dot (clearly not a barrier); hover for detail */}
+        {/* gutter labels: neutral leader + anchor dot (clearly not a barrier); hover for detail */}
         {entries.map((e, i) => (
           <g key={i}>
             <title>{e.desc}</title>
             <circle cx={X1 + 3} cy={e.target} r={1.6} fill="var(--text-faint)" />
             <path d={`M ${X1 + 3} ${e.target.toFixed(1)} L ${LABEL_X - 6} ${adjY[i].toFixed(1)}`}
                   fill="none" stroke="var(--text-faint)" strokeWidth="0.9" />
-            <text x={LABEL_X} y={adjY[i] + 3.2} fontSize="10.5">
+            <text x={LABEL_X} y={adjY[i] + 3.2} fontSize="10">
               <tspan fill={e.color}>{e.name} </tspan>
               <tspan fill="var(--text)" fontWeight={600}>{e.value}</tspan>
             </text>
           </g>
         ))}
 
-        {/* main observation axis (sits at the autocall level) */}
-        <line x1={X0} y1={lineY} x2={X1} y2={lineY} stroke="var(--border-strong)" strokeWidth="1.5" strokeLinecap="round" />
+        {/* axes — extended past the data with arrowheads so the chart doesn't end abruptly */}
+        <line x1={X0} y1={Y_BOT} x2={X0} y2={Y_TOP - 7} stroke="var(--border-strong)" strokeWidth="1.2" />
+        <path d={`M ${X0 - 3} ${Y_TOP - 4} L ${X0} ${Y_TOP - 8} L ${X0 + 3} ${Y_TOP - 4} Z`} fill="var(--border-strong)" />
+        <line x1={X0} y1={Y_BOT} x2={X1 + 8} y2={Y_BOT} stroke="var(--border-strong)" strokeWidth="1.2" />
+        <path d={`M ${X1 + 5} ${Y_BOT - 3} L ${X1 + 9} ${Y_BOT} L ${X1 + 5} ${Y_BOT + 3} Z`} fill="var(--border-strong)" />
+        <text x={X0 - 9} y={Y_TOP - 9} fontSize="8.5" fontWeight={600} fill="var(--text-faint)" textAnchor="start">{t('diag_axis_level')}</text>
+        {/* end captions: issue / maturity word, with the real date (or tenor) below */}
+        <text x={X0} y={Y_BOT + 13} fontSize="9.5" fontWeight={500} fill="var(--text-muted)" textAnchor="middle">{t('issue')}</text>
+        {issueDateLabel && <text x={X0} y={Y_BOT + 23} fontSize="8" className="mono" fill="var(--text-faint)" textAnchor="middle">{issueDateLabel}</text>}
+        <text x={X1} y={Y_BOT + 13} fontSize="9.5" fontWeight={500} fill="var(--text-muted)" textAnchor="middle">{t('maturity_short')}</text>
+        <text x={X1} y={Y_BOT + 23} fontSize="8" className="mono" fontWeight={600} fill="var(--text-muted)" textAnchor="middle">{matDateLabel}</text>
 
-        {/* issue */}
-        <Dot x={X0} r={5} fill="var(--accent)" stroke="var(--accent)" />
-        <text x={X0} y={lineY - 24} fontSize="10" fontWeight={500} fill="var(--text-muted)" textAnchor="middle">{t('issue')}</text>
-
-        {/* observation nodes + per-period coupon (placed ABOVE the axis, clear of the barriers below) */}
+        {/* observation nodes on the par line + per-period coupon above them */}
         {fracs.map((f, i) => {
           const k = i + 1
           const x = mapX(f)
@@ -152,16 +207,20 @@ export default function NoteTimeline({ terms }: { terms: NoteTerms }) {
           const stroke = isMat ? 'var(--navy)' : isAutocall ? 'var(--accent)' : 'var(--border-strong)'
           return (
             <g key={k}>
-              <Dot x={x} r={isMat ? 5.5 : isAutocall ? 5 : 4.5} fill={fill} stroke={stroke} />
-              {isMat && (
-                <text x={x + 2} y={lineY - 24} fontSize="10" fontWeight={500} fill="var(--text-muted)" textAnchor="end">{t('maturity_short')}</text>
-              )}
+              <line x1={x} y1={parY} x2={x} y2={Y_BOT} stroke="var(--border)" strokeWidth="0.7" strokeDasharray="2 3" opacity="0.5" />
+              <Dot x={x} r={isMat ? 5 : isAutocall ? 4.5 : 4} fill={fill} stroke={stroke} />
               {showCoupon && (
-                <text x={x} y={lineY - 13} fontSize="8" className="mono" fill={C_COUPON} textAnchor="middle">+{pct(couponPer, 2)}</text>
+                <text x={x} y={parY - 9} fontSize="8" className="mono" fill={C_COUPON} textAnchor="middle">+{pct(couponPer, 2)}</text>
+              )}
+              {showYrTicks && !isMat && (
+                <text x={x} y={Y_BOT + 13} fontSize="7.5" className="mono" fill="var(--text-faint)" textAnchor="middle">{yrTick(f * terms.maturity)}</text>
               )}
             </g>
           )
         })}
+
+        {/* issue marker on the par line */}
+        <Dot x={X0} r={4.5} fill="var(--accent)" stroke="var(--accent)" />
       </svg>
 
       <div style={{ fontSize: 11, color: 'var(--text-faint)', marginTop: 6, paddingTop: 8, borderTop: '1px solid var(--border)' }}>{summary}</div>

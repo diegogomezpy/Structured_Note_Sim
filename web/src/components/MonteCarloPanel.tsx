@@ -64,10 +64,12 @@ export default function MonteCarloPanel({ result, terms }: { result: SimResult; 
           {figures.asset_fans.length > 0 && (
             <Panel title={t('per_asset')} pad={14}>
               {/* Stacked full-width (one below the other) so 3+ underlyings don't
-                  squish — each fan reads like the worst-of fan above. */}
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-                {figures.asset_fans.map((a) => (
-                  <div key={a.name} style={{ background: 'var(--surface-2)', borderRadius: 10, padding: '12px 14px' }}>
+                  squish — each fan reads like the worst-of fan above. No tinted
+                  card behind each fan (that belongs in the PDF, not here); a thin
+                  divider separates them on the panel surface. */}
+              <div style={{ display: 'flex', flexDirection: 'column' }}>
+                {figures.asset_fans.map((a, i) => (
+                  <div key={a.name} style={{ paddingTop: i === 0 ? 0 : 16, marginTop: i === 0 ? 0 : 16, borderTop: i === 0 ? 'none' : '1px solid var(--border)' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
                       <TickerLogo symbol={nameToSym[a.name] ?? a.name} name={a.name} size={20} />
                       <span style={{ fontSize: 13, fontWeight: 600 }}>{a.name}</span>
