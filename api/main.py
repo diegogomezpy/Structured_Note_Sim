@@ -96,12 +96,13 @@ class BacktestInspectRequest(BaseModel):
 
 class ReportRequest(BaseModel):
     terms: dict
-    sections: list[str] = Field(default_factory=list)  # mc/calibration/backtest/live; empty = all
+    sections: list[str] = Field(default_factory=list)  # fine include keys; empty = all
     lang: str = "en"
     n_paths: int = Field(10000, ge=1000, le=250000)
     seed: int = 42
     calib_years: float = 5.0
     engine: str = "numpy"
+    branding: dict | None = None
 
 
 # ── endpoints ─────────────────────────────────────────────────────────────────
@@ -301,7 +302,8 @@ def report(req: ReportRequest):
     try:
         pdf = engine.build_report_pdf(
             terms, sections=req.sections, lang=req.lang, n_paths=req.n_paths,
-            seed=req.seed, calib_years=req.calib_years, engine=req.engine)
+            seed=req.seed, calib_years=req.calib_years, engine=req.engine,
+            branding=req.branding)
     except Exception as e:
         raise HTTPException(500, f"report generation failed: {e}")
     # Content-Disposition is latin-1 only, so strip the filename to safe ASCII

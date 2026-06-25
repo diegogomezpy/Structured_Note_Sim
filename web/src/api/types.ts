@@ -281,16 +281,25 @@ export interface InspectResult {
   assets?: { name: string; final: number | null }[]
 }
 
-export type ReportSection = 'mc' | 'calibration' | 'backtest' | 'live'
+/** Firm-branding overrides for the PDF (subset of pdf_report's schema). */
+export interface Branding {
+  firm_name?: string
+  report_title?: string
+  primary_color?: string
+  accent_color?: string
+  logo_base64?: string
+  footer_note?: string
+}
 
 export interface ReportRequest {
   terms: NoteTerms
-  sections: ReportSection[]
+  sections: string[]          // fine include keys; empty = everything
   lang?: 'en' | 'es'
   n_paths?: number
   seed?: number
   calib_years?: number
   engine?: 'numpy' | 'cpp'
+  branding?: Branding | null
 }
 
 export interface Health {

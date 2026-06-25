@@ -1018,24 +1018,6 @@ def run_describe(*, issuer: str | None = None, symbols: list[str] | None = None,
 
 
 # ── PDF report flow ──────────────────────────────────────────────────────────────
-def _expand_sections(groups: set[str], n_assets: int) -> set[str]:
-    """Map coarse UI section groups to the fine-grained item keys the PDF gates on.
-    Note terms + the observation schedule are always seeded — they are core to any
-    term sheet, and the PDF defines its shared `usable` page width inside that
-    block, so later sections (MC/calib/live) reference it expecting it present."""
-    keys: set[str] = {"note_terms", "obs_schedule"}
-    if "mc" in groups:
-        keys |= {"mc_metrics", "mc_irr", "mc_autocall", "mc_wof"}
-        keys |= {f"mc_fan_{i}" for i in range(n_assets)}
-    if "calibration" in groups:
-        keys |= {"calib_table", "calib_corr"}
-    if "backtest" in groups:
-        keys |= {"bt_metrics", "bt_outcome", "bt_pie", "bt_irr", "bt_prices"}
-    if "live" in groups:
-        keys |= {"live_metrics", "live_asset_table", "live_obs_table", "live_chart"}
-    return keys
-
-
 def _backtest_for_pdf(terms: NoteTerms, tr, history_years: float | None) -> tuple[dict | None, dict | None]:
     """(bt_summary, bt_figures) for the PDF, or (None, None) if no issues backtest.
     Builds the go.Figure objects (not JSON) the report embeds."""
@@ -1070,29 +1052,48 @@ def _backtest_for_pdf(terms: NoteTerms, tr, history_years: float | None) -> tupl
     return bt_summary, bt_figures
 
 
+def _decode_data_url(s: str | None) -> bytes | None:
+    """Decode a base64 data-URL (custom logo upload) to raw bytes."""
+    if not s or "," not in s:
+        return None
+    import base64
+    try:
+        return base64.b64decode(s.split(",", 1)[1])
+    except Exception:
+        return None
+
+
 def build_report_pdf(terms: NoteTerms, *, sections: list[str] | None = None, lang: str = "en",
                      n_paths: int = 10000, seed: int = 42, calib_years: float = 5.0,
-                     history_years: float | None = None, engine: str = "numpy") -> bytes:
-    """Assemble the institutional PDF report (app/pdf_report.py). Runs only the
-    flows whose sections were requested (empty/None ⇒ everything available), reusing
-    the cached price pulls. Returns the PDF bytes."""
+                     history_years: float | None = None, engine: str = "numpy",
+                     branding: dict | None = None) -> bytes:
+    """Assemble the institutional PDF report (app/pdf_report.py). `sections` is the
+    set of fine-grained item keys to include (empty/None ⇒ everything available);
+    only the flows those keys touch are run. `branding` is an optional firm-branding
+    dict. Returns the PDF bytes."""
     from pdf_report import generate_pdf_report                     # heavy import, lazy
 
     tr = translations.Translator(lang)
-    groups = set(sections or [])
-    all_on = not groups
-    want_mc   = all_on or {"mc", "calibration"} & groups
-    want_bt   = all_on or "backtest" in groups
-    want_live = all_on or "live" in groups
-
     tickers = dict(terms.tickers)
     asset_names = list(tickers.values())
     n_assets = len(tickers)
-    include_sections = None if all_on else _expand_sections(groups, n_assets)
+
+    keys = set(sections or [])
+    all_on = not keys
+    if "mc_fans" in keys:                                           # per-underlying fans pseudo-key
+        keys |= {f"mc_fan_{i}" for i in range(n_assets)}
+        keys.discard("mc_fans")
+    include_sections = None if all_on else keys
+
+    want_mc   = all_on or any(k.startswith("mc_") for k in keys)
+    want_cal  = all_on or bool({"calib_table", "calib_corr"} & keys)
+    want_bt   = all_on or any(k.startswith("bt_") for k in keys)
+    want_live = all_on or any(k.startswith("live_") for k in keys)
+    want_ul   = all_on or "underlying_breakdown" in keys
 
     results: dict = {}
     figures: dict = {}
-    if want_mc:
+    if want_mc or want_cal:
         sf = _simulate_full(terms, n_paths=n_paths, seed=seed, calib_years=calib_years,
                             history_years=history_years, engine=engine)
         note, cal_result = sf["note"], sf["cal_result"]
@@ -1125,13 +1126,30 @@ def build_report_pdf(terms: NoteTerms, *, sections: list[str] | None = None, lan
         if live.get("available"):
             live_data, live_figure = live["live_data"], live["live_figure"]
 
+    # Underlying breakdown: per-asset metrics + a 1Y price chart (raw go.Figures).
+    underlying_metrics = underlying_price_figs = None
+    if want_ul:
+        try:
+            px_1y = _prices(tickers, years=1.0, field="close")
+            closes = {nm: px_1y[nm] for nm in px_1y.columns}
+            underlying_metrics = load_underlying_metrics(tickers, closes=closes)
+            underlying_price_figs = {nm: charts.build_underlying_price_chart(px_1y[nm], nm, tr)
+                                     for nm in asset_names if nm in px_1y.columns}
+        except Exception as e:
+            print(f"[report] underlying breakdown skipped: {e}")
+
     logo_urls     = {nm: underlyings.logo_for(sym) for sym, nm in tickers.items()}
     logo_tickers  = {nm: sym for sym, nm in tickers.items()}
     issuer_logo   = underlyings.issuer_logo_for(getattr(terms, "issuer", "") or "")
+    # User-uploaded custom underlying logos (terms.underlyings[name].logo data-URLs).
+    logo_overrides = {nm: b for nm, ov in (terms.underlyings or {}).items()
+                      if isinstance(ov, dict) and (b := _decode_data_url(ov.get("logo")))}
 
     return generate_pdf_report(
         terms=terms, results=results, asset_names=asset_names, figures=figures,
         lang=lang, bt_summary=bt_summary, bt_figures=bt_figures,
         live_data=live_data, live_figure=live_figure,
         logo_urls=logo_urls, issuer_logo_url=issuer_logo, logo_tickers=logo_tickers,
+        logo_overrides=logo_overrides or None, branding=branding,
+        underlying_metrics=underlying_metrics, underlying_price_figs=underlying_price_figs,
         include_sections=include_sections)

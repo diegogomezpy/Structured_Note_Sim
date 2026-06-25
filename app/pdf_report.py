@@ -2636,6 +2636,10 @@ def _build_pdf_report(
         panel_color     = panel_color,             # NEW
         sidebar_bar_color = sidebar_bar_color,     # NEW
     )
+    # Usable content width — a page-geometry constant used by every table. Defined
+    # here (not inside the Note-Terms block) so later sections never hit an unbound
+    # `usable` when Note details is toggled off.
+    usable = pdf.w - pdf.l_margin - pdf.r_margin
 
     # ── 1. Cover ───────────────────────────────────────────────────────────
     _cover_page(pdf, terms, results, asset_names, bt_summary, live_data, lang,
