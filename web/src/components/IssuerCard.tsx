@@ -64,7 +64,7 @@ export default function IssuerCard({ terms }: { terms: NoteTerms }) {
   const long = desc.length > 230
 
   return (
-    <Section title={t('issuer_section')} defaultOpen>
+    <Section title={t('issuer_section')}>
       <div className="card" style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 13 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
           <IssuerLogo issuer={issuer} size={34} />

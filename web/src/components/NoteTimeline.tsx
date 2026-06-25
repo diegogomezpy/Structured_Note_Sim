@@ -7,13 +7,13 @@ import type { NoteTerms } from '../api/types'
 const VIEW_W = 720
 const X0 = 40
 const X1 = 470        // axis right end — leaves a gutter for the floating labels
-const VIEW_H = 134
-const Y_TOP = 26
-const Y_BOT = 118
-const DOMAIN = 1.28   // level mapped to the top of the plot
+const VIEW_H = 118
+const Y_TOP = 30
+const Y_BOT = 104
+const DOMAIN = 1.30   // level mapped to the top of the plot
 const LABEL_X = X1 + 30
 
-// Distinct, legend-matched colours so each dashed barrier is unambiguous.
+// Distinct, colour-matched so each dashed barrier and its floating label agree.
 const C_COUPON = '#0891b2'
 const C_KNOCKIN = 'var(--red)'
 const C_ONESTAR = '#16a34a'
@@ -25,8 +25,7 @@ const mapY = (level: number) => Y_BOT - (Math.min(Math.max(level, 0), DOMAIN) / 
 const mapX = (frac: number) => X0 + frac * (X1 - X0)
 
 /** Greedily separate label y-positions by at least `gap`, kept inside [minY,maxY],
-    returned in the original order — so each label clears its neighbours and a
-    leader can run back to the line. */
+    returned in the original order — so each label clears its neighbours. */
 function declutter(ys: number[], gap: number, minY: number, maxY: number): number[] {
   const idx = ys.map((y, i) => ({ y, i })).sort((a, b) => a.y - b.y)
   for (let k = 1; k < idx.length; k++) if (idx[k].y < idx[k - 1].y + gap) idx[k].y = idx[k - 1].y + gap
@@ -39,12 +38,11 @@ function declutter(ys: number[], gap: number, minY: number, maxY: number): numbe
   return out
 }
 
-interface GutterEntry { target: number; color: string; name: string; value: string }
+interface GutterEntry { target: number; color: string; name: string; value: string; desc: string }
 
 /** Live schematic of the note: observation timeline + autocall window + the
     barrier reference lines, with floating value labels (joined to each line by a
-    neutral pointer, distinct from the dashed barriers) and a descriptive key
-    beneath. Pure function of the terms — no simulation. */
+    neutral pointer; hover for the full mechanic). Pure function of the terms. */
 export default function NoteTimeline({ terms }: { terms: NoteTerms }) {
   const { t } = useI18n()
   const uid = useId().replace(/:/g, '')
@@ -72,29 +70,26 @@ export default function NoteTimeline({ terms }: { terms: NoteTerms }) {
     fracs.forEach((f, i) => { stepPath += ` H ${mapX(f).toFixed(1)} V ${mapY(sched[i]).toFixed(1)}` })
   }
 
-  // ── floating gutter labels (de-collided, joined by neutral leaders) ──────────
+  const acDesc = t(stepped ? 'diag_lgd_autocall_step' : 'diag_lgd_autocall', { lvl: stepped ? `${pct(acLevel, 0)} → ${pct(minAc, 0)}` : pct(acLevel, 0), p: `P${start}` })
+  const cpDesc = t('diag_lgd_coupon', { cpn: pct(terms.coupon_pa, 1), lvl: pct(cpLevel, 0), mem: terms.memory ? t('diag_lgd_coupon_mem') : '' })
+  const kiDesc = t('diag_lgd_knockin', { lvl: pct(kiLevel, 0) })
+
+  // ── floating gutter labels (de-collided; hover = full mechanic) ──────────────
   const entries: GutterEntry[] = [{
     target: lineY, color: C_AUTOCALL, name: t('autocall_barrier'),
-    value: stepped ? `${pct(acLevel, 0)} → ${pct(minAc, 0)}` : pct(acLevel, 0),
+    value: stepped ? `${pct(acLevel, 0)} → ${pct(minAc, 0)}` : pct(acLevel, 0), desc: acDesc,
   }]
   if (barriersEqual) {
-    entries.push({ target: mapY(cpLevel), color: C_COUPON, name: `${t('coupon_barrier')} · ${t('knock_in_barrier')}`, value: pct(cpLevel, 0) })
+    entries.push({ target: mapY(cpLevel), color: C_COUPON, name: `${t('coupon_barrier')} · ${t('knock_in_barrier')}`, value: pct(cpLevel, 0), desc: `${cpDesc} ${kiDesc}` })
   } else {
-    entries.push({ target: mapY(cpLevel), color: C_COUPON, name: t('coupon_barrier'), value: pct(cpLevel, 0) })
-    entries.push({ target: mapY(kiLevel), color: C_KNOCKIN, name: t('knock_in_barrier'), value: pct(kiLevel, 0) })
+    entries.push({ target: mapY(cpLevel), color: C_COUPON, name: t('coupon_barrier'), value: pct(cpLevel, 0), desc: cpDesc })
+    entries.push({ target: mapY(kiLevel), color: C_KNOCKIN, name: t('knock_in_barrier'), value: pct(kiLevel, 0), desc: kiDesc })
   }
-  if (osLevel != null) entries.push({ target: mapY(osLevel), color: C_ONESTAR, name: t('one_star'), value: pct(osLevel, 0) })
+  if (osLevel != null) entries.push({ target: mapY(osLevel), color: C_ONESTAR, name: t('one_star'), value: pct(osLevel, 0), desc: t('diag_lgd_onestar', { lvl: pct(osLevel, 0) }) })
   const adjY = declutter(entries.map((e) => e.target), 15, Y_TOP + 2, Y_BOT + 8)
 
-  // ── descriptive key (HTML, beneath the SVG) ─────────────────────────────────
-  const legend: { color: string; text: string }[] = [
-    { color: 'var(--accent)', text: t(stepped ? 'diag_lgd_autocall_step' : 'diag_lgd_autocall', { lvl: stepped ? `${pct(acLevel, 0)} → ${pct(minAc, 0)}` : pct(acLevel, 0), p: `P${start}` }) },
-    { color: C_COUPON, text: t('diag_lgd_coupon', { cpn: pct(terms.coupon_pa, 1), lvl: pct(cpLevel, 0), mem: terms.memory ? t('diag_lgd_coupon_mem') : '' }) },
-    { color: 'var(--red)', text: t('diag_lgd_knockin', { lvl: pct(kiLevel, 0) }) },
-  ]
-  if (osLevel != null) legend.push({ color: C_ONESTAR, text: t('diag_lgd_onestar', { lvl: pct(osLevel, 0) }) })
-
-  const summary = `${n} × ${t(`freq_${terms.payment_freq}`)} · ${pct(terms.coupon_pa, 1)} ${t('coupon_pa').toLowerCase()}${terms.memory ? ` · ${t('memory').toLowerCase()}` : ''}`
+  const couponNote = couponPer > 0 ? ` · +${pct(couponPer, 2)}/${t('per_period')}` : ''
+  const summary = `${n} × ${t(`freq_${terms.payment_freq}`)} · ${pct(terms.coupon_pa, 1)} ${t('coupon_pa').toLowerCase()}${couponNote}${terms.memory ? ` · ${t('memory').toLowerCase()}` : ''}`
 
   const Dot = ({ x, r, fill, stroke }: { x: number; r: number; fill: string; stroke: string }) => (
     <>
@@ -108,7 +103,7 @@ export default function NoteTimeline({ terms }: { terms: NoteTerms }) {
       <svg viewBox={`0 0 ${VIEW_W} ${VIEW_H}`} width="100%" style={{ display: 'block', fontFamily: 'IBM Plex Sans, sans-serif' }}
            role="img" aria-label="Note structure timeline">
         {/* autocall window band */}
-        <rect x={acX} y={lineY - 13} width={X1 - acX} height={26} rx={8} fill="var(--accent-weak)" />
+        <rect x={acX} y={lineY - 9} width={X1 - acX} height={18} rx={6} fill="var(--accent-weak)" />
 
         {/* barrier reference lines (values float in the gutter) */}
         {barriersEqual ? (
@@ -126,9 +121,10 @@ export default function NoteTimeline({ terms }: { terms: NoteTerms }) {
           <path d={stepPath} fill="none" stroke="var(--text-muted)" strokeWidth="1.4" strokeDasharray="4 3" strokeLinecap="round" opacity="0.85" />
         )}
 
-        {/* floating labels: a neutral solid leader + anchor dot (clearly NOT a barrier) */}
+        {/* floating labels: neutral solid leader + anchor dot (clearly not a barrier); hover for detail */}
         {entries.map((e, i) => (
           <g key={i}>
+            <title>{e.desc}</title>
             <circle cx={X1 + 3} cy={e.target} r={1.6} fill="var(--text-faint)" />
             <path d={`M ${X1 + 3} ${e.target.toFixed(1)} L ${LABEL_X - 6} ${adjY[i].toFixed(1)}`}
                   fill="none" stroke="var(--text-faint)" strokeWidth="0.9" />
@@ -144,9 +140,9 @@ export default function NoteTimeline({ terms }: { terms: NoteTerms }) {
 
         {/* issue */}
         <Dot x={X0} r={5} fill="var(--accent)" stroke="var(--accent)" />
-        <text x={X0} y={lineY - 19} fontSize="10" fontWeight={500} fill="var(--text-muted)" textAnchor="middle">{t('issue')}</text>
+        <text x={X0} y={lineY - 24} fontSize="10" fontWeight={500} fill="var(--text-muted)" textAnchor="middle">{t('issue')}</text>
 
-        {/* observation nodes + per-period coupon */}
+        {/* observation nodes + per-period coupon (placed ABOVE the axis, clear of the barriers below) */}
         {fracs.map((f, i) => {
           const k = i + 1
           const x = mapX(f)
@@ -158,26 +154,17 @@ export default function NoteTimeline({ terms }: { terms: NoteTerms }) {
             <g key={k}>
               <Dot x={x} r={isMat ? 5.5 : isAutocall ? 5 : 4.5} fill={fill} stroke={stroke} />
               {isMat && (
-                <text x={x + 2} y={lineY - 19} fontSize="10" fontWeight={500} fill="var(--text-muted)" textAnchor="end">{t('maturity_short')}</text>
+                <text x={x + 2} y={lineY - 24} fontSize="10" fontWeight={500} fill="var(--text-muted)" textAnchor="end">{t('maturity_short')}</text>
               )}
               {showCoupon && (
-                <text x={x} y={lineY + 25} fontSize="9" className="mono" fill={C_COUPON} textAnchor="middle">+{pct(couponPer, 2)}</text>
+                <text x={x} y={lineY - 13} fontSize="8" className="mono" fill={C_COUPON} textAnchor="middle">+{pct(couponPer, 2)}</text>
               )}
             </g>
           )
         })}
       </svg>
 
-      {/* descriptive key */}
-      <div style={{ marginTop: 4, paddingTop: 10, borderTop: '1px solid var(--border)', display: 'flex', flexDirection: 'column', gap: 6 }}>
-        <div style={{ fontSize: 11, color: 'var(--text-faint)', marginBottom: 1 }}>{summary}</div>
-        {legend.map((it, i) => (
-          <div key={i} style={{ display: 'flex', gap: 9, alignItems: 'flex-start', fontSize: 11.5, lineHeight: 1.5 }}>
-            <span style={{ width: 9, height: 9, borderRadius: 3, background: it.color, marginTop: 3.5, flexShrink: 0 }} />
-            <span style={{ color: 'var(--text-muted)' }}>{it.text}</span>
-          </div>
-        ))}
-      </div>
+      <div style={{ fontSize: 11, color: 'var(--text-faint)', marginTop: 6, paddingTop: 8, borderTop: '1px solid var(--border)' }}>{summary}</div>
     </div>
   )
 }

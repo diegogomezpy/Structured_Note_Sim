@@ -48,8 +48,10 @@ export function CalibrationTable({ summary, nameToSym }: { summary: SimSummary; 
       <div style={{ overflowX: 'auto' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, whiteSpace: 'nowrap' }}>
           <thead><tr>
-            {['', 'S₀', 'μ p.a.', 'V₀ (σ)', 'θ (σ)', 'κ', 'ξ', 'ρ', 'Feller'].map((h, i) => (
-              <th key={i} style={{ ...th, textAlign: i === 0 ? 'left' : 'right' }}>{h}</th>
+            {([['', ''], ['S₀', 'calib_tip_s0'], ['μ p.a.', 'calib_tip_mu'], ['V₀ (σ)', 'calib_tip_v0'], ['θ (σ)', 'calib_tip_theta'], ['κ', 'calib_tip_kappa'], ['ξ', 'calib_tip_xi'], ['ρ', 'calib_tip_rho'], ['Feller', 'calib_tip_feller']] as const).map(([h, tip], i) => (
+              <th key={i} title={tip ? t(tip) : undefined} style={{ ...th, textAlign: i === 0 ? 'left' : 'right', cursor: tip ? 'help' : undefined }}>
+                {h}{tip ? <span style={{ color: 'var(--text-faint)', marginLeft: 3 }}>ⓘ</span> : ''}
+              </th>
             ))}
           </tr></thead>
           <tbody>

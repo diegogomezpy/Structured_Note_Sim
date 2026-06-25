@@ -63,14 +63,16 @@ export default function MonteCarloPanel({ result, terms }: { result: SimResult; 
           </Panel>
           {figures.asset_fans.length > 0 && (
             <Panel title={t('per_asset')} pad={14}>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 14 }}>
+              {/* Stacked full-width (one below the other) so 3+ underlyings don't
+                  squish — each fan reads like the worst-of fan above. */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
                 {figures.asset_fans.map((a) => (
                   <div key={a.name} style={{ background: 'var(--surface-2)', borderRadius: 10, padding: '12px 14px' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
                       <TickerLogo symbol={nameToSym[a.name] ?? a.name} name={a.name} size={20} />
                       <span style={{ fontSize: 13, fontWeight: 600 }}>{a.name}</span>
                     </div>
-                    <div style={{ height: 240 }}><Figure fig={a.fig} name={`${a.name}_fan`} /></div>
+                    <div style={{ height: CHART_H }}><Figure fig={a.fig} name={`${a.name}_fan`} /></div>
                   </div>
                 ))}
               </div>
@@ -93,15 +95,15 @@ export default function MonteCarloPanel({ result, terms }: { result: SimResult; 
 
       {sub === 'correlation' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }} className="fade-up">
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 18 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(360px, 1fr))', gap: 18 }}>
             <Panel title={t('corr_input')} pad={14}>
-              <div style={{ height: 280 }}><Figure fig={figures.corr_input} name="corr_input" /></div>
+              <div style={{ height: 360 }}><Figure fig={figures.corr_input} name="corr_input" /></div>
             </Panel>
             <Panel title={t('corr_realized')} pad={14}>
-              <div style={{ height: 280 }}><Figure fig={figures.corr_realized} name="corr_realized" /></div>
+              <div style={{ height: 360 }}><Figure fig={figures.corr_realized} name="corr_realized" /></div>
             </Panel>
             <Panel title={t('corr_difference')} pad={14}>
-              <div style={{ height: 280 }}><Figure fig={figures.corr_diff} name="corr_difference" /></div>
+              <div style={{ height: 360 }}><Figure fig={figures.corr_diff} name="corr_difference" /></div>
             </Panel>
           </div>
           <Panel title={t('calibration_h')} pad={0}>
