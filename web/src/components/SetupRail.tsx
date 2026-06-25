@@ -2,9 +2,9 @@ import { useRef, useState } from 'react'
 import { useI18n } from '../i18n/I18nProvider'
 import { pct } from '../lib/format'
 import Icon from './Icon'
-import TickerLogo from './TickerLogo'
 import { Slider, SelectField } from './fields'
 import AddNoteHelp from './AddNoteHelp'
+import UnderlyingPicker from './UnderlyingPicker'
 import type { ConfigMeta, NoteTerms } from '../api/types'
 
 export interface RunOpts {
@@ -87,16 +87,7 @@ export default function SetupRail({
         {uploadErr && <div style={{ fontSize: 11.5, color: 'var(--red)', marginTop: 5 }}>{uploadErr}</div>}
       </div>
 
-      <div>
-        <label style={{ fontSize: 12, color: 'var(--text-muted)', display: 'block', marginBottom: 8 }}>{t('underlyings')}</label>
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7 }}>
-          {Object.entries(terms.tickers ?? {}).map(([sym, name]) => (
-            <span key={sym} className="pill" style={{ background: 'var(--surface-2)', color: 'var(--text)', border: '1px solid var(--border)', paddingLeft: 5 }}>
-              <TickerLogo symbol={sym} name={name} size={17} />{name}
-            </span>
-          ))}
-        </div>
-      </div>
+      <UnderlyingPicker tickers={terms.tickers} onChange={(tk) => set('tickers', tk)} />
 
       {/* Lean inline editor for the terms that drive the note diagram above —
           maturity / schedule / coupon and the three barriers. Everything else
