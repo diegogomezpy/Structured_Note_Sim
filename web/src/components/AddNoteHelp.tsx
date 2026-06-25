@@ -6,6 +6,9 @@ import Icon from './Icon'
 const TEMPLATE = {
   name: 'My Bank XS000000000 — 2Y Quarterly Phoenix',
   issuer: 'My Bank',
+  issuer_rating_sp: 'A+',
+  issuer_rating_moody: 'A1',
+  issuer_rating_fitch: 'A+',
   maturity: 2.0,
   payment_freq: 'quarterly',
   coupon_pa: 0.12,
@@ -13,32 +16,59 @@ const TEMPLATE = {
   autocall_barrier: 1.0,
   autocall_start_period: 1,
   knock_in_barrier: 0.60,
+  principal_protection: 1.0,
   memory: true,
   coupon_basket: 'worst_of',
   autocall_basket: 'worst_of',
   one_star_level: null,
+  call_steepness: null,
+  autocall_step_down: 0.0,
+  autocall_floor: null,
+  coupon_at_autocall_only: false,
+  capital_guarantee: null,
+  upside_cap: null,
   tickers: { AAPL: 'Apple', MSFT: 'Microsoft' },
   issue_date: '2025-01-15',
+  underlyings: { Apple: { analyst: { buy: 60, hold: 30, sell: 10 } } },
 }
 const TEMPLATE_JSON = JSON.stringify(TEMPLATE, null, 2)
 
-// Field reference (code keys are language-neutral; meanings are bilingual here
-// to keep the global string table lean).
-const FIELDS: { k: string; en: string; es: string }[] = [
+// Exhaustive field reference (code keys are language-neutral; meanings are
+// bilingual here to keep the global string table lean). `g` rows are section
+// headers; everything below the first header is optional (sensible defaults).
+type FieldRow = { g: string; es: string } | { k: string; en: string; es: string }
+const FIELDS: FieldRow[] = [
+  { g: 'Core terms', es: 'Términos principales' },
   { k: 'name', en: 'Name shown in the dropdown', es: 'Nombre en el menú' },
-  { k: 'issuer', en: 'Issuing bank', es: 'Banco emisor' },
   { k: 'maturity', en: 'Tenor in years', es: 'Plazo en años' },
   { k: 'payment_freq', en: 'monthly · quarterly · semi-annual · annual', es: 'monthly · quarterly · semi-annual · annual' },
   { k: 'coupon_pa', en: 'Annual coupon (0.12 = 12%)', es: 'Cupón anual (0,12 = 12%)' },
   { k: 'coupon_barrier', en: 'Coupon barrier, fraction (0.70 = 70%)', es: 'Barrera de cupón, fracción (0,70 = 70%)' },
+  { k: 'knock_in_barrier', en: 'Capital-protection barrier (0.60 = 60%)', es: 'Barrera de protección de capital (0,60 = 60%)' },
   { k: 'autocall_barrier', en: 'Autocall level (1.0 = 100%)', es: 'Nivel de autocall (1,0 = 100%)' },
-  { k: 'autocall_start_period', en: 'First callable period', es: 'Primer período rescatable' },
-  { k: 'knock_in_barrier', en: 'Capital-protection barrier', es: 'Barrera de protección de capital' },
-  { k: 'memory', en: 'Memory coupons (true/false)', es: 'Cupones con memoria (true/false)' },
+  { k: 'autocall_start_period', en: 'First callable period (1-indexed)', es: 'Primer período rescatable (base 1)' },
+  { k: 'memory', en: 'Memory coupons (true / false)', es: 'Cupones con memoria (true / false)' },
   { k: 'coupon_basket / autocall_basket', en: 'worst_of · best_of · average', es: 'worst_of · best_of · average' },
-  { k: 'one_star_level', en: 'One-Star best-of level, or null', es: 'Nivel One-Star (best-of), o null' },
   { k: 'tickers', en: 'Yahoo symbol → display name', es: 'Símbolo Yahoo → nombre' },
-  { k: 'issue_date', en: 'YYYY-MM-DD (optional, enables Current performance)', es: 'AAAA-MM-DD (opcional, activa Rendimiento actual)' },
+
+  { g: 'Optional — structure', es: 'Opcional — estructura' },
+  { k: 'principal_protection', en: 'Redemption floor when not knocked in (default 1.0)', es: 'Piso de redención sin knock-in (def. 1,0)' },
+  { k: 'one_star_level', en: 'One-Star best-of overlay level, or null', es: 'Nivel One-Star (best-of), o null' },
+  { k: 'call_steepness', en: 'null = hard autocall trigger (default)', es: 'null = disparo de autocall duro (def.)' },
+  { k: 'autocall_step_down', en: 'Per-period drop of the autocall barrier (0 = constant)', es: 'Caída por período de la barrera de autocall (0 = constante)' },
+  { k: 'autocall_floor', en: 'Min autocall barrier when stepping down, or null', es: 'Barrera mínima de autocall al decrecer, o null' },
+  { k: 'coupon_at_autocall_only', en: 'true = premium paid only at call (no periodic coupon)', es: 'true = prima solo al rescate (sin cupón periódico)' },
+  { k: 'capital_guarantee', en: 'Guaranteed min redemption (e.g. 0.95), or null', es: 'Redención mínima garantizada (ej. 0,95), o null' },
+  { k: 'upside_cap', en: 'Max gain above par (0.15 = +15%), or null', es: 'Ganancia máxima sobre par (0,15 = +15%), o null' },
+  { k: 'issue_date', en: 'YYYY-MM-DD — enables Current performance', es: 'AAAA-MM-DD — activa Rendimiento actual' },
+
+  { g: 'Optional — issuer', es: 'Opcional — emisor' },
+  { k: 'issuer', en: 'Issuing bank (display + favicon)', es: 'Banco emisor (visual + favicon)' },
+  { k: 'issuer_description', en: 'Prose blurb (auto-filled from Yahoo if omitted)', es: 'Descripción (se rellena desde Yahoo si se omite)' },
+  { k: 'issuer_rating_sp / _moody / _fitch', en: 'Agency credit ratings (A+, A1, AA-)', es: 'Calificaciones de agencias (A+, A1, AA-)' },
+
+  { g: 'Optional — per-underlying overrides', es: 'Opcional — ajustes por subyacente' },
+  { k: 'underlyings', en: 'Keyed by display name: { description, logo, analyst {buy,hold,sell}, sector … }', es: 'Por nombre: { description, logo, analyst {buy,hold,sell}, sector … }' },
 ]
 
 export default function AddNoteHelp() {
@@ -99,11 +129,17 @@ export default function AddNoteHelp() {
 
           <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--text-muted)', marginBottom: 10 }}>{t('addnote_fields')}</div>
           <div style={{ display: 'grid', gridTemplateColumns: 'max-content 1fr', columnGap: 16, rowGap: 7, fontSize: 12.5, marginBottom: 18 }}>
-            {FIELDS.map((f) => (
-              <div key={f.k} style={{ display: 'contents' }}>
-                <code style={{ fontFamily: 'IBM Plex Mono, monospace', color: 'var(--accent-text)', whiteSpace: 'nowrap' }}>{f.k}</code>
-                <span style={{ color: 'var(--text-muted)' }}>{lang === 'es' ? f.es : f.en}</span>
-              </div>
+            {FIELDS.map((f, i) => (
+              'g' in f ? (
+                <div key={`g${i}`} style={{ gridColumn: '1 / -1', fontSize: 10.5, fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--text-faint)', marginTop: i ? 8 : 0 }}>
+                  {lang === 'es' ? f.es : f.g}
+                </div>
+              ) : (
+                <div key={f.k} style={{ display: 'contents' }}>
+                  <code style={{ fontFamily: 'IBM Plex Mono, monospace', color: 'var(--accent-text)', whiteSpace: 'nowrap' }}>{f.k}</code>
+                  <span style={{ color: 'var(--text-muted)' }}>{lang === 'es' ? f.es : f.en}</span>
+                </div>
+              )
             ))}
           </div>
 

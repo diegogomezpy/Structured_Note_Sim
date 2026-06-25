@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { api } from '../api/client'
 import { useI18n } from '../i18n/I18nProvider'
 import Icon from './Icon'
+import { Section } from './fields'
 import { IssuerLogo } from './TickerLogo'
 import type { NoteTerms } from '../api/types'
 
@@ -25,7 +26,7 @@ function Rating({ label, value }: { label: string; value: string }) {
     the language changes. Hidden when no issuer is set. */
 export default function IssuerCard({ terms }: { terms: NoteTerms }) {
   const { t, lang } = useI18n()
-  const [open, setOpen] = useState(false)
+  const [expanded, setExpanded] = useState(false)
   const [fetched, setFetched] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const issuer = terms.issuer || ''
@@ -33,8 +34,11 @@ export default function IssuerCard({ terms }: { terms: NoteTerms }) {
   // Cache the in-flight key so we don't refetch on unrelated term edits.
   const lastKey = useRef('')
 
+  // Prefetch runs regardless of the section's collapsed state (the effect lives
+  // in this always-mounted component, not inside the collapsible body) so the
+  // profile is ready the instant the section is opened.
   useEffect(() => {
-    setOpen(false)
+    setExpanded(false)
     if (!issuer || curated) { setFetched(null); return }
     const key = `${issuer}|${lang}`
     if (key === lastKey.current) return
@@ -60,10 +64,7 @@ export default function IssuerCard({ terms }: { terms: NoteTerms }) {
   const long = desc.length > 230
 
   return (
-    <div style={{ borderTop: '1px solid var(--border)', paddingTop: 14 }}>
-      <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--text-muted)', marginBottom: 10 }}>
-        {t('issuer_section')}
-      </div>
+    <Section title={t('issuer_section')} defaultOpen>
       <div className="card" style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 13 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
           <IssuerLogo issuer={issuer} size={34} />
@@ -81,10 +82,10 @@ export default function IssuerCard({ terms }: { terms: NoteTerms }) {
           </div>
         ) : desc ? (
           <div style={{ fontSize: 12.5, color: 'var(--text-muted)', lineHeight: 1.6 }}>
-            <span style={open || !long ? undefined : { display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{desc}</span>
+            <span style={expanded || !long ? undefined : { display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{desc}</span>
             {long && (
-              <button onClick={() => setOpen((o) => !o)} style={{ display: 'block', marginTop: 5, background: 'none', border: 'none', padding: 0, cursor: 'pointer', color: 'var(--accent-text)', fontSize: 11.5, fontFamily: 'inherit' }}>
-                {open ? t('ul_less') : t('ul_more')}
+              <button onClick={() => setExpanded((o) => !o)} style={{ display: 'block', marginTop: 5, background: 'none', border: 'none', padding: 0, cursor: 'pointer', color: 'var(--accent-text)', fontSize: 11.5, fontFamily: 'inherit' }}>
+                {expanded ? t('ul_less') : t('ul_more')}
               </button>
             )}
           </div>
@@ -92,6 +93,6 @@ export default function IssuerCard({ terms }: { terms: NoteTerms }) {
           <div style={{ fontSize: 12, color: 'var(--text-faint)' }}>{t('issuer_no_desc')}</div>
         )}
       </div>
-    </div>
+    </Section>
   )
 }
