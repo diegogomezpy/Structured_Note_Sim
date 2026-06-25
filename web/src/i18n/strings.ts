@@ -134,6 +134,7 @@ export const S: Dict = {
   knock_in_barrier: { en: 'Knock-in barrier', es: 'Barrera de knock-in' },
   autocall_start:   { en: 'Autocall starts', es: 'Autocancelación desde' },
   quick_edit:       { en: 'Terms', es: 'Términos' },
+  quick_mechanics:  { en: 'Mechanics', es: 'Mecánica' },
   coupon_barrier_short: { en: 'Coupon', es: 'Cupón' },
   knock_in_short:   { en: 'Knock-in', es: 'Knock-in' },
   autocall_short:   { en: 'Autocall', es: 'Autocall' },

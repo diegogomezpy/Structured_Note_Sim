@@ -1,8 +1,9 @@
 import { useRef, useState } from 'react'
 import { useI18n } from '../i18n/I18nProvider'
 import { pct } from '../lib/format'
+import { nObs } from '../lib/terms'
 import Icon from './Icon'
-import { Slider, SelectField } from './fields'
+import { Slider, SelectField, ToggleField } from './fields'
 import AddNoteHelp from './AddNoteHelp'
 import UnderlyingPicker from './UnderlyingPicker'
 import type { ConfigMeta, NoteTerms } from '../api/types'
@@ -15,24 +16,8 @@ export interface RunOpts {
 }
 
 const FREQS: NoteTerms['payment_freq'][] = ['monthly', 'quarterly', 'semi-annual', 'annual']
-
-/** Compact percentage input (stored as a fraction, edited as a %) for the
-    barrier row — narrow enough to sit three-across in the rail. */
-function Barrier({ label, value, onChange, min = 0, max = 300, tip }: {
-  label: string; value: number; onChange: (v: number) => void; min?: number; max?: number; tip?: string
-}) {
-  return (
-    <div>
-      <div title={tip} style={{ fontSize: 10, fontWeight: 600, letterSpacing: '0.03em', textTransform: 'uppercase', color: 'var(--text-muted)', marginBottom: 5, whiteSpace: 'nowrap', cursor: tip ? 'help' : undefined }}>{label}</div>
-      <div style={{ position: 'relative' }}>
-        <input type="number" value={Math.round(value * 1000) / 10} min={min} max={max} step={0.5}
-               onChange={(e) => { const v = parseFloat(e.target.value); if (!Number.isNaN(v)) onChange(v / 100) }}
-               style={{ textAlign: 'right', paddingRight: 20 }} />
-        <span style={{ position: 'absolute', right: 9, top: '50%', transform: 'translateY(-50%)', fontSize: 12, color: 'var(--text-faint)', pointerEvents: 'none' }}>%</span>
-      </div>
-    </div>
-  )
-}
+const BASKETS: NoteTerms['coupon_basket'][] = ['worst_of', 'best_of', 'average']
+const pct0 = (v: number) => pct(v, 0)
 
 export default function SetupRail({
   terms, onChange, configs, configFile, onSelectConfig, onUploadConfig, opts, running, stale, onRun, onOpenSettings,
@@ -102,9 +87,9 @@ export default function SetupRail({
 
       <UnderlyingPicker tickers={terms.tickers} onChange={(tk) => set('tickers', tk)} />
 
-      {/* Lean inline editor for the terms that drive the note diagram above —
-          maturity / schedule / coupon and the three barriers. Everything else
-          lives in the full settings overlay. */}
+      {/* Inline editor for the terms that drive the note diagram above. The full
+          settings overlay still holds the rarer fields (engine, ratings, capital
+          guarantee, upside cap, …). */}
       <div style={{ borderTop: '1px solid var(--border)', paddingTop: 14 }}>
         <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--text-muted)', marginBottom: 12 }}>{t('quick_edit')}</div>
 
@@ -116,11 +101,35 @@ export default function SetupRail({
         <Slider label={t('coupon_pa')} value={terms.coupon_pa} min={0} max={0.3} step={0.005} tip={t('tip_coupon_pa')}
                 fmt={(v) => pct(v, 1)} onChange={(v) => set('coupon_pa', v)} />
 
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, marginTop: 2 }}>
-          <Barrier label={t('coupon_barrier_short')} value={terms.coupon_barrier} onChange={(v) => set('coupon_barrier', v)} tip={t('tip_coupon_barrier')} />
-          <Barrier label={t('knock_in_short')} value={terms.knock_in_barrier} onChange={(v) => set('knock_in_barrier', v)} tip={t('tip_knock_in')} />
-          <Barrier label={t('autocall_short')} value={terms.autocall_barrier} min={50} onChange={(v) => set('autocall_barrier', v)} tip={t('tip_autocall')} />
-        </div>
+        <Slider label={t('coupon_barrier')} value={terms.coupon_barrier} min={0} max={1} step={0.01} tip={t('tip_coupon_barrier')}
+                fmt={pct0} onChange={(v) => set('coupon_barrier', v)} />
+        <Slider label={t('knock_in_barrier')} value={terms.knock_in_barrier} min={0} max={1} step={0.01} tip={t('tip_knock_in')}
+                fmt={pct0} onChange={(v) => set('knock_in_barrier', v)} />
+        <Slider label={t('autocall_barrier')} value={terms.autocall_barrier} min={0.5} max={1.5} step={0.01} tip={t('tip_autocall')}
+                fmt={pct0} onChange={(v) => set('autocall_barrier', v)} />
+      </div>
+
+      {/* Second group — the next-most-edited mechanics, inline so they don't
+          require the settings overlay. */}
+      <div style={{ borderTop: '1px solid var(--border)', paddingTop: 14 }}>
+        <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--text-muted)', marginBottom: 12 }}>{t('quick_mechanics')}</div>
+
+        <Slider label={t('autocall_start')} value={Math.min(terms.autocall_start_period, nObs(terms))}
+                min={1} max={Math.max(1, nObs(terms))} step={1} fmt={(v) => `P${v}`}
+                onChange={(v) => set('autocall_start_period', v)} />
+        <SelectField label={t('coupon_basket')} value={terms.coupon_basket}
+                     options={BASKETS.map((b) => ({ value: b, label: t(`basket_${b}`) }))}
+                     onChange={(v) => set('coupon_basket', v)} />
+        <SelectField label={t('autocall_basket')} value={terms.autocall_basket}
+                     options={BASKETS.map((b) => ({ value: b, label: t(`basket_${b}`) }))}
+                     onChange={(v) => set('autocall_basket', v)} />
+        <ToggleField label={t('memory')} checked={terms.memory} onChange={(v) => set('memory', v)} />
+        <ToggleField label={t('one_star')} checked={terms.one_star_level != null}
+                     onChange={(on) => set('one_star_level', on ? 1.0 : null)} />
+        {terms.one_star_level != null && (
+          <Slider label={t('one_star_level')} value={terms.one_star_level} min={0.5} max={1.5} step={0.01}
+                  fmt={pct0} onChange={(v) => set('one_star_level', v)} />
+        )}
       </div>
 
       <button className="btn" style={{ justifyContent: 'center', padding: '10px' }} onClick={onOpenSettings}>
