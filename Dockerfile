@@ -1,6 +1,20 @@
-# Reproducible image for Cloud Run (or any container host). Bundles chromium so
-# the PDF figure export (kaleido) works, and pins the whole environment so
-# "works locally" == "works in prod" — unlike the opaque Streamlit Cloud builder.
+# Reproducible single-image build for Cloud Run. Two stages:
+#   1. node   — build the React/Vite front-end (web/) into web/dist
+#   2. python — FastAPI (uvicorn) serves the API *and* the built bundle
+#               same-origin, with chromium bundled so the PDF figure export
+#               (kaleido) works. Pins the whole environment so
+#               "works locally" == "works in prod".
+
+# ── stage 1: build the front-end ──────────────────────────────────────────────
+FROM node:22-slim AS web-build
+WORKDIR /web
+# Install deps first so this layer caches across source-only changes.
+COPY web/package.json web/package-lock.json ./
+RUN npm ci
+COPY web/ ./
+RUN npm run build          # → /web/dist (tsc -b && vite build)
+
+# ── stage 2: python runtime ───────────────────────────────────────────────────
 FROM python:3.12-slim
 
 # System deps:
@@ -22,23 +36,23 @@ WORKDIR /app
 
 # Install Python deps first so the layer caches across source-only changes.
 # All deps ship cp312 manylinux wheels, so no build toolchain is needed.
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+COPY requirements.txt ./requirements.txt
+COPY api/requirements.txt ./api-requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt -r api-requirements.txt
 
 COPY . .
+# Overlay the built front-end from stage 1 (web/dist is dockerignored from the
+# build context, so the only copy present is this freshly-built one).
+COPY --from=web-build /web/dist ./web/dist
 
 # Run unprivileged — also lets chromium use its own sandbox (no --no-sandbox
 # hacks) when rendering the PDF.
 RUN useradd --create-home appuser && chown -R appuser /app
 USER appuser
 
-# Headless overrides the repo's config.toml (which has headless=false for local).
-ENV STREAMLIT_SERVER_HEADLESS=true \
-    STREAMLIT_BROWSER_GATHER_USAGE_STATS=false
+ENV PYTHONUNBUFFERED=1
 
-# Cloud Run injects $PORT (default 8080). Shell form so it expands.
+# Cloud Run injects $PORT (default 8080). Shell form so it expands. uvicorn binds
+# 0.0.0.0 so the platform's startup probe can reach it.
 EXPOSE 8080
-CMD streamlit run app/app.py \
-    --server.port=${PORT:-8080} \
-    --server.address=0.0.0.0 \
-    --server.headless=true
+CMD uvicorn api.main:app --host 0.0.0.0 --port ${PORT:-8080}

@@ -30,7 +30,7 @@ function Stat({ label, value, sub, subTone, help, children }: {
   )
 }
 
-export default function LivePanel({ result, terms }: { result: LiveResult; terms: NoteTerms }) {
+export default function LivePanel({ result }: { result: LiveResult; terms: NoteTerms }) {
   const { t } = useI18n()
 
   if (!result.available) {

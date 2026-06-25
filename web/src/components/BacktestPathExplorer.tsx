@@ -14,7 +14,6 @@ import type { BtRange, ExplorerData, NoteTerms } from '../api/types'
 export default function BacktestPathExplorer({ terms, range, view }: {
   terms: NoteTerms; range: BtRange; view: 'sample' | 'explorer'
 }) {
-  const { t } = useI18n()
   const sig = JSON.stringify({ terms, range })
   const inspectFetcher = useCallback(
     (body: Parameters<typeof api.backtestInspect>[1]) => api.backtestInspect(terms, body, range),

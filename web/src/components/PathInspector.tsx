@@ -328,12 +328,12 @@ function InspectorPanel({ fetcher, terms, label, onRemove }: {
           <div style={{ height: 360 }}><Figure fig={fig} name="path_inspector" /></div>
           {outcomeLine && <div style={{ fontSize: 13, color: 'var(--text-muted)', margin: '8px 0 12px' }}>{outcomeLine}</div>}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12, marginBottom: 12 }}>
-            <Metric label={t('insp_m_principal')} value={pct(data.metrics?.principal, 2)} />
-            <Metric label={t('insp_m_coupons')} value={pct(data.metrics?.coupons, 2)} />
-            <Metric label={t('insp_m_irr')} value={pct(data.metrics?.irr, 2)} />
+            <Metric label={t('insp_m_principal')} value={pct(data?.metrics?.principal, 2)} />
+            <Metric label={t('insp_m_coupons')} value={pct(data?.metrics?.coupons, 2)} />
+            <Metric label={t('insp_m_irr')} value={pct(data?.metrics?.irr, 2)} />
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 10 }}>
-            {data.assets?.map((a) => {
+            {data?.assets?.map((a) => {
               const d = a.final != null ? a.final - 1 : null
               return (
                 <div key={a.name} className="card" style={{ padding: '10px 12px' }}>

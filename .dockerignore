@@ -1,8 +1,13 @@
 # Keep the build context (and image) small. fonts/, note_configs/, branding/,
-# app/, core/, data/, .streamlit/ are all needed and intentionally NOT ignored.
+# app/, core/, data/, web/ (source — built in the node stage) are all needed and
+# intentionally NOT ignored.
 .venv
 venv
 env
+# Front-end: node_modules is reinstalled (npm ci) and dist is rebuilt in the
+# node stage, so neither should ship in the build context.
+web/node_modules
+web/dist
 **/__pycache__
 *.pyc
 *.pyo
@@ -12,14 +17,19 @@ env
 .DS_Store
 .claude
 docs
-# C++ engine is not used in the deploy (numpy is the default engine).
+# C++ engine is not built into the deploy image — the simulator falls back to the
+# numpy reference when heston_cpp / simulator_cpp are absent.
 cpp
 core/simulator_cpp.py
 scripts/verify_pdf.py
 scripts/compare_engines.py
-# Local-only branding overrides (the example template is kept).
+# Local-only branding overrides + commercial brand fonts (the example template and
+# the bundled IBM Plex family are kept). These are gitignored too, so the
+# Cloud Build checkout never has them — this is belt-and-suspenders for local builds.
 branding/branding_*.json
 !branding/branding_example.json
+fonts/brand/*.ttf
+fonts/brand/*.otf
 # Build/test artifacts
 *.egg-info
 .pytest_cache

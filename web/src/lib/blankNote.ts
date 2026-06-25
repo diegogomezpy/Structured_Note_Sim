@@ -27,6 +27,7 @@ export function blankNote(): NoteTerms {
     issuer_rating_sp: '',
     issuer_rating_moody: '',
     issuer_rating_fitch: '',
+    note_description: '',
     tickers: { '^GSPC': 'S&P 500' },
     issue_date: null,
     underlyings: {},

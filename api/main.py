@@ -398,3 +398,15 @@ def _cpp_available() -> bool:
         return True
     except Exception:
         return False
+
+
+# ── static front-end (single-image prod build) ───────────────────────────────
+# In the container the React bundle is built to web/dist and served same-origin.
+# Mounted LAST so the explicit /api/* routes above always take precedence;
+# html=True serves index.html at "/" (and as the single-page fallback). Absent in
+# local dev — Vite serves the front-end and proxies /api to uvicorn.
+from fastapi.staticfiles import StaticFiles   # noqa: E402
+
+_WEB_DIST = _REPO / "web" / "dist"
+if _WEB_DIST.is_dir():
+    app.mount("/", StaticFiles(directory=str(_WEB_DIST), html=True), name="web")

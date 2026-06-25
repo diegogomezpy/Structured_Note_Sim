@@ -20,7 +20,7 @@ const BASKETS: NoteTerms['coupon_basket'][] = ['worst_of', 'best_of', 'average']
 const pct0 = (v: number) => pct(v, 0)
 
 export default function SetupRail({
-  terms, onChange, configs, configFile, onSelectConfig, onUploadConfig, opts, running, stale, onRun, onOpenSettings,
+  terms, onChange, configs, configFile, onSelectConfig, onUploadConfig, running, stale, onRun, onOpenSettings,
 }: {
   terms: NoteTerms
   onChange: (t: NoteTerms) => void
