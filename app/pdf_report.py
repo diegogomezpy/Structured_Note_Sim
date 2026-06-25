@@ -275,6 +275,7 @@ _LABELS: dict[str, dict[str, str]] = {
     "n_paths":               {"en": "Simulated paths",                   "es": "Caminos simulados"},
     "autocall_by_period":    {"en": "Autocall Probability by Period",    "es": "Probabilidad de Autocall por Período"},
     "fig_outcome":           {"en": "Outcome breakdown",                 "es": "Distribución de resultados"},
+    "fig_sample":            {"en": "Sample worst-of paths",             "es": "Muestra de trayectorias del peor de"},
     "period":                {"en": "Period",                            "es": "Período"},
     "time_y":                {"en": "Time (yrs)",                        "es": "Tiempo (años)"},
     "p_autocall":            {"en": "P(autocall)",                       "es": "P(autocall)"},
@@ -3263,7 +3264,7 @@ def _build_pdf_report(
         # so it is included only when the report actually carries MC output. A
         # Note-details / backtest / live-only report (sim skipped) omits it.
         _mc_keys = {"mc_metrics", "mc_outcome", "mc_irr", "mc_autocall", "mc_wof",
-                    "mc_single_wof", "calib_table", "calib_corr"}
+                    "mc_sample", "mc_single_wof", "calib_table", "calib_corr"}
         _mc_keys |= {f"mc_fan_{i}" for i in range(len(asset_names or []))}
         if any(_inc(k) for k in _mc_keys):
             pdf.ln(8)   # breathing room before the model box
@@ -3433,6 +3434,9 @@ def _build_pdf_report(
             _sec()
             pdf.figure(_fig_to_png(fig, **_kw),
                        _t("fig_individual", lang).format(name=nm), src_mc)
+    if _inc("mc_sample") and figures.get("sample") is not None:
+        _sec()
+        pdf.figure(_fig_to_png(figures.get("sample"), **_kw), _t("fig_sample", lang), src_mc)
 
     # 3c. Path Explorer — the simulated path(s) the user last viewed. One worst-of
     # chart per comparison panel, captioned with the user's panel title (or the

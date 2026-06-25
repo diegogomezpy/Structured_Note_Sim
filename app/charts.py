@@ -534,6 +534,68 @@ def build_corr_heatmap(
 # Backtest — outcome bar chart
 # ---------------------------------------------------------------------------
 
+def build_sample_paths(
+    wof_paths,
+    t_grid,
+    autocall_period,
+    knock_in_mask,
+    knock_in_barrier: float,
+    autocall_barrier: float,
+    obs_pairs,
+    tr: Translator,
+    n_show: int = 300,
+) -> go.Figure:
+    """Spaghetti of a sample of worst-of trajectories, coloured by outcome
+    (autocalled blue / held-to-maturity green / knocked-in red) — the report
+    version of the web sample-paths chart. Three concatenated traces (one per
+    outcome) so the figure stays light even with hundreds of paths."""
+    wof = np.asarray(wof_paths)
+    P = wof.shape[0]
+    ap = np.asarray(autocall_period)
+    ki = np.asarray(knock_in_mask)
+    idx = np.arange(P)
+    if P > n_show:
+        idx = np.random.default_rng(0).choice(P, size=n_show, replace=False)
+    kind = np.where(ki[idx], "ki", np.where(ap[idx] > 0, "ac", "mat"))
+    spec = [
+        ("mat", "rgba(22,163,74,0.30)",  tr("sp_held")),
+        ("ac",  "rgba(37,99,235,0.22)",  tr("sp_autocalled")),
+        ("ki",  "rgba(220,38,38,0.40)",  tr("knocked_in")),
+    ]
+    tg = list(np.asarray(t_grid))
+    fig = go.Figure()
+    for code, col, name in spec:
+        sel = idx[kind == code]
+        if len(sel) == 0:
+            continue
+        xs, ys = [], []
+        for i in sel:
+            xs.extend(tg); xs.append(None)
+            ys.extend(list(wof[i])); ys.append(None)
+        fig.add_trace(go.Scatter(x=xs, y=ys, mode="lines", name=name,
+                                 line=dict(color=col, width=0.6), hoverinfo="skip"))
+    fig.add_hline(y=autocall_barrier, line_dash="dash", line_color=_BLUE,
+                  annotation_text=tr("chart_autocall_barrier_lvl", lvl=f"{autocall_barrier:.0%}"),
+                  annotation_position="right")
+    fig.add_hline(y=knock_in_barrier, line_dash="dash", line_color="#dc2626",
+                  annotation_text=tr("chart_ki_barrier", lvl=f"{knock_in_barrier:.0%}"),
+                  annotation_position="right")
+    for label, t_val in (obs_pairs or []):
+        fig.add_vline(x=t_val, line_dash="dot", line_color="#bbb")
+    fig.update_layout(
+        title=tr("sample_paths_fig"),
+        xaxis=dict(title=tr("time_years"), tickformat=".2f"),
+        yaxis=dict(title=tr("perf_vs_initial"), tickformat=".0%"),
+    )
+    _apply_theme(fig)
+    fig.update_layout(
+        legend=dict(orientation="h", yanchor="top", y=-0.18, xanchor="center", x=0.5,
+                    font=dict(size=10), bgcolor="rgba(0,0,0,0)"),
+        margin=dict(l=60, r=40, t=50, b=72),
+    )
+    return fig
+
+
 def build_outcome_breakdown(
     autocall_by_period,
     prob_maturity: float,

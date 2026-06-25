@@ -1140,6 +1140,10 @@ def build_report_pdf(terms: NoteTerms, *, sections: list[str] | None = None, lan
             "outcome": charts.build_outcome_breakdown(
                 note.get("prob_autocall_by_period"), note.get("prob_maturity"),
                 note.get("prob_knock_in_total"), tr),
+            "sample": charts.build_sample_paths(
+                sf["wof_paths"], t_grid, note.get("autocall_period"),
+                note.get("knock_in_mask"), terms.knock_in_barrier,
+                terms.autocall_barrier, obs_pairs, tr),
             "irr_dist": charts.build_irr_distribution(
                 note["annualized_returns"], note.get("total_returns"),
                 note["autocall_events"], note["expected_irr"], terms.coupon_pa, tr),

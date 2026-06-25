@@ -69,6 +69,9 @@ _STRINGS: dict[str, tuple[str, str]] = {
     "redeemed_at_par":          ("Redeemed at par",                 "Reembolso a la par"),
     "knocked_in":               ("Knocked in",                      "Knock-in"),
     "autocalled_p":             ("Autocalled P{p}",                 "Autocancelado P{p}"),
+    "sample_paths_fig":         ("Sample worst-of paths",           "Muestra de trayectorias del peor de"),
+    "sp_autocalled":            ("Autocalled",                      "Autocancelado"),
+    "sp_held":                  ("Held to maturity",                "Mantenido al vencimiento"),
     "explorer_panel_name":      ("Panel name (chart title)",        "Nombre del panel (título)"),
     "explorer_panel_name_ph":   ("e.g. Best autocall scenario",     "p. ej. Mejor escenario de autocall"),
 
