@@ -2353,16 +2353,17 @@ def _front_cover_page(pdf: _NotePDF, terms, lang: str, report_title: str, websit
         except Exception:
             pass
 
-    # Eyebrow ("NOTA ESTRUCTURADA"), letter-spaced, white.
+    # Eyebrow ("STRUCTURED NOTE"), letter-spaced, white — the cover's hero line.
     eb = (report_title or _t("report_eyebrow", lang)).upper()
-    pdf.set_xy(0, H * 0.17 + 29)
-    pdf._sf(22, "light")
+    _rule_y = H * 0.17 + 50
+    pdf.set_xy(0, H * 0.17 + 27)
+    pdf._sf(32, "light")
     pdf.set_text_color(255, 255, 255)
     try:
-        pdf.set_char_spacing(3.0)
+        pdf.set_char_spacing(2.4)
     except Exception:
         pass
-    pdf.cell(W, 11, _safe(eb), align="C")
+    pdf.cell(W, 16, _safe(eb), align="C")
     try:
         pdf.set_char_spacing(0)
     except Exception:
@@ -2370,16 +2371,19 @@ def _front_cover_page(pdf: _NotePDF, terms, lang: str, report_title: str, websit
     # Accent rule under the eyebrow.
     pdf.set_draw_color(*pdf.section_rule_color)
     pdf.set_line_width(0.9)
-    pdf.line(cx - 38, H * 0.17 + 46, cx + 38, H * 0.17 + 46)
+    pdf.line(cx - 40, _rule_y, cx + 40, _rule_y)
 
     # Optional emblem / sigil — a brand mark distinct from the wordmark logo,
-    # centred in the middle band between the eyebrow and the note name.
+    # sized to fill the open space between the accent rule and the note name.
     sig_b = getattr(pdf, "cover_sigil_bytes", None)
     if sig_b:
         try:
-            sh = 40.0
+            _name_y = H * 0.64
+            _gap = _name_y - _rule_y
+            sh = _gap * 0.86
             sw = sh * _logo_aspect(sig_b, default=1.0)
-            pdf.image(io.BytesIO(sig_b), x=cx - sw / 2, y=H * 0.37, w=sw, h=sh)
+            sy = _rule_y + (_gap - sh) / 2.0
+            pdf.image(io.BytesIO(sig_b), x=cx - sw / 2, y=sy, w=sw, h=sh)
         except Exception:
             pass
 
@@ -2477,14 +2481,16 @@ def _full_bleed_disclaimer(pdf: _NotePDF, lang: str, text: str, website: str = "
         except Exception:
             body_h = H * 0.42   # generous fallback if measurement isn't available
         ptop, pbot = 37.0, min(54.0 + body_h + 6.0, H - 26.0)
-        pdf.set_fill_color(*_blend(pdf.primary_color, (0, 0, 0), 0.5))
+        pdf.set_fill_color(*_blend(pdf.primary_color, (0, 0, 0), 0.68))   # near-black green
+        pdf.set_draw_color(*pdf.section_rule_color)                       # accent border
+        pdf.set_line_width(0.6)
         try:
-            with pdf.local_context(fill_opacity=0.6):
-                pdf.rect(pdf.l_margin - 5, ptop, inner + 10, pbot - ptop,
-                         style="F", round_corners=True, corner_radius=4)
+            with pdf.local_context(fill_opacity=0.86):
+                pdf.rect(pdf.l_margin - 6, ptop, inner + 12, pbot - ptop,
+                         style="DF", round_corners=True, corner_radius=4)
         except Exception:
             try:
-                pdf.rect(pdf.l_margin - 5, ptop, inner + 10, pbot - ptop, style="F")
+                pdf.rect(pdf.l_margin - 6, ptop, inner + 12, pbot - ptop, style="DF")
             except Exception:
                 pass
 

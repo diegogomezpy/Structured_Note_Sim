@@ -167,6 +167,7 @@ export const S: Dict = {
   autocall_window:  { en: 'autocall window', es: 'ventana de autocancelación' },
   diag_first_call:  { en: '1st call', es: '1er rescate' },
   per_period:       { en: 'period', es: 'período' },
+  calib_guide:      { en: 'What the parameters mean', es: 'Qué significan los parámetros' },
   calib_tip_s0:     { en: 'Spot price at calibration (the latest close).', es: 'Precio spot en la calibración (último cierre).' },
   calib_tip_mu:     { en: 'Calibrated annual drift of the asset (arithmetic, dS/S).', es: 'Deriva anual calibrada del activo (aritmética, dS/S).' },
   calib_tip_v0:     { en: 'Initial variance V₀, shown as the equivalent volatility √V₀.', es: 'Varianza inicial V₀, mostrada como la volatilidad equivalente √V₀.' },

@@ -9,7 +9,7 @@ export default function NoteDescription({ terms }: { terms: NoteTerms }) {
   const { t, lang } = useI18n()
   const text = (terms.note_description?.trim()) || noteDescription(terms, lang)
   return (
-    <Section title={t('note_desc_section')} defaultOpen>
+    <Section title={t('note_desc_section')}>
       <p style={{ margin: 0, fontSize: 13, lineHeight: 1.65, color: 'var(--text-muted)' }}>{text}</p>
     </Section>
   )

@@ -82,8 +82,23 @@ export function CalibrationTable({ summary, nameToSym }: { summary: SimSummary; 
           </tbody>
         </table>
       </div>
+
+      {/* Always-visible guide to the Heston parameters (the column headers also
+          carry these as hover tooltips). */}
+      <div style={{ marginTop: 16, borderTop: '1px solid var(--border)', paddingTop: 12 }}>
+        <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--text-muted)', marginBottom: 9 }}>{t('calib_guide')}</div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(270px, 1fr))', gap: '8px 22px' }}>
+          {([['S₀', 'calib_tip_s0'], ['μ', 'calib_tip_mu'], ['V₀', 'calib_tip_v0'], ['θ', 'calib_tip_theta'], ['κ', 'calib_tip_kappa'], ['ξ', 'calib_tip_xi'], ['ρ', 'calib_tip_rho'], ['Feller', 'calib_tip_feller']] as const).map(([sym, tip]) => (
+            <div key={sym} style={{ fontSize: 12, lineHeight: 1.5, display: 'flex', gap: 9 }}>
+              <span className="mono" style={{ fontWeight: 600, color: 'var(--accent-text)', minWidth: 40, flexShrink: 0 }}>{sym}</span>
+              <span style={{ color: 'var(--text-muted)' }}>{t(tip)}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+
       {summary.t_dof != null && (
-        <div style={{ fontSize: 12, color: 'var(--text-faint)', marginTop: 10 }}>
+        <div style={{ fontSize: 12, color: 'var(--text-faint)', marginTop: 12 }}>
           {t('t_copula_dof')} {num(summary.t_dof, 1)}
         </div>
       )}
