@@ -6,7 +6,8 @@ import Tabs from './Tabs'
 import Icon from './Icon'
 import TickerLogo from './TickerLogo'
 import BacktestPathExplorer from './BacktestPathExplorer'
-import { pct, pctSigned } from '../lib/format'
+import AnimatedNumber from './AnimatedNumber'
+import { pct, pctSigned, num as numFmt } from '../lib/format'
 import type { BacktestIssue, BacktestResult, BtRange, NoteTerms } from '../api/types'
 
 type Kind = 'ac' | 'mat' | 'ki'
@@ -17,13 +18,20 @@ function classify(i: BacktestIssue): Kind {
   return i.knock_in ? 'ki' : 'mat'
 }
 
-function MiniStat({ label, value, tone, tip }: { label: string; value: string; tone?: string; tip?: string }) {
+/** Backtest headline figure. Pass a fraction `num` (+`dp`) to count it up from 0
+    with a split % unit (matching the MC hero); else a plain `value` string. */
+function MiniStat({ label, value, num, dp = 2, tone, tip }: { label: string; value?: string; num?: number | null; dp?: number; tone?: string; tip?: string }) {
+  const animate = num != null && Number.isFinite(num)
   return (
-    <div className="card" style={{ padding: '14px 16px', cursor: tip ? 'help' : undefined }} title={tip}>
+    <div className="card lift" style={{ padding: '14px 16px', cursor: tip ? 'help' : undefined }} title={tip}>
       <div style={{ fontSize: 10.5, fontWeight: 600, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--text-muted)', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 5 }}>
         {label}{tip && <span style={{ color: 'var(--text-faint)', fontWeight: 400 }}>ⓘ</span>}
       </div>
-      <div className="mono" style={{ fontSize: 24, fontWeight: 600, color: tone ?? 'var(--text)', lineHeight: 1 }}>{value}</div>
+      <div className="mono" style={{ fontSize: 24, fontWeight: 600, color: tone ?? 'var(--text)', lineHeight: 1, display: 'flex', alignItems: 'baseline', gap: 1 }}>
+        {animate
+          ? <><AnimatedNumber value={num! * 100} format={(n) => numFmt(n, dp)} animateOnMount /><i className="fig-unit" style={{ color: 'inherit', opacity: 0.7 }}>%</i></>
+          : value}
+      </div>
     </div>
   )
 }
@@ -97,18 +105,18 @@ export default function BacktestPanel({ result, terms, range, onApplyRange }: {
           caption above rather than as its own card. */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
         <StatGroup title={t('bt_realised')}>
-          <MiniStat label={t('bt_mean_irr')} value={pct(summary.mean_irr, 2)} tip={t('bt_tip_mean_irr')}
+          <MiniStat label={t('bt_mean_irr')} num={summary.mean_irr} dp={2} tip={t('bt_tip_mean_irr')}
                     tone={(summary.mean_irr ?? 0) >= 0 ? 'var(--accent-text)' : 'var(--red)'} />
-          <MiniStat label={t('bt_total_return')} value={pct(summary.expected_total_return, 2)} tip={t('bt_tip_total_return')}
+          <MiniStat label={t('bt_total_return')} num={summary.expected_total_return} dp={2} tip={t('bt_tip_total_return')}
                     tone={(summary.expected_total_return ?? 0) >= 0 ? 'var(--text)' : 'var(--red)'} />
-          <MiniStat label={t('bt_coupon_income')} value={pct(summary.expected_coupon, 2)} tip={t('bt_tip_coupon')} />
+          <MiniStat label={t('bt_coupon_income')} num={summary.expected_coupon} dp={2} tip={t('bt_tip_coupon')} />
         </StatGroup>
         <StatGroup title={t('hero_risk')}>
-          <MiniStat label={t('bt_called_rate')} value={pct(summary.prob_called, 1)} tip={t('bt_tip_called')} />
-          <MiniStat label={t('bt_ki_rate')} value={pct(summary.prob_knock_in, 1)} tip={t('bt_tip_ki')}
+          <MiniStat label={t('bt_called_rate')} num={summary.prob_called} dp={1} tip={t('bt_tip_called')} />
+          <MiniStat label={t('bt_ki_rate')} num={summary.prob_knock_in} dp={1} tip={t('bt_tip_ki')}
                     tone={(summary.prob_knock_in ?? 0) <= 0.15 ? 'var(--green)' : 'var(--red)'} />
           <MiniStat label={t('loss_given_ki')}
-                    value={(summary.prob_knock_in ?? 0) > 0 && summary.loss_given_knock_in != null ? pct(summary.loss_given_knock_in, 2) : '—'}
+                    num={(summary.prob_knock_in ?? 0) > 0 ? summary.loss_given_knock_in : null} value="—" dp={2}
                     tip={t('bt_tip_lgki')}
                     tone={(summary.loss_given_knock_in ?? 0) < 0 ? 'var(--red)' : 'var(--text)'} />
         </StatGroup>

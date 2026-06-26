@@ -4,6 +4,7 @@ import Figure from './Figure'
 import Icon from './Icon'
 import TickerLogo from './TickerLogo'
 import BarrierMonitor from './BarrierMonitor'
+import AnimatedNumber from './AnimatedNumber'
 import { pct, pctSigned, num } from '../lib/format'
 import type { LiveObsRow, LiveResult, LiveStatus, NoteTerms } from '../api/types'
 
@@ -15,16 +16,25 @@ const STATUS_META: Record<LiveStatus, { key: string; color: string }> = {
   upcoming:      { key: 'live_st_upcoming',      color: 'var(--text-faint)' },
 }
 
-/** Stat card with an optional signed-delta subline (and tone). */
-function Stat({ label, value, sub, subTone, help, children }: {
-  label: string; value: string; sub?: string; subTone?: string; help?: string; children?: React.ReactNode
+/** Stat card with an optional signed-delta subline (and tone). Pass a fraction
+    `num` (+`dp`, `signed`) to count it up from 0 with a split % unit; else a
+    plain `value` string (e.g. the worst-asset name). */
+function Stat({ label, value, num: figure, dp = 1, signed, sub, subTone, help, children }: {
+  label: string; value?: string; num?: number | null; dp?: number; signed?: boolean
+  sub?: string; subTone?: string; help?: string; children?: React.ReactNode
 }) {
+  const animate = figure != null && Number.isFinite(figure)
+  const fmt = signed ? (n: number) => `${n >= 0 ? '+' : ''}${num(n, dp)}` : (n: number) => num(n, dp)
   return (
     <div className="card lift" style={{ padding: '14px 16px' }} title={help}>
       <div style={{ fontSize: 10.5, fontWeight: 600, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--text-muted)', marginBottom: 8 }}>{label}</div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
         {children}
-        <div className="mono" style={{ fontSize: 24, fontWeight: 600, lineHeight: 1 }}>{value}</div>
+        <div className="mono" style={{ fontSize: 24, fontWeight: 600, lineHeight: 1, display: 'flex', alignItems: 'baseline', gap: 1 }}>
+          {animate
+            ? <><AnimatedNumber value={figure! * 100} format={fmt} animateOnMount /><i className="fig-unit" style={{ color: 'inherit', opacity: 0.7 }}>%</i></>
+            : value}
+        </div>
       </div>
       {sub && <div className="mono" style={{ fontSize: 12, marginTop: 7, color: subTone ?? 'var(--text-muted)' }}>{sub}</div>}
     </div>
@@ -67,7 +77,7 @@ export default function LivePanel({ result }: { result: LiveResult; terms: NoteT
           <span>{t('live_matures')} <span className="mono" style={{ color: 'var(--text)' }}>{s.maturity_date}</span></span>
         </div>
         <div style={{ height: 8, borderRadius: 5, background: 'var(--surface-2)', overflow: 'hidden' }}>
-          <div style={{ width: `${Math.round((s.pct_elapsed ?? 0) * 100)}%`, height: '100%', background: 'var(--accent)', borderRadius: 5, transition: 'width .5s ease' }} />
+          <div className="grow-x" style={{ width: `${Math.round((s.pct_elapsed ?? 0) * 100)}%`, height: '100%', background: 'var(--accent)', borderRadius: 5, transition: 'width .5s ease' }} />
         </div>
       </Panel>
 
@@ -84,15 +94,15 @@ export default function LivePanel({ result }: { result: LiveResult; terms: NoteT
       )}
 
       {/* Today + barriers */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: 14 }}>
-        <Stat label={t('live_wof_today')} value={pct(s.wof_today, 1)}
+      <div className="stagger" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: 14 }}>
+        <Stat label={t('live_wof_today')} num={s.wof_today} dp={1}
               sub={`${pctSigned(wofDelta, 1)} ${t('live_vs_strike')}`} subTone={tone(wofDelta)} />
         <Stat label={t('live_worst_asset')} value={s.worst_asset}>
           <TickerLogo symbol={s.worst_symbol || s.worst_asset} name={s.worst_asset} size={22} />
         </Stat>
-        <Stat label={t('live_ki_buffer')} value={pctSigned(s.ki_buffer, 1)} subTone={tone(s.ki_buffer)}
+        <Stat label={t('live_ki_buffer')} num={s.ki_buffer} dp={1} signed subTone={tone(s.ki_buffer)}
               sub={t('live_ref_barrier', { v: pct(s.knock_in_barrier, 0) })} />
-        <Stat label={t('live_ac_buffer')} value={pctSigned(s.ac_buffer, 1)} subTone={tone(s.ac_buffer)}
+        <Stat label={t('live_ac_buffer')} num={s.ac_buffer} dp={1} signed subTone={tone(s.ac_buffer)}
               sub={t('live_ref_autocall', { v: pct(s.next_ac_barrier, 0) })} />
       </div>
 
@@ -121,10 +131,9 @@ export default function LivePanel({ result }: { result: LiveResult; terms: NoteT
       </Panel>
 
       {/* Coupon KPIs */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: 14 }}>
-        <Stat label={t('live_coupons_paid')} value={pct(s.total_coupons, 2)} />
-        <Stat label={t('live_irr_to_date')} value={pct(s.irr_to_date, 2)}
-              subTone={tone(s.irr_to_date)} />
+      <div className="stagger" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: 14 }}>
+        <Stat label={t('live_coupons_paid')} num={s.total_coupons} dp={2} />
+        <Stat label={t('live_irr_to_date')} num={s.irr_to_date} dp={2} subTone={tone(s.irr_to_date)} />
       </div>
 
       {s.pending_coupons > 0 && (

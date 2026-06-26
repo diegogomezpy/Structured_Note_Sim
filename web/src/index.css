@@ -301,6 +301,10 @@ input:focus, select:focus { outline: none; border-color: var(--accent); box-shad
 .tick-up { animation: tickFlashUp 800ms var(--ease-settle); }
 .tick-down { animation: tickFlashDown 800ms var(--ease-settle); }
 
+/* Bar fill grows in from the left on reveal (progress bars, meters, barrier band). */
+@keyframes growX { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+.grow-x { transform-origin: left center; animation: growX 600ms var(--ease-enter) both; }
+
 /* On a phone, modals dock to the bottom as a sheet that slides up — Mobile +
    Motion · V. Pure CSS: the same .modal-scrim/.modal-card retarget, no JS. */
 @keyframes sheetIn { from { transform: translateY(100%); } to { transform: none; } }

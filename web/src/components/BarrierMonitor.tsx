@@ -19,10 +19,11 @@ export default function BarrierMonitor({ now, barrier }: { now: number; barrier:
         <span className="section-label">{t('live_wo_vs_barrier')}</span>
         <span className="mono" style={{ fontSize: 20, fontWeight: 600, color: safe ? 'var(--accent)' : 'var(--red)' }}>{pctSigned(buffer, 1)}</span>
       </div>
-      <div style={{
-        position: 'relative', height: 8, borderRadius: 999, marginBottom: 9,
-        background: `linear-gradient(90deg, var(--red-weak) 0%, var(--amber-weak) ${bp}%, var(--accent-weak) 100%)`,
-      }}>
+      <div style={{ position: 'relative', height: 8, marginBottom: 9 }}>
+        <div className="grow-x" style={{
+          position: 'absolute', inset: 0, borderRadius: 999,
+          background: `linear-gradient(90deg, var(--red-weak) 0%, var(--amber-weak) ${bp}%, var(--accent-weak) 100%)`,
+        }} />
         <div style={{ position: 'absolute', left: `${bp}%`, top: -4, bottom: -4, width: 1.5, background: 'var(--red)' }} />
         <div style={{
           position: 'absolute', left: `${np}%`, top: '50%', transform: 'translate(-50%, -50%)',
