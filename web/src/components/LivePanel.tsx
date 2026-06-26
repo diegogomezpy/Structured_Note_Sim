@@ -113,7 +113,7 @@ export default function LivePanel({ result }: { result: LiveResult; terms: NoteT
 
       {/* Per-asset vs strike */}
       <Panel title={t('live_asset_perf')} pad={16}>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 12 }}>
+        <div className="stagger" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 12 }}>
           {assets.map((a) => {
             const d = a.perf != null ? a.perf - 1 : null
             return (
@@ -122,7 +122,11 @@ export default function LivePanel({ result }: { result: LiveResult; terms: NoteT
                   <TickerLogo symbol={a.symbol || a.name} name={a.name} size={18} />
                   <span style={{ fontSize: 12.5, fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{a.name}</span>
                 </div>
-                <div className="mono" style={{ fontSize: 19, fontWeight: 600 }}>{pct(a.perf, 1)}</div>
+                <div className="mono" style={{ fontSize: 19, fontWeight: 600, display: 'flex', alignItems: 'baseline', gap: 1 }}>
+                  {a.perf != null
+                    ? <><AnimatedNumber value={a.perf * 100} format={(n) => num(n, 1)} animateOnMount /><i className="fig-unit" style={{ opacity: 0.7 }}>%</i></>
+                    : '—'}
+                </div>
                 <div className="mono" style={{ fontSize: 11.5, marginTop: 4, color: tone(d) }}>{pctSigned(d, 1)} {t('live_vs_strike')}</div>
               </div>
             )
