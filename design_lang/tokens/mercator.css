@@ -1,13 +1,20 @@
 /* ────────────────────────────────────────────────────────────────────────
    Mercator — Structured Products design system
-   Editorial / institutional. Source Serif 4 + Hanken Grotesk.
-   Warm paper + ink, deep viridian accent. Light-primary, dark-secondary.
+   Institutional. Three voices: Source Serif 4 (titles) + Hanken Grotesk (UI)
+   + IBM Plex Mono (ALL figures/data). Warm paper + ink, deep viridian accent,
+   on a faint graph-paper ground. Light-primary, dark-secondary.
    Theme driven by [data-theme] on <html> (keep the existing ThemeProvider).
 
+   THE REGISTER (the core rule): every numeral, ticker, code, unit, and
+   eyebrow label is set in IBM Plex Mono, tabular. Serif carries titles only;
+   sans carries body + controls. Direction is signed and coloured (viridian up
+   / rust down); units are split (number large, unit small + muted); tables are
+   ruled ledgers (heavy header rule + hairline rows + vertical rules).
+
    This is a DROP-IN replacement for src/index.css. The CSS variable NAMES
-   are unchanged from the current file, so most components need no edits —
-   only the additions noted under "NEW TOKENS" require touch-ups (figures
-   move from monospace to serif; headings use the serif stack).
+   are unchanged from the current file, so most components need no edits.
+   Numerics: keep className="mono" (now mapped to IBM Plex Mono) or use the
+   .fig / .fig-unit / .delta-pos / .delta-neg helpers below.
    ──────────────────────────────────────────────────────────────────────── */
 
 :root,
@@ -46,6 +53,11 @@
   /* NEW TOKENS — type */
   --font-serif:    'Source Serif 4', Georgia, 'Times New Roman', serif;
   --font-sans:     'Hanken Grotesk', system-ui, -apple-system, sans-serif;
+  --font-mono:     'IBM Plex Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+
+  /* graph-paper ground — apply to the app shell via .ground */
+  --grid-minor:    #e7e0cf;
+  --grid-major:    #ddd4bf;
 }
 
 :root[data-theme='dark'] {
@@ -73,6 +85,8 @@
   --ring:          rgba(63, 174, 134, 0.35);
   --shadow:        0 1px 3px rgba(0,0,0,0.5), 0 14px 36px -18px rgba(0,0,0,0.7);
   --header-bg:     #121712;
+  --grid-minor:    #1c241d;
+  --grid-major:    #232c24;
 }
 
 * { box-sizing: border-box; }
@@ -90,29 +104,35 @@ body {
   transition: background 0.2s ease, color 0.2s ease;
 }
 
-/* Headings + display use the serif. */
+/* Headings + display use the serif (titles ONLY — never figures). */
 h1, h2, h3 { font-family: var(--font-serif); font-weight: 600; color: var(--text); margin: 0; letter-spacing: -0.01em; }
 
-/* Figures: large numbers read in the serif with tabular lining figures.
-   Replaces the old `.mono` numeric treatment. */
-.figure {
-  font-family: var(--font-serif);
-  font-variant-numeric: tabular-nums lining-nums;
-  letter-spacing: -0.01em;
+/* THE REGISTER — all figures are monospaced + tabular.
+   `.mono` is kept (the app already uses it) and now maps to IBM Plex Mono;
+   `.fig` is the same thing for new code. */
+.mono, .figure, .fig {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: 'tnum' 1;
 }
-/* Small data values inside tables/labels that still want even columns
-   but at body size — sans with tabular figures. */
 .tnum { font-variant-numeric: tabular-nums; }
 
-/* Small-caps section label. No accent tick (that was the terminal look);
-   pair with a hairline rule instead — see .section-rule. */
-.section-label {
-  font-family: var(--font-sans);
-  font-size: 10.5px;
-  font-weight: 600;
-  letter-spacing: 0.14em;
+/* Split unit — wrap the unit glyph (%, bps, y, €) so it sits smaller + muted
+   beside the figure:  <span class="fig">8.25<i class="fig-unit">%</i></span> */
+.fig-unit { font-style: normal; font-size: 0.55em; color: var(--text-faint); margin-left: 1px; }
+
+/* Signed P&L — direction carries the colour (viridian up / rust down). */
+.delta-pos { color: var(--accent); font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+.delta-neg { color: var(--red);    font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+
+/* Eyebrow / overline + caption labels — mono uppercase, NOT sans. */
+.eyebrow, .section-label {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: var(--text-muted);
+  color: var(--text-faint);
 }
 .section-rule {            /* divider: label + hairline + optional caption */
   display: flex;
@@ -208,3 +228,46 @@ input:focus, select:focus { outline: none; border-color: var(--accent); box-shad
   animation: shimmer 1.4s linear infinite;
 }
 @keyframes shimmer { 0% { background-position: -400px 0; } 100% { background-position: 400px 0; } }
+
+/* ── graph-paper ground ───────────────────────────────────────────────────
+   Apply to the app shell (the element behind the panels) so the faint grid
+   shows in the gutters. Panels stay opaque (var(--surface)). */
+.ground {
+  background-color: var(--bg-elev);
+  background-image:
+    linear-gradient(var(--grid-minor) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid-minor) 1px, transparent 1px),
+    linear-gradient(var(--grid-major) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid-major) 1px, transparent 1px);
+  background-size: 26px 26px, 26px 26px, 130px 130px, 130px 130px;
+  background-position: -1px -1px;
+}
+
+/* ── ledger table ─────────────────────────────────────────────────────────
+   Heavy header rule, hairline row + vertical rules, right-aligned mono cells. */
+.ledger { width: 100%; border-collapse: collapse; }
+.ledger th {
+  font-family: var(--font-mono);
+  font-size: 9.5px; font-weight: 500;
+  letter-spacing: 0.06em; text-transform: uppercase;
+  color: var(--text-faint);
+  padding: 9px 12px;
+  border-bottom: 1.5px solid var(--text);   /* heavy header rule */
+}
+.ledger td {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 13px; color: var(--text);
+  padding: 9px 12px;
+  border-bottom: 1px solid var(--hairline);
+}
+.ledger th + th, .ledger td + td { border-left: 1px solid var(--hairline); }
+.ledger td.num, .ledger th.num { text-align: right; }
+.ledger tr:last-child td { border-bottom: none; }
+
+/* ── focus ring (shared by every focusable control) ──────────────────────── */
+:where(button, [tabindex], a):focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--ring);
+  border-radius: 5px;
+}

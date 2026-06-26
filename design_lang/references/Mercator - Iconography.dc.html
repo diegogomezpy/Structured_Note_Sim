@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<meta name="design_doc_mode" content="canvas">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&family=Hanken+Grotesk:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+</helmet>
+
+<!-- INTRO -->
+<div style="position:absolute; left:0; top:0; width:1180px;">
+  <div data-drags-parent="1" style="font-family:'Hanken Grotesk',sans-serif; font-size:11px; letter-spacing:0.16em; text-transform:uppercase; color:#9aa49b; margin-bottom:12px; cursor:grab;">Mercator · iconography</div>
+  <div style="background:#fffefb; border:1px solid #e6e1d5; border-radius:6px; padding:26px 32px;">
+    <div style="font-family:'IBM Plex Mono',monospace; font-size:10px; letter-spacing:0.16em; text-transform:uppercase; color:#8c9189; margin-bottom:11px;">Mark · lockups · icon set</div>
+    <div style="font-family:'Source Serif 4',serif; font-size:23px; font-weight:600; color:#1c241f; line-height:1.2; letter-spacing:-0.01em; margin-bottom:10px;">One mark, one stroke.</div>
+    <div style="font-family:'Hanken Grotesk',sans-serif; font-size:13.5px; line-height:1.6; color:#5c635b; max-width:760px;">The meridian circle is the only mark. Icons are a single line family — 24px grid, 1.9 stroke, round caps — never filled, never duotone, save the play triangle.</div>
+  </div>
+</div>
+
+<!-- BRAND MARK -->
+<div style="position:absolute; left:0; top:230px; width:1180px;">
+  <div data-drags-parent="1" style="font-family:'Hanken Grotesk',sans-serif; font-size:11px; letter-spacing:0.16em; text-transform:uppercase; color:#9aa49b; margin-bottom:12px; cursor:grab;">Brand mark &amp; lockups</div>
+  <div style="border:1px solid #e6e1d5; border-radius:8px; background:#fffefb; overflow:hidden;">
+
+    <!-- variants row -->
+    <div style="display:grid; grid-template-columns:repeat(4,1fr); border-bottom:1px solid #e6e1d5;">
+      <div style="padding:30px; display:flex; flex-direction:column; align-items:center; gap:14px; border-right:1px solid #e6e1d5;">
+        <div style="width:60px; height:60px; border-radius:12px; background:#15694e; display:flex; align-items:center; justify-content:center;"><svg width="38" height="38" viewBox="0 0 32 32" fill="none" stroke="#f7f5ef" stroke-width="1.4"><circle cx="16" cy="16" r="12"/><ellipse cx="16" cy="16" rx="5" ry="12"/><line x1="4" y1="16" x2="28" y2="16" opacity="0.4"/><circle cx="16" cy="4" r="1.9" fill="#f7f5ef" stroke="none"/></svg></div>
+        <span style="font-family:'IBM Plex Mono',monospace; font-size:10px; color:#8c9189;">Primary</span>
+      </div>
+      <div style="padding:30px; display:flex; flex-direction:column; align-items:center; gap:14px; border-right:1px solid #e6e1d5;">
+        <div style="width:60px; height:60px; border-radius:12px; background:#fffefb; border:1px solid #e6e1d5; display:flex; align-items:center; justify-content:center;"><svg width="38" height="38" viewBox="0 0 32 32" fill="none" stroke="#15694e" stroke-width="1.4"><circle cx="16" cy="16" r="12"/><ellipse cx="16" cy="16" rx="5" ry="12"/><line x1="4" y1="16" x2="28" y2="16" opacity="0.4"/><circle cx="16" cy="4" r="1.9" fill="#15694e" stroke="none"/></svg></div>
+        <span style="font-family:'IBM Plex Mono',monospace; font-size:10px; color:#8c9189;">Mark only</span>
+      </div>
+      <div style="padding:30px; display:flex; flex-direction:column; align-items:center; gap:14px; border-right:1px solid #e6e1d5;">
+        <div style="width:60px; height:60px; border-radius:12px; background:#1c241f; display:flex; align-items:center; justify-content:center;"><svg width="38" height="38" viewBox="0 0 32 32" fill="none" stroke="#f7f5ef" stroke-width="1.4"><circle cx="16" cy="16" r="12"/><ellipse cx="16" cy="16" rx="5" ry="12"/><line x1="4" y1="16" x2="28" y2="16" opacity="0.4"/><circle cx="16" cy="4" r="1.9" fill="#f7f5ef" stroke="none"/></svg></div>
+        <span style="font-family:'IBM Plex Mono',monospace; font-size:10px; color:#8c9189;">On ink</span>
+      </div>
+      <div style="padding:30px; display:flex; flex-direction:column; align-items:center; gap:14px;">
+        <div style="width:60px; height:60px; border-radius:12px; background:#f7f5ef; display:flex; align-items:center; justify-content:center;"><svg width="38" height="38" viewBox="0 0 32 32" fill="none" stroke="#1c241f" stroke-width="1.4"><circle cx="16" cy="16" r="12"/><ellipse cx="16" cy="16" rx="5" ry="12"/><line x1="4" y1="16" x2="28" y2="16" opacity="0.4"/><circle cx="16" cy="4" r="1.9" fill="#1c241f" stroke="none"/></svg></div>
+        <span style="font-family:'IBM Plex Mono',monospace; font-size:10px; color:#8c9189;">Mono ink</span>
+      </div>
+    </div>
+
+    <!-- lockups + clearspace -->
+    <div style="display:grid; grid-template-columns:1fr 1fr 1fr;">
+      <div style="padding:28px 30px; border-right:1px solid #e6e1d5;">
+        <div style="font-family:'IBM Plex Mono',monospace; font-size:9.5px; letter-spacing:0.06em; text-transform:uppercase; color:#8c9189; margin-bottom:18px;">Horizontal lockup</div>
+        <div style="display:flex; align-items:center; gap:12px; margin-bottom:24px;">
+          <div style="width:38px; height:38px; border-radius:9px; background:#15694e; display:flex; align-items:center; justify-content:center;"><svg width="25" height="25" viewBox="0 0 32 32" fill="none" stroke="#f7f5ef" stroke-width="1.5"><circle cx="16" cy="16" r="12"/><ellipse cx="16" cy="16" rx="5" ry="12"/><line x1="4" y1="16" x2="28" y2="16" opacity="0.4"/></svg></div>
+          <span style="font-family:'Source Serif 4',serif; font-size:23px; font-weight:600; color:#1c241f;">Mercator</span>
+        </div>
+        <div style="font-family:'IBM Plex Mono',monospace; font-size:9.5px; letter-spacing:0.06em; text-transform:uppercase; color:#8c9189; margin-bottom:14px;">Stacked + tagline</div>
+        <div style="display:flex; flex-direction:column; align-items:flex-start; gap:8px;">
+          <div style="width:34px; height:34px; border-radius:8px; background:#15694e; display:flex; align-items:center; justify-content:center;"><svg width="22" height="22" viewBox="0 0 32 32" fill="none" stroke="#f7f5ef" stroke-width="1.5"><circle cx="16" cy="16" r="12"/><ellipse cx="16" cy="16" rx="5" ry="12"/><line x1="4" y1="16" x2="28" y2="16" opacity="0.4"/></svg></div>
+          <span style="font-family:'Source Serif 4',serif; font-size:18px; font-weight:600; color:#1c241f; line-height:1;">Mercator</span>
+          <span style="font-family:'IBM Plex Mono',monospace; font-size:9px; letter-spacing:0.1em; text-transform:uppercase; color:#8c9189;">Structured Products Desk</span>
+        </div>
+      </div>
+
+      <div style="padding:28px 30px; border-right:1px solid #e6e1d5;">
+        <div style="font-family:'IBM Plex Mono',monospace; font-size:9.5px; letter-spacing:0.06em; text-transform:uppercase; color:#8c9189; margin-bottom:18px;">Clear space</div>
+        <div style="display:inline-block; padding:22px; border:1px dashed #c4bdac; border-radius:8px; position:relative;">
+          <div style="width:48px; height:48px; border-radius:10px; background:#15694e; display:flex; align-items:center; justify-content:center;"><svg width="30" height="30" viewBox="0 0 32 32" fill="none" stroke="#f7f5ef" stroke-width="1.5"><circle cx="16" cy="16" r="12"/><ellipse cx="16" cy="16" rx="5" ry="12"/><line x1="4" y1="16" x2="28" y2="16" opacity="0.4"/></svg></div>
+        </div>
+        <div style="font-family:'Hanken Grotesk',sans-serif; font-size:11.5px; color:#5c635b; line-height:1.5; margin-top:14px;">Keep clear space of <strong style="color:#1c241f;">½ the mark height</strong> on every side. Nothing intrudes.</div>
+      </div>
+
+      <div style="padding:28px 30px;">
+        <div style="font-family:'IBM Plex Mono',monospace; font-size:9.5px; letter-spacing:0.06em; text-transform:uppercase; color:#8c9189; margin-bottom:18px;">Minimum size</div>
+        <div style="display:flex; align-items:flex-end; gap:20px; margin-bottom:14px;">
+          <div style="display:flex; flex-direction:column; align-items:center; gap:8px;"><div style="width:24px; height:24px; border-radius:6px; background:#15694e; display:flex; align-items:center; justify-content:center;"><svg width="16" height="16" viewBox="0 0 32 32" fill="none" stroke="#f7f5ef" stroke-width="1.7"><circle cx="16" cy="16" r="12"/><ellipse cx="16" cy="16" rx="5" ry="12"/></svg></div><span style="font-family:'IBM Plex Mono',monospace; font-size:9px; color:#8c9189;">24px</span></div>
+          <div style="display:flex; flex-direction:column; align-items:center; gap:8px;"><div style="width:18px; height:18px; border-radius:5px; background:#15694e; display:flex; align-items:center; justify-content:center;"><svg width="13" height="13" viewBox="0 0 32 32" fill="none" stroke="#f7f5ef" stroke-width="2"><circle cx="16" cy="16" r="12"/><ellipse cx="16" cy="16" rx="5" ry="12"/></svg></div><span style="font-family:'IBM Plex Mono',monospace; font-size:9px; color:#9c3b30;">16px</span></div>
+        </div>
+        <div style="font-family:'Hanken Grotesk',sans-serif; font-size:11.5px; color:#5c635b; line-height:1.5;">Drop the equator line below <strong style="color:#1c241f;">20px</strong>. Never render the mark under 16px.</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ICON SET -->
+<div style="position:absolute; left:0; top:710px; width:1180px;">
+  <div data-drags-parent="1" style="font-family:'Hanken Grotesk',sans-serif; font-size:11px; letter-spacing:0.16em; text-transform:uppercase; color:#9aa49b; margin-bottom:12px; cursor:grab;">Icon set</div>
+  <div style="border:1px solid #e6e1d5; border-radius:8px; background:#fffefb; overflow:hidden;">
+    <div style="padding:14px 20px; border-bottom:1px solid #e6e1d5; display:flex; align-items:center; justify-content:space-between;">
+      <span style="font-family:'IBM Plex Mono',monospace; font-size:10px; letter-spacing:0.06em; text-transform:uppercase; color:#8c9189;">12 icons · 24×24 grid · 1.9 stroke · round cap &amp; join</span>
+      <span style="font-family:'IBM Plex Mono',monospace; font-size:10px; color:#8c9189;">stroke = currentColor</span>
+    </div>
+    <div style="display:grid; grid-template-columns:repeat(6,1fr);">
+      <div style="padding:24px 10px; display:flex; flex-direction:column; align-items:center; gap:11px; border-right:1px solid #f0ece2; border-bottom:1px solid #f0ece2;"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#1c241f" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4V2M12 22v-2M4 12H2m20 0h-2M6.3 6.3 4.9 4.9m14.2 14.2-1.4-1.4M6.3 17.7l-1.4 1.4M19.1 4.9l-1.4 1.4M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8Z"/></svg><span style="font-family:'IBM Plex Mono',monospace; font-size:10px; color:#8c9189;">sun</span></div>
+      <div style="padding:24px 10px; display:flex; flex-direction:column; align-items:center; gap:11px; border-right:1px solid #f0ece2; border-bottom:1px solid #f0ece2;"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#1c241f" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8Z"/></svg><span style="font-family:'IBM Plex Mono',monospace; font-size:10px; color:#8c9189;">moon</span></div>
+      <div style="padding:24px 10px; display:flex; flex-direction:column; align-items:center; gap:11px; border-right:1px solid #f0ece2; border-bottom:1px solid #f0ece2;"><svg width="26" height="26" viewBox="0 0 24 24" fill="#1c241f" stroke="#1c241f" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M6 4l14 8-14 8V4Z"/></svg><span style="font-family:'IBM Plex Mono',monospace; font-size:10px; color:#8c9189;">play</span></div>
+      <div style="padding:24px 10px; display:flex; flex-direction:column; align-items:center; gap:11px; border-right:1px solid #f0ece2; border-bottom:1px solid #f0ece2;"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#1c241f" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 0 1 15.5-6.2M21 3v5h-5M21 12a9 9 0 0 1-15.5 6.2M3 21v-5h5"/></svg><span style="font-family:'IBM Plex Mono',monospace; font-size:10px; color:#8c9189;">refresh</span></div>
+      <div style="padding:24px 10px; display:flex; flex-direction:column; align-items:center; gap:11px; border-right:1px solid #f0ece2; border-bottom:1px solid #f0ece2;"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#1c241f" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19V5m0 14h16M8 16V9m4 7V6m4 10v-4"/></svg><span style="font-family:'IBM Plex Mono',monospace; font-size:10px; color:#8c9189;">chart</span></div>
+      <div style="padding:24px 10px; display:flex; flex-direction:column; align-items:center; gap:11px; border-bottom:1px solid #f0ece2;"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#1c241f" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3a9 9 0 1 0 9 9"/></svg><span style="font-family:'IBM Plex Mono',monospace; font-size:10px; color:#8c9189;">spinner</span></div>
+
+      <div style="padding:24px 10px; display:flex; flex-direction:column; align-items:center; gap:11px; border-right:1px solid #f0ece2;"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#1c241f" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12"/></svg><span style="font-family:'IBM Plex Mono',monospace; font-size:10px; color:#8c9189;">x</span></div>
+      <div style="padding:24px 10px; display:flex; flex-direction:column; align-items:center; gap:11px; border-right:1px solid #f0ece2;"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#1c241f" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg><span style="font-family:'IBM Plex Mono',monospace; font-size:10px; color:#8c9189;">plus</span></div>
+      <div style="padding:24px 10px; display:flex; flex-direction:column; align-items:center; gap:11px; border-right:1px solid #f0ece2;"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#1c241f" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 16v-4m0-4h.01M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20Z"/></svg><span style="font-family:'IBM Plex Mono',monospace; font-size:10px; color:#8c9189;">info</span></div>
+      <div style="padding:24px 10px; display:flex; flex-direction:column; align-items:center; gap:11px; border-right:1px solid #f0ece2;"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#15694e" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg><span style="font-family:'IBM Plex Mono',monospace; font-size:10px; color:#8c9189;">check</span></div>
+      <div style="padding:24px 10px; display:flex; flex-direction:column; align-items:center; gap:11px; border-right:1px solid #f0ece2;"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#1c241f" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 16V4m0 0L7 9m5-5 5 5M4 17v2a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-2"/></svg><span style="font-family:'IBM Plex Mono',monospace; font-size:10px; color:#8c9189;">upload</span></div>
+      <div style="padding:24px 10px; display:flex; flex-direction:column; align-items:center; gap:11px;"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#1c241f" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v12m0 0 5-5m-5 5-5-5M4 17v2a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-2"/></svg><span style="font-family:'IBM Plex Mono',monospace; font-size:10px; color:#8c9189;">download</span></div>
+    </div>
+    <!-- usage -->
+    <div style="padding:18px 20px; border-top:1px solid #e6e1d5; background:#f7f5ef; display:flex; align-items:center; gap:24px;">
+      <span style="font-family:'IBM Plex Mono',monospace; font-size:9.5px; letter-spacing:0.06em; text-transform:uppercase; color:#8c9189;">In context</span>
+      <button style="display:flex; align-items:center; gap:7px; font-family:'Hanken Grotesk',sans-serif; font-size:12.5px; font-weight:600; color:#fffefb; background:#15694e; border:none; border-radius:6px; padding:8px 14px;"><svg width="14" height="14" viewBox="0 0 24 24" fill="#fffefb" stroke="#fffefb" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M6 4l14 8-14 8V4Z"/></svg>Run</button>
+      <button style="display:flex; align-items:center; gap:7px; font-family:'Hanken Grotesk',sans-serif; font-size:12.5px; font-weight:500; color:#1c241f; background:#fffefb; border:1px solid #d4cdbd; border-radius:6px; padding:8px 14px;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#1c241f" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v12m0 0 5-5m-5 5-5-5M4 17v2a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-2"/></svg>Export</button>
+      <span style="display:flex; align-items:center; gap:6px; font-family:'Hanken Grotesk',sans-serif; font-size:12px; color:#5c635b;"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#8c9189" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 16v-4m0-4h.01M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20Z"/></svg>Inline help</span>
+    </div>
+  </div>
+</div>
+</x-dc>
+</body>
+</html>

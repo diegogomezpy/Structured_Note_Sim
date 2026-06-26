@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<meta name="design_doc_mode" content="canvas">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&family=Hanken+Grotesk:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+</helmet>
+
+<!-- INTRO -->
+<div style="position:absolute; left:0; top:0; width:1100px;">
+  <div data-drags-parent="1" style="font-family:'Hanken Grotesk',sans-serif; font-size:11px; letter-spacing:0.16em; text-transform:uppercase; color:#9aa49b; margin-bottom:12px; cursor:grab;">Mercator · backtest &amp; live</div>
+  <div style="background:#fffefb; border:1px solid #e6e1d5; border-radius:6px; padding:26px 32px;">
+    <div style="font-family:'IBM Plex Mono',monospace; font-size:10px; letter-spacing:0.16em; text-transform:uppercase; color:#8c9189; margin-bottom:11px;">The other two tabs, in situ</div>
+    <div style="font-family:'Source Serif 4',serif; font-size:23px; font-weight:600; color:#1c241f; line-height:1.2; letter-spacing:-0.01em; margin-bottom:10px;">History and the present.</div>
+    <div style="font-family:'Hanken Grotesk',sans-serif; font-size:13.5px; line-height:1.6; color:#5c635b; max-width:760px;">Backtest replays the note over real history; Live tracks the open position against its barriers. Same register, same charts, same ledger tables.</div>
+  </div>
+</div>
+
+<!-- BACKTEST -->
+<div style="position:absolute; left:0; top:230px; width:1100px;">
+  <div data-drags-parent="1" style="font-family:'Hanken Grotesk',sans-serif; font-size:11px; letter-spacing:0.16em; text-transform:uppercase; color:#9aa49b; margin-bottom:12px; cursor:grab;">Backtest tab</div>
+  <div style="background:#fffefb; border:1px solid #e6e1d5; border-radius:9px; overflow:hidden;">
+    <!-- tab bar -->
+    <div style="display:flex; gap:26px; border-bottom:1px solid #e6e1d5; padding:0 22px;">
+      <span style="font-family:'Hanken Grotesk',sans-serif; font-size:13px; color:#8c9189; padding:14px 0;">Monte Carlo</span>
+      <span style="font-family:'Hanken Grotesk',sans-serif; font-size:13px; font-weight:600; color:#15694e; padding:14px 0; border-bottom:2px solid #15694e; margin-bottom:-1px;">Backtest</span>
+      <span style="font-family:'Hanken Grotesk',sans-serif; font-size:13px; color:#8c9189; padding:14px 0;">Live</span>
+      <span style="font-family:'Hanken Grotesk',sans-serif; font-size:13px; color:#8c9189; padding:14px 0;">Report</span>
+    </div>
+    <div style="padding:22px;">
+      <!-- range row -->
+      <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:22px;">
+        <div style="display:flex; align-items:center; gap:10px;"><span style="font-family:'IBM Plex Mono',monospace; font-size:9.5px; letter-spacing:0.06em; text-transform:uppercase; color:#8c9189;">Window</span><span style="font-family:'IBM Plex Mono',monospace; font-size:12px; color:#1c241f; border:1px solid #d4cdbd; border-radius:6px; padding:6px 11px;">Jan 2008 — Jun 2025</span></div>
+        <div style="display:flex; border:1px solid #d4cdbd; border-radius:6px; overflow:hidden;"><span style="font-family:'Hanken Grotesk',sans-serif; font-size:11.5px; font-weight:600; padding:6px 13px; background:#15694e; color:#fffefb;">Full</span><span style="font-family:'Hanken Grotesk',sans-serif; font-size:11.5px; padding:6px 13px; color:#5c635b;">10y</span><span style="font-family:'Hanken Grotesk',sans-serif; font-size:11.5px; padding:6px 13px; color:#5c635b;">5y</span></div>
+      </div>
+      <!-- metrics -->
+      <div style="display:grid; grid-template-columns:repeat(4,1fr); gap:14px; margin-bottom:24px;">
+        <div style="border:1px solid #e6e1d5; border-radius:8px; padding:15px 17px;"><div style="font-family:'IBM Plex Mono',monospace; font-size:9px; letter-spacing:0.06em; text-transform:uppercase; color:#8c9189; margin-bottom:9px;">Windows tested</div><div style="font-family:'IBM Plex Mono',monospace; font-size:24px; font-weight:600; line-height:1;">4,140</div></div>
+        <div style="border:1px solid #e6e1d5; border-radius:8px; padding:15px 17px;"><div style="font-family:'IBM Plex Mono',monospace; font-size:9px; letter-spacing:0.06em; text-transform:uppercase; color:#8c9189; margin-bottom:9px;">Autocall rate</div><div style="display:flex; align-items:baseline; gap:2px;"><span style="font-family:'IBM Plex Mono',monospace; font-size:24px; font-weight:600; color:#15694e; line-height:1;">81.6</span><span style="font-family:'IBM Plex Mono',monospace; font-size:12px; color:#15694e;">%</span></div></div>
+        <div style="border:1px solid #e6e1d5; border-radius:8px; padding:15px 17px;"><div style="font-family:'IBM Plex Mono',monospace; font-size:9px; letter-spacing:0.06em; text-transform:uppercase; color:#8c9189; margin-bottom:9px;">Avg holding</div><div style="display:flex; align-items:baseline; gap:2px;"><span style="font-family:'IBM Plex Mono',monospace; font-size:24px; font-weight:600; line-height:1;">1.4</span><span style="font-family:'IBM Plex Mono',monospace; font-size:12px; color:#8c9189;">y</span></div></div>
+        <div style="border:1px solid #e6e1d5; border-radius:8px; padding:15px 17px;"><div style="font-family:'IBM Plex Mono',monospace; font-size:9px; letter-spacing:0.06em; text-transform:uppercase; color:#8c9189; margin-bottom:9px;">Capital-loss rate</div><div style="display:flex; align-items:baseline; gap:2px;"><span style="font-family:'IBM Plex Mono',monospace; font-size:24px; font-weight:600; color:#9c3b30; line-height:1;">4.8</span><span style="font-family:'IBM Plex Mono',monospace; font-size:12px; color:#9c3b30;">%</span></div></div>
+      </div>
+      <!-- charts row -->
+      <div style="display:grid; grid-template-columns:1.4fr 1fr; gap:18px;">
+        <div style="border:1px solid #e6e1d5; border-radius:8px; padding:16px 18px;">
+          <div style="font-family:'IBM Plex Mono',monospace; font-size:9px; letter-spacing:0.06em; text-transform:uppercase; color:#8c9189; margin-bottom:12px;">Realised IRR by entry date</div>
+          <svg width="100%" height="120" viewBox="0 0 360 120" style="display:block;">
+            <line x1="0" y1="78" x2="360" y2="78" stroke="#1c241f" stroke-width="1"/>
+            <line x1="0" y1="40" x2="360" y2="40" stroke="#ece8dd" stroke-width="1"/>
+            <circle cx="14" cy="60" r="2.6" fill="#15694e"/><circle cx="36" cy="50" r="2.6" fill="#15694e"/><circle cx="58" cy="68" r="2.6" fill="#15694e"/><circle cx="80" cy="38" r="2.6" fill="#15694e"/><circle cx="102" cy="96" r="2.6" fill="#9c3b30"/><circle cx="124" cy="56" r="2.6" fill="#15694e"/><circle cx="146" cy="46" r="2.6" fill="#15694e"/><circle cx="168" cy="100" r="2.6" fill="#9c3b30"/><circle cx="190" cy="62" r="2.6" fill="#15694e"/><circle cx="212" cy="34" r="2.6" fill="#15694e"/><circle cx="234" cy="54" r="2.6" fill="#15694e"/><circle cx="256" cy="44" r="2.6" fill="#15694e"/><circle cx="278" cy="88" r="2.6" fill="#9c3b30"/><circle cx="300" cy="58" r="2.6" fill="#15694e"/><circle cx="322" cy="42" r="2.6" fill="#15694e"/><circle cx="344" cy="52" r="2.6" fill="#15694e"/>
+          </svg>
+          <div style="display:flex; justify-content:space-between; margin-top:6px; padding-top:7px; border-top:1px solid #ece8dd; font-family:'IBM Plex Mono',monospace; font-size:9px; color:#8c9189;"><span>2008</span><span>2016</span><span>2025</span></div>
+        </div>
+        <div style="border:1px solid #e6e1d5; border-radius:8px; padding:16px 18px;">
+          <div style="font-family:'IBM Plex Mono',monospace; font-size:9px; letter-spacing:0.06em; text-transform:uppercase; color:#8c9189; margin-bottom:12px;">Outcome split</div>
+          <div style="display:flex; height:24px; border-radius:5px; overflow:hidden; gap:2px; margin-bottom:13px;"><div style="width:60%; background:#15694e;"></div><div style="width:22%; background:#3f8a6f;"></div><div style="width:13%; background:#7eb4a0;"></div><div style="width:5%; background:#9c3b30;"></div></div>
+          <div style="display:flex; flex-direction:column; gap:7px;">
+            <div style="display:flex; align-items:center; justify-content:space-between;"><span style="display:flex; align-items:center; gap:7px;"><span style="width:8px; height:8px; border-radius:2px; background:#15694e;"></span><span style="font-family:'Hanken Grotesk',sans-serif; font-size:11.5px; color:#5c635b;">Autocalled early</span></span><span style="font-family:'IBM Plex Mono',monospace; font-size:11.5px; font-weight:600;">60%</span></div>
+            <div style="display:flex; align-items:center; justify-content:space-between;"><span style="display:flex; align-items:center; gap:7px;"><span style="width:8px; height:8px; border-radius:2px; background:#3f8a6f;"></span><span style="font-family:'Hanken Grotesk',sans-serif; font-size:11.5px; color:#5c635b;">Autocalled later</span></span><span style="font-family:'IBM Plex Mono',monospace; font-size:11.5px; font-weight:600;">22%</span></div>
+            <div style="display:flex; align-items:center; justify-content:space-between;"><span style="display:flex; align-items:center; gap:7px;"><span style="width:8px; height:8px; border-radius:2px; background:#7eb4a0;"></span><span style="font-family:'Hanken Grotesk',sans-serif; font-size:11.5px; color:#5c635b;">Redeemed at par</span></span><span style="font-family:'IBM Plex Mono',monospace; font-size:11.5px; font-weight:600;">13%</span></div>
+            <div style="display:flex; align-items:center; justify-content:space-between;"><span style="display:flex; align-items:center; gap:7px;"><span style="width:8px; height:8px; border-radius:2px; background:#9c3b30;"></span><span style="font-family:'Hanken Grotesk',sans-serif; font-size:11.5px; color:#5c635b;">Capital loss</span></span><span style="font-family:'IBM Plex Mono',monospace; font-size:11.5px; font-weight:600; color:#9c3b30;">5%</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- LIVE -->
+<div style="position:absolute; left:0; top:830px; width:1100px;">
+  <div data-drags-parent="1" style="font-family:'Hanken Grotesk',sans-serif; font-size:11px; letter-spacing:0.16em; text-transform:uppercase; color:#9aa49b; margin-bottom:12px; cursor:grab;">Live tab · current performance</div>
+  <div style="background:#fffefb; border:1px solid #e6e1d5; border-radius:9px; overflow:hidden;">
+    <div style="display:flex; gap:26px; border-bottom:1px solid #e6e1d5; padding:0 22px;">
+      <span style="font-family:'Hanken Grotesk',sans-serif; font-size:13px; color:#8c9189; padding:14px 0;">Monte Carlo</span>
+      <span style="font-family:'Hanken Grotesk',sans-serif; font-size:13px; color:#8c9189; padding:14px 0;">Backtest</span>
+      <span style="font-family:'Hanken Grotesk',sans-serif; font-size:13px; font-weight:600; color:#15694e; padding:14px 0; border-bottom:2px solid #15694e; margin-bottom:-1px;">Live</span>
+      <span style="font-family:'Hanken Grotesk',sans-serif; font-size:13px; color:#8c9189; padding:14px 0;">Report</span>
+    </div>
+    <div style="padding:22px;">
+      <!-- metrics -->
+      <div style="display:grid; grid-template-columns:repeat(4,1fr); gap:14px; margin-bottom:22px;">
+        <div style="border:1px solid #e6e1d5; border-radius:8px; padding:15px 17px;"><div style="font-family:'IBM Plex Mono',monospace; font-size:9px; letter-spacing:0.06em; text-transform:uppercase; color:#8c9189; margin-bottom:9px;">Worst-of level</div><div style="display:flex; align-items:baseline; gap:2px;"><span style="font-family:'IBM Plex Mono',monospace; font-size:24px; font-weight:600; line-height:1;">72.4</span><span style="font-family:'IBM Plex Mono',monospace; font-size:12px; color:#8c9189;">%</span></div></div>
+        <div style="border:1px solid #e6e1d5; border-radius:8px; padding:15px 17px;"><div style="font-family:'IBM Plex Mono',monospace; font-size:9px; letter-spacing:0.06em; text-transform:uppercase; color:#8c9189; margin-bottom:9px;">Dist. to barrier</div><div style="display:flex; align-items:baseline; gap:2px;"><span style="font-family:'IBM Plex Mono',monospace; font-size:24px; font-weight:600; color:#15694e; line-height:1;">+12.4</span><span style="font-family:'IBM Plex Mono',monospace; font-size:12px; color:#15694e;">pp</span></div></div>
+        <div style="border:1px solid #e6e1d5; border-radius:8px; padding:15px 17px;"><div style="font-family:'IBM Plex Mono',monospace; font-size:9px; letter-spacing:0.06em; text-transform:uppercase; color:#8c9189; margin-bottom:9px;">Accrued coupon</div><div style="display:flex; align-items:baseline; gap:2px;"><span style="font-family:'IBM Plex Mono',monospace; font-size:24px; font-weight:600; line-height:1;">8.25</span><span style="font-family:'IBM Plex Mono',monospace; font-size:12px; color:#8c9189;">%</span></div></div>
+        <div style="border:1px solid #e6e1d5; border-radius:8px; padding:15px 17px;"><div style="font-family:'IBM Plex Mono',monospace; font-size:9px; letter-spacing:0.06em; text-transform:uppercase; color:#8c9189; margin-bottom:9px;">Next observation</div><div style="font-family:'IBM Plex Mono',monospace; font-size:16px; font-weight:600; line-height:1.2; margin-top:5px;">Jun 2028</div></div>
+      </div>
+      <!-- per-asset + performance -->
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:18px; align-items:start;">
+        <div style="border:1px solid #e6e1d5; border-radius:8px; padding:8px 18px 16px;">
+          <div style="font-family:'IBM Plex Mono',monospace; font-size:9px; letter-spacing:0.06em; text-transform:uppercase; color:#8c9189; margin:12px 0 4px;">Per-asset</div>
+          <table style="width:100%; border-collapse:collapse;">
+            <thead><tr>
+              <th style="text-align:left; padding:8px 0; font-family:'IBM Plex Mono',monospace; font-size:9px; text-transform:uppercase; color:#8c9189; border-bottom:1.5px solid #1c241f;">Asset</th>
+              <th style="text-align:right; padding:8px 0; font-family:'IBM Plex Mono',monospace; font-size:9px; text-transform:uppercase; color:#8c9189; border-bottom:1.5px solid #1c241f;">vs strike</th>
+              <th style="text-align:right; padding:8px 0; font-family:'IBM Plex Mono',monospace; font-size:9px; text-transform:uppercase; color:#8c9189; border-bottom:1.5px solid #1c241f;">vs barrier</th>
+            </tr></thead>
+            <tbody>
+              <tr><td style="padding:9px 0; font-family:'IBM Plex Mono',monospace; font-size:12.5px; font-weight:600; border-bottom:1px solid #ece8dd;">SX5E</td><td style="padding:9px 0; text-align:right; font-family:'IBM Plex Mono',monospace; font-size:12.5px; color:#15694e; border-bottom:1px solid #ece8dd;">+18.1%</td><td style="padding:9px 0; text-align:right; font-family:'IBM Plex Mono',monospace; font-size:12.5px; color:#15694e; border-bottom:1px solid #ece8dd;">+31.1pp</td></tr>
+              <tr><td style="padding:9px 0; font-family:'IBM Plex Mono',monospace; font-size:12.5px; font-weight:600; border-bottom:1px solid #ece8dd;">SPX</td><td style="padding:9px 0; text-align:right; font-family:'IBM Plex Mono',monospace; font-size:12.5px; color:#15694e; border-bottom:1px solid #ece8dd;">+22.4%</td><td style="padding:9px 0; text-align:right; font-family:'IBM Plex Mono',monospace; font-size:12.5px; color:#15694e; border-bottom:1px solid #ece8dd;">+35.2pp</td></tr>
+              <tr><td style="padding:9px 0; font-family:'IBM Plex Mono',monospace; font-size:12.5px; font-weight:600; color:#9a6b1a;">NKY</td><td style="padding:9px 0; text-align:right; font-family:'IBM Plex Mono',monospace; font-size:12.5px; color:#9a6b1a;">+4.3%</td><td style="padding:9px 0; text-align:right; font-family:'IBM Plex Mono',monospace; font-size:12.5px; color:#9a6b1a;">+12.4pp</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div style="border:1px solid #e6e1d5; border-radius:8px; padding:16px 18px;">
+          <div style="font-family:'IBM Plex Mono',monospace; font-size:9px; letter-spacing:0.06em; text-transform:uppercase; color:#8c9189; margin-bottom:12px;">Worst-of since issue</div>
+          <svg width="100%" height="110" viewBox="0 0 360 110" preserveAspectRatio="none" style="display:block;">
+            <line x1="0" y1="20" x2="360" y2="20" stroke="#ece8dd" stroke-width="1"/>
+            <line x1="0" y1="55" x2="360" y2="55" stroke="#ece8dd" stroke-width="1"/>
+            <line x1="0" y1="92" x2="360" y2="92" stroke="#9c3b30" stroke-width="1.2" stroke-dasharray="5 4"/>
+            <polyline points="0,55 50,48 100,62 150,44 200,52 250,38 300,42 360,34" fill="none" stroke="#15694e" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+            <circle cx="360" cy="34" r="3" fill="#15694e"/>
+          </svg>
+          <div style="display:flex; justify-content:space-between; margin-top:8px; padding-top:7px; border-top:1px solid #ece8dd; font-family:'IBM Plex Mono',monospace; font-size:9px; color:#8c9189;"><span>Issue</span><span>Today</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+</x-dc>
+</body>
+</html>
