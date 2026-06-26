@@ -46,12 +46,14 @@ export default function Header({ terms, run }: { terms: NoteTerms | null; run: R
                     {terms.name}
                   </div>
                 )}
-                <div className="mono" style={{ fontSize: 10.5, color: 'var(--text-faint)', display: 'flex', alignItems: 'center', gap: 6, marginTop: terms.name ? 2 : 0 }}>
-                  <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                <div className="mono" style={{ fontSize: 10.5, color: 'var(--text-faint)', display: 'flex', alignItems: 'center', gap: 6, marginTop: terms.name ? 2 : 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                  <span style={{ display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0 }}>
                     {tickers.map(([sym, name]) => <TickerLogo key={sym} symbol={sym} name={name} size={15} />)}
                   </span>
-                  {terms.maturity}y · {t('worst_of')}
-                  {tickers.length > 0 && ` · ${tickers.map(([sym]) => sym).join('/')}`}
+                  <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                    {terms.maturity}y · {t('worst_of')}
+                    {tickers.length > 0 && ` · ${tickers.map(([sym]) => sym).join('/')}`}
+                  </span>
                 </div>
               </div>
             </div>

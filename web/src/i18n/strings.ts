@@ -147,6 +147,7 @@ export const S: Dict = {
   retry:            { en: 'Retry', es: 'Reintentar' },
   error_title:      { en: 'Simulation failed', es: 'La simulación falló' },
   barrier_max:      { en: '≤ 100% required', es: '≤ 100% requerido' },
+  edit_terms:       { en: 'Edit terms', es: 'Editar términos' },
 
   // frequencies
   freq_monthly:     { en: 'Monthly', es: 'Mensual' },

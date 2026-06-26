@@ -329,6 +329,16 @@ export default function App() {
         </main>
       </div>
 
+      {/* Phone: result reads first, the rail collapses to this sticky bar (Mobile doc). */}
+      {terms && (
+        <div className="mobile-action-bar">
+          <button className="btn" style={{ flex: 1, justifyContent: 'center' }} onClick={() => setSettingsOpen(true)}>{t('edit_terms')}</button>
+          <button className="btn btn--primary" style={{ flex: 1, justifyContent: 'center' }} onClick={run}>
+            <Icon name="refresh" size={14} /> {t('rerun')}
+          </button>
+        </div>
+      )}
+
       {settingsOpen && terms && (
         <SettingsOverlay
           terms={terms} onChange={setTerms}
