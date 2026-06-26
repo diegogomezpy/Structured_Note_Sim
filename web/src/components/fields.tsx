@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { InfoDot } from './Tooltip'
 
@@ -26,20 +26,75 @@ export function Field({ label, value, children, tip }: { label: string; value?: 
   )
 }
 
+/** The numeric readout for a Slider, rendered as an inline editable input so the
+    user can type an exact figure — including one beyond the slider's range (the
+    slider thumb just pegs at its end). `pct` shows/accepts a percentage while the
+    stored value stays a fraction (0.15 ↔ "15"). The buffer is only re-synced from
+    the outside when the field isn't focused, so mid-edit typing is never clobbered. */
+function EditableValue({
+  value, pct, digits, prefix, suffix, isInt, clampMin = 0, clampMax, color, label, onCommit,
+}: {
+  value: number; pct?: boolean; digits: number
+  prefix?: string; suffix?: string; isInt?: boolean
+  clampMin?: number; clampMax?: number; color: string; label: string
+  onCommit: (v: number) => void
+}) {
+  const toDisp = (v: number) => (pct ? v * 100 : v)
+  const fromDisp = (d: number) => (pct ? d / 100 : d)
+  const fmtDisp = (v: number) => (isInt ? String(Math.round(toDisp(v))) : toDisp(v).toFixed(digits))
+  const [focused, setFocused] = useState(false)
+  const [text, setText] = useState(() => fmtDisp(value))
+  useEffect(() => { if (!focused) setText(fmtDisp(value)) }, [value, focused])  // eslint-disable-line react-hooks/exhaustive-deps
+
+  const commit = (raw: string) => {
+    let n = parseFloat(raw)
+    if (Number.isNaN(n)) return
+    if (isInt) n = Math.round(n)
+    if (clampMin != null) n = Math.max(clampMin, n)
+    if (clampMax != null) n = Math.min(clampMax, n)
+    onCommit(fromDisp(n))
+  }
+
+  return (
+    <span style={{ display: 'inline-flex', alignItems: 'baseline', gap: 1 }}>
+      {prefix && <span className="mono" style={{ fontSize: 12, color }}>{prefix}</span>}
+      <input
+        type="text" inputMode="decimal" aria-label={label} className="slider-val-input mono"
+        value={text}
+        onChange={(e) => { setText(e.target.value); commit(e.target.value) }}
+        onFocus={(e) => { setFocused(true); e.currentTarget.select() }}
+        onBlur={() => { setFocused(false); setText(fmtDisp(value)) }}
+        style={{ color, width: `${Math.max(2, text.length)}ch` }} />
+      {suffix && <span className="mono" style={{ fontSize: 12, color }}>{suffix}</span>}
+    </span>
+  )
+}
+
 export function Slider({
   label, value, min, max, step, fmt, onChange, disabled, tip, tone = 'accent',
+  editable = true, pct, editDigits = 2, editSuffix, editPrefix, editInt, editClamp,
 }: {
   label: string; value: number; min: number; max: number; step: number
   fmt: (n: number) => string; onChange: (v: number) => void; disabled?: boolean; tip?: string
   tone?: 'accent' | 'danger'
+  /** A typed readout (default). `pct` edits in percent; `editClamp` is [min, max?]
+      in display units (max omitted ⇒ direct entry may exceed the slider's range). */
+  editable?: boolean; pct?: boolean; editDigits?: number
+  editSuffix?: string; editPrefix?: string; editInt?: boolean
+  editClamp?: [number, number?]
 }) {
   // Value-driven filled track: viridian (or rust, for downside barriers) up to
   // the thumb, hairline beyond — matches the Pricer/Mobile sliders.
   const frac = max > min ? Math.min(1, Math.max(0, (value - min) / (max - min))) : 0
   const fill = tone === 'danger' ? 'var(--red)' : 'var(--accent)'
   const valColor = tone === 'danger' ? 'var(--red)' : 'var(--text)'
+  const readout = editable && !disabled
+    ? <EditableValue value={value} pct={pct} digits={editDigits} prefix={editPrefix} suffix={editSuffix}
+                     isInt={editInt} clampMin={editClamp?.[0]} clampMax={editClamp?.[1]}
+                     color={valColor} label={label} onCommit={onChange} />
+    : <span style={{ color: valColor }}>{fmt(value)}</span>
   return (
-    <Field label={label} value={<span style={{ color: valColor }}>{fmt(value)}</span>} tip={tip}>
+    <Field label={label} value={readout} tip={tip}>
       <input type="range" min={min} max={max} step={step} value={value} disabled={disabled}
              className={tone === 'danger' ? 'range--danger' : undefined}
              onChange={(e) => onChange(parseFloat(e.target.value))}

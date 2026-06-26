@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { api } from '../api/client'
 import { useI18n } from '../i18n/I18nProvider'
 import { fetchUnderlyingMetricsCached } from '../lib/metricsStore'
 import { price as fmtPrice } from '../lib/format'
 import AnimatedNumber from './AnimatedNumber'
-import type { NoteTerms, UnderlyingMetric } from '../api/types'
+import type { NoteTerms, Quote, UnderlyingMetric } from '../api/types'
 
 /** Quote-screen ticker tape — Mercator · Elements. An ink bar with a viridian
     LIVE chip, then a divided row of the note's underlyings (ticker · last price ·
@@ -13,6 +14,17 @@ import type { NoteTerms, UnderlyingMetric } from '../api/types'
     new value and the cell flashes on a change. All data is real. */
 const POLL_MS = 30000
 
+/** Compact magnitude (12.3M / 1.24B / 2.1T) for volume and market cap. */
+const compact = (n: number | null | undefined): string => {
+  if (n == null || !Number.isFinite(n)) return '—'
+  const a = Math.abs(n)
+  if (a >= 1e12) return `${(n / 1e12).toFixed(2)}T`
+  if (a >= 1e9) return `${(n / 1e9).toFixed(2)}B`
+  if (a >= 1e6) return `${(n / 1e6).toFixed(2)}M`
+  if (a >= 1e3) return `${(n / 1e3).toFixed(1)}K`
+  return String(Math.round(n))
+}
+
 export default function TickerTape({ terms }: { terms: NoteTerms }) {
   const { lang } = useI18n()
   const tickers = terms.tickers ?? {}
@@ -20,8 +32,9 @@ export default function TickerTape({ terms }: { terms: NoteTerms }) {
   const key = syms.slice().sort().join(',') + '|' + lang
 
   const [rows, setRows] = useState<UnderlyingMetric[] | null>(null)
-  const [quotes, setQuotes] = useState<Record<string, { price: number | null; change: number | null }>>({})
+  const [quotes, setQuotes] = useState<Record<string, Quote>>({})
   const [flash, setFlash] = useState<Record<string, 'up' | 'down'>>({})
+  const [hover, setHover] = useState<{ sym: string; rect: DOMRect } | null>(null)
   const prevPrice = useRef<Record<string, number>>({})
 
   // Seed the tape from the (cached) metrics endpoint.
@@ -104,7 +117,10 @@ export default function TickerTape({ terms }: { terms: NoteTerms }) {
 
   const UP = '#5fb89a', DOWN = '#d98b80', LIGHT = '#c8d0c9', PAPER = '#f7f5ef', RULE = '#313a33'
 
+  const hoverM = hover ? (rows ?? []).find((mm) => rowSym(mm) === hover.sym) ?? null : null
+
   return (
+    <>
     <div className="ticker-reveal" style={{ display: 'flex', alignItems: 'stretch', background: '#1c241f', overflow: 'hidden' }}>
       <div style={{
         display: 'flex', alignItems: 'center', padding: '0 14px', background: 'var(--accent)',
@@ -120,11 +136,13 @@ export default function TickerTape({ terms }: { terms: NoteTerms }) {
           const fl = flash[sym]
           const cls = [leaving ? 'tick-leaving' : '', fl === 'up' ? 'tick-up' : fl === 'down' ? 'tick-down' : ''].filter(Boolean).join(' ')
           return (
-            <span key={m.name} title={m.name}
+            <span key={m.name}
               className={cls || undefined}
+              onMouseEnter={(e) => setHover({ sym, rect: e.currentTarget.getBoundingClientRect() })}
+              onMouseLeave={() => setHover((h) => (h?.sym === sym ? null : h))}
               style={{
                 display: 'inline-flex', alignItems: 'baseline', gap: 8, padding: '11px 18px', overflow: 'hidden',
-                borderRight: i < display.length - 1 ? `1px solid ${RULE}` : 'none', fontSize: 12,
+                borderRight: i < display.length - 1 ? `1px solid ${RULE}` : 'none', fontSize: 12, cursor: 'default',
               }}>
               <span style={{ fontWeight: 600, color: PAPER }}>{sym}</span>
               <span style={{ color: LIGHT }}>
@@ -138,5 +156,84 @@ export default function TickerTape({ terms }: { terms: NoteTerms }) {
         })}
       </div>
     </div>
+    {hover && <QuoteDetail sym={hover.sym} rect={hover.rect} q={quotes[hover.sym] ?? null} m={hoverM} />}
+    </>
+  )
+}
+
+/** A 0–100% position marker over a low→high range (day or 52-week). */
+function RangeBar({ label, low, high, value }: {
+  label: string; low: number | null; high: number | null; value: number | null
+}) {
+  if (low == null || high == null || high <= low) return null
+  const frac = value == null ? null : Math.min(1, Math.max(0, (value - low) / (high - low)))
+  return (
+    <div style={{ marginTop: 11 }}>
+      <div className="mono" style={{ fontSize: 9.5, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--text-faint)', marginBottom: 6 }}>{label}</div>
+      <div style={{ position: 'relative', height: 5, background: 'var(--border-strong)', borderRadius: 999 }}>
+        {frac != null && (
+          <div style={{
+            position: 'absolute', left: `${frac * 100}%`, top: '50%', width: 9, height: 9, borderRadius: '50%',
+            background: 'var(--accent)', border: '2px solid var(--surface)', boxShadow: '0 0 0 1px var(--accent)',
+            transform: 'translate(-50%, -50%)',
+          }} />
+        )}
+      </div>
+      <div className="mono" style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: 'var(--text-muted)', marginTop: 5 }}>
+        <span>{fmtPrice(low)}</span><span>{fmtPrice(high)}</span>
+      </div>
+    </div>
+  )
+}
+
+function Stat({ label, value }: { label: string; value: string }) {
+  return (
+    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 8 }}>
+      <span style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>{label}</span>
+      <span className="mono" style={{ fontSize: 11.5, color: 'var(--text)' }}>{value}</span>
+    </div>
+  )
+}
+
+/** Hover quote card — anchored under the ticker cell. Combines the live quote
+    (day/52-week range, open, volume) with the seeded metric (market cap, IV, RSI)
+    so it's useful even before the first poll lands. Read-only (pointer-events
+    none), so it never interferes with the tape's hover tracking. */
+function QuoteDetail({ sym, rect, q, m }: { sym: string; rect: DOMRect; q: Quote | null; m: UnderlyingMetric | null }) {
+  const { t } = useI18n()
+  const W = 272
+  const left = Math.min(Math.max(8, rect.left), window.innerWidth - W - 8)
+  const top = rect.bottom + 8
+  const price = q?.price ?? m?.last_price ?? null
+  const change = q?.change ?? m?.day_change ?? null
+  const mktcap = q?.market_cap ?? m?.market_cap ?? null
+  const name = m?.long_name || m?.name || sym
+  const tone = change == null ? 'var(--text-muted)' : change >= 0 ? 'var(--accent-text)' : 'var(--red)'
+  return createPortal(
+    <div className="quote-pop" style={{ position: 'fixed', left, top, width: W, zIndex: 1100, pointerEvents: 'none' }}>
+      <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 8 }}>
+        <span style={{ fontFamily: 'var(--font-serif)', fontSize: 15, fontWeight: 600, color: 'var(--text)' }}>{sym}</span>
+        <span className="mono" style={{ fontSize: 14, color: 'var(--text)' }}>{price != null ? fmtPrice(price) : '—'}</span>
+      </div>
+      <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 8, marginTop: 2 }}>
+        <span style={{ fontSize: 11, color: 'var(--text-faint)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 150 }}>{name}</span>
+        {change != null && (
+          <span className="mono" style={{ fontSize: 11.5, color: tone, flexShrink: 0 }}>
+            {change >= 0 ? '▲' : '▼'} {(Math.abs(change) * 100).toFixed(2)}%
+          </span>
+        )}
+      </div>
+      <RangeBar label={t('tk_day_range')} low={q?.day_low ?? null} high={q?.day_high ?? null} value={price} />
+      <RangeBar label={t('tk_52w')} low={q?.year_low ?? null} high={q?.year_high ?? null} value={price} />
+      <div style={{ marginTop: 12, paddingTop: 11, borderTop: '1px solid var(--hairline)', display: 'flex', flexDirection: 'column', gap: 7 }}>
+        <Stat label={t('tk_open')} value={q?.open != null ? fmtPrice(q.open) : '—'} />
+        <Stat label={t('tk_prev_close')} value={q?.prev_close != null ? fmtPrice(q.prev_close) : '—'} />
+        <Stat label={t('tk_volume')} value={compact(q?.volume)} />
+        <Stat label={t('tk_mktcap')} value={compact(mktcap)} />
+        {m?.iv_3m != null && <Stat label={t('tk_iv')} value={`${(m.iv_3m * 100).toFixed(1)}%`} />}
+        {m?.rsi_14 != null && <Stat label={t('tk_rsi')} value={m.rsi_14.toFixed(0)} />}
+      </div>
+    </div>,
+    document.body,
   )
 }

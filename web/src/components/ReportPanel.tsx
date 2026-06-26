@@ -81,6 +81,8 @@ export default function ReportPanel({ terms, opts }: { terms: NoteTerms; opts: R
   const [presets, setPresets] = useState<{ file: string; firm_name: string }[]>([])
   // The user's own folder of branding JSONs (auto-detected), alongside the repo presets.
   const brandFolder = useLocalFolder('branding')
+  const [brandLocalName, setBrandLocalName] = useState<string | null>(null)
+  const [brandSaving, setBrandSaving] = useState(false)
   const [status, setStatus] = useState<Status>('idle')
   const [error, setError] = useState('')
   const logoRef = useRef<HTMLInputElement>(null)
@@ -110,18 +112,33 @@ export default function ReportPanel({ terms, opts }: { terms: NoteTerms; opts: R
   // Load a bundled branding preset auto-discovered from the branding/ folder.
   const loadPreset = async (file: string) => {
     if (!file) return
+    setBrandLocalName(null)
     try { applyBranding(await api.branding(file) as Record<string, any>) } catch { /* ignore */ }
   }
   // Manual fallback: upload a branding config JSON when it isn't auto-detected
   // (e.g. a local/gitignored brand config that never shipped with the app).
   const onUploadBranding = (file: File | undefined) => {
     if (!file) return
+    setBrandLocalName(null)
     const r = new FileReader()
     r.onload = () => {
       try { applyBranding(JSON.parse(String(r.result))); setError('') }
       catch { setError(t('brand_upload_bad')) }
     }
     r.readAsText(file)
+  }
+  // Save the branding straight back into the connected folder — overwriting the
+  // file it was loaded from, or creating one named after the firm. Mirrors the
+  // note-config save in the setup rail.
+  const saveBrandingToFolder = async () => {
+    setBrandSaving(true)
+    try {
+      const saved = await brandFolder.save(brandLocalName ?? (brand.firm_name || 'branding'), brand)
+      setBrandLocalName(saved)
+      toast.push({ title: t('brand_saved'), sub: `${saved}.json · ${brandFolder.folder}`, tone: 'accent', icon: 'check' })
+    } catch {
+      toast.push({ title: t('cfg_save_failed'), sub: t('cfg_save_failed_sub'), tone: 'red', icon: 'info' })
+    } finally { setBrandSaving(false) }
   }
   // Download the current branding as a self-contained JSON — logo, cover sigil,
   // background image, fonts and colours are all already base64-embedded in
@@ -251,7 +268,7 @@ export default function ReportPanel({ terms, opts }: { terms: NoteTerms; opts: R
                         onChange={(v) => {
                           if (v.startsWith('local:')) {
                             const f = brandFolder.files.find((f) => `local:${f.name}` === v)
-                            if (f) applyBranding(f.raw as Record<string, unknown>)
+                            if (f) { setBrandLocalName(f.name); applyBranding(f.raw as Record<string, unknown>) }
                           } else loadPreset(v)
                         }} />
                 <FolderConnect fld={brandFolder} />
@@ -265,9 +282,17 @@ export default function ReportPanel({ terms, opts }: { terms: NoteTerms; opts: R
                      onChange={(e) => { onUploadBranding(e.target.files?.[0]); e.target.value = '' }} />
             </Field>
             <Field label={t('brand_save_cfg')}>
-              <button className="btn" style={{ padding: '7px 12px' }} onClick={downloadBranding}>
-                <Icon name="download" size={13} /> {t('brand_save_cfg_btn')}
-              </button>
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                <button className="btn" style={{ padding: '7px 12px' }} onClick={downloadBranding}>
+                  <Icon name="download" size={13} /> {t('brand_save_cfg_btn')}
+                </button>
+                {brandFolder.canSave && (
+                  <button className="btn" style={{ padding: '7px 12px' }} disabled={brandSaving} onClick={saveBrandingToFolder}
+                          title={brandLocalName ? t('cfg_save_over_hint', { name: brandLocalName }) : t('cfg_save_to_folder_hint')}>
+                    <Icon name={brandSaving ? 'spinner' : 'save'} size={13} /> {t('brand_save_to_folder_btn')}
+                  </button>
+                )}
+              </div>
             </Field>
           </div>
         )}

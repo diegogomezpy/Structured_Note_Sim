@@ -8,6 +8,7 @@ import AddNoteHelp from './AddNoteHelp'
 import UnderlyingPicker from './UnderlyingPicker'
 import FolderConnect from './FolderConnect'
 import { useLocalFolder } from '../lib/localFolder'
+import { useToast } from './Toast'
 import type { ConfigMeta, NoteTerms } from '../api/types'
 
 export interface RunOpts {
@@ -41,9 +42,11 @@ export default function SetupRail({
   onOpenSettings: () => void
 }) {
   const { t } = useI18n()
+  const toast = useToast()
   const set = <K extends keyof NoteTerms>(k: K, v: NoteTerms[K]) => onChange({ ...terms, [k]: v })
   const fileRef = useRef<HTMLInputElement>(null)
   const [uploadErr, setUploadErr] = useState('')
+  const [saving, setSaving] = useState(false)
 
   // The user's own folder of note-config JSONs (auto-detected via the File System
   // Access API), shown alongside the examples bundled in the repo. `localSel`
@@ -51,6 +54,7 @@ export default function SetupRail({
   // load routes through onUploadConfig, which clears the repo `configFile`).
   const local = useLocalFolder('note-configs')
   const [localSel, setLocalSel] = useState<string | null>(null)
+  const activeLocalName = localSel?.startsWith('local:') ? localSel.slice('local:'.length) : null
 
   const onFile = async (file: File | undefined) => {
     setUploadErr('')
@@ -72,6 +76,20 @@ export default function SetupRail({
     document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url)
   }
 
+  // Save the current note straight back into the connected folder — overwriting
+  // the file it was loaded from, or creating one named after the note. No
+  // download / re-import round-trip: the website edits the config in place.
+  const saveToFolder = async () => {
+    setSaving(true)
+    try {
+      const saved = await local.save(activeLocalName ?? (terms.name || 'note'), terms)
+      setLocalSel(`local:${saved}`)
+      toast.push({ title: t('cfg_saved'), sub: `${saved}.json · ${local.folder}`, tone: 'accent', icon: 'check' })
+    } catch {
+      toast.push({ title: t('cfg_save_failed'), sub: t('cfg_save_failed_sub'), tone: 'red', icon: 'info' })
+    } finally { setSaving(false) }
+  }
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
       <div data-tour="term-sheet">
@@ -79,6 +97,14 @@ export default function SetupRail({
           <label style={{ fontSize: 12, color: 'var(--text-muted)' }}>{t('config_label')}</label>
           <div style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
             <AddNoteHelp />
+            {local.canSave && (
+              <button className="btn btn--ghost" style={{ padding: '3px 7px' }} disabled={saving}
+                      onClick={saveToFolder}
+                      title={activeLocalName ? t('cfg_save_over_hint', { name: activeLocalName }) : t('cfg_save_to_folder_hint')}
+                      aria-label={t('cfg_save_to_folder')}>
+                <Icon name={saving ? 'spinner' : 'save'} size={14} />
+              </button>
+            )}
             <button className="btn btn--ghost" style={{ padding: '3px 7px' }}
                     onClick={downloadConfig} title={t('download_config_hint')} aria-label={t('download_config')}>
               <Icon name="download" size={14} />
@@ -118,19 +144,19 @@ export default function SetupRail({
         <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--text-muted)', marginBottom: 12 }}>{t('quick_edit')}</div>
 
         <Slider label={t('maturity')} value={terms.maturity} min={0.25} max={5} step={0.25} tip={t('tip_maturity')}
-                fmt={(v) => `${v.toFixed(2)} y`} onChange={(v) => set('maturity', v)} />
+                editDigits={2} editSuffix="y" fmt={(v) => `${v.toFixed(2)} y`} onChange={(v) => set('maturity', v)} />
         <SegmentedField label={t('frequency')} value={terms.payment_freq} tip={t('tip_frequency')}
                         options={FREQS.map((f) => ({ value: f, label: FREQ_SHORT[f] }))}
                         onChange={(v) => set('payment_freq', v)} />
         <Slider label={t('coupon_pa')} value={terms.coupon_pa} min={0} max={0.3} step={0.005} tip={t('tip_coupon_pa')}
-                fmt={(v) => pct(v, 1)} onChange={(v) => set('coupon_pa', v)} />
+                pct editDigits={2} editSuffix="%" fmt={(v) => pct(v, 1)} onChange={(v) => set('coupon_pa', v)} />
 
         <Slider label={t('coupon_barrier')} value={terms.coupon_barrier} min={0} max={1} step={0.01} tip={t('tip_coupon_barrier')}
-                fmt={pct0} onChange={(v) => set('coupon_barrier', v)} />
+                pct editDigits={1} editSuffix="%" fmt={pct0} onChange={(v) => set('coupon_barrier', v)} />
         <Slider label={t('knock_in_barrier')} value={terms.knock_in_barrier} min={0} max={1} step={0.01} tip={t('tip_knock_in')}
-                tone="danger" fmt={pct0} onChange={(v) => set('knock_in_barrier', v)} />
+                tone="danger" pct editDigits={1} editSuffix="%" fmt={pct0} onChange={(v) => set('knock_in_barrier', v)} />
         <Slider label={t('autocall_barrier')} value={terms.autocall_barrier} min={0.5} max={1.5} step={0.01} tip={t('tip_autocall')}
-                fmt={pct0} onChange={(v) => set('autocall_barrier', v)} />
+                pct editDigits={1} editSuffix="%" fmt={pct0} onChange={(v) => set('autocall_barrier', v)} />
       </div>
 
       {/* Second group — the next-most-edited mechanics, inline so they don't
@@ -140,6 +166,7 @@ export default function SetupRail({
 
         <Slider label={t('autocall_start')} value={Math.min(terms.autocall_start_period, nObs(terms))}
                 min={1} max={Math.max(1, nObs(terms))} step={1} fmt={(v) => `P${v}`}
+                editInt editPrefix="P" editClamp={[1, Math.max(1, nObs(terms))]}
                 onChange={(v) => set('autocall_start_period', v)} />
         <SelectField label={t('coupon_basket')} value={terms.coupon_basket}
                      options={BASKETS.map((b) => ({ value: b, label: t(`basket_${b}`) }))}
@@ -152,7 +179,7 @@ export default function SetupRail({
                      onChange={(on) => set('one_star_level', on ? 1.0 : null)} />
         {terms.one_star_level != null && (
           <Slider label={t('one_star_level')} value={terms.one_star_level} min={0.5} max={1.5} step={0.01}
-                  fmt={pct0} onChange={(v) => set('one_star_level', v)} />
+                  pct editDigits={1} editSuffix="%" fmt={pct0} onChange={(v) => set('one_star_level', v)} />
         )}
       </div>
 

@@ -93,11 +93,11 @@ export default function SettingsOverlay({
       <Group n={2} title={t('sec_schedule_coupon')}>
         <Grid>
           <Slider label={t('maturity')} value={terms.maturity} min={0.25} max={5} step={0.25}
-                  fmt={(v) => `${v.toFixed(2)} y`} onChange={(v) => set('maturity', v)} />
+                  editDigits={2} editSuffix="y" fmt={(v) => `${v.toFixed(2)} y`} onChange={(v) => set('maturity', v)} />
           <SegmentedField label={t('frequency')} value={terms.payment_freq}
                           options={FREQS.map((f) => ({ value: f, label: t(`freq_${f}`) }))} onChange={(v) => set('payment_freq', v)} />
           <Slider label={t('coupon_pa')} value={terms.coupon_pa} min={0} max={0.3} step={0.005}
-                  fmt={(v) => pct(v, 1)} onChange={(v) => set('coupon_pa', v)} />
+                  pct editDigits={2} editSuffix="%" fmt={(v) => pct(v, 1)} onChange={(v) => set('coupon_pa', v)} />
           <SelectField label={t('coupon_basket')} value={terms.coupon_basket} options={basketOpts} onChange={(v) => set('coupon_basket', v)} />
           <NumberField label={t('coupon_barrier')} value={terms.coupon_barrier} percent suffix="%" min={0} max={100} step={0.5}
                        onChange={(v) => set('coupon_barrier', v)} />
@@ -146,7 +146,7 @@ export default function SettingsOverlay({
           <NumberField label={t('autocall_barrier')} value={terms.autocall_barrier} percent suffix="%" min={50} max={300} step={0.5}
                        onChange={(v) => set('autocall_barrier', v)} />
           <Slider label={t('autocall_start')} value={Math.min(terms.autocall_start_period, n)} min={1} max={n} step={1}
-                  fmt={(v) => `P${v}`} onChange={(v) => set('autocall_start_period', v)} />
+                  editInt editPrefix="P" editClamp={[1, n]} fmt={(v) => `P${v}`} onChange={(v) => set('autocall_start_period', v)} />
           <SelectField label={t('autocall_basket')} value={terms.autocall_basket} options={basketOpts} onChange={(v) => set('autocall_basket', v)} />
           <NumberField label={t('step_down')} value={stepDown} percent suffix="%" min={0} max={10} step={0.5}
                        onChange={(v) => set('autocall_step_down', v || null)} />

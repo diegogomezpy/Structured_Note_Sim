@@ -203,7 +203,7 @@ export default function App() {
   ]
 
   return (
-    <div className="ground" style={{ minHeight: '100%', display: 'flex', flexDirection: 'column' }}>
+    <div className="ground">
       <Header terms={terms} run={runMeta} />
       {terms && <div data-tour="ticker"><TickerTape terms={terms} /></div>}
 
@@ -227,7 +227,7 @@ export default function App() {
           </Panel>
         </aside>
 
-        <main style={{ display: 'flex', flexDirection: 'column', gap: 18, minWidth: 0 }}>
+        <main className="app-main" style={{ display: 'flex', flexDirection: 'column', gap: 18, minWidth: 0 }}>
           {terms && (
             <div data-tour="structure">
               <Panel title={t('note_structure')} right={

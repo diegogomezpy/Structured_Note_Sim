@@ -1027,24 +1027,53 @@ def run_underlying_metrics(tickers: dict, *, lang: str = "en") -> list[dict]:
 
 
 def run_quotes(symbols: list[str]) -> dict:
-    """Fast last-price + day-change per symbol for the live ticker tape. Uses
-    Yahoo fast_info only (no .info / options / history), so it's cheap enough to
-    poll. Best-effort: a symbol that fails returns nulls."""
+    """Fast quote snapshot per symbol for the live ticker tape and its hover
+    detail card. Uses Yahoo fast_info only (no .info / options / history), so it's
+    cheap enough to poll: last price, day change, open, prev close, day range,
+    52-week range, volume, market cap and currency. Best-effort — a symbol that
+    fails (or a field Yahoo omits) returns null for that field."""
     import yfinance as yf
+
+    def _f(v):  # → float or None
+        try:
+            return None if v is None else float(v)
+        except (TypeError, ValueError):
+            return None
+
     out: dict[str, dict] = {}
     for sym in symbols:
-        rec = {"price": None, "change": None}
+        rec = {"price": None, "change": None, "open": None, "prev_close": None,
+               "day_low": None, "day_high": None, "year_low": None, "year_high": None,
+               "volume": None, "market_cap": None, "currency": None}
         try:
             fi = yf.Ticker(sym).fast_info
-            last = getattr(fi, "last_price", None)
-            prev = getattr(fi, "previous_close", None)
-            if last is None and hasattr(fi, "get"):
-                last = fi.get("lastPrice")
-                prev = fi.get("previousClose")
-            if last is not None:
-                rec["price"] = float(last)
-                if prev:
-                    rec["change"] = float(last) / float(prev) - 1.0
+
+            def g(*names):
+                """First non-None of several fast_info keys (attribute + dict styles
+                vary across yfinance versions)."""
+                for n in names:
+                    v = getattr(fi, n, None)
+                    if v is None and hasattr(fi, "get"):
+                        v = fi.get(n)
+                    if v is not None:
+                        return v
+                return None
+
+            last = _f(g("last_price", "lastPrice"))
+            prev = _f(g("previous_close", "previousClose"))
+            rec["price"] = last
+            rec["prev_close"] = prev
+            if last is not None and prev:
+                rec["change"] = last / prev - 1.0
+            rec["open"] = _f(g("open"))
+            rec["day_low"] = _f(g("day_low", "dayLow"))
+            rec["day_high"] = _f(g("day_high", "dayHigh"))
+            rec["year_low"] = _f(g("year_low", "yearLow"))
+            rec["year_high"] = _f(g("year_high", "yearHigh"))
+            rec["volume"] = _f(g("last_volume", "lastVolume", "regularMarketVolume"))
+            rec["market_cap"] = _f(g("market_cap", "marketCap"))
+            cur = g("currency")
+            rec["currency"] = str(cur) if cur else None
         except Exception as e:
             print(f"[quotes] {sym} failed: {e}")
         out[sym] = rec

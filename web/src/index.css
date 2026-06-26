@@ -428,6 +428,9 @@ input:focus, select:focus { outline: none; border-color: var(--accent); box-shad
     linear-gradient(90deg, var(--grid-major) 1px, transparent 1px);
   background-size: 26px 26px, 26px 26px, 130px 130px, 130px 130px;
   background-position: -1px -1px;
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
 }
 
 /* ── ledger table ─────────────────────────────────────────────────────────
@@ -510,6 +513,40 @@ input[type='range'].range--danger:active::-moz-range-thumb { box-shadow: 0 0 0 6
 input.field-invalid, select.field-invalid { border-color: var(--red); box-shadow: 0 0 0 3px var(--red-weak); }
 .field-msg { font-family: var(--font-mono); font-size: 10px; color: var(--red); margin-top: 5px; }
 
+/* Inline editable slider readout — looks like the static mono value, but the
+   user can click and type an exact figure (even one past the slider's range). A
+   faint box on hover hints it's editable; a ring on focus. */
+input.slider-val-input {
+  width: auto;
+  min-width: 0;
+  border: 1px solid transparent;
+  background: transparent;
+  padding: 1px 3px;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  border-radius: 4px;
+  color: inherit;
+  transition: background var(--dur-micro) var(--ease-settle), border-color var(--dur-micro) var(--ease-settle), box-shadow var(--dur-micro) var(--ease-settle);
+}
+input.slider-val-input:hover { background: var(--surface-2); border-color: var(--border); }
+input.slider-val-input:focus { background: var(--surface); border-color: var(--accent); box-shadow: 0 0 0 2px var(--ring); outline: none; }
+
+/* Live ticker hover quote card — a quote-screen popover with day / 52-week range
+   markers and key figures. Read-only (pointer-events handled inline). */
+.quote-pop {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 11px;
+  padding: 14px 16px;
+  box-shadow: var(--shadow-lift);
+  animation: quotePopIn var(--dur-base) var(--ease-enter) both;
+}
+@keyframes quotePopIn {
+  from { opacity: 0; transform: translateY(-5px); }
+  to { opacity: 1; transform: none; }
+}
+
 /* Dual-thumb range (path-inspector return band): two range inputs overlaid;
    only the thumbs receive pointer events so both stay draggable. */
 .range-dual { position: relative; height: 18px; }
@@ -549,6 +586,42 @@ input.field-invalid, select.field-invalid { border-color: var(--red); box-shadow
 @media (max-width: 1000px) {
   .app-layout { grid-template-columns: 1fr; padding: 14px; }
   .app-rail { position: static; }
+}
+
+/* Desktop: a fixed-height app shell. The header + ticker stay pinned, and the
+   setup rail and main report each become their own scroll pane — so a long
+   sidebar no longer drags the report down with it (and vice-versa). On narrower
+   screens the whole page scrolls as one document (rule above), which reads
+   better stacked. */
+@media (min-width: 1001px) {
+  .ground { height: 100dvh; min-height: 0; overflow: hidden; }
+  .app-layout {
+    flex: 1 1 auto;
+    min-height: 0;
+    align-items: stretch;
+    overflow: hidden;
+  }
+  .app-rail {
+    position: static;
+    height: 100%;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    padding-bottom: 24px;
+  }
+  .app-main {
+    height: 100%;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    padding-bottom: 36px;
+  }
+  /* Slim, on-brand scrollbars for the two panes. */
+  .app-rail::-webkit-scrollbar, .app-main::-webkit-scrollbar { width: 10px; }
+  .app-rail::-webkit-scrollbar-thumb, .app-main::-webkit-scrollbar-thumb {
+    background: var(--border-strong); border-radius: 999px;
+    border: 3px solid transparent; background-clip: content-box;
+  }
+  .app-rail::-webkit-scrollbar-thumb:hover, .app-main::-webkit-scrollbar-thumb:hover { background: var(--text-faint); background-clip: content-box; }
+  .app-rail, .app-main { scrollbar-width: thin; scrollbar-color: var(--border-strong) transparent; }
 }
 
 /* Phone: the result reads first — the rail collapses into a sticky action bar

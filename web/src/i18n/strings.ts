@@ -46,6 +46,12 @@ export const S: Dict = {
   tip_autocall:     { en: 'Worst-of level at/above which the note is autocalled.', es: 'Nivel del peor de en/por encima del cual la nota se autocancela.' },
   download_config:  { en: 'Download config', es: 'Descargar configuración' },
   download_config_hint: { en: 'Download this note as a JSON config', es: 'Descargar esta nota como JSON' },
+  cfg_save_to_folder: { en: 'Save to folder', es: 'Guardar en carpeta' },
+  cfg_save_to_folder_hint: { en: 'Save this note into your connected folder', es: 'Guardar esta nota en tu carpeta conectada' },
+  cfg_save_over_hint: { en: 'Save changes to {name}.json in your folder', es: 'Guardar cambios en {name}.json de tu carpeta' },
+  cfg_saved:        { en: 'Saved to your folder', es: 'Guardado en tu carpeta' },
+  cfg_save_failed:  { en: 'Could not save', es: 'No se pudo guardar' },
+  cfg_save_failed_sub: { en: 'Folder write access was denied', es: 'Se denegó el acceso de escritura a la carpeta' },
 
   // local folder (File System Access)
   folder_connect:   { en: 'Connect a folder', es: 'Conectar una carpeta' },
@@ -468,7 +474,19 @@ export const S: Dict = {
   brand_upload_cfg_btn: { en: 'Upload JSON', es: 'Subir JSON' },
   brand_save_cfg: { en: 'Save branding', es: 'Guardar marca' },
   brand_save_cfg_btn: { en: 'Download JSON', es: 'Descargar JSON' },
+  brand_save_to_folder_btn: { en: 'Save to folder', es: 'Guardar en carpeta' },
+  brand_saved: { en: 'Branding saved to your folder', es: 'Marca guardada en tu carpeta' },
   brand_downloaded: { en: 'Branding config saved', es: 'Configuración de marca guardada' },
+
+  // live ticker hover quote card
+  tk_day_range:   { en: 'Day range', es: 'Rango del día' },
+  tk_52w:         { en: '52-week range', es: 'Rango 52 semanas' },
+  tk_open:        { en: 'Open', es: 'Apertura' },
+  tk_prev_close:  { en: 'Prev close', es: 'Cierre ant.' },
+  tk_volume:      { en: 'Volume', es: 'Volumen' },
+  tk_mktcap:      { en: 'Market cap', es: 'Capitalización' },
+  tk_iv:          { en: 'Implied vol', es: 'Vol. implícita' },
+  tk_rsi:         { en: 'RSI (14)', es: 'RSI (14)' },
 
   // cover-photo library
   cover_lib:        { en: 'Cover photo library', es: 'Biblioteca de portadas' },

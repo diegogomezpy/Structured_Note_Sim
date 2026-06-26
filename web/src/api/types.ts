@@ -253,6 +253,22 @@ export interface UnderlyingMetric {
   figure: any
 }
 
+/** Fast quote snapshot from /api/quotes (fast_info only) — drives the live ticker
+    tape and its hover detail card. Every field is best-effort and may be null. */
+export interface Quote {
+  price: number | null
+  change: number | null
+  open: number | null
+  prev_close: number | null
+  day_low: number | null
+  day_high: number | null
+  year_low: number | null
+  year_high: number | null
+  volume: number | null
+  market_cap: number | null
+  currency: string | null
+}
+
 export interface InspectFilters {
   outcome?: 'any' | 'autocalled' | 'maturity' | 'loss'
   ac_periods?: number[]

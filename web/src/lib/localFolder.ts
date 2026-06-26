@@ -80,6 +80,28 @@ async function reconnectFolder(key: string): Promise<{ name: string; files: Loca
   if (await dir.requestPermission({ mode: 'read' }) !== 'granted') return null
   return { name: dir.name, files: await scan(dir) }
 }
+
+// Filesystem-illegal characters only — spaces, dashes and accents are kept so an
+// edit saves back over the very file it was loaded from.
+const safeName = (s: string) => (s || 'note').replace(/[/\\:*?"<>|]/g, '_').slice(0, 80).trim() || 'note'
+
+/** Write `obj` as pretty JSON into the connected folder, overwriting `<name>.json`
+    (the existing file when editing one loaded from the folder, else a new file).
+    Upgrades the directory handle to read-write — the browser prompts once per
+    session. Returns the saved base name (no extension), or throws if denied. */
+async function writeFile(key: string, name: string, obj: unknown): Promise<string> {
+  const dir = await idbGet<any>(key).catch(() => undefined)
+  if (!dir) throw new Error('no folder connected')
+  let perm = await dir.queryPermission({ mode: 'readwrite' })
+  if (perm !== 'granted') perm = await dir.requestPermission({ mode: 'readwrite' })
+  if (perm !== 'granted') throw new Error('write permission denied')
+  const base = safeName(name)
+  const fh = await dir.getFileHandle(`${base}.json`, { create: true })
+  const w = await fh.createWritable()
+  await w.write(JSON.stringify(obj, null, 2))
+  await w.close()
+  return base
+}
 /* eslint-enable @typescript-eslint/no-explicit-any */
 
 /** React state for a connected local folder of JSONs (configs or branding).
@@ -121,6 +143,17 @@ export function useLocalFolder(key: string) {
     await idbDel(key).catch(() => {})
     setFolder(null); setFiles([]); setNeedsGrant(false)
   }
+  // Write the current config back into the folder (overwriting `<name>.json`),
+  // then re-scan so the list reflects it. Throws if the user denies write access.
+  const save = async (name: string, obj: unknown): Promise<string> => {
+    setBusy(true)
+    try {
+      const saved = await writeFile(key, name, obj)
+      const r = await restoreFolder(key)
+      if (r) { setFiles(r.files); setNeedsGrant(r.needsGrant) }
+      return saved
+    } finally { setBusy(false) }
+  }
   // Fallback for browsers without the File System Access API: a one-shot import
   // of every JSON in a chosen folder (no persistence — re-pick each session).
   const importFiles = async (list: FileList | null) => {
@@ -133,5 +166,9 @@ export function useLocalFolder(key: string) {
     if (out.length) { setFiles(out.sort((a, b) => a.name.localeCompare(b.name))); setFolder('imported') }
   }
 
-  return { supported: fsSupported, files, folder, needsGrant, busy, connect, reconnect, refresh, disconnect, importFiles }
+  // Writes need the File System Access API + a real connected directory handle
+  // (the webkitdirectory import fallback has no handle, so it can't save back).
+  const canSave = fsSupported && !!folder && folder !== 'imported'
+
+  return { supported: fsSupported, files, folder, needsGrant, busy, canSave, connect, reconnect, refresh, disconnect, importFiles, save }
 }
