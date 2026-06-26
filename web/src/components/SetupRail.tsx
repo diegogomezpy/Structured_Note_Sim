@@ -135,7 +135,7 @@ export default function SetupRail({
 
       {/* Second group — the next-most-edited mechanics, inline so they don't
           require the settings overlay. */}
-      <div style={{ borderTop: '1px solid var(--border)', paddingTop: 14 }}>
+      <div data-tour="mechanics" style={{ borderTop: '1px solid var(--border)', paddingTop: 14 }}>
         <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--text-muted)', marginBottom: 12 }}>{t('quick_mechanics')}</div>
 
         <Slider label={t('autocall_start')} value={Math.min(terms.autocall_start_period, nObs(terms))}
@@ -156,7 +156,7 @@ export default function SetupRail({
         )}
       </div>
 
-      <button className="btn" style={{ justifyContent: 'center', padding: '10px' }} onClick={onOpenSettings}>
+      <button data-tour="settings" className="btn" style={{ justifyContent: 'center', padding: '10px' }} onClick={onOpenSettings}>
         <Icon name="chart" size={15} /> {t('edit_settings')}
       </button>
 

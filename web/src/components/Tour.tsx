@@ -27,6 +27,8 @@ export function mainTour(t: (k: string) => string): TourStep[] {
     { target: '[data-tour="term-sheet"]', title: t('tour_termsheet_t'), body: t('tour_termsheet_b'), placement: 'right' },
     { target: '[data-tour="underlyings"]', title: t('tour_underlyings_t'), body: t('tour_underlyings_b'), placement: 'right' },
     { target: '[data-tour="terms"]', title: t('tour_terms_t'), body: t('tour_terms_b'), placement: 'right' },
+    { target: '[data-tour="mechanics"]', title: t('tour_mechanics_t'), body: t('tour_mechanics_b'), placement: 'right' },
+    { target: '[data-tour="settings"]', title: t('tour_settings_t'), body: t('tour_settings_b'), placement: 'right' },
     { target: '[data-tour="structure"]', title: t('tour_structure_t'), body: t('tour_structure_b') },
     { target: '[data-tour="run"]', title: t('tour_run_t'), body: t('tour_run_b'), placement: 'right' },
     { target: '[data-tour="tabs"]', title: t('tour_tabs_t'), body: t('tour_tabs_b') },
@@ -98,6 +100,16 @@ export function TourProvider({ children }: { children: ReactNode }) {
     setCardPos({ left, top })
   }, [rect, steps, i, step])
 
+  // Glide the spotlight/card only when MOVING BETWEEN STEPS — never while the user
+  // scrolls (the CSS transition would otherwise lag the highlight behind the page).
+  const [animating, setAnimating] = useState(false)
+  useEffect(() => {
+    if (!steps) return
+    setAnimating(true)
+    const id = setTimeout(() => setAnimating(false), 320)
+    return () => clearTimeout(id)
+  }, [i, steps])
+
   // Keyboard: Esc closes, ←/→ navigate.
   useEffect(() => {
     if (!steps) return
@@ -115,7 +127,7 @@ export function TourProvider({ children }: { children: ReactNode }) {
       {children}
       {steps && step && createPortal(
         <TourOverlay
-          step={step} index={i} total={steps.length} rect={rect} cardPos={cardPos} cardRef={cardRef}
+          step={step} index={i} total={steps.length} rect={rect} cardPos={cardPos} cardRef={cardRef} animating={animating}
           onSkip={close} onBack={() => setI((n) => Math.max(0, n - 1))}
           onNext={() => (i + 1 >= steps.length ? close() : setI((n) => n + 1))}
         />,
@@ -125,20 +137,23 @@ export function TourProvider({ children }: { children: ReactNode }) {
   )
 }
 
-function TourOverlay({ step, index, total, rect, cardPos, cardRef, onSkip, onBack, onNext }: {
+function TourOverlay({ step, index, total, rect, cardPos, cardRef, animating, onSkip, onBack, onNext }: {
   step: TourStep; index: number; total: number; rect: Rect | null
   cardPos: { left: number; top: number } | null; cardRef: React.RefObject<HTMLDivElement | null>
+  animating: boolean
   onSkip: () => void; onBack: () => void; onNext: () => void
 }) {
   const { t } = useI18n()
   const last = index + 1 >= total
+  // Transition only between steps; `none` during scroll so the highlight tracks 1:1.
+  const glide = animating ? undefined : ('none' as const)
   return (
     <>
       <div className="tour-block" onClick={onSkip} />
       {rect
-        ? <div className="tour-spot" style={{ left: rect.left - 6, top: rect.top - 6, width: rect.width + 12, height: rect.height + 12 }} />
+        ? <div className="tour-spot" style={{ left: rect.left - 6, top: rect.top - 6, width: rect.width + 12, height: rect.height + 12, transition: glide }} />
         : <div className="tour-dim" />}
-      <div ref={cardRef} className="tour-card" style={{ left: cardPos?.left ?? -9999, top: cardPos?.top ?? -9999, width: CARD_W, visibility: cardPos ? 'visible' : 'hidden' }}>
+      <div ref={cardRef} className="tour-card" style={{ left: cardPos?.left ?? -9999, top: cardPos?.top ?? -9999, width: CARD_W, visibility: cardPos ? 'visible' : 'hidden', transition: glide }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
           <span className="mono" style={{ fontSize: 10.5, fontWeight: 600, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--accent-text)' }}>{t('tour_eyebrow')}</span>
           <span className="mono" style={{ fontSize: 11, color: 'var(--text-faint)' }}>{index + 1} / {total}</span>
