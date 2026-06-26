@@ -14,29 +14,26 @@ export default function RunProgress() {
     return () => clearInterval(id)
   }, [stages.length])
 
+  // Mercator running state: serif heading + a determinate 3px hairline bar +
+  // a mono telemetry line. No spinner.
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 14, padding: '8px 2px' }}>
-      {stages.map((label, i) => {
-        const state = i < step ? 'done' : i === step ? 'active' : 'todo'
-        return (
-          <div key={label} style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-            <span style={{
-              width: 18, height: 18, borderRadius: '50%', flexShrink: 0,
-              border: `2px solid ${state === 'todo' ? 'var(--border-strong)' : 'var(--accent)'}`,
-              background: state === 'done' ? 'var(--accent)' : 'transparent',
-              boxShadow: state === 'active' ? '0 0 0 4px var(--accent-weak)' : 'none',
-              transition: 'all 0.2s ease',
-            }} />
-            <span style={{
-              fontSize: 14,
-              color: state === 'todo' ? 'var(--text-faint)' : 'var(--text)',
-              fontWeight: state === 'active' ? 600 : 400,
-            }}>
-              {label}{state === 'active' ? '…' : ''}
-            </span>
-          </div>
-        )
-      })}
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 12, padding: '6px 2px' }}>
+      <div style={{ fontFamily: 'var(--font-serif)', fontWeight: 600, fontSize: 16, letterSpacing: '-0.01em' }}>
+        {stages[step]}…
+      </div>
+      <div style={{ height: 3, borderRadius: 999, background: 'var(--border)', overflow: 'hidden' }}>
+        <div style={{
+          height: '100%', width: `${((step + 1) / stages.length) * 100}%`,
+          background: 'var(--accent)', borderRadius: 999, transition: 'width 0.5s ease',
+        }} />
+      </div>
+      <div className="mono" style={{ fontSize: 11, letterSpacing: '0.04em', display: 'flex', gap: 7, flexWrap: 'wrap' }}>
+        {stages.map((label, i) => (
+          <span key={label} style={{ color: i === step ? 'var(--accent-text)' : i < step ? 'var(--text-muted)' : 'var(--text-faint)' }}>
+            {label.toLowerCase()}{i < stages.length - 1 ? ' ·' : ''}
+          </span>
+        ))}
+      </div>
     </div>
   )
 }

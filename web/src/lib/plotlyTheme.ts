@@ -36,14 +36,16 @@ const SERIES_REMAP: Record<Mode, Record<string, string>> = {
     // purple → third series
     '#9b59b6': '#7eb4a0', '#a855f7': '#7eb4a0', '#7c3aed': '#3f8a6f',
     // red → claret
-    '#dc2626': '#9c3b30',
+    '#dc2626': '#9c3b30', '#ef4444': '#9c3b30',
+    // bright green → viridian
+    '#22c55e': '#15694e',
     // amber/orange → ochre
     '#d97706': '#9a6b1a', '#f39c12': '#9a6b1a', '#e67e22': '#9a6b1a',
     // navy lines → ink
     '#1a2e4a': '#1c241f', '#2c3e50': '#1c241f',
     // greys / borders / gridlines → Mercator lines
     '#e5e7eb': '#e6e1d5', '#f1f5f9': '#ece8dd', '#6b7280': '#8c9189', '#64748b': '#8c9189',
-    '#cccccc': '#d4cdbd', '#dddddd': '#e6e1d5',
+    '#94a3b8': '#8c9189', '#cccccc': '#d4cdbd', '#dddddd': '#e6e1d5',
     // rgba fans / fills (worst-of bands, sample paths)
     'rgba(37,99,235,0.08)': 'rgba(21,105,78,0.08)',
     'rgba(37,99,235,0.04)': 'rgba(21,105,78,0.04)',
@@ -58,11 +60,12 @@ const SERIES_REMAP: Record<Mode, Record<string, string>> = {
     '#16a34a': '#3fae86',
     '#0891b2': '#5cc09c', '#0d9488': '#5cc09c',
     '#9b59b6': '#88cbb2', '#a855f7': '#88cbb2', '#7c3aed': '#5cc09c',
-    '#dc2626': '#d97a6e',
+    '#dc2626': '#d97a6e', '#ef4444': '#d97a6e',
+    '#22c55e': '#3fae86',
     '#d97706': '#d2a24e', '#f39c12': '#d2a24e', '#e67e22': '#d2a24e',
     '#1a2e4a': '#eef1ea', '#2c3e50': '#eef1ea',
     '#e5e7eb': '#2a332c', '#f1f5f9': '#232c24', '#6b7280': '#9aa49b', '#64748b': '#9aa49b',
-    '#cccccc': '#3a453c', '#dddddd': '#2a332c',
+    '#94a3b8': '#9aa49b', '#cccccc': '#3a453c', '#dddddd': '#2a332c',
     'rgba(37,99,235,0.08)': 'rgba(63,174,134,0.10)',
     'rgba(37,99,235,0.04)': 'rgba(63,174,134,0.06)',
     'rgba(37,99,235,0.20)': 'rgba(63,174,134,0.24)',

@@ -18,9 +18,9 @@ const Y_BOT = 178      // maps to 0%
 const DOMAIN = 1.35    // top of the level axis
 const LABEL_X = X1 + 14
 
-const C_COUPON = '#0891b2'
-const C_KNOCKIN = 'var(--red)'
-const C_ONESTAR = '#16a34a'
+const C_COUPON = '#3f8a6f'          /* secondary viridian */
+const C_KNOCKIN = 'var(--red)'      /* claret */
+const C_ONESTAR = 'var(--amber)'    /* ochre — the best-of rescue overlay */
 const C_AUTOCALL = 'var(--accent-text)'
 
 const PPY: Record<string, number> = { monthly: 12, quarterly: 4, 'semi-annual': 2, annual: 1 }
@@ -126,8 +126,8 @@ export default function NoteTimeline({ terms }: { terms: NoteTerms }) {
         </defs>
 
         {/* payoff zones: protected (≥ knock-in) green, at-risk (< knock-in) red */}
-        <rect x={X0} y={Y_TOP} width={X1 - X0} height={Math.max(0, kiY - Y_TOP)} fill="rgba(22,163,74,0.07)" />
-        <rect x={X0} y={kiY} width={X1 - X0} height={Math.max(0, Y_BOT - kiY)} fill="rgba(220,38,38,0.07)" />
+        <rect x={X0} y={Y_TOP} width={X1 - X0} height={Math.max(0, kiY - Y_TOP)} fill="rgba(21,105,78,0.06)" />
+        <rect x={X0} y={kiY} width={X1 - X0} height={Math.max(0, Y_BOT - kiY)} fill="rgba(156,59,48,0.07)" />
 
         {/* autocall window: above the autocall barrier, over the callable periods */}
         {start <= n && (
@@ -147,7 +147,7 @@ export default function NoteTimeline({ terms }: { terms: NoteTerms }) {
         ))}
 
         {/* zone captions */}
-        <text x={X0 + 7} y={protTextY} fontSize="9" fontWeight={600} fill="#16a34a" opacity="0.85">{t('diag_zone_protected')}</text>
+        <text x={X0 + 7} y={protTextY} fontSize="9" fontWeight={600} fill="var(--accent)" opacity="0.85">{t('diag_zone_protected')}</text>
         {kiY < Y_BOT - 8 && (
           <text x={X0 + 7} y={riskTextY} fontSize="9" fontWeight={600} fill="var(--red)" opacity="0.8">{t('diag_zone_atrisk')}</text>
         )}
