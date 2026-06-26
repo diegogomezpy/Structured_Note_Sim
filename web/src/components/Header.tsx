@@ -34,23 +34,26 @@ export default function Header({ terms, run }: { terms: NoteTerms | null; run: R
           <span style={{ fontFamily: 'var(--font-serif)', fontSize: 19, fontWeight: 600, letterSpacing: '-0.01em' }}>Mercator</span>
         </div>
 
-        {/* active instrument readout */}
+        {/* active instrument readout — serif title (Pricer doc) + mono subtitle */}
         {terms && (
           <>
             <span style={{ width: 1, height: 30, background: 'var(--border)', flexShrink: 0 }} />
-            <div style={{ display: 'flex', alignItems: 'center', gap: 9, minWidth: 0 }}>
-              {terms.issuer && (
-                <>
-                  <IssuerLogo issuer={terms.issuer} size={22} />
-                  <span style={{ fontSize: 13, fontWeight: 600 }}>{terms.issuer}</span>
-                </>
-              )}
-              <span style={{ display: 'flex', alignItems: 'center', gap: 5, marginLeft: 2 }}>
-                {tickers.map(([sym, name]) => <TickerLogo key={sym} symbol={sym} name={name} size={17} />)}
-              </span>
-              <span style={{ fontSize: 12, color: 'var(--text-faint)' }}>
-                {terms.maturity}y · {t('worst_of')}
-              </span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
+              {terms.issuer && <IssuerLogo issuer={terms.issuer} size={26} />}
+              <div style={{ minWidth: 0 }}>
+                {terms.name && (
+                  <div style={{ fontFamily: 'var(--font-serif)', fontSize: 14.5, fontWeight: 600, lineHeight: 1.15, letterSpacing: '-0.01em', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                    {terms.name}
+                  </div>
+                )}
+                <div className="mono" style={{ fontSize: 10.5, color: 'var(--text-faint)', display: 'flex', alignItems: 'center', gap: 6, marginTop: terms.name ? 2 : 0 }}>
+                  <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                    {tickers.map(([sym, name]) => <TickerLogo key={sym} symbol={sym} name={name} size={15} />)}
+                  </span>
+                  {terms.maturity}y · {t('worst_of')}
+                  {tickers.length > 0 && ` · ${tickers.map(([sym]) => sym).join('/')}`}
+                </div>
+              </div>
             </div>
           </>
         )}

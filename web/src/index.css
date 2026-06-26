@@ -276,8 +276,12 @@ input:focus, select:focus { outline: none; border-color: var(--accent); box-shad
 @keyframes overlayScrimIn { from { opacity: 0; } to { opacity: 1; } }
 @keyframes modalCardIn { from { opacity: 0; transform: translateY(8px) scale(0.98); } to { opacity: 1; transform: none; } }
 @keyframes toastIn { from { opacity: 0; transform: translateX(-16px); } to { opacity: 1; transform: none; } }
+@keyframes chartIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
 .modal-scrim { animation: overlayScrimIn var(--dur-base) var(--ease-settle) both; }
 .modal-card  { animation: modalCardIn var(--dur-enter) var(--ease-enter) both; }
+/* Charts draw in once on reveal (Motion · IV) — a gentle rise, not a Plotly
+   redraw (which risks the resize loop). */
+.chart-reveal { animation: chartIn 320ms var(--ease-enter) both; }
 
 .skeleton {
   border-radius: 6px;

@@ -3,6 +3,7 @@ import Panel from './Panel'
 import Figure from './Figure'
 import Icon from './Icon'
 import TickerLogo from './TickerLogo'
+import BarrierMonitor from './BarrierMonitor'
 import { pct, pctSigned, num } from '../lib/format'
 import type { LiveObsRow, LiveResult, LiveStatus, NoteTerms } from '../api/types'
 
@@ -94,6 +95,11 @@ export default function LivePanel({ result }: { result: LiveResult; terms: NoteT
         <Stat label={t('live_ac_buffer')} value={pctSigned(s.ac_buffer, 1)} subTone={tone(s.ac_buffer)}
               sub={t('live_ref_autocall', { v: pct(s.next_ac_barrier, 0) })} />
       </div>
+
+      {/* Barrier monitor — worst-of toward the knock-in */}
+      {s.wof_today != null && s.knock_in_barrier != null && (
+        <BarrierMonitor now={s.wof_today} barrier={s.knock_in_barrier} />
+      )}
 
       {/* Per-asset vs strike */}
       <Panel title={t('live_asset_perf')} pad={16}>

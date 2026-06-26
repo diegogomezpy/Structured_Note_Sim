@@ -50,7 +50,7 @@ export default function Figure({ fig, height, name = 'chart', noDownload }: { fi
   }
 
   return (
-    <div style={{ position: 'relative', width: '100%', height: height ?? '100%', minWidth: 0, overflow: 'hidden' }}
+    <div className="chart-reveal" style={{ position: 'relative', width: '100%', height: height ?? '100%', minWidth: 0, overflow: 'hidden' }}
          onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)}>
       {!noDownload && <button onClick={download} title="Download PNG" aria-label="Download chart"
         style={{
