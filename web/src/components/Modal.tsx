@@ -19,12 +19,12 @@ export default function Modal({
     <div
       onMouseDown={(e) => { if (e.target === e.currentTarget) onClose() }}
       style={{
-        position: 'fixed', inset: 0, zIndex: 1000, background: 'rgba(6, 10, 18, 0.55)',
+        position: 'fixed', inset: 0, zIndex: 1000, background: 'rgba(20, 28, 23, 0.46)',
         display: 'flex', alignItems: 'flex-start', justifyContent: 'center',
         padding: '4vh 16px', overflow: 'auto',
       }}>
       <div className="fade-up" style={{
-        background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 16,
+        background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 12,
         boxShadow: 'var(--shadow)', width: `min(${width}px, 100%)`, maxHeight: '92vh',
         display: 'flex', flexDirection: 'column',
       }}>
@@ -32,7 +32,7 @@ export default function Modal({
           display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12,
           padding: '16px 22px', borderBottom: '1px solid var(--border)', flexShrink: 0,
         }}>
-          <div style={{ fontSize: 15, fontWeight: 600 }}>{title}</div>
+          <div style={{ fontFamily: 'var(--font-serif)', fontSize: 16, fontWeight: 600, letterSpacing: '-0.01em' }}>{title}</div>
           <button className="btn btn--ghost" onClick={onClose} aria-label="Close" style={{ padding: 7 }}>
             <Icon name="x" size={17} />
           </button>
