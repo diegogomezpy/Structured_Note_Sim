@@ -4,7 +4,7 @@ import { useI18n } from '../i18n/I18nProvider'
 import { useToast } from './Toast'
 import Panel from './Panel'
 import Icon from './Icon'
-import { Select } from './fields'
+import { Select, Segmented } from './fields'
 import FolderConnect from './FolderConnect'
 import CoverPhotoPicker from './CoverPhotoPicker'
 import { useLocalFolder } from '../lib/localFolder'
@@ -51,6 +51,25 @@ const TREE: Group[] = [
   ] },
 ]
 
+// Report presets — one click selects a sensible set of sections for an audience.
+// Keys are intersected with what's actually available (e.g. the live group only
+// when the note has an issue date). "Custom" keeps the current selection so the
+// user can hand-tune; it's also the mode any manual toggle drops into.
+const PRESET_KEYS: Record<'client' | 'analyst', string[]> = {
+  // Client fact sheet — what the note is: terms, structure, underlyings. No
+  // simulation or backtest analysis.
+  client: ['cover', 'note_description', 'note_diagram', 'note_terms', 'obs_schedule', 'issuer_info', 'underlying_breakdown'],
+  // Risk analyst — the quantitative analysis: full Monte Carlo, backtest,
+  // calibration and current performance, plus the terms for context. Skips the
+  // branded cover and the marketing description.
+  analyst: ['note_terms', 'note_diagram', 'obs_schedule', 'issuer_info', 'underlying_breakdown',
+            'mc_metrics', 'mc_outcome', 'mc_autocall', 'mc_irr', 'mc_wof', 'mc_sample', 'mc_fans', 'calib_corr', 'calib_table',
+            'bt_metrics', 'bt_outcome', 'bt_pie', 'bt_irr', 'bt_prices',
+            'live_metrics', 'live_asset_table', 'live_obs_table', 'live_chart'],
+}
+const PRESET_ORDER = ['full', 'client', 'analyst', 'custom'] as const
+type Preset = (typeof PRESET_ORDER)[number]
+
 function filenameFrom(res: Response, fallback: string): string {
   const cd = res.headers.get('Content-Disposition') || ''
   const m = cd.match(/filename="?([^"]+)"?/)
@@ -76,6 +95,7 @@ export default function ReportPanel({ terms, opts }: { terms: NoteTerms; opts: R
   const allKeys = useMemo(() => groups.flatMap((g) => g.items.map((i) => i[0])), [groups])
 
   const [sel, setSel] = useState<Set<string>>(() => new Set(allKeys))
+  const [preset, setPreset] = useState<Preset>('full')
   const [brandOpen, setBrandOpen] = useState(false)
   const [brand, setBrand] = useState<Branding>({})
   const [presets, setPresets] = useState<{ file: string; firm_name: string }[]>([])
@@ -156,12 +176,22 @@ export default function ReportPanel({ terms, opts }: { terms: NoteTerms; opts: R
   }
 
   const lab = (en: string, es: string) => (lang === 'es' ? es : en)
-  const toggle = (k: string) => { setSel((p) => { const n = new Set(p); n.has(k) ? n.delete(k) : n.add(k); return n }); setStatus('idle') }
+  const toggle = (k: string) => { setSel((p) => { const n = new Set(p); n.has(k) ? n.delete(k) : n.add(k); return n }); setPreset('custom'); setStatus('idle') }
   const toggleGroup = (g: Group) => {
     const ks = g.items.map((i) => i[0])
     const allOn = ks.every((k) => sel.has(k))
     setSel((p) => { const n = new Set(p); ks.forEach((k) => allOn ? n.delete(k) : n.add(k)); return n })
+    setPreset('custom')
     setStatus('idle')
+  }
+  // Apply a named preset: select its sections (intersected with what's available).
+  // "Custom" leaves the current selection untouched so the user can fine-tune.
+  const applyPreset = (p: Preset) => {
+    setPreset(p)
+    setStatus('idle')
+    if (p === 'custom') return
+    const keys = p === 'full' ? allKeys : PRESET_KEYS[p].filter((k) => allKeys.includes(k))
+    setSel(new Set(keys))
   }
   const setBrandField = (k: keyof Branding, v: string) => setBrand((b) => ({ ...b, [k]: v || undefined }))
   const onImage = (field: keyof Branding, file: File | undefined) => {
@@ -223,6 +253,13 @@ export default function ReportPanel({ terms, opts }: { terms: NoteTerms; opts: R
       <div style={{ fontSize: 12.5, color: 'var(--text-muted)' }}>{t('report_intro')}</div>
 
       <Panel title={t('report_sections')}>
+        <div style={{ marginBottom: 18 }}>
+          <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--text-muted)', marginBottom: 8 }}>{t('rep_preset')}</div>
+          <Segmented value={preset} ariaLabel={t('rep_preset')}
+                     options={PRESET_ORDER.map((p) => ({ value: p, label: t(`rep_preset_${p}`) }))}
+                     onChange={(p) => applyPreset(p as Preset)} />
+          <div style={{ fontSize: 11.5, color: 'var(--text-faint)', marginTop: 8, lineHeight: 1.5 }}>{t(`rep_preset_${preset}_desc`)}</div>
+        </div>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(230px, 1fr))', gap: '4px 28px' }}>
           {groups.map((g) => {
             const ks = g.items.map((i) => i[0])

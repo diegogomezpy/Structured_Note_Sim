@@ -464,6 +464,7 @@ _GLOSSARY: dict[str, list[tuple[str, str]]] = {
         ("Implied volatility (ATM, 3M)", "Forward-looking volatility backed out from option prices — the market's expectation of future movement. 'ATM' uses the strike nearest spot (~100% moneyness, call and put averaged) at the expiry nearest three months."),
         ("Realized volatility", "Backward-looking volatility: the annualised standard deviation of recent daily log-returns (~3 months here). Shown in place of implied vol when an underlying has no listed options on the data source."),
         ("Moneyness / at-the-money (ATM)", "An option's strike relative to spot. At-the-money is a strike at ~100% of spot, and is the reference point for quoting a single headline implied volatility."),
+        ("RSI (14)", "The 14-day Relative Strength Index — a momentum oscillator ranging from 0 to 100 that gauges the speed and magnitude of recent price moves. Readings above 70 are conventionally read as 'overbought' and below 30 as 'oversold'; around 50 is neutral. Shown per underlying as a snapshot of recent momentum, not a forecast."),
         ("Monte Carlo simulation", "Estimating the note's outcomes by generating many random price paths under the model, pricing the payoff on each, and summarising across all paths."),
         ("Backtest", "Re-running the note's payoff over historical price windows — one per past issue date — to see how it would have performed in realised market history, as opposed to simulated paths."),
     ],
@@ -489,13 +490,14 @@ _GLOSSARY: dict[str, list[tuple[str, str]]] = {
         ("Volatilidad implícita (ATM, 3M)", "Volatilidad prospectiva derivada de los precios de las opciones — la expectativa del mercado sobre el movimiento futuro. 'ATM' usa el strike más cercano al spot (~100% de moneyness, promedio de call y put) en el vencimiento más próximo a tres meses."),
         ("Volatilidad realizada", "Volatilidad retrospectiva: desviación estándar anualizada de los log-retornos diarios recientes (~3 meses aquí). Se muestra en lugar de la implícita cuando un subyacente no tiene opciones listadas en la fuente de datos."),
         ("Moneyness / at-the-money (ATM)", "El strike de una opción respecto al spot. At-the-money es un strike al ~100% del spot, y es la referencia para cotizar una única volatilidad implícita de referencia."),
+        ("RSI (14)", "Índice de Fuerza Relativa de 14 días — un oscilador de momento de 0 a 100 que mide la velocidad y magnitud de los movimientos de precio recientes. Lecturas por encima de 70 se leen convencionalmente como 'sobrecompra' y por debajo de 30 como 'sobreventa'; alrededor de 50 es neutral. Se muestra por subyacente como una instantánea del momento reciente, no un pronóstico."),
         ("Simulación de Monte Carlo", "Estimación de los resultados de la nota generando muchas trayectorias de precio aleatorias bajo el modelo, valorando el pago en cada una y resumiendo sobre todas las trayectorias."),
         ("Backtest", "Re-ejecución del pago de la nota sobre ventanas históricas de precios — una por cada fecha de emisión pasada — para ver cómo habría rendido en el mercado real, frente a las trayectorias simuladas."),
     ],
 }
 
 # Which report content each glossary term explains — index-aligned with the en/es
-# lists above (both have the same 23 entries in the same order; index 11 is the
+# lists above (both have the same 24 entries in the same order; index 11 is the
 # One-Star / best-of-redemption clause in either language). A term only prints
 # when the content that needs it is in the report. "core" = always relevant when
 # there is a note at all.
@@ -521,8 +523,9 @@ _GLOSSARY_TAGS: list[set[str]] = [
     {"ul"},          # 18 Implied volatility (ATM, 3M)
     {"ul"},          # 19 Realized volatility
     {"ul"},          # 20 Moneyness / ATM
-    {"mc"},          # 21 Monte Carlo simulation
-    {"bt"},          # 22 Backtest
+    {"ul"},          # 21 RSI (14)
+    {"mc"},          # 22 Monte Carlo simulation
+    {"bt"},          # 23 Backtest
 ]
 
 
