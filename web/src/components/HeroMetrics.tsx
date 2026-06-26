@@ -26,13 +26,13 @@ function Group({ title, cards }: { title: string; cards: Card[] }) {
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 14 }}>
         {cards.map((c) => (
           <div key={c.label} className="card fade-up" title={c.tip} style={{ padding: '18px 20px', cursor: 'help' }}>
-            <div style={{ fontSize: 10.5, fontWeight: 600, letterSpacing: '0.07em', textTransform: 'uppercase', color: 'var(--text-muted)', marginBottom: 12, display: 'flex', alignItems: 'center', gap: 5 }}>
+            <div className="eyebrow" style={{ marginBottom: 12, display: 'flex', alignItems: 'center', gap: 5 }}>
               {c.label}<span style={{ color: 'var(--text-faint)', fontWeight: 400 }}>ⓘ</span>
             </div>
-            <div className="mono" style={{ fontSize: 34, fontWeight: 600, color: toneColor[c.tone], lineHeight: 0.95, letterSpacing: '-0.02em' }}>
+            <div className="mono" style={{ fontSize: 33, fontWeight: 600, color: toneColor[c.tone], lineHeight: 0.95, letterSpacing: '-0.02em' }}>
               <AnimatedNumber value={c.value} format={c.format} />
             </div>
-            {c.hint && <div style={{ fontSize: 11.5, color: 'var(--text-faint)', marginTop: 10 }}>{c.hint}</div>}
+            {c.hint && <div className="mono" style={{ fontSize: 11, color: 'var(--text-faint)', marginTop: 10 }}>{c.hint}</div>}
           </div>
         ))}
       </div>
