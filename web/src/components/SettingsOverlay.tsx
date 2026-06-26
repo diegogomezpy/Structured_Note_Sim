@@ -93,11 +93,11 @@ export default function SettingsOverlay({
       <Group n={2} title={t('sec_schedule_coupon')}>
         <Grid>
           <Slider label={t('maturity')} value={terms.maturity} min={0.25} max={5} step={0.25}
-                  editDigits={2} editSuffix="y" fmt={(v) => `${v.toFixed(2)} y`} onChange={(v) => set('maturity', v)} />
+                  editSuffix="y" fmt={(v) => `${v.toFixed(2)} y`} onChange={(v) => set('maturity', v)} />
           <SegmentedField label={t('frequency')} value={terms.payment_freq}
                           options={FREQS.map((f) => ({ value: f, label: t(`freq_${f}`) }))} onChange={(v) => set('payment_freq', v)} />
           <Slider label={t('coupon_pa')} value={terms.coupon_pa} min={0} max={0.3} step={0.005}
-                  pct editDigits={2} editSuffix="%" fmt={(v) => pct(v, 1)} onChange={(v) => set('coupon_pa', v)} />
+                  pct editSuffix="%" fmt={(v) => pct(v, 1)} onChange={(v) => set('coupon_pa', v)} />
           <SelectField label={t('coupon_basket')} value={terms.coupon_basket} options={basketOpts} onChange={(v) => set('coupon_basket', v)} />
           <NumberField label={t('coupon_barrier')} value={terms.coupon_barrier} percent suffix="%" min={0} max={100} step={0.5}
                        onChange={(v) => set('coupon_barrier', v)} />

@@ -41,7 +41,9 @@ function EditableValue({
 }) {
   const toDisp = (v: number) => (pct ? v * 100 : v)
   const fromDisp = (d: number) => (pct ? d / 100 : d)
-  const fmtDisp = (v: number) => (isInt ? String(Math.round(toDisp(v))) : toDisp(v).toFixed(digits))
+  // Up to `digits` decimals with trailing zeros trimmed, so a typed value keeps its
+  // precision ("13.375") without padding round numbers ("10", not "10.000").
+  const fmtDisp = (v: number) => (isInt ? String(Math.round(toDisp(v))) : String(parseFloat(toDisp(v).toFixed(digits))))
   const [focused, setFocused] = useState(false)
   const [text, setText] = useState(() => fmtDisp(value))
   useEffect(() => { if (!focused) setText(fmtDisp(value)) }, [value, focused])  // eslint-disable-line react-hooks/exhaustive-deps
@@ -72,7 +74,7 @@ function EditableValue({
 
 export function Slider({
   label, value, min, max, step, fmt, onChange, disabled, tip, tone = 'accent',
-  editable = true, pct, editDigits = 2, editSuffix, editPrefix, editInt, editClamp,
+  editable = true, pct, editDigits = 3, editSuffix, editPrefix, editInt, editClamp,
 }: {
   label: string; value: number; min: number; max: number; step: number
   fmt: (n: number) => string; onChange: (v: number) => void; disabled?: boolean; tip?: string

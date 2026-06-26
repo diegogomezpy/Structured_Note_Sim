@@ -320,6 +320,27 @@ input:focus, select:focus { outline: none; border-color: var(--accent); box-shad
 }
 .tick-leaving { animation: tickerCellOut 260ms var(--ease-exit) both; pointer-events: none; }
 
+/* Continuous scrolling marquee — a real quote-screen ticker. The track holds the
+   row repeated enough to overfill the viewport on each half; translating it by
+   exactly one half (-50%) loops seamlessly. Pauses on hover so you can read a
+   ticker (and its hover quote card sits still). */
+.ticker-marquee { flex: 1; min-width: 0; overflow: hidden; position: relative; }
+/* Soft fade at both edges so cells scroll in/out rather than hard-clipping. */
+.ticker-marquee::before, .ticker-marquee::after {
+  content: ''; position: absolute; top: 0; bottom: 0; width: 28px; z-index: 1; pointer-events: none;
+}
+.ticker-marquee::before { left: 0; background: linear-gradient(90deg, #1c241f, transparent); }
+.ticker-marquee::after { right: 0; background: linear-gradient(270deg, #1c241f, transparent); }
+.ticker-track { display: flex; width: max-content; will-change: transform; animation: tickerScroll linear infinite; }
+.ticker-seq { display: flex; flex-shrink: 0; }
+@keyframes tickerScroll { from { transform: translateX(0); } to { transform: translateX(-50%); } }
+.ticker-marquee:hover .ticker-track { animation-play-state: paused; }
+@media (prefers-reduced-motion: reduce) {
+  .ticker-track { animation: none; transform: none; }
+  .ticker-marquee { overflow-x: auto; scrollbar-width: none; }
+  .ticker-marquee::before, .ticker-marquee::after { display: none; }
+}
+
 /* Staggered children reveal — sequence cards/panels in rather than snapping them
    all at once (Motion: one mover at a time). Applied to result grids/columns. */
 .stagger > * { animation: fadeUp var(--dur-enter) var(--ease-enter) both; }

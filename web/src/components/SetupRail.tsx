@@ -144,19 +144,19 @@ export default function SetupRail({
         <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--text-muted)', marginBottom: 12 }}>{t('quick_edit')}</div>
 
         <Slider label={t('maturity')} value={terms.maturity} min={0.25} max={5} step={0.25} tip={t('tip_maturity')}
-                editDigits={2} editSuffix="y" fmt={(v) => `${v.toFixed(2)} y`} onChange={(v) => set('maturity', v)} />
+                editSuffix="y" fmt={(v) => `${v.toFixed(2)} y`} onChange={(v) => set('maturity', v)} />
         <SegmentedField label={t('frequency')} value={terms.payment_freq} tip={t('tip_frequency')}
                         options={FREQS.map((f) => ({ value: f, label: FREQ_SHORT[f] }))}
                         onChange={(v) => set('payment_freq', v)} />
         <Slider label={t('coupon_pa')} value={terms.coupon_pa} min={0} max={0.3} step={0.005} tip={t('tip_coupon_pa')}
-                pct editDigits={2} editSuffix="%" fmt={(v) => pct(v, 1)} onChange={(v) => set('coupon_pa', v)} />
+                pct editSuffix="%" fmt={(v) => pct(v, 1)} onChange={(v) => set('coupon_pa', v)} />
 
         <Slider label={t('coupon_barrier')} value={terms.coupon_barrier} min={0} max={1} step={0.01} tip={t('tip_coupon_barrier')}
-                pct editDigits={1} editSuffix="%" fmt={pct0} onChange={(v) => set('coupon_barrier', v)} />
+                pct editSuffix="%" fmt={pct0} onChange={(v) => set('coupon_barrier', v)} />
         <Slider label={t('knock_in_barrier')} value={terms.knock_in_barrier} min={0} max={1} step={0.01} tip={t('tip_knock_in')}
-                tone="danger" pct editDigits={1} editSuffix="%" fmt={pct0} onChange={(v) => set('knock_in_barrier', v)} />
+                tone="danger" pct editSuffix="%" fmt={pct0} onChange={(v) => set('knock_in_barrier', v)} />
         <Slider label={t('autocall_barrier')} value={terms.autocall_barrier} min={0.5} max={1.5} step={0.01} tip={t('tip_autocall')}
-                pct editDigits={1} editSuffix="%" fmt={pct0} onChange={(v) => set('autocall_barrier', v)} />
+                pct editSuffix="%" fmt={pct0} onChange={(v) => set('autocall_barrier', v)} />
       </div>
 
       {/* Second group — the next-most-edited mechanics, inline so they don't
@@ -179,7 +179,7 @@ export default function SetupRail({
                      onChange={(on) => set('one_star_level', on ? 1.0 : null)} />
         {terms.one_star_level != null && (
           <Slider label={t('one_star_level')} value={terms.one_star_level} min={0.5} max={1.5} step={0.01}
-                  pct editDigits={1} editSuffix="%" fmt={pct0} onChange={(v) => set('one_star_level', v)} />
+                  pct editSuffix="%" fmt={pct0} onChange={(v) => set('one_star_level', v)} />
         )}
       </div>
 
