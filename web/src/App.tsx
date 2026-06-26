@@ -267,7 +267,7 @@ export default function App() {
                       background: 'var(--accent-weak)', color: 'var(--accent-text)',
                       display: 'flex', alignItems: 'center', justifyContent: 'center',
                     }}><BrandMark size={28} /></div>
-                    <div style={{ fontSize: 17, fontWeight: 600, marginBottom: 8 }}>{t('no_run_title')}</div>
+                    <div style={{ fontFamily: 'var(--font-serif)', fontSize: 19, fontWeight: 600, letterSpacing: '-0.01em', marginBottom: 8 }}>{t('no_run_title')}</div>
                     <div style={{ fontSize: 13.5, color: 'var(--text-muted)', lineHeight: 1.65 }}>{t('no_run_body')}</div>
                   </div>
                 </Panel>

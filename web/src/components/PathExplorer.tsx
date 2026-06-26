@@ -7,7 +7,11 @@ import Icon from './Icon'
 import type { ExplorerData, ExplorerPath } from '../api/types'
 
 type Kind = 'ac' | 'mat' | 'ki'
-const KIND_COLOR: Record<Kind, string> = { ac: '#3b82f6', mat: '#22c55e', ki: '#ef4444' }
+/* Mercator outcome palette (distinct shades so autocalled vs held read apart):
+   autocalled viridian, held-to-maturity secondary viridian, knocked-in claret.
+   Used for both the chart traces and the DOM legend chips; plotlyTheme lightens
+   these in dark mode. */
+const KIND_COLOR: Record<Kind, string> = { ac: '#15694e', mat: '#3f8a6f', ki: '#9c3b30' }
 
 function classify(p: ExplorerPath): Kind {
   if (p.ap > 0) return 'ac'

@@ -66,6 +66,8 @@ const SERIES_REMAP: Record<Mode, Record<string, string>> = {
     '#1a2e4a': '#eef1ea', '#2c3e50': '#eef1ea',
     '#e5e7eb': '#2a332c', '#f1f5f9': '#232c24', '#6b7280': '#9aa49b', '#64748b': '#9aa49b',
     '#94a3b8': '#9aa49b', '#cccccc': '#3a453c', '#dddddd': '#2a332c',
+    // Mercator literals (e.g. PathExplorer outcome palette) → dark family
+    '#15694e': '#3fae86', '#3f8a6f': '#5cc09c', '#9c3b30': '#d97a6e',
     'rgba(37,99,235,0.08)': 'rgba(63,174,134,0.10)',
     'rgba(37,99,235,0.04)': 'rgba(63,174,134,0.06)',
     'rgba(37,99,235,0.20)': 'rgba(63,174,134,0.24)',
