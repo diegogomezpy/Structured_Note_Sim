@@ -247,6 +247,7 @@ export interface UnderlyingMetric {
   iv_3m: number | null
   iv_source: string | null
   last_price: number | null
+  day_change: number | null
   rsi_14: number | null
   business_summary: string | null
   figure: any

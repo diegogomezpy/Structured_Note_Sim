@@ -464,7 +464,7 @@ def load_underlying_metrics(
     for sym, name in tickers.items():
         rec = {k: None for k in (
             "long_name", "type", "sector", "industry", "market_cap", "currency",
-            "last_price", "rsi_14", "iv_3m", "iv_source", "business_summary")}
+            "last_price", "day_change", "rsi_14", "iv_3m", "iv_source", "business_summary")}
         try:
             t = yf.Ticker(sym)
             try:
@@ -490,6 +490,8 @@ def load_underlying_metrics(
                 _ps = ser.dropna()
                 rec["last_price"] = float(_ps.iloc[-1])
                 rec["rsi_14"]     = _wilder_rsi(_ps.values)
+                if len(_ps) >= 2:
+                    rec["day_change"] = float(_ps.iloc[-1] / _ps.iloc[-2] - 1.0)
                 _hist = _ps.values
             else:
                 rec["last_price"] = (info.get("currentPrice")
@@ -499,6 +501,8 @@ def load_underlying_metrics(
                     if len(h):
                         rec["last_price"] = rec["last_price"] or float(h.iloc[-1])
                         rec["rsi_14"]     = _wilder_rsi(h.values)
+                        if len(h) >= 2:
+                            rec["day_change"] = float(h.iloc[-1] / h.iloc[-2] - 1.0)
                         _hist = h.values
                 except Exception:
                     pass

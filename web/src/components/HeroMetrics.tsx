@@ -1,16 +1,21 @@
 import AnimatedNumber from './AnimatedNumber'
 import { useI18n } from '../i18n/I18nProvider'
-import { pct } from '../lib/format'
+import { pct, num } from '../lib/format'
 import type { SimSummary } from '../api/types'
 
 interface Card {
   label: string
   value: number
   format: (n: number) => string
+  unit?: string
   hint?: string
   tip: string
   tone: 'accent' | 'plain' | 'good' | 'bad'
 }
+
+/** Bare-number percentage formatter (the unit is rendered separately, smaller +
+    muted — the register's split-unit rule). */
+const pctNum = (dp: number) => (n: number) => num(n * 100, dp)
 
 const toneColor: Record<Card['tone'], string> = {
   accent: 'var(--accent-text)',
@@ -29,8 +34,9 @@ function Group({ title, cards }: { title: string; cards: Card[] }) {
             <div className="eyebrow" style={{ marginBottom: 12, display: 'flex', alignItems: 'center', gap: 5 }}>
               {c.label}<span style={{ color: 'var(--text-faint)', fontWeight: 400 }}>ⓘ</span>
             </div>
-            <div className="mono" style={{ fontSize: 33, fontWeight: 600, color: toneColor[c.tone], lineHeight: 0.95, letterSpacing: '-0.02em' }}>
+            <div className="mono" style={{ fontSize: 33, fontWeight: 600, color: toneColor[c.tone], lineHeight: 0.95, letterSpacing: '-0.02em', display: 'flex', alignItems: 'baseline', gap: 1 }}>
               <AnimatedNumber value={c.value} format={c.format} />
+              {c.unit && <span className="fig-unit" style={{ color: c.tone === 'plain' ? 'var(--text-faint)' : 'inherit', opacity: c.tone === 'plain' ? 1 : 0.7 }}>{c.unit}</span>}
             </div>
             {c.hint && <div className="mono" style={{ fontSize: 11, color: 'var(--text-faint)', marginTop: 10 }}>{c.hint}</div>}
           </div>
@@ -49,20 +55,20 @@ export default function HeroMetrics({ summary }: { summary: SimSummary }) {
   const ki = summary.prob_knock_in_total ?? 0
 
   const expected: Card[] = [
-    { label: t('expected_irr'), value: irr, format: (n) => pct(n, 2), tip: t('tip_expected_irr'),
+    { label: t('expected_irr'), value: irr, format: pctNum(2), unit: '%', tip: t('tip_expected_irr'),
       hint: `${t('vs_coupon')} ${pct(summary.coupon_pa, 1)}`, tone: irr >= 0 ? 'accent' : 'bad' },
-    { label: t('expected_total_return'), value: summary.expected_total_return ?? 0, format: (n) => pct(n, 2),
+    { label: t('expected_total_return'), value: summary.expected_total_return ?? 0, format: pctNum(2), unit: '%',
       tip: t('tip_expected_total_return'), tone: (summary.expected_total_return ?? 0) >= 0 ? 'plain' : 'bad' },
-    { label: t('expected_coupon'), value: summary.expected_coupon ?? 0, format: (n) => pct(n, 2),
+    { label: t('expected_coupon'), value: summary.expected_coupon ?? 0, format: pctNum(2), unit: '%',
       tip: t('tip_expected_coupon'), tone: 'plain' },
   ]
 
   const risk: Card[] = [
-    { label: t('p_autocall'), value: summary.prob_autocall ?? 0, format: (n) => pct(n, 2),
+    { label: t('p_autocall'), value: summary.prob_autocall ?? 0, format: pctNum(2), unit: '%',
       hint: peakIdx >= 0 ? `${t('period')} P${peakIdx + 1}` : undefined, tip: t('tip_p_autocall'), tone: 'plain' },
-    { label: t('p_knock_in'), value: ki, format: (n) => pct(n, ki < 0.1 ? 2 : 1), tip: t('tip_p_knock_in'),
+    { label: t('p_knock_in'), value: ki, format: pctNum(ki < 0.1 ? 2 : 1), unit: '%', tip: t('tip_p_knock_in'),
       tone: ki <= 0.15 ? 'good' : 'bad' },
-    { label: t('loss_given_ki'), value: summary.loss_given_knock_in ?? 0, format: (n) => pct(n, 2),
+    { label: t('loss_given_ki'), value: summary.loss_given_knock_in ?? 0, format: pctNum(2), unit: '%',
       tip: t('tip_loss_given_ki'), tone: (summary.loss_given_knock_in ?? 0) >= 0 ? 'plain' : 'bad' },
   ]
 

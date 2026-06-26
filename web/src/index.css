@@ -210,6 +210,26 @@ a { color: var(--accent-text); text-decoration: none; }
   color: var(--accent); font-weight: 600;
   border-bottom: 1.5px solid var(--accent); border-radius: 0;
 }
+/* Danger — destructive actions (remove, reset, discard). Rust, Controls doc. */
+.btn--danger { color: var(--red); background: var(--surface); border-color: var(--red-weak); }
+.btn--danger:hover { background: var(--red-weak); border-color: var(--red); }
+/* Icon-only remove/destructive control — faint until hovered, then rust. */
+.icon-remove { color: var(--text-faint); transition: color var(--dur-micro) var(--ease-settle); }
+.icon-remove:hover { color: var(--red); }
+
+/* Segmented control — pill of mutually-exclusive choices (engine, frequency,
+   range). Viridian active segment; the rest read as muted labels. Controls doc. */
+.seg { display: inline-flex; border: 1px solid var(--border-strong); border-radius: 6px; overflow: hidden; }
+.seg > button {
+  flex: 1; font-family: var(--font-sans); font-size: 12px; font-weight: 500;
+  color: var(--text-muted); background: transparent; border: none; cursor: pointer;
+  padding: 7px 13px; white-space: nowrap;
+  transition: background var(--dur-micro) var(--ease-settle), color var(--dur-micro) var(--ease-settle);
+}
+.seg > button + button { border-left: 1px solid var(--border-strong); }
+.seg > button:hover:not(.seg--on) { background: var(--surface-hover); color: var(--text); }
+.seg > button.seg--on { background: var(--accent); color: #fffefb; font-weight: 600; }
+.seg:focus-within { box-shadow: 0 0 0 3px var(--ring); border-radius: 6px; }
 
 input, select {
   font-family: var(--font-sans);
@@ -348,6 +368,18 @@ input[type='range']::-moz-range-thumb {
   transition: transform var(--dur-micro) var(--ease-settle), box-shadow var(--dur-micro) var(--ease-settle);
 }
 input[type='range']:active::-moz-range-thumb { transform: scale(1.3); box-shadow: 0 0 0 6px var(--ring); }
+
+/* Downside slider (knock-in / protection barriers) — rust thumb + halo, so the
+   protective barrier reads apart from the upside controls. Pricer/Mobile docs.
+   The filled track is set inline (a value-driven linear-gradient). */
+input[type='range'].range--danger::-webkit-slider-thumb { border-color: var(--red); box-shadow: 0 0 0 1px var(--red); }
+input[type='range'].range--danger:active::-webkit-slider-thumb { box-shadow: 0 0 0 1px var(--red), 0 0 0 6px var(--red-weak); }
+input[type='range'].range--danger::-moz-range-thumb { border-color: var(--red); }
+input[type='range'].range--danger:active::-moz-range-thumb { box-shadow: 0 0 0 6px var(--red-weak); }
+
+/* Field error — rust border + halo + mono message under the control. Controls doc. */
+input.field-invalid, select.field-invalid { border-color: var(--red); box-shadow: 0 0 0 3px var(--red-weak); }
+.field-msg { font-family: var(--font-mono); font-size: 10px; color: var(--red); margin-top: 5px; }
 
 /* Dual-thumb range (path-inspector return band): two range inputs overlaid;
    only the thumbs receive pointer events so both stay draggable. */

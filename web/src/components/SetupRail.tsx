@@ -3,7 +3,7 @@ import { useI18n } from '../i18n/I18nProvider'
 import { pct } from '../lib/format'
 import { nObs } from '../lib/terms'
 import Icon from './Icon'
-import { Slider, SelectField, ToggleField } from './fields'
+import { Slider, SelectField, SegmentedField, ToggleField } from './fields'
 import AddNoteHelp from './AddNoteHelp'
 import UnderlyingPicker from './UnderlyingPicker'
 import type { ConfigMeta, NoteTerms } from '../api/types'
@@ -16,6 +16,10 @@ export interface RunOpts {
 }
 
 const FREQS: NoteTerms['payment_freq'][] = ['monthly', 'quarterly', 'semi-annual', 'annual']
+/** Compact codes for the narrow rail's segmented frequency control. */
+const FREQ_SHORT: Record<NoteTerms['payment_freq'], string> = {
+  monthly: 'M', quarterly: 'Q', 'semi-annual': 'S/A', annual: 'A',
+}
 const BASKETS: NoteTerms['coupon_basket'][] = ['worst_of', 'best_of', 'average']
 const pct0 = (v: number) => pct(v, 0)
 
@@ -95,16 +99,16 @@ export default function SetupRail({
 
         <Slider label={t('maturity')} value={terms.maturity} min={0.25} max={5} step={0.25} tip={t('tip_maturity')}
                 fmt={(v) => `${v.toFixed(2)} y`} onChange={(v) => set('maturity', v)} />
-        <SelectField label={t('frequency')} value={terms.payment_freq} tip={t('tip_frequency')}
-                     options={FREQS.map((f) => ({ value: f, label: t(`freq_${f}`) }))}
-                     onChange={(v) => set('payment_freq', v)} />
+        <SegmentedField label={t('frequency')} value={terms.payment_freq} tip={t('tip_frequency')}
+                        options={FREQS.map((f) => ({ value: f, label: FREQ_SHORT[f] }))}
+                        onChange={(v) => set('payment_freq', v)} />
         <Slider label={t('coupon_pa')} value={terms.coupon_pa} min={0} max={0.3} step={0.005} tip={t('tip_coupon_pa')}
                 fmt={(v) => pct(v, 1)} onChange={(v) => set('coupon_pa', v)} />
 
         <Slider label={t('coupon_barrier')} value={terms.coupon_barrier} min={0} max={1} step={0.01} tip={t('tip_coupon_barrier')}
                 fmt={pct0} onChange={(v) => set('coupon_barrier', v)} />
         <Slider label={t('knock_in_barrier')} value={terms.knock_in_barrier} min={0} max={1} step={0.01} tip={t('tip_knock_in')}
-                fmt={pct0} onChange={(v) => set('knock_in_barrier', v)} />
+                tone="danger" fmt={pct0} onChange={(v) => set('knock_in_barrier', v)} />
         <Slider label={t('autocall_barrier')} value={terms.autocall_barrier} min={0.5} max={1.5} step={0.01} tip={t('tip_autocall')}
                 fmt={pct0} onChange={(v) => set('autocall_barrier', v)} />
       </div>

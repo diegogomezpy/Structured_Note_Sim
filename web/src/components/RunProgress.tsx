@@ -34,6 +34,17 @@ export default function RunProgress() {
           </span>
         ))}
       </div>
+
+      {/* Skeleton metric cards in the panel's own shapes (States doc) — they
+          shimmer where the hero figures will land. */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 14, marginTop: 10 }}>
+        {[0, 1, 2].map((i) => (
+          <div key={i} className="card" style={{ padding: '18px 20px', boxShadow: 'none' }}>
+            <div className="skeleton" style={{ height: 9, width: '55%', marginBottom: 16 }} />
+            <div className="skeleton" style={{ height: 26, width: '78%' }} />
+          </div>
+        ))}
+      </div>
     </div>
   )
 }

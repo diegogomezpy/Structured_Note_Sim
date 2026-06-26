@@ -6,7 +6,7 @@ import Modal from './Modal'
 import Icon from './Icon'
 import UnderlyingPicker from './UnderlyingPicker'
 import UnderlyingDetails from './UnderlyingDetails'
-import { Slider, NumberField, SelectField, ToggleField, TextField } from './fields'
+import { Slider, NumberField, SelectField, SegmentedField, ToggleField, TextField } from './fields'
 import { NOTE_TYPES, detectNoteType, applyPreset } from '../lib/noteType'
 import type { RunOpts } from './SetupRail'
 import type { Basket, NoteTerms } from '../api/types'
@@ -94,8 +94,8 @@ export default function SettingsOverlay({
         <Grid>
           <Slider label={t('maturity')} value={terms.maturity} min={0.25} max={5} step={0.25}
                   fmt={(v) => `${v.toFixed(2)} y`} onChange={(v) => set('maturity', v)} />
-          <SelectField label={t('frequency')} value={terms.payment_freq}
-                       options={FREQS.map((f) => ({ value: f, label: t(`freq_${f}`) }))} onChange={(v) => set('payment_freq', v)} />
+          <SegmentedField label={t('frequency')} value={terms.payment_freq}
+                          options={FREQS.map((f) => ({ value: f, label: t(`freq_${f}`) }))} onChange={(v) => set('payment_freq', v)} />
           <Slider label={t('coupon_pa')} value={terms.coupon_pa} min={0} max={0.3} step={0.005}
                   fmt={(v) => pct(v, 1)} onChange={(v) => set('coupon_pa', v)} />
           <SelectField label={t('coupon_basket')} value={terms.coupon_basket} options={basketOpts} onChange={(v) => set('coupon_basket', v)} />
@@ -108,6 +108,7 @@ export default function SettingsOverlay({
       <Group n={3} title={t('sec_protection')}>
         <Grid>
           <NumberField label={t('knock_in_barrier')} value={terms.knock_in_barrier} percent suffix="%" min={0} max={100} step={0.5}
+                       error={terms.knock_in_barrier > 1 ? t('barrier_max') : undefined}
                        onChange={(v) => set('knock_in_barrier', v)} />
         </Grid>
         <Grid>
@@ -181,9 +182,9 @@ export default function SettingsOverlay({
           <SelectField label={t('paths')} value={String(opts.n_paths)}
                        options={PATH_PRESETS.map((p) => ({ value: String(p), label: p.toLocaleString() }))}
                        onChange={(v) => onOptsChange({ ...opts, n_paths: parseInt(v) })} />
-          <SelectField label={t('engine')} value={opts.engine}
-                       options={[{ value: 'numpy', label: 'numpy' }, { value: 'cpp', label: cppAvailable ? 'C++' : 'C++ (auto-fallback)' }]}
-                       onChange={(v) => onOptsChange({ ...opts, engine: v === 'cpp' ? 'cpp' : 'numpy' })} />
+          <SegmentedField label={t('engine')} value={opts.engine}
+                          options={[{ value: 'numpy', label: 'numpy' }, { value: 'cpp', label: cppAvailable ? 'C++' : 'C++ (fallback)' }]}
+                          onChange={(v) => onOptsChange({ ...opts, engine: v === 'cpp' ? 'cpp' : 'numpy' })} />
           <NumberField label={t('seed')} value={opts.seed} step={1} min={0} onChange={(v) => onOptsChange({ ...opts, seed: Math.round(v) })} />
           <SelectField label={t('calib_window')} value={String(opts.calib_years)}
                        options={CALIB_YEARS.map((y) => ({ value: String(y), label: `${y} ${t('calib_years')}` }))}

@@ -51,8 +51,8 @@ export default function UnderlyingPicker({
                 style={{ background: 'var(--surface-2)', color: 'var(--text)', border: '1px solid var(--border)', paddingLeft: 5, paddingRight: 6 }}>
             <TickerLogo symbol={s} name={name} size={17} />{name}
             {entries.length > 1 && (
-              <button onClick={() => remove(s)} aria-label={`Remove ${name}`}
-                style={{ border: 'none', background: 'transparent', cursor: 'pointer', color: 'var(--text-faint)', display: 'inline-flex', padding: 0, marginLeft: 1 }}>
+              <button onClick={() => remove(s)} aria-label={`Remove ${name}`} className="icon-remove"
+                style={{ border: 'none', background: 'transparent', cursor: 'pointer', display: 'inline-flex', padding: 0, marginLeft: 1 }}>
                 <Icon name="x" size={13} />
               </button>
             )}

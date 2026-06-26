@@ -144,6 +144,9 @@ export const S: Dict = {
   run:              { en: 'Run simulation', es: 'Ejecutar simulación' },
   rerun:            { en: 'Re-run', es: 'Re-ejecutar' },
   running:          { en: 'Running…', es: 'Ejecutando…' },
+  retry:            { en: 'Retry', es: 'Reintentar' },
+  error_title:      { en: 'Simulation failed', es: 'La simulación falló' },
+  barrier_max:      { en: '≤ 100% required', es: '≤ 100% requerido' },
 
   // frequencies
   freq_monthly:     { en: 'Monthly', es: 'Mensual' },

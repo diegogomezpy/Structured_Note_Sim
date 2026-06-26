@@ -4,6 +4,8 @@ import { blankNote } from './lib/blankNote'
 import type { BacktestResult, BtRange, ConfigMeta, LiveResult, NoteTerms, SimResult } from './api/types'
 import { useI18n } from './i18n/I18nProvider'
 import Header from './components/Header'
+import TickerTape from './components/TickerTape'
+import ErrorState from './components/ErrorState'
 import SetupRail, { type RunOpts } from './components/SetupRail'
 import NoteTimeline from './components/NoteTimeline'
 import { noteSummary } from './lib/terms'
@@ -195,6 +197,7 @@ export default function App() {
   return (
     <div className="ground" style={{ minHeight: '100%', display: 'flex', flexDirection: 'column' }}>
       <Header terms={terms} run={runMeta} />
+      {terms && <TickerTape terms={terms} />}
 
       <div className="app-layout">
         <aside className="app-rail">
@@ -251,24 +254,19 @@ export default function App() {
                 </div>
               )}
               {status === 'running' && <Panel><RunProgress /></Panel>}
-              {status === 'error' && (
-                <Panel>
-                  <div style={{ color: 'var(--red)', fontSize: 13 }}>
-                    <strong>{t('error')}.</strong> {errorMsg}
-                  </div>
-                </Panel>
-              )}
+              {status === 'error' && <ErrorState message={errorMsg} onRetry={run} />}
               {status !== 'running' && result && terms && <MonteCarloPanel result={result} terms={terms} />}
               {status === 'idle' && !result && (
                 <Panel pad={48}>
-                  <div style={{ textAlign: 'center', maxWidth: 440, margin: '0 auto' }}>
+                  <div style={{ textAlign: 'center', maxWidth: 440, margin: '0 auto', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
                     <div style={{
-                      width: 52, height: 52, borderRadius: 14, margin: '0 auto 16px',
+                      width: 52, height: 52, borderRadius: 14, marginBottom: 16,
                       background: 'var(--accent-weak)', color: 'var(--accent-text)',
                       display: 'flex', alignItems: 'center', justifyContent: 'center',
                     }}><BrandMark size={28} /></div>
                     <div style={{ fontFamily: 'var(--font-serif)', fontSize: 19, fontWeight: 600, letterSpacing: '-0.01em', marginBottom: 8 }}>{t('no_run_title')}</div>
-                    <div style={{ fontSize: 13.5, color: 'var(--text-muted)', lineHeight: 1.65 }}>{t('no_run_body')}</div>
+                    <div style={{ fontSize: 13.5, color: 'var(--text-muted)', lineHeight: 1.65, marginBottom: 20 }}>{t('no_run_body')}</div>
+                    <button className="btn btn--primary" onClick={run}><Icon name="play" size={14} /> {t('run')}</button>
                   </div>
                 </Panel>
               )}
@@ -295,9 +293,7 @@ export default function App() {
                   </div>
                 </Panel>
               )}
-              {btStatus === 'error' && (
-                <Panel><div style={{ color: 'var(--red)', fontSize: 13 }}><strong>{t('error')}.</strong> {btError}</div></Panel>
-              )}
+              {btStatus === 'error' && <ErrorState message={btError} onRetry={() => fetchBacktest()} />}
               {btStatus !== 'running' && btResult && terms && (
                 <BacktestPanel result={btResult} terms={terms} range={btRange} onApplyRange={applyBtRange} />
               )}
@@ -324,9 +320,7 @@ export default function App() {
                   </div>
                 </Panel>
               )}
-              {liveStatus === 'error' && (
-                <Panel><div style={{ color: 'var(--red)', fontSize: 13 }}><strong>{t('error')}.</strong> {liveError}</div></Panel>
-              )}
+              {liveStatus === 'error' && <ErrorState message={liveError} onRetry={fetchLive} />}
               {liveStatus !== 'running' && liveResult && terms && <LivePanel result={liveResult} terms={terms} />}
             </>
           )}
