@@ -142,11 +142,11 @@ export default function LivePanel({ result }: { result: LiveResult; terms: NoteT
       {/* Observation history */}
       <Panel title={t('live_obs_history')} pad={0}>
         <div style={{ maxHeight: 420, overflow: 'auto' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+          <table className="ledger">
             <thead>
               <tr style={{ position: 'sticky', top: 0, background: 'var(--surface)', zIndex: 1 }}>
                 {[t('live_col_period'), t('live_col_date'), t('live_col_status'), t('live_col_wof'), t('live_col_coupon'), t('live_col_cumulative')].map((h, i) => (
-                  <th key={h} style={{ textAlign: i >= 3 ? 'right' : 'left', padding: '10px 16px', fontSize: 10.5, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--text-muted)', borderBottom: '1px solid var(--border)' }}>{h}</th>
+                  <th key={h} className={i >= 3 ? 'num' : undefined}>{h}</th>
                 ))}
               </tr>
             </thead>
@@ -154,18 +154,18 @@ export default function LivePanel({ result }: { result: LiveResult; terms: NoteT
               {rows.map((r: LiveObsRow) => {
                 const m = STATUS_META[r.status]
                 return (
-                  <tr key={r.period} style={{ borderBottom: '1px solid var(--border)', opacity: r.upcoming ? 0.55 : 1 }}>
-                    <td className="mono" style={{ padding: '9px 16px', fontWeight: 600 }}>{r.period}</td>
-                    <td className="mono" style={{ padding: '9px 16px', color: 'var(--text-muted)' }}>{r.date ?? '—'}</td>
-                    <td style={{ padding: '9px 16px' }}>
+                  <tr key={r.period} style={{ opacity: r.upcoming ? 0.55 : 1 }}>
+                    <td style={{ fontWeight: 600 }}>{r.period}</td>
+                    <td style={{ color: 'var(--text-muted)' }}>{r.date ?? '—'}</td>
+                    <td>
                       <span style={{ display: 'inline-flex', alignItems: 'center', gap: 7 }}>
                         <span style={{ width: 8, height: 8, borderRadius: '50%', background: m.color }} />
                         {t(m.key)}
                       </span>
                     </td>
-                    <td className="mono" style={{ padding: '9px 16px', textAlign: 'right', color: r.wof != null && r.wof < (s.knock_in_barrier ?? 0) ? 'var(--red)' : 'var(--text)' }}>{r.wof != null ? pct(r.wof, 1) : '—'}</td>
-                    <td className="mono" style={{ padding: '9px 16px', textAlign: 'right', color: r.coupon ? 'var(--green)' : 'var(--text-faint)' }}>{r.coupon ? pct(r.coupon, 2) : '—'}</td>
-                    <td className="mono" style={{ padding: '9px 16px', textAlign: 'right' }}>{r.cumulative != null ? pct(r.cumulative, 2) : '—'}</td>
+                    <td className="num" style={{ color: r.wof != null && r.wof < (s.knock_in_barrier ?? 0) ? 'var(--red)' : 'var(--text)' }}>{r.wof != null ? pct(r.wof, 1) : '—'}</td>
+                    <td className="num" style={{ color: r.coupon ? 'var(--green)' : 'var(--text-faint)' }}>{r.coupon ? pct(r.coupon, 2) : '—'}</td>
+                    <td className="num">{r.cumulative != null ? pct(r.cumulative, 2) : '—'}</td>
                   </tr>
                 )
               })}
