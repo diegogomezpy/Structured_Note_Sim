@@ -89,7 +89,7 @@ export default function CoverPhotoPicker({ terms, onPick }: {
                     borderRadius: 9, aspectRatio: '16 / 10', background: 'var(--surface-2)',
                     border: pickedId === p.id ? '2px solid var(--accent)' : '1px solid var(--border)',
                   }}>
-            <img src={p.thumb} alt={p.alt} loading="lazy" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+            <img src={p.thumb} alt={p.alt} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
             {busyId === p.id && (
               <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(15,18,16,.45)', color: '#fff' }}>
                 <Icon name="spinner" size={18} />
