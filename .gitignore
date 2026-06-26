@@ -60,3 +60,6 @@ data/*.csv
 # Brand fonts are licensed assets — kept local like the branding config
 fonts/brand/*.ttf
 fonts/brand/*.otf
+
+# Local firm design-language material (CADIEM etc.) — never published.
+branding/CADIEM_design_lang/
