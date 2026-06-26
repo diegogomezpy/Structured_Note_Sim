@@ -3,7 +3,7 @@ import { useI18n } from '../i18n/I18nProvider'
 import { pct } from '../lib/format'
 import { nObs } from '../lib/terms'
 import Icon from './Icon'
-import { Slider, SelectField, SegmentedField, ToggleField } from './fields'
+import { Slider, SelectField, SegmentedField, ToggleField, Select } from './fields'
 import AddNoteHelp from './AddNoteHelp'
 import UnderlyingPicker from './UnderlyingPicker'
 import type { ConfigMeta, NoteTerms } from '../api/types'
@@ -82,10 +82,8 @@ export default function SetupRail({
           <input ref={fileRef} type="file" accept="application/json,.json" style={{ display: 'none' }}
                  onChange={(e) => onFile(e.target.files?.[0])} />
         </div>
-        <select value={configFile} onChange={(e) => onSelectConfig(e.target.value)}>
-          <option value="">{t('blank_note')}</option>
-          {configs.map((c) => <option key={c.file} value={c.file}>{c.name}</option>)}
-        </select>
+        <Select value={configFile} onChange={onSelectConfig} ariaLabel={t('config_label')}
+                options={[{ value: '', label: t('blank_note') }, ...configs.map((c) => ({ value: c.file, label: c.name }))]} />
         {uploadErr && <div style={{ fontSize: 11.5, color: 'var(--red)', marginTop: 5 }}>{uploadErr}</div>}
       </div>
 

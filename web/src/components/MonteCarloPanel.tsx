@@ -107,7 +107,7 @@ export default function MonteCarloPanel({ result, terms }: { result: SimResult; 
               <div style={{ height: 360 }}><Figure fig={figures.corr_diff} name="corr_difference" /></div>
             </Panel>
           </div>
-          <Panel title={t('calibration_h')} pad={0}>
+          <Panel title={t('calibration_h')} pad={16}>
             <CalibrationTable summary={summary} nameToSym={nameToSym} />
           </Panel>
         </div>

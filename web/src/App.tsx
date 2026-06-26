@@ -294,7 +294,7 @@ export default function App() {
                 </Panel>
               )}
               {btStatus === 'error' && <ErrorState message={btError} onRetry={() => fetchBacktest()} />}
-              {btStatus !== 'running' && btResult && terms && (
+              {btStatus !== 'running' && btStatus !== 'error' && btResult && terms && (
                 <BacktestPanel result={btResult} terms={terms} range={btRange} onApplyRange={applyBtRange} />
               )}
             </>

@@ -10,9 +10,9 @@ import { SENTIMENT_COLOR } from './UnderlyingDetails'
 import { marketCap, price, pct, num } from '../lib/format'
 import type { NoteTerms, UnderlyingMetric, UnderlyingOverride } from '../api/types'
 
-function Metric({ label, value, help }: { label: string; value: string; help?: string }) {
+function Metric({ label, value }: { label: string; value: string }) {
   return (
-    <div title={help} style={{ background: 'var(--surface-2)', border: '1px solid var(--border)', borderRadius: 9, padding: '9px 11px' }}>
+    <div style={{ background: 'var(--surface)', padding: '9px 12px' }}>
       <div style={{ fontSize: 9.5, fontWeight: 600, letterSpacing: '0.05em', textTransform: 'uppercase', color: 'var(--text-muted)', marginBottom: 4 }}>{label}</div>
       <div className="mono" style={{ fontSize: 16, fontWeight: 600 }}>{value}</div>
     </div>
@@ -93,9 +93,10 @@ function Card({ m, override, chart = true }: { m: UnderlyingMetric; override: Un
         </div>
       </div>
 
-      {/* auto-fit so the boxes wrap to 2×2 in a narrow (multi-underlying) card
-          instead of overflowing, and sit 1×4 when the card is wide. */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(116px, 1fr))', gap: 10 }}>
+      {/* Ruled register grid (hairlines via 1px gaps over a border-coloured
+          ground) — matches the calibration cards. Auto-fit wraps to 2×2 in a
+          narrow multi-underlying card and sits 1×4 when the card is wide. */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(108px, 1fr))', gap: 1, background: 'var(--border)', border: '1px solid var(--border)', borderRadius: 8, overflow: 'hidden' }}>
         <Metric label={t('ul_market_cap')} value={marketCap(m.market_cap)} />
         <Metric label={ivRealized ? t('ul_vol_3m') : t('ul_iv_3m')} value={m.iv_3m != null ? pct(m.iv_3m, 1) : '—'} />
         <Metric label={t('ul_last_price')} value={price(m.last_price)} />
@@ -210,6 +211,15 @@ export default function UnderlyingCards({ terms }: { terms: NoteTerms }) {
           {status === 'error' && <div style={{ color: 'var(--red)', fontSize: 12.5, padding: '8px 0' }}>{t('ul_load_fail')}</div>}
           {rows && status !== 'loading' && (
             <>
+              {/* Editorial lead — viridian rule + serif title + supporting line,
+                  mirroring the note description so the section reads in-voice. */}
+              <div className="fade-up" style={{ display: 'flex', gap: 14, marginBottom: 16 }}>
+                <div style={{ width: 2, borderRadius: 2, background: 'var(--accent)', flexShrink: 0 }} />
+                <div style={{ maxWidth: 660 }}>
+                  <div style={{ fontFamily: 'var(--font-serif)', fontSize: 15.5, fontWeight: 600, letterSpacing: '-0.01em', color: 'var(--text)' }}>{t('ul_breakdown')}</div>
+                  <div style={{ fontSize: 12.5, lineHeight: 1.6, color: 'var(--text-muted)', marginTop: 3 }}>{t('ul_breakdown_lead')}</div>
+                </div>
+              </div>
               {many && (
                 <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 8 }}>
                   <button className="btn btn--ghost" style={{ padding: '4px 10px', fontSize: 11.5 }}

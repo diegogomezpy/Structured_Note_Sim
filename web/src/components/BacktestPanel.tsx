@@ -7,6 +7,7 @@ import Icon from './Icon'
 import TickerLogo from './TickerLogo'
 import BacktestPathExplorer from './BacktestPathExplorer'
 import AnimatedNumber from './AnimatedNumber'
+import { InfoDot } from './Tooltip'
 import { pct, pctSigned, num as numFmt } from '../lib/format'
 import type { BacktestIssue, BacktestResult, BtRange, NoteTerms } from '../api/types'
 
@@ -23,9 +24,9 @@ function classify(i: BacktestIssue): Kind {
 function MiniStat({ label, value, num, dp = 2, tone, tip }: { label: string; value?: string; num?: number | null; dp?: number; tone?: string; tip?: string }) {
   const animate = num != null && Number.isFinite(num)
   return (
-    <div className="card lift" style={{ padding: '14px 16px', cursor: tip ? 'help' : undefined }} title={tip}>
-      <div style={{ fontSize: 10.5, fontWeight: 600, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--text-muted)', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 5 }}>
-        {label}{tip && <span style={{ color: 'var(--text-faint)', fontWeight: 400 }}>ⓘ</span>}
+    <div className="card lift" style={{ padding: '14px 16px' }}>
+      <div style={{ fontSize: 10.5, fontWeight: 600, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--text-muted)', marginBottom: 8, display: 'flex', alignItems: 'center' }}>
+        {label}{tip && <InfoDot title={label} body={tip} />}
       </div>
       <div className="mono" style={{ fontSize: 24, fontWeight: 600, color: tone ?? 'var(--text)', lineHeight: 1, display: 'flex', alignItems: 'baseline', gap: 1 }}>
         {animate
@@ -54,12 +55,58 @@ export default function BacktestPanel({ result, terms, range, onApplyRange }: {
   const [end, setEnd] = useState(range.end ?? '')
   const { summary, issues, figures } = result
   const rangeDirty = (start || null) !== range.start || (end || null) !== range.end
+  // ISO date strings compare lexically — a start after the end is invalid, so we
+  // block the (doomed) request client-side rather than letting it return empty.
+  const rangeInvalid = !!start && !!end && start > end
+  const hasRange = !!(range.start || range.end)
 
   const nameToSym: Record<string, string> = {}
   for (const [sym, name] of Object.entries(terms.tickers ?? {})) nameToSym[name] = sym
 
+  // The issue-window controls — rendered in BOTH the populated and the empty
+  // state so a range that yields no issues never strands the user (the controls
+  // used to vanish with the early-return, leaving no way back).
+  const rangeBar = (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
+      <div style={{ display: 'flex', alignItems: 'flex-end', gap: 12, flexWrap: 'wrap' }}>
+        <div>
+          <label style={{ fontSize: 11, color: 'var(--text-muted)', display: 'block', marginBottom: 5 }}>{t('bt_from')}</label>
+          <input type="date" value={start} onChange={(e) => setStart(e.target.value)}
+                 className={rangeInvalid ? 'field-invalid' : undefined} style={{ width: 'auto' }} />
+        </div>
+        <div>
+          <label style={{ fontSize: 11, color: 'var(--text-muted)', display: 'block', marginBottom: 5 }}>{t('bt_to')}</label>
+          <input type="date" value={end} onChange={(e) => setEnd(e.target.value)}
+                 className={rangeInvalid ? 'field-invalid' : undefined} style={{ width: 'auto' }} />
+        </div>
+        <button className="btn btn--primary" style={{ padding: '8px 14px' }} disabled={!rangeDirty || rangeInvalid}
+                onClick={() => onApplyRange({ start: start || null, end: end || null })}>
+          <Icon name="refresh" size={14} /> {t('bt_apply')}
+        </button>
+        {(hasRange || start || end) && (
+          <button className="btn" style={{ padding: '8px 14px' }}
+                  onClick={() => { setStart(''); setEnd(''); if (hasRange) onApplyRange({ start: null, end: null }) }}>{t('bt_clear')}</button>
+        )}
+      </div>
+      {rangeInvalid && <div className="field-msg">{t('bt_range_invalid')}</div>}
+    </div>
+  )
+
   if (!issues.length) {
-    return <Panel pad={40}><div style={{ textAlign: 'center', color: 'var(--text-muted)', fontSize: 14 }}>{t('bt_empty')}</div></Panel>
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }} className="fade-up">
+        <div style={{ fontSize: 12.5, color: 'var(--text-muted)' }}>{t('bt_intro')}</div>
+        {rangeBar}
+        <Panel pad={40}>
+          <div style={{ textAlign: 'center', color: 'var(--text-muted)', fontSize: 14, maxWidth: 460, margin: '0 auto', lineHeight: 1.6 }}>
+            {t('bt_empty')}
+            {hasRange && <div style={{ marginTop: 14 }}>
+              <button className="btn" onClick={() => { setStart(''); setEnd(''); onApplyRange({ start: null, end: null }) }}>{t('bt_clear_range')}</button>
+            </div>}
+          </div>
+        </Panel>
+      </div>
+    )
   }
 
   const label = (i: BacktestIssue) => {
@@ -122,24 +169,7 @@ export default function BacktestPanel({ result, terms, range, onApplyRange }: {
         </StatGroup>
       </div>
 
-      <div style={{ display: 'flex', alignItems: 'flex-end', gap: 12, flexWrap: 'wrap' }}>
-        <div>
-          <label style={{ fontSize: 11, color: 'var(--text-muted)', display: 'block', marginBottom: 5 }}>{t('bt_from')}</label>
-          <input type="date" value={start} onChange={(e) => setStart(e.target.value)} style={{ width: 'auto' }} />
-        </div>
-        <div>
-          <label style={{ fontSize: 11, color: 'var(--text-muted)', display: 'block', marginBottom: 5 }}>{t('bt_to')}</label>
-          <input type="date" value={end} onChange={(e) => setEnd(e.target.value)} style={{ width: 'auto' }} />
-        </div>
-        <button className="btn btn--primary" style={{ padding: '8px 14px' }} disabled={!rangeDirty}
-                onClick={() => onApplyRange({ start: start || null, end: end || null })}>
-          <Icon name="refresh" size={14} /> {t('bt_apply')}
-        </button>
-        {(range.start || range.end) && (
-          <button className="btn" style={{ padding: '8px 14px' }}
-                  onClick={() => { setStart(''); setEnd(''); onApplyRange({ start: null, end: null }) }}>{t('bt_clear')}</button>
-        )}
-      </div>
+      {rangeBar}
 
       <Tabs tabs={[{ id: 'outcomes', label: t('bt_sub_outcomes') }, { id: 'prices', label: t('bt_sub_prices') }, { id: 'sample', label: t('bt_sub_sample') }, { id: 'explorer', label: t('bt_sub_explorer') }]} active={sub} onChange={setSub} />
 

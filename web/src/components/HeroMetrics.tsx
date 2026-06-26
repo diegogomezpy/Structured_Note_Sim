@@ -1,4 +1,5 @@
 import AnimatedNumber from './AnimatedNumber'
+import { InfoDot } from './Tooltip'
 import { useI18n } from '../i18n/I18nProvider'
 import { pct, num } from '../lib/format'
 import type { SimSummary } from '../api/types'
@@ -30,9 +31,9 @@ function Group({ title, cards }: { title: string; cards: Card[] }) {
       <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-muted)', marginBottom: 10 }}>{title}</div>
       <div className="stagger" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 14 }}>
         {cards.map((c) => (
-          <div key={c.label} className="card lift" title={c.tip} style={{ padding: '18px 20px', cursor: 'help' }}>
-            <div className="eyebrow" style={{ marginBottom: 12, display: 'flex', alignItems: 'center', gap: 5 }}>
-              {c.label}<span style={{ color: 'var(--text-faint)', fontWeight: 400 }}>ⓘ</span>
+          <div key={c.label} className="card lift" style={{ padding: '18px 20px' }}>
+            <div className="eyebrow" style={{ marginBottom: 12, display: 'flex', alignItems: 'center' }}>
+              {c.label}<InfoDot title={c.label} body={c.tip} />
             </div>
             <div className="mono" style={{ fontSize: 33, fontWeight: 600, color: toneColor[c.tone], lineHeight: 0.95, letterSpacing: '-0.02em', display: 'flex', alignItems: 'baseline', gap: 1 }}>
               <AnimatedNumber value={c.value} format={c.format} animateOnMount />

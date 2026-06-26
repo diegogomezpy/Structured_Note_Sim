@@ -1,13 +1,24 @@
-import { useState, type ReactNode } from 'react'
+import { useLayoutEffect, useRef, useState, type ReactNode } from 'react'
+import { createPortal } from 'react-dom'
+import { InfoDot } from './Tooltip'
 
 const labelStyle: React.CSSProperties = { fontSize: 12, color: 'var(--text-muted)', display: 'block', marginBottom: 6 }
+
+/** A field label with an optional info dot carrying the tooltip. */
+function FieldLabel({ label, tip, style }: { label: string; tip?: string; style?: React.CSSProperties }) {
+  return (
+    <span style={{ fontSize: 12, color: 'var(--text-muted)', display: 'inline-flex', alignItems: 'center', ...style }}>
+      {label}{tip && <InfoDot title={label} body={tip} />}
+    </span>
+  )
+}
 
 /** Label + right-aligned value readout above a control (used by sliders). */
 export function Field({ label, value, children, tip }: { label: string; value?: ReactNode; children: ReactNode; tip?: string }) {
   return (
     <div style={{ marginBottom: 14 }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
-        <span title={tip} style={{ fontSize: 12, color: 'var(--text-muted)', cursor: tip ? 'help' : undefined }}>{label}</span>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+        <FieldLabel label={label} tip={tip} />
         {value != null && <span className="mono" style={{ fontSize: 12, color: 'var(--text)' }}>{value}</span>}
       </div>
       {children}
@@ -66,15 +77,94 @@ export function NumberField({
   )
 }
 
+/** Custom dropdown — a button + portalled popover menu styled to the design
+    language (native <option> lists can't be themed). Closes on click-outside,
+    Esc, or scroll; arrow keys move the active row, Enter selects. */
+export function Select<T extends string>({
+  value, options, onChange, ariaLabel, placeholder,
+}: { value: T; options: { value: T; label: string }[]; onChange: (v: T) => void; ariaLabel?: string; placeholder?: string }) {
+  const btnRef = useRef<HTMLButtonElement>(null)
+  const menuRef = useRef<HTMLDivElement>(null)
+  const [open, setOpen] = useState(false)
+  const [rect, setRect] = useState<DOMRect | null>(null)
+  const [active, setActive] = useState(-1)
+  const current = options.find((o) => o.value === value)
+
+  useLayoutEffect(() => {
+    if (!open || !btnRef.current) { setRect(null); return }
+    const measure = () => btnRef.current && setRect(btnRef.current.getBoundingClientRect())
+    measure()
+    setActive(options.findIndex((o) => o.value === value))
+    const onScroll = (e: Event) => { if (!menuRef.current?.contains(e.target as Node)) setOpen(false) }
+    const onResize = () => setOpen(false)
+    const onDown = (e: MouseEvent) => {
+      if (!btnRef.current?.contains(e.target as Node) && !menuRef.current?.contains(e.target as Node)) setOpen(false)
+    }
+    window.addEventListener('scroll', onScroll, true)
+    window.addEventListener('resize', onResize)
+    document.addEventListener('mousedown', onDown)
+    return () => {
+      window.removeEventListener('scroll', onScroll, true)
+      window.removeEventListener('resize', onResize)
+      document.removeEventListener('mousedown', onDown)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open])
+
+  const choose = (v: T) => { onChange(v); setOpen(false); btnRef.current?.focus() }
+
+  const onKey = (e: React.KeyboardEvent) => {
+    if (e.key === 'Escape') { setOpen(false); return }
+    if (!open && (e.key === 'ArrowDown' || e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); setOpen(true); return }
+    if (!open) return
+    if (e.key === 'ArrowDown') { e.preventDefault(); setActive((i) => Math.min(options.length - 1, i + 1)) }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); setActive((i) => Math.max(0, i - 1)) }
+    else if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); if (active >= 0) choose(options[active].value) }
+  }
+
+  // Decide whether to drop down or up given the room below the trigger.
+  const below = rect ? window.innerHeight - rect.bottom > 220 || rect.top < window.innerHeight - rect.bottom : true
+
+  return (
+    <>
+      <button ref={btnRef} type="button" className="select-btn" aria-haspopup="listbox" aria-expanded={open}
+              aria-label={ariaLabel} onClick={() => setOpen((o) => !o)} onKeyDown={onKey}>
+        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: current ? undefined : 'var(--text-muted)' }}>
+          {current?.label ?? placeholder ?? ''}
+        </span>
+        <svg className="select-caret" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+             strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6" /></svg>
+      </button>
+      {open && rect && createPortal(
+        <div ref={menuRef} className="select-menu" role="listbox" aria-label={ariaLabel}
+             style={{
+               left: rect.left, width: rect.width,
+               top: below ? rect.bottom + 4 : undefined,
+               bottom: below ? undefined : window.innerHeight - rect.top + 4,
+             }}>
+          {options.map((o, i) => (
+            <button key={o.value} type="button" role="option" className="select-opt"
+                    aria-selected={o.value === value} data-active={i === active}
+                    onMouseEnter={() => setActive(i)} onClick={() => choose(o.value)}>
+              <span>{o.label}</span>
+              <svg className="select-opt-check" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                   strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5" /></svg>
+            </button>
+          ))}
+        </div>,
+        document.body,
+      )}
+    </>
+  )
+}
+
 export function SelectField<T extends string>({
   label, value, options, onChange, tip,
 }: { label: string; value: T; options: { value: T; label: string }[]; onChange: (v: T) => void; tip?: string }) {
   return (
     <div style={{ marginBottom: 14 }}>
-      <label style={{ ...labelStyle, cursor: tip ? 'help' : undefined }} title={tip}>{label}</label>
-      <select value={value} onChange={(e) => onChange(e.target.value as T)}>
-        {options.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-      </select>
+      <div style={{ marginBottom: 6 }}><FieldLabel label={label} tip={tip} /></div>
+      <Select value={value} options={options} onChange={onChange} ariaLabel={label} />
     </div>
   )
 }
@@ -102,7 +192,7 @@ export function SegmentedField<T extends string>({
 }: { label: string; value: T; options: { value: T; label: string }[]; onChange: (v: T) => void; tip?: string }) {
   return (
     <div style={{ marginBottom: 14 }}>
-      <label style={{ ...labelStyle, cursor: tip ? 'help' : undefined }} title={tip}>{label}</label>
+      <div style={{ marginBottom: 6 }}><FieldLabel label={label} tip={tip} /></div>
       <Segmented value={value} options={options} onChange={onChange} ariaLabel={label} />
     </div>
   )

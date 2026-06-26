@@ -276,12 +276,22 @@ input:focus, select:focus { outline: none; border-color: var(--accent); box-shad
 @keyframes overlayScrimIn { from { opacity: 0; } to { opacity: 1; } }
 @keyframes modalCardIn { from { opacity: 0; transform: translateY(8px) scale(0.98); } to { opacity: 1; transform: none; } }
 @keyframes toastIn { from { opacity: 0; transform: translateX(-16px); } to { opacity: 1; transform: none; } }
-@keyframes chartIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
 .modal-scrim { animation: overlayScrimIn var(--dur-base) var(--ease-settle) both; }
 .modal-card  { animation: modalCardIn var(--dur-enter) var(--ease-enter) both; }
-/* Charts draw in once on reveal (Motion · IV) — a gentle rise, not a Plotly
-   redraw (which risks the resize loop). */
-.chart-reveal { animation: chartIn 320ms var(--ease-enter) both; }
+/* Charts draw in once on reveal (Motion · IV) — the plot fills out left-to-right
+   like a trace being drawn, rather than a snap or a Plotly redraw (which risks
+   the resize loop). The opacity settles early so only the wipe is felt. */
+@keyframes chartDraw {
+  from { opacity: 0; clip-path: inset(0 100% 0 0); }
+  35%  { opacity: 1; }
+  to   { opacity: 1; clip-path: inset(0 0 0 0); }
+}
+.chart-reveal { animation: chartDraw 760ms var(--ease-enter) both; }
+
+/* The live ticker bar rolls down into place rather than popping in (Motion · IV);
+   its cells then stagger via the inner .stagger. */
+@keyframes tickerReveal { from { clip-path: inset(0 0 100% 0); opacity: 0.5; } to { clip-path: inset(0 0 0 0); opacity: 1; } }
+.ticker-reveal { animation: tickerReveal 380ms var(--ease-enter) both; }
 
 /* Staggered children reveal — sequence cards/panels in rather than snapping them
    all at once (Motion: one mover at a time). Applied to result grids/columns. */
@@ -304,6 +314,55 @@ input:focus, select:focus { outline: none; border-color: var(--accent); box-shad
 /* Bar fill grows in from the left on reveal (progress bars, meters, barrier band). */
 @keyframes growX { from { transform: scaleX(0); } to { transform: scaleX(1); } }
 .grow-x { transform-origin: left center; animation: growX 600ms var(--ease-enter) both; }
+
+/* ── tooltip — ink card, serif title (Elements · 11) ────────────────────────── */
+@keyframes tipIn { from { opacity: 0; transform: translateY(3px); } to { opacity: 1; transform: none; } }
+.mtip {
+  position: fixed; z-index: 1000; max-width: 240px; pointer-events: none;
+  background: #1c241f; border-radius: 6px; padding: 11px 14px;
+  box-shadow: 0 8px 22px -12px rgba(28,36,31,.6);
+  animation: tipIn 120ms var(--ease-enter) both;
+}
+.mtip-title { font-family: var(--font-serif); font-size: 12.5px; font-weight: 600; color: #f7f5ef; margin-bottom: 3px; line-height: 1.3; }
+.mtip-body  { font-family: var(--font-sans); font-size: 11.5px; color: #b9c2bb; line-height: 1.5; }
+.mtip-caret { position: absolute; width: 9px; height: 9px; background: #1c241f; transform: rotate(45deg); }
+/* The small info dot that opens a tooltip on hover/focus. */
+.info-dot {
+  display: inline-flex; align-items: center; justify-content: center; vertical-align: middle;
+  width: 13px; height: 13px; margin-left: 4px; border-radius: 50%;
+  color: var(--text-faint); cursor: help; background: transparent; border: none; padding: 0;
+  transition: color .12s ease;
+}
+.info-dot:hover, .info-dot:focus-visible { color: var(--accent); outline: none; }
+
+/* ── custom select — popover menu (Controls) ────────────────────────────────── */
+.select-btn {
+  width: 100%; display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  font-family: var(--font-sans); font-size: 13px; color: var(--text); text-align: left;
+  background: var(--surface); border: 1px solid var(--border-strong); border-radius: 5px;
+  padding: 8px 10px; cursor: pointer; transition: border-color .12s ease, box-shadow .12s ease;
+}
+.select-btn:hover { border-color: var(--accent); }
+.select-btn:focus-visible,
+.select-btn[aria-expanded="true"] { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--ring); }
+.select-caret { flex-shrink: 0; color: var(--text-faint); transition: transform .15s var(--ease-settle); }
+.select-btn[aria-expanded="true"] .select-caret { transform: rotate(180deg); }
+@keyframes menuIn { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
+.select-menu {
+  position: fixed; z-index: 1000; background: var(--surface);
+  border: 1px solid var(--border-strong); border-radius: 8px; padding: 4px;
+  box-shadow: var(--shadow-lift); max-height: 260px; overflow-y: auto;
+  animation: menuIn 140ms var(--ease-enter) both;
+}
+.select-opt {
+  width: 100%; display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  font-family: var(--font-sans); font-size: 13px; color: var(--text); text-align: left;
+  background: transparent; border: none; border-radius: 5px; padding: 7px 9px; cursor: pointer;
+}
+.select-opt:hover, .select-opt[data-active="true"] { background: var(--surface-hover); }
+.select-opt[aria-selected="true"] { color: var(--accent-text); font-weight: 600; }
+.select-opt-check { flex-shrink: 0; opacity: 0; }
+.select-opt[aria-selected="true"] .select-opt-check { opacity: 1; }
 
 /* On a phone, modals dock to the bottom as a sheet that slides up — Mobile +
    Motion · V. Pure CSS: the same .modal-scrim/.modal-card retarget, no JS. */

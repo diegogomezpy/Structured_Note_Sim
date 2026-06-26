@@ -5,6 +5,7 @@ import Icon from './Icon'
 import TickerLogo from './TickerLogo'
 import BarrierMonitor from './BarrierMonitor'
 import AnimatedNumber from './AnimatedNumber'
+import { InfoDot } from './Tooltip'
 import { pct, pctSigned, num } from '../lib/format'
 import type { LiveObsRow, LiveResult, LiveStatus, NoteTerms } from '../api/types'
 
@@ -26,8 +27,10 @@ function Stat({ label, value, num: figure, dp = 1, signed, sub, subTone, help, c
   const animate = figure != null && Number.isFinite(figure)
   const fmt = signed ? (n: number) => `${n >= 0 ? '+' : ''}${num(n, dp)}` : (n: number) => num(n, dp)
   return (
-    <div className="card lift" style={{ padding: '14px 16px' }} title={help}>
-      <div style={{ fontSize: 10.5, fontWeight: 600, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--text-muted)', marginBottom: 8 }}>{label}</div>
+    <div className="card lift" style={{ padding: '14px 16px' }}>
+      <div style={{ display: 'flex', alignItems: 'center', fontSize: 10.5, fontWeight: 600, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--text-muted)', marginBottom: 8 }}>
+        {label}{help && <InfoDot title={label} body={help} />}
+      </div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
         {children}
         <div className="mono" style={{ fontSize: 24, fontWeight: 600, lineHeight: 1, display: 'flex', alignItems: 'baseline', gap: 1 }}>

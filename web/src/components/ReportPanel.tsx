@@ -4,6 +4,7 @@ import { useI18n } from '../i18n/I18nProvider'
 import { useToast } from './Toast'
 import Panel from './Panel'
 import Icon from './Icon'
+import { Select } from './fields'
 import type { Branding, NoteTerms } from '../api/types'
 import type { RunOpts } from './SetupRail'
 
@@ -223,10 +224,9 @@ export default function ReportPanel({ terms, opts }: { terms: NoteTerms; opts: R
           <div style={{ padding: '0 16px 12px', display: 'flex', gap: 14, flexWrap: 'wrap', alignItems: 'flex-end' }}>
             {presets.length > 0 && (
               <Field label={t('brand_preset')}>
-                <select defaultValue="" onChange={(e) => loadPreset(e.target.value)}>
-                  <option value="">{t('brand_preset_ph')}</option>
-                  {presets.map((p) => <option key={p.file} value={p.file}>{p.firm_name}</option>)}
-                </select>
+                <Select value="" placeholder={t('brand_preset_ph')} ariaLabel={t('brand_preset')}
+                        options={presets.map((p) => ({ value: p.file, label: p.firm_name }))}
+                        onChange={loadPreset} />
               </Field>
             )}
             <Field label={t('brand_upload_cfg')}>

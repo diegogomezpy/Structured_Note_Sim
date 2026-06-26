@@ -3,6 +3,7 @@ import { api } from '../api/client'
 import { useI18n } from '../i18n/I18nProvider'
 import TickerLogo from './TickerLogo'
 import Icon from './Icon'
+import { Select } from './fields'
 import type { UnderlyingOption } from '../api/types'
 
 const MAX = 5
@@ -61,11 +62,11 @@ export default function UnderlyingPicker({
       </div>
 
       {!atMax ? (
-        <select value="" onChange={(e) => { const o = universe.find((u) => u.symbol === e.target.value); if (o) add(o.symbol, nameFromLabel(o.label)) }}
-                style={{ marginBottom: 8 }}>
-          <option value="">＋ {t('add_underlying')}</option>
-          {available.map((o) => <option key={o.symbol} value={o.symbol}>{o.label}</option>)}
-        </select>
+        <div style={{ marginBottom: 8 }}>
+          <Select value="" placeholder={`＋ ${t('add_underlying')}`} ariaLabel={t('add_underlying')}
+                  options={available.map((o) => ({ value: o.symbol, label: o.label }))}
+                  onChange={(sym) => { const o = universe.find((u) => u.symbol === sym); if (o) add(o.symbol, nameFromLabel(o.label)) }} />
+        </div>
       ) : (
         <div style={{ fontSize: 11.5, color: 'var(--text-faint)', marginBottom: 8 }}>{t('max_underlyings')}</div>
       )}

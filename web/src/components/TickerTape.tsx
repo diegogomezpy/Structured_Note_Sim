@@ -66,20 +66,26 @@ export default function TickerTape({ terms }: { terms: NoteTerms }) {
   const nameToSym: Record<string, string> = {}
   for (const [sym, name] of Object.entries(tickers)) nameToSym[name] = sym
 
-  if (!rows || !rows.length) return null
+  // Only show underlyings that are still in the note: a removed one drops out
+  // immediately (rather than lingering with stale data until the refetch lands),
+  // and a newly-added one stays hidden until its seeded metrics arrive.
+  const symSet = new Set(syms)
+  const rowSym = (m: UnderlyingMetric) => m.symbol || nameToSym[m.name] || m.name
+  const visible = (rows ?? []).filter((m) => symSet.has(rowSym(m)))
+  if (!visible.length) return null
 
   const UP = '#5fb89a', DOWN = '#d98b80', LIGHT = '#c8d0c9', PAPER = '#f7f5ef', RULE = '#313a33'
 
   return (
-    <div style={{ display: 'flex', alignItems: 'stretch', background: '#1c241f', overflow: 'hidden' }}>
+    <div className="ticker-reveal" style={{ display: 'flex', alignItems: 'stretch', background: '#1c241f', overflow: 'hidden' }}>
       <div style={{
         display: 'flex', alignItems: 'center', padding: '0 14px', background: 'var(--accent)',
         fontFamily: 'var(--font-mono)', fontSize: 10, fontWeight: 600, letterSpacing: '0.14em',
         textTransform: 'uppercase', color: PAPER, whiteSpace: 'nowrap', flexShrink: 0,
       }}>LIVE ·</div>
       <div className="mono stagger" style={{ flex: 1, display: 'flex', alignItems: 'stretch', overflowX: 'auto', whiteSpace: 'nowrap', scrollbarWidth: 'none' }}>
-        {rows.map((m, i) => {
-          const sym = m.symbol || nameToSym[m.name] || m.name
+        {visible.map((m, i) => {
+          const sym = rowSym(m)
           const price = quotes[sym]?.price ?? m.last_price
           const dc = quotes[sym]?.change ?? m.day_change
           const tone = dc == null ? LIGHT : dc >= 0 ? UP : DOWN
@@ -89,7 +95,7 @@ export default function TickerTape({ terms }: { terms: NoteTerms }) {
               className={fl === 'up' ? 'tick-up' : fl === 'down' ? 'tick-down' : undefined}
               style={{
                 display: 'inline-flex', alignItems: 'baseline', gap: 8, padding: '11px 18px',
-                borderRight: i < rows.length - 1 ? `1px solid ${RULE}` : 'none', fontSize: 12,
+                borderRight: i < visible.length - 1 ? `1px solid ${RULE}` : 'none', fontSize: 12,
               }}>
               <span style={{ fontWeight: 600, color: PAPER }}>{sym}</span>
               <span style={{ color: LIGHT }}>
