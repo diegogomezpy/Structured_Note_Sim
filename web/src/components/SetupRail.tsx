@@ -6,6 +6,8 @@ import Icon from './Icon'
 import { Slider, SelectField, SegmentedField, ToggleField, Select } from './fields'
 import AddNoteHelp from './AddNoteHelp'
 import UnderlyingPicker from './UnderlyingPicker'
+import FolderConnect from './FolderConnect'
+import { useLocalFolder } from '../lib/localFolder'
 import type { ConfigMeta, NoteTerms } from '../api/types'
 
 export interface RunOpts {
@@ -42,6 +44,13 @@ export default function SetupRail({
   const set = <K extends keyof NoteTerms>(k: K, v: NoteTerms[K]) => onChange({ ...terms, [k]: v })
   const fileRef = useRef<HTMLInputElement>(null)
   const [uploadErr, setUploadErr] = useState('')
+
+  // The user's own folder of note-config JSONs (auto-detected via the File System
+  // Access API), shown alongside the examples bundled in the repo. `localSel`
+  // tracks a chosen local config so the selector keeps showing its name (a local
+  // load routes through onUploadConfig, which clears the repo `configFile`).
+  const local = useLocalFolder('note-configs')
+  const [localSel, setLocalSel] = useState<string | null>(null)
 
   const onFile = async (file: File | undefined) => {
     setUploadErr('')
@@ -82,8 +91,19 @@ export default function SetupRail({
           <input ref={fileRef} type="file" accept="application/json,.json" style={{ display: 'none' }}
                  onChange={(e) => onFile(e.target.files?.[0])} />
         </div>
-        <Select value={configFile} onChange={onSelectConfig} ariaLabel={t('config_label')}
-                options={[{ value: '', label: t('blank_note') }, ...configs.map((c) => ({ value: c.file, label: c.name }))]} />
+        <Select value={localSel ?? configFile} ariaLabel={t('config_label')}
+                options={[
+                  { value: '', label: t('blank_note') },
+                  ...local.files.map((f) => ({ value: `local:${f.name}`, label: `${f.name} ${t('folder_tag')}` })),
+                  ...configs.map((c) => ({ value: c.file, label: c.name })),
+                ]}
+                onChange={(v) => {
+                  if (v.startsWith('local:')) {
+                    const f = local.files.find((f) => `local:${f.name}` === v)
+                    if (f) { setLocalSel(v); onUploadConfig(f.raw) }
+                  } else { setLocalSel(null); onSelectConfig(v) }
+                }} />
+        <FolderConnect fld={local} />
         {uploadErr && <div style={{ fontSize: 11.5, color: 'var(--red)', marginTop: 5 }}>{uploadErr}</div>}
       </div>
 

@@ -47,6 +47,16 @@ export const S: Dict = {
   download_config:  { en: 'Download config', es: 'Descargar configuración' },
   download_config_hint: { en: 'Download this note as a JSON config', es: 'Descargar esta nota como JSON' },
 
+  // local folder (File System Access)
+  folder_connect:   { en: 'Connect a folder', es: 'Conectar una carpeta' },
+  folder_reconnect: { en: 'Reconnect {name}', es: 'Reconectar {name}' },
+  folder_count:     { en: '{n} files', es: '{n} archivos' },
+  folder_tag:       { en: '· folder', es: '· carpeta' },
+  folder_refresh:   { en: 'Rescan folder', es: 'Volver a escanear' },
+  folder_disconnect: { en: 'Disconnect folder', es: 'Desconectar carpeta' },
+  folder_import:    { en: 'Import a folder', es: 'Importar una carpeta' },
+  folder_reimport:  { en: 'Re-import ({n})', es: 'Reimportar ({n})' },
+
   // add-note tutorial
   addnote_trigger:  { en: 'How to add a note', es: 'Cómo añadir una nota' },
   addnote_title:    { en: 'Add your own note', es: 'Añade tu propia nota' },

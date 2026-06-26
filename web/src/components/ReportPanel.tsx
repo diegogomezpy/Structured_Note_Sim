@@ -5,6 +5,8 @@ import { useToast } from './Toast'
 import Panel from './Panel'
 import Icon from './Icon'
 import { Select } from './fields'
+import FolderConnect from './FolderConnect'
+import { useLocalFolder } from '../lib/localFolder'
 import type { Branding, NoteTerms } from '../api/types'
 import type { RunOpts } from './SetupRail'
 
@@ -76,6 +78,8 @@ export default function ReportPanel({ terms, opts }: { terms: NoteTerms; opts: R
   const [brandOpen, setBrandOpen] = useState(false)
   const [brand, setBrand] = useState<Branding>({})
   const [presets, setPresets] = useState<{ file: string; firm_name: string }[]>([])
+  // The user's own folder of branding JSONs (auto-detected), alongside the repo presets.
+  const brandFolder = useLocalFolder('branding')
   const [status, setStatus] = useState<Status>('idle')
   const [error, setError] = useState('')
   const logoRef = useRef<HTMLInputElement>(null)
@@ -236,11 +240,20 @@ export default function ReportPanel({ terms, opts }: { terms: NoteTerms; opts: R
         </button>
         {brandOpen && (
           <div style={{ padding: '0 16px 12px', display: 'flex', gap: 14, flexWrap: 'wrap', alignItems: 'flex-end' }}>
-            {presets.length > 0 && (
+            {(presets.length > 0 || brandFolder.files.length > 0 || brandFolder.supported) && (
               <Field label={t('brand_preset')}>
                 <Select value="" placeholder={t('brand_preset_ph')} ariaLabel={t('brand_preset')}
-                        options={presets.map((p) => ({ value: p.file, label: p.firm_name }))}
-                        onChange={loadPreset} />
+                        options={[
+                          ...brandFolder.files.map((f) => ({ value: `local:${f.name}`, label: `${f.name} ${t('folder_tag')}` })),
+                          ...presets.map((p) => ({ value: p.file, label: p.firm_name })),
+                        ]}
+                        onChange={(v) => {
+                          if (v.startsWith('local:')) {
+                            const f = brandFolder.files.find((f) => `local:${f.name}` === v)
+                            if (f) applyBranding(f.raw as Record<string, unknown>)
+                          } else loadPreset(v)
+                        }} />
+                <FolderConnect fld={brandFolder} />
               </Field>
             )}
             <Field label={t('brand_upload_cfg')}>
