@@ -118,6 +118,20 @@ export default function ReportPanel({ terms, opts }: { terms: NoteTerms; opts: R
     }
     r.readAsText(file)
   }
+  // Download the current branding as a self-contained JSON — logo, cover sigil,
+  // background image, fonts and colours are all already base64-embedded in
+  // `brand`, so the file is portable and reloads identically (no external assets).
+  const downloadBranding = () => {
+    const json = JSON.stringify(brand, null, 2)
+    const blob = new Blob([json], { type: 'application/json' })
+    const url = URL.createObjectURL(blob)
+    const fname = `${(brand.firm_name || 'branding').replace(/[^A-Za-z0-9]+/g, '_').toLowerCase()}_branding.json`
+    const a = document.createElement('a')
+    a.href = url; a.download = fname
+    document.body.appendChild(a); a.click(); a.remove()
+    URL.revokeObjectURL(url)
+    toast.push({ title: t('brand_downloaded'), sub: fname, tone: 'accent' })
+  }
 
   const lab = (en: string, es: string) => (lang === 'es' ? es : en)
   const toggle = (k: string) => { setSel((p) => { const n = new Set(p); n.has(k) ? n.delete(k) : n.add(k); return n }); setStatus('idle') }
@@ -235,6 +249,11 @@ export default function ReportPanel({ terms, opts }: { terms: NoteTerms; opts: R
               </button>
               <input ref={brandCfgRef} type="file" accept="application/json,.json" style={{ display: 'none' }}
                      onChange={(e) => { onUploadBranding(e.target.files?.[0]); e.target.value = '' }} />
+            </Field>
+            <Field label={t('brand_save_cfg')}>
+              <button className="btn" style={{ padding: '7px 12px' }} onClick={downloadBranding}>
+                <Icon name="download" size={13} /> {t('brand_save_cfg_btn')}
+              </button>
             </Field>
           </div>
         )}

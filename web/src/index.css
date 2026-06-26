@@ -278,20 +278,32 @@ input:focus, select:focus { outline: none; border-color: var(--accent); box-shad
 @keyframes toastIn { from { opacity: 0; transform: translateX(-16px); } to { opacity: 1; transform: none; } }
 .modal-scrim { animation: overlayScrimIn var(--dur-base) var(--ease-settle) both; }
 .modal-card  { animation: modalCardIn var(--dur-enter) var(--ease-enter) both; }
-/* Charts draw in once on reveal (Motion · IV) — the plot fills out left-to-right
-   like a trace being drawn, rather than a snap or a Plotly redraw (which risks
-   the resize loop). The opacity settles early so only the wipe is felt. */
-@keyframes chartDraw {
-  from { opacity: 0; clip-path: inset(0 100% 0 0); }
-  35%  { opacity: 1; }
-  to   { opacity: 1; clip-path: inset(0 0 0 0); }
-}
-.chart-reveal { animation: chartDraw 760ms var(--ease-enter) both; }
+/* Charts draw in once on reveal (Motion · IV), with a gesture matched to the
+   chart TYPE rather than one generic fade — a line traces left-to-right, a
+   scatter/bars fill bottom-up, a heatmap settles in place, a pie blooms open.
+   The opacity resolves early so only the gesture is felt, never a Plotly redraw
+   (which risks the resize loop). Figure picks the variant from the trace type. */
+@keyframes chartWipe { from { opacity: 0; clip-path: inset(0 100% 0 0); } 35% { opacity: 1; } to { opacity: 1; clip-path: inset(0 0 0 0); } }
+@keyframes chartRise { from { opacity: 0; clip-path: inset(100% 0 0 0); } 35% { opacity: 1; } to { opacity: 1; clip-path: inset(0 0 0 0); } }
+@keyframes chartSettle { from { opacity: 0; transform: scale(0.965); } to { opacity: 1; transform: none; } }
+@keyframes chartBloom { from { opacity: 0; transform: scale(0.82) rotate(-7deg); } to { opacity: 1; transform: none; } }
+.chart-reveal { transform-origin: center; }
+.chart-reveal--wipe   { animation: chartWipe 820ms var(--ease-enter) both; }
+.chart-reveal--rise   { animation: chartRise 720ms var(--ease-enter) both; }
+.chart-reveal--settle { animation: chartSettle 460ms var(--ease-settle) both; }
+.chart-reveal--bloom  { animation: chartBloom 620ms var(--ease-enter) both; }
 
 /* The live ticker bar rolls down into place rather than popping in (Motion · IV);
    its cells then stagger via the inner .stagger. */
 @keyframes tickerReveal { from { clip-path: inset(0 0 100% 0); opacity: 0.5; } to { clip-path: inset(0 0 0 0); opacity: 1; } }
 .ticker-reveal { animation: tickerReveal 380ms var(--ease-enter) both; }
+/* A removed underlying collapses its cell out rather than vanishing — width and
+   padding fall to zero while it fades (Motion · exit easing). */
+@keyframes tickerCellOut {
+  from { opacity: 1; max-width: 320px; }
+  to   { opacity: 0; max-width: 0; padding-left: 0; padding-right: 0; }
+}
+.tick-leaving { animation: tickerCellOut 260ms var(--ease-exit) both; pointer-events: none; }
 
 /* Staggered children reveal — sequence cards/panels in rather than snapping them
    all at once (Motion: one mover at a time). Applied to result grids/columns. */

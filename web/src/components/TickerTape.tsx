@@ -72,7 +72,35 @@ export default function TickerTape({ terms }: { terms: NoteTerms }) {
   const symSet = new Set(syms)
   const rowSym = (m: UnderlyingMetric) => m.symbol || nameToSym[m.name] || m.name
   const visible = (rows ?? []).filter((m) => symSet.has(rowSym(m)))
-  if (!visible.length) return null
+  const visibleSig = visible.map((m) => m.name).join(',')
+
+  // Render list that retains a just-removed underlying for one beat so its cell
+  // can collapse out rather than vanishing. Reconciles add/remove in place; a
+  // short timer drops the leaving cells once the exit animation has played.
+  const [display, setDisplay] = useState<{ m: UnderlyingMetric; leaving: boolean }[]>([])
+  useEffect(() => {
+    setDisplay((prev) => {
+      const byName = new Map(visible.map((m) => [m.name, m]))
+      const out: { m: UnderlyingMetric; leaving: boolean }[] = []
+      const placed = new Set<string>()
+      for (const cell of prev) {
+        const m = byName.get(cell.m.name)
+        if (m) { out.push({ m, leaving: false }); placed.add(m.name) }   // still present
+        else if (!cell.leaving) out.push({ m: cell.m, leaving: true })   // newly removed → collapse in place
+        else out.push(cell)                                              // already leaving
+      }
+      for (const m of visible) if (!placed.has(m.name)) out.push({ m, leaving: false })  // newly added
+      return out
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [visibleSig])
+  useEffect(() => {
+    if (!display.some((c) => c.leaving)) return
+    const t = setTimeout(() => setDisplay((d) => d.filter((c) => !c.leaving)), 300)
+    return () => clearTimeout(t)
+  }, [display])
+
+  if (!display.length) return null
 
   const UP = '#5fb89a', DOWN = '#d98b80', LIGHT = '#c8d0c9', PAPER = '#f7f5ef', RULE = '#313a33'
 
@@ -84,18 +112,19 @@ export default function TickerTape({ terms }: { terms: NoteTerms }) {
         textTransform: 'uppercase', color: PAPER, whiteSpace: 'nowrap', flexShrink: 0,
       }}>LIVE ·</div>
       <div className="mono stagger" style={{ flex: 1, display: 'flex', alignItems: 'stretch', overflowX: 'auto', whiteSpace: 'nowrap', scrollbarWidth: 'none' }}>
-        {visible.map((m, i) => {
+        {display.map(({ m, leaving }, i) => {
           const sym = rowSym(m)
           const price = quotes[sym]?.price ?? m.last_price
           const dc = quotes[sym]?.change ?? m.day_change
           const tone = dc == null ? LIGHT : dc >= 0 ? UP : DOWN
           const fl = flash[sym]
+          const cls = [leaving ? 'tick-leaving' : '', fl === 'up' ? 'tick-up' : fl === 'down' ? 'tick-down' : ''].filter(Boolean).join(' ')
           return (
             <span key={m.name} title={m.name}
-              className={fl === 'up' ? 'tick-up' : fl === 'down' ? 'tick-down' : undefined}
+              className={cls || undefined}
               style={{
-                display: 'inline-flex', alignItems: 'baseline', gap: 8, padding: '11px 18px',
-                borderRight: i < visible.length - 1 ? `1px solid ${RULE}` : 'none', fontSize: 12,
+                display: 'inline-flex', alignItems: 'baseline', gap: 8, padding: '11px 18px', overflow: 'hidden',
+                borderRight: i < display.length - 1 ? `1px solid ${RULE}` : 'none', fontSize: 12,
               }}>
               <span style={{ fontWeight: 600, color: PAPER }}>{sym}</span>
               <span style={{ color: LIGHT }}>

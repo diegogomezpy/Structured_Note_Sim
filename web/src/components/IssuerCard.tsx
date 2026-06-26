@@ -61,11 +61,16 @@ export default function IssuerCard({ terms }: { terms: NoteTerms }) {
   ].filter(([, v]) => v) as [string, string][]
 
   const desc = curated || fetched || ''
-  const long = desc.length > 230
+  // Editorial split: lead sentence in the serif voice, the rest as body (mirrors
+  // the note description). The remainder clamps to a few lines until expanded.
+  const idx = desc.indexOf('. ')
+  const lead = idx >= 0 ? desc.slice(0, idx + 1) : desc
+  const rest = idx >= 0 ? desc.slice(idx + 2) : ''
+  const long = rest.length > 200
 
   return (
     <Section title={t('issuer_section')}>
-      <div className="card" style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 13 }}>
+      <div className="card" style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 14 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
           <IssuerLogo issuer={issuer} size={34} />
           <span style={{ fontSize: 15, fontWeight: 600 }}>{issuer}</span>
@@ -81,13 +86,21 @@ export default function IssuerCard({ terms }: { terms: NoteTerms }) {
             <Icon name="spinner" size={14} /> {t('issuer_loading')}
           </div>
         ) : desc ? (
-          <div style={{ fontSize: 12.5, color: 'var(--text-muted)', lineHeight: 1.6 }}>
-            <span style={expanded || !long ? undefined : { display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{desc}</span>
-            {long && (
-              <button onClick={() => setExpanded((o) => !o)} style={{ display: 'block', marginTop: 5, background: 'none', border: 'none', padding: 0, cursor: 'pointer', color: 'var(--accent-text)', fontSize: 11.5, fontFamily: 'inherit' }}>
-                {expanded ? t('ul_less') : t('ul_more')}
-              </button>
-            )}
+          <div className="fade-up" style={{ display: 'flex', gap: 14 }}>
+            <div style={{ width: 2, borderRadius: 2, background: 'var(--accent)', flexShrink: 0 }} />
+            <div style={{ maxWidth: 660 }}>
+              <p style={{ margin: rest ? '0 0 8px' : 0, fontFamily: 'var(--font-serif)', fontSize: 14.5, fontWeight: 600, lineHeight: 1.5, letterSpacing: '-0.01em', color: 'var(--text)' }}>{lead}</p>
+              {rest && (
+                <>
+                  <p style={expanded || !long ? { margin: 0, fontSize: 12.5, lineHeight: 1.65, color: 'var(--text-muted)' } : { margin: 0, fontSize: 12.5, lineHeight: 1.65, color: 'var(--text-muted)', display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{rest}</p>
+                  {long && (
+                    <button onClick={() => setExpanded((o) => !o)} style={{ display: 'block', marginTop: 5, background: 'none', border: 'none', padding: 0, cursor: 'pointer', color: 'var(--accent-text)', fontSize: 11.5, fontFamily: 'inherit' }}>
+                      {expanded ? t('ul_less') : t('ul_more')}
+                    </button>
+                  )}
+                </>
+              )}
+            </div>
           </div>
         ) : (
           <div style={{ fontSize: 12, color: 'var(--text-faint)' }}>{t('issuer_no_desc')}</div>

@@ -15,9 +15,28 @@ const Plot = createPlotlyComponent(Plotly)
 
     A hover download button exports the chart as a PNG via Plotly.downloadImage
     (the default modebar stays hidden to keep the chrome clean). */
-export default function Figure({ fig, height, name = 'chart', noDownload }: { fig: any; height?: number; name?: string; noDownload?: boolean }) {
+/** Choose the entrance gesture from the figure's trace types so each chart kind
+    reveals in a way that fits it: a line traces in, a scatter/bars fill up, a
+    heatmap settles, a pie blooms. An explicit `reveal` prop overrides this. */
+type Reveal = 'wipe' | 'rise' | 'settle' | 'bloom'
+function pickReveal(fig: any): Reveal {
+  const data: any[] = Array.isArray(fig?.data) ? fig.data : []
+  if (!data.length) return 'wipe'
+  if (data.some((d) => d?.type === 'pie')) return 'bloom'
+  if (data.some((d) => d?.type === 'heatmap')) return 'settle'
+  if (data.some((d) => d?.type === 'bar')) return 'rise'
+  // scatter: markers-only (a point cloud, e.g. the IRR scatter) fills bottom-up;
+  // anything with lines/fills (time series, fans) traces left-to-right.
+  const pts = data.filter((d) => !d?.type || d.type === 'scatter' || d.type === 'scattergl')
+  if (pts.length && pts.every((d) => typeof d.mode === 'string' && d.mode.includes('markers') && !d.mode.includes('lines'))) return 'rise'
+  return 'wipe'
+}
+
+export default function Figure({ fig, height, name = 'chart', noDownload, reveal }: { fig: any; height?: number; name?: string; noDownload?: boolean; reveal?: Reveal }) {
   const { mode } = useTheme()
   const themed = useMemo(() => themeFigure(fig, mode), [fig, mode])
+  const auto = useMemo(() => pickReveal(fig), [fig])
+  const variant = reveal ?? auto
   const gd = useRef<any>(null)
   const [hover, setHover] = useState(false)
 
@@ -50,7 +69,7 @@ export default function Figure({ fig, height, name = 'chart', noDownload }: { fi
   }
 
   return (
-    <div className="chart-reveal" style={{ position: 'relative', width: '100%', height: height ?? '100%', minWidth: 0, overflow: 'hidden' }}
+    <div className={`chart-reveal chart-reveal--${variant}`} style={{ position: 'relative', width: '100%', height: height ?? '100%', minWidth: 0, overflow: 'hidden' }}
          onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)}>
       {!noDownload && <button onClick={download} title="Download PNG" aria-label="Download chart"
         style={{
