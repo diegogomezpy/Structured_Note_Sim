@@ -71,6 +71,7 @@ export interface SimSummary {
   prob_barrier_event: number | null
   expected_nominal_payout: number | null
   loss_given_knock_in: number | null
+  avg_time_to_autocall: number | null
   coupon_pa: number | null
   n_obs: number
   n_paths: number
@@ -133,6 +134,7 @@ export interface BacktestSummary {
   prob_knock_in: number | null
   prob_maturity: number | null
   loss_given_knock_in: number | null
+  avg_time_to_autocall: number | null
   [k: string]: number | null
 }
 

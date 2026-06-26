@@ -529,12 +529,14 @@ def price_note(
     rng = np.random.default_rng(seed)
 
     # ------------------------------------------------------------------
-    # Capital Protected Note branch (capital_guarantee is not None)
+    # Capital Protected Note branch (capital_guarantee is a real guarantee)
     # ------------------------------------------------------------------
     # Payoff: clip(worst-of at maturity, capital_guarantee, 1 + upside_cap)
     # No autocall, no periodic coupons, no KI barrier — the entire Phoenix
     # waterfall is skipped. This is a standalone payoff type.
-    if terms.capital_guarantee is not None:
+    # A guarantee of 0 (the UI's "off" state) is NOT protection — it must route
+    # through the normal autocallable waterfall, not this branch.
+    if terms.capital_guarantee is not None and terms.capital_guarantee > 0:
         final_step      = obs_steps[-1]
         # worst-of basket at maturity (same convention as knock_in_cond)
         worst_final_cp  = perf_paths[:, final_step, :].min(axis=1)       # (n_paths,)
@@ -572,6 +574,7 @@ def price_note(
             "prob_barrier_event":       0.0,
             "prob_rescued":             0.0,
             "loss_given_knock_in":      float("nan"),
+            "avg_time_to_autocall":     None,   # capital-protected note never autocalls
         }
 
     # ------------------------------------------------------------------
@@ -867,6 +870,12 @@ def price_note(
         "prob_barrier_event":       float(be_total.mean()),   # incl. paths rescued by final condition
         "prob_rescued":             float((be_total & ~ki_total).mean()),
         "loss_given_knock_in":      lgki,
+        # Average time (years) to early redemption, over the paths that actually
+        # autocalled (None when none do). Uses the real observation times.
+        "avg_time_to_autocall": (
+            float(np.asarray(obs_times, dtype=float)[autocall_period[any_autocalled] - 1].mean())
+            if bool(any_autocalled.any()) else None
+        ),
     }
 
 

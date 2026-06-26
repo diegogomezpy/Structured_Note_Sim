@@ -523,7 +523,7 @@ def run_simulation(terms: NoteTerms, *, n_paths: int = 10000, seed: int = 42,
         "expected_irr", "expected_total_return", "expected_coupon",
         "prob_autocall", "prob_knock_in_total", "expected_nominal_payout",
         "loss_given_knock_in", "prob_maturity", "prob_rescued",
-        "prob_barrier_event")}
+        "prob_barrier_event", "avg_time_to_autocall")}
     summary["n_paths"] = int(len(note["annualized_returns"]))   # 2×n_paths (antithetic)
     summary["engine"]  = eng_used
     summary["assets"]  = asset_names

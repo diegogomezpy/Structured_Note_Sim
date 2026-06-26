@@ -162,6 +162,9 @@ def run_backtest(
         "expected_nominal_payout": float(res["expected_nominal_payout"]),
         "loss_given_knock_in":   float(res["loss_given_knock_in"]),
         "prob_knock_in_total":   float(res["prob_knock_in_total"]),
+        # Average time (years) to early redemption over the historical windows that
+        # autocalled — None when none did. Same shared-engine measure as the MC run.
+        "avg_time_to_autocall":  res["avg_time_to_autocall"],
         # Per-issue × per-period coupon matrix (n_issues, n_obs), row-aligned with
         # `bt` (bt is built from `res` in this same order). Powers the path
         # explorer's "coupon paid at period t" filter over historical issues.

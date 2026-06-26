@@ -10,11 +10,22 @@ import { SENTIMENT_COLOR } from './UnderlyingDetails'
 import { marketCap, price, pct, num } from '../lib/format'
 import type { NoteTerms, UnderlyingMetric, UnderlyingOverride } from '../api/types'
 
-function Metric({ label, value }: { label: string; value: string }) {
+/** Split a formatted figure into its numeric stem and a trailing unit/suffix
+    ($4.7 + T, 40.6 + %, 195.74 + ''), so the unit can render small + muted —
+    the Mercator register's split-unit rule (matches the hero metrics). */
+function splitUnit(v: string): [string, string] {
+  const m = v.match(/^([^A-Za-z%]*[\d.,]+)\s*([%A-Za-z]*)$/)
+  return m ? [m[1], m[2]] : [v, '']
+}
+
+function Metric({ label, value, tone }: { label: string; value: string; tone?: string }) {
+  const [stem, unit] = splitUnit(value)
   return (
-    <div style={{ background: 'var(--surface)', padding: '9px 12px' }}>
-      <div style={{ fontSize: 9.5, fontWeight: 600, letterSpacing: '0.05em', textTransform: 'uppercase', color: 'var(--text-muted)', marginBottom: 4 }}>{label}</div>
-      <div className="mono" style={{ fontSize: 16, fontWeight: 600 }}>{value}</div>
+    <div style={{ background: 'var(--surface)', padding: '11px 13px' }}>
+      <div className="eyebrow" style={{ marginBottom: 7 }}>{label}</div>
+      <div className="mono" style={{ fontSize: 19, fontWeight: 600, letterSpacing: '-0.01em', color: tone ?? 'var(--text)', display: 'flex', alignItems: 'baseline', gap: 1, lineHeight: 1 }}>
+        {stem}{unit && <span className="fig-unit">{unit}</span>}
+      </div>
     </div>
   )
 }
@@ -85,11 +96,11 @@ function Card({ m, override, chart = true }: { m: UnderlyingMetric; override: Un
         }}>
         <Icon name={saving ? 'spinner' : 'download'} size={14} />
       </button>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-        {override.logo ? <LogoImg url={override.logo} name={m.name} size={28} /> : <TickerLogo symbol={m.symbol} name={m.name} size={28} />}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 11 }}>
+        {override.logo ? <LogoImg url={override.logo} name={m.name} size={30} /> : <TickerLogo symbol={m.symbol} name={m.name} size={30} />}
         <div style={{ minWidth: 0 }}>
-          <div style={{ fontSize: 14, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{m.long_name}</div>
-          <div style={{ fontSize: 11.5, color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{sub}</div>
+          <div style={{ fontFamily: 'var(--font-serif)', fontSize: 16, fontWeight: 600, letterSpacing: '-0.01em', color: 'var(--text)', lineHeight: 1.15, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{m.long_name}</div>
+          <div className="eyebrow" style={{ marginTop: 3, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{sub}</div>
         </div>
       </div>
 
@@ -105,7 +116,7 @@ function Card({ m, override, chart = true }: { m: UnderlyingMetric; override: Un
 
       {a && total > 0 && (
         <div>
-          <div style={{ fontSize: 9.5, fontWeight: 600, letterSpacing: '0.05em', textTransform: 'uppercase', color: 'var(--text-muted)', marginBottom: 6 }}>{t('ul_analyst')}</div>
+          <div className="eyebrow" style={{ marginBottom: 7 }}>{t('ul_analyst')}</div>
           <div style={{ display: 'flex', height: 8, borderRadius: 5, overflow: 'hidden', background: 'var(--surface-2)' }}>
             {(['buy', 'hold', 'sell'] as const).map((k) => a[k] > 0 && (
               <div key={k} title={`${t(`sent_${k}`)} ${a[k]}%`} style={{ flex: `${a[k]} 0 0`, background: SENTIMENT_COLOR[k] }} />

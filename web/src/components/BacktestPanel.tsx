@@ -21,7 +21,7 @@ function classify(i: BacktestIssue): Kind {
 
 /** Backtest headline figure. Pass a fraction `num` (+`dp`) to count it up from 0
     with a split % unit (matching the MC hero); else a plain `value` string. */
-function MiniStat({ label, value, num, dp = 2, tone, tip }: { label: string; value?: string; num?: number | null; dp?: number; tone?: string; tip?: string }) {
+function MiniStat({ label, value, num, dp = 2, tone, tip, unit = '%', scale = 100 }: { label: string; value?: string; num?: number | null; dp?: number; tone?: string; tip?: string; unit?: string; scale?: number }) {
   const animate = num != null && Number.isFinite(num)
   return (
     <div className="card lift" style={{ padding: '14px 16px' }}>
@@ -30,7 +30,7 @@ function MiniStat({ label, value, num, dp = 2, tone, tip }: { label: string; val
       </div>
       <div className="mono" style={{ fontSize: 24, fontWeight: 600, color: tone ?? 'var(--text)', lineHeight: 1, display: 'flex', alignItems: 'baseline', gap: 1 }}>
         {animate
-          ? <><AnimatedNumber value={num! * 100} format={(n) => numFmt(n, dp)} animateOnMount /><i className="fig-unit" style={{ color: 'inherit', opacity: 0.7 }}>%</i></>
+          ? <><AnimatedNumber value={num! * scale} format={(n) => numFmt(n, dp)} animateOnMount /><i className="fig-unit" style={{ color: 'inherit', opacity: 0.7 }}>{unit}</i></>
           : value}
       </div>
     </div>
@@ -160,6 +160,8 @@ export default function BacktestPanel({ result, terms, range, onApplyRange }: {
         </StatGroup>
         <StatGroup title={t('hero_risk')}>
           <MiniStat label={t('bt_called_rate')} num={summary.prob_called} dp={1} tip={t('bt_tip_called')} />
+          <MiniStat label={t('avg_time_autocall')} num={summary.avg_time_to_autocall} value="—" dp={2}
+                    unit="y" scale={1} tip={t('tip_avg_time_autocall')} />
           <MiniStat label={t('bt_ki_rate')} num={summary.prob_knock_in} dp={1} tip={t('bt_tip_ki')}
                     tone={(summary.prob_knock_in ?? 0) <= 0.15 ? 'var(--green)' : 'var(--red)'} />
           <MiniStat label={t('loss_given_ki')}

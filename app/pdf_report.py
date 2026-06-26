@@ -276,6 +276,7 @@ _LABELS: dict[str, dict[str, str]] = {
     "in_this_report":        {"en": "In this report",                    "es": "En este informe"},
     "expected_coupon":       {"en": "Expected coupon income",            "es": "Cupón total esperado"},
     "prob_autocall":         {"en": "P(autocall)",                       "es": "P(autocall)"},
+    "avg_time_autocall":     {"en": "Avg. time to call",                 "es": "T. medio a autocall"},
     "prob_knock_in":         {"en": "P(knock-in)",                       "es": "P(knock-in)"},
     "loss_given_ki":         {"en": "Loss given knock-in",               "es": "Pérdida dado knock-in"},
     "n_paths":               {"en": "Simulated paths",                   "es": "Caminos simulados"},
@@ -3484,10 +3485,13 @@ def _build_pdf_report(
         _p_ki = results.get("prob_knock_in_total", 0)
         _lgki = results.get("loss_given_knock_in")
         _lgki_str = f"{_lgki:.2%}" if _lgki is not None and _lgki == _lgki else "—"  # nan-safe
+        _att = results.get("avg_time_to_autocall")
+        _att_str = f"{_att:.2f} y" if _att is not None and _att == _att else "—"  # nan-safe
         pdf.metric_band([
             (_t("expected_irr",       lang), f"{results.get('expected_irr', 0):.2%}"),
             (_t("total_return_short", lang), f"{results.get('expected_total_return', 0):.2%}"),
             (_t("prob_autocall",      lang), f"{results.get('prob_autocall', 0):.1%}"),
+            (_t("avg_time_autocall",  lang), _att_str),
             (_t("prob_knock_in",      lang), f"{_p_ki:.2%}"),
             (_t("loss_given_ki",      lang), _lgki_str),
             (_t("n_paths",            lang), f"{n_paths_val:,}"),
@@ -3621,10 +3625,13 @@ def _build_pdf_report(
             _bt_lgki = bt_summary.get("loss_given_knock_in")
         _bt_lgki_pdf = (f"{_bt_lgki:.2%}"
                         if _bt_lgki is not None and _bt_lgki == _bt_lgki else "—")  # nan-safe
+        _bt_att = bt_summary.get("avg_time_to_autocall")
+        _bt_att_str = f"{_bt_att:.2f} y" if _bt_att is not None and _bt_att == _bt_att else "—"  # nan-safe
         pdf.metric_band([
             (_t("bt_mean_irr",        lang), f"{bt_summary.get('mean_irr', 0):.2%}"),
             (_t("total_return_short", lang), f"{bt_summary.get('expected_total_return', 0):.2%}"),
             (_t("bt_autocalled_pct",  lang), f"{bt_summary.get('prob_called', 0):.1%}"),
+            (_t("avg_time_autocall",  lang), _bt_att_str),
             (_t("bt_knock_in_pct",    lang), f"{bt_summary.get('prob_knock_in', 0):.1%}"),
             (_t("bt_loss_given_ki",   lang), _bt_lgki_pdf),
             (_t("bt_n_issues",        lang), str(bt_summary.get("n_issues", 0))),

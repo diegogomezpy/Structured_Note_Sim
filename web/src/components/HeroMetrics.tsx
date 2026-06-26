@@ -67,6 +67,10 @@ export default function HeroMetrics({ summary }: { summary: SimSummary }) {
   const risk: Card[] = [
     { label: t('p_autocall'), value: summary.prob_autocall ?? 0, format: pctNum(2), unit: '%',
       hint: peakIdx >= 0 ? `${t('period')} P${peakIdx + 1}` : undefined, tip: t('tip_p_autocall'), tone: 'plain' },
+    ...(summary.avg_time_to_autocall != null
+      ? [{ label: t('avg_time_autocall'), value: summary.avg_time_to_autocall, format: (n: number) => num(n, 2), unit: 'y',
+          tip: t('tip_avg_time_autocall'), tone: 'plain' as const }]
+      : []),
     { label: t('p_knock_in'), value: ki, format: pctNum(ki < 0.1 ? 2 : 1), unit: '%', tip: t('tip_p_knock_in'),
       tone: ki <= 0.15 ? 'good' : 'bad' },
     { label: t('loss_given_ki'), value: summary.loss_given_knock_in ?? 0, format: pctNum(2), unit: '%',
