@@ -74,7 +74,7 @@ export default function SetupRail({
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-      <div>
+      <div data-tour="term-sheet">
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
           <label style={{ fontSize: 12, color: 'var(--text-muted)' }}>{t('config_label')}</label>
           <div style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
@@ -107,12 +107,14 @@ export default function SetupRail({
         {uploadErr && <div style={{ fontSize: 11.5, color: 'var(--red)', marginTop: 5 }}>{uploadErr}</div>}
       </div>
 
-      <UnderlyingPicker tickers={terms.tickers} onChange={(tk) => set('tickers', tk)} />
+      <div data-tour="underlyings">
+        <UnderlyingPicker tickers={terms.tickers} onChange={(tk) => set('tickers', tk)} />
+      </div>
 
       {/* Inline editor for the terms that drive the note diagram above. The full
           settings overlay still holds the rarer fields (engine, ratings, capital
           guarantee, upside cap, …). */}
-      <div style={{ borderTop: '1px solid var(--border)', paddingTop: 14 }}>
+      <div data-tour="terms" style={{ borderTop: '1px solid var(--border)', paddingTop: 14 }}>
         <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--text-muted)', marginBottom: 12 }}>{t('quick_edit')}</div>
 
         <Slider label={t('maturity')} value={terms.maturity} min={0.25} max={5} step={0.25} tip={t('tip_maturity')}
@@ -158,7 +160,7 @@ export default function SetupRail({
         <Icon name="chart" size={15} /> {t('edit_settings')}
       </button>
 
-      <button className={`btn btn--primary${stale && !running ? ' btn--pulse' : ''}`}
+      <button data-tour="run" className={`btn btn--primary${stale && !running ? ' btn--pulse' : ''}`}
               style={{ justifyContent: 'center', padding: '12px', fontSize: 14 }}
               disabled={running} onClick={onRun}>
         <Icon name={running ? 'spinner' : stale ? 'refresh' : 'play'} size={16} />

@@ -293,6 +293,21 @@ input:focus, select:focus { outline: none; border-color: var(--accent); box-shad
 .chart-reveal--settle { animation: chartSettle 460ms var(--ease-settle) both; }
 .chart-reveal--bloom  { animation: chartBloom 620ms var(--ease-enter) both; }
 
+/* ── guided tour (coachmark) ─────────────────────────────────────────────── */
+.tour-block { position: fixed; inset: 0; z-index: 1100; }
+.tour-dim { position: fixed; inset: 0; z-index: 1101; background: rgba(15,18,16,.58); animation: overlayScrimIn var(--dur-base) var(--ease-settle) both; }
+.tour-spot {
+  position: fixed; z-index: 1101; border-radius: 10px; pointer-events: none;
+  box-shadow: 0 0 0 9999px rgba(15,18,16,.58); outline: 2px solid var(--accent); outline-offset: 0;
+  transition: left .28s var(--ease-settle), top .28s var(--ease-settle), width .28s var(--ease-settle), height .28s var(--ease-settle);
+}
+.tour-card {
+  position: fixed; z-index: 1102; background: var(--surface);
+  border: 1px solid var(--border); border-radius: 14px; padding: 18px 20px;
+  box-shadow: var(--shadow-lift); animation: modalCardIn var(--dur-enter) var(--ease-enter) both;
+  transition: left .26s var(--ease-settle), top .26s var(--ease-settle);
+}
+
 /* The live ticker bar rolls down into place rather than popping in (Motion · IV);
    its cells then stagger via the inner .stagger. */
 @keyframes tickerReveal { from { clip-path: inset(0 0 100% 0); opacity: 0.5; } to { clip-path: inset(0 0 0 0); opacity: 1; } }

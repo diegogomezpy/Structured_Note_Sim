@@ -3,6 +3,7 @@ import { useI18n } from '../i18n/I18nProvider'
 import Icon from './Icon'
 import BrandMark from './BrandMark'
 import TickerLogo, { IssuerLogo } from './TickerLogo'
+import { useTour, mainTour } from './Tour'
 import type { NoteTerms } from '../api/types'
 
 export interface RunMeta { engine: string; nPaths: number; stale: boolean }
@@ -14,6 +15,7 @@ function compactPaths(n: number): string {
 export default function Header({ terms, run }: { terms: NoteTerms | null; run: RunMeta | null }) {
   const { mode, toggle } = useTheme()
   const { lang, setLang, t } = useI18n()
+  const { start } = useTour()
   const tickers = terms ? Object.entries(terms.tickers ?? {}) : []
 
   return (
@@ -62,6 +64,10 @@ export default function Header({ terms, run }: { terms: NoteTerms | null; run: R
       </div>
 
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexShrink: 0 }}>
+        <button className="btn btn--ghost" onClick={() => start(mainTour(t))}
+                style={{ padding: '6px 11px', fontSize: 12.5, gap: 6 }}>
+          <Icon name="info" size={15} /> {t('tour_launch')}
+        </button>
         {run && (
           <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
             <span className="mono" style={{ fontSize: 11, color: 'var(--text-faint)' }}>

@@ -23,6 +23,7 @@ import ReportPanel from './components/ReportPanel'
 import SettingsOverlay from './components/SettingsOverlay'
 import BrandMark from './components/BrandMark'
 import Icon from './components/Icon'
+import { useTour, mainTour } from './components/Tour'
 
 type Status = 'idle' | 'running' | 'error'
 
@@ -33,6 +34,7 @@ const sigOf = (terms: NoteTerms, opts: RunOpts) =>
 
 export default function App() {
   const { t, lang } = useI18n()
+  const { start: startTour } = useTour()
   const [configs, setConfigs] = useState<ConfigMeta[]>([])
   const [configFile, setConfigFile] = useState('')
   const [terms, setTerms] = useState<NoteTerms | null>(null)
@@ -73,6 +75,12 @@ export default function App() {
     checkHealth()
     api.configs().then(setConfigs).catch((e) => setErrorMsg(String(e)))
     setTerms(blankNote())
+    // First-ever visit: launch the guided tour once (it can be reopened any time
+    // from "How it works"). Delayed so the layout has settled before spotlighting.
+    if (!localStorage.getItem('mercator_tour_seen')) {
+      localStorage.setItem('mercator_tour_seen', '1')
+      setTimeout(() => startTour(mainTour(t)), 900)
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
@@ -197,7 +205,7 @@ export default function App() {
   return (
     <div className="ground" style={{ minHeight: '100%', display: 'flex', flexDirection: 'column' }}>
       <Header terms={terms} run={runMeta} />
-      {terms && <TickerTape terms={terms} />}
+      {terms && <div data-tour="ticker"><TickerTape terms={terms} /></div>}
 
       <div className="app-layout">
         <aside className="app-rail">
@@ -221,24 +229,26 @@ export default function App() {
 
         <main style={{ display: 'flex', flexDirection: 'column', gap: 18, minWidth: 0 }}>
           {terms && (
-            <Panel title={t('note_structure')} right={
-              <button className="btn btn--ghost" style={{ padding: '3px 9px', fontSize: 11.5 }}
-                      onClick={() => setDiagramOpen((v) => !v)}>
-                {diagramOpen ? t('hide_diagram') : t('show_diagram')}
-              </button>
-            }>
-              <div style={{ fontSize: 12.5, color: 'var(--text-muted)', marginTop: -6, marginBottom: 14 }}>
-                {noteSummary(terms, t)}
-              </div>
-              {diagramOpen && <NoteTimeline terms={terms} />}
-              <NoteDescription terms={terms} />
-              <ObservationSchedule terms={terms} />
-              <IssuerCard terms={terms} />
-              <UnderlyingCards terms={terms} />
-            </Panel>
+            <div data-tour="structure">
+              <Panel title={t('note_structure')} right={
+                <button className="btn btn--ghost" style={{ padding: '3px 9px', fontSize: 11.5 }}
+                        onClick={() => setDiagramOpen((v) => !v)}>
+                  {diagramOpen ? t('hide_diagram') : t('show_diagram')}
+                </button>
+              }>
+                <div style={{ fontSize: 12.5, color: 'var(--text-muted)', marginTop: -6, marginBottom: 14 }}>
+                  {noteSummary(terms, t)}
+                </div>
+                {diagramOpen && <NoteTimeline terms={terms} />}
+                <NoteDescription terms={terms} />
+                <ObservationSchedule terms={terms} />
+                <IssuerCard terms={terms} />
+                <UnderlyingCards terms={terms} />
+              </Panel>
+            </div>
           )}
 
-          <Tabs tabs={tabs} active={tab} onChange={setTab} />
+          <div data-tour="tabs"><Tabs tabs={tabs} active={tab} onChange={setTab} /></div>
 
           {tab === 'mc' && (
             <>
