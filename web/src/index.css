@@ -283,6 +283,24 @@ input:focus, select:focus { outline: none; border-color: var(--accent); box-shad
    redraw (which risks the resize loop). */
 .chart-reveal { animation: chartIn 320ms var(--ease-enter) both; }
 
+/* Staggered children reveal — sequence cards/panels in rather than snapping them
+   all at once (Motion: one mover at a time). Applied to result grids/columns. */
+.stagger > * { animation: fadeUp var(--dur-enter) var(--ease-enter) both; }
+.stagger > *:nth-child(1) { animation-delay: 0ms; }
+.stagger > *:nth-child(2) { animation-delay: 55ms; }
+.stagger > *:nth-child(3) { animation-delay: 110ms; }
+.stagger > *:nth-child(4) { animation-delay: 165ms; }
+.stagger > *:nth-child(5) { animation-delay: 220ms; }
+.stagger > *:nth-child(6) { animation-delay: 275ms; }
+.stagger > *:nth-child(7) { animation-delay: 330ms; }
+.stagger > *:nth-child(n+8) { animation-delay: 385ms; }
+
+/* Value tick flash — a brief wash when a live figure updates (ticker tape). */
+@keyframes tickFlashUp { from { background: rgba(95, 184, 154, 0.22); } to { background: transparent; } }
+@keyframes tickFlashDown { from { background: rgba(217, 122, 110, 0.22); } to { background: transparent; } }
+.tick-up { animation: tickFlashUp 800ms var(--ease-settle); }
+.tick-down { animation: tickFlashDown 800ms var(--ease-settle); }
+
 /* On a phone, modals dock to the bottom as a sheet that slides up — Mobile +
    Motion · V. Pure CSS: the same .modal-scrim/.modal-card retarget, no JS. */
 @keyframes sheetIn { from { transform: translateY(100%); } to { transform: none; } }

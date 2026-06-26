@@ -38,6 +38,8 @@ export const api = {
     jpost<LiveResult>('/api/live', { terms, lang }),
   underlyingMetrics: (tickers: Record<string, string>, lang = 'en') =>
     jpost<UnderlyingMetric[]>('/api/underlyings/metrics', { tickers, lang }),
+  quotes: (symbols: string[]) =>
+    jpost<Record<string, { price: number | null; change: number | null }>>('/api/quotes', { symbols }),
   describe: (issuer: string | null, symbols: string[], lang = 'en') =>
     jpost<DescribeResult>('/api/describe', { issuer, symbols, lang }),
   brandingList: () => jget<{ file: string; firm_name: string }[]>('/api/branding'),

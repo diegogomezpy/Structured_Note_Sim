@@ -70,6 +70,10 @@ class MetricsRequest(BaseModel):
     lang: str = "en"
 
 
+class QuotesRequest(BaseModel):
+    symbols: list[str] = Field(default_factory=list)
+
+
 class DescribeRequest(BaseModel):
     issuer: str | None = None
     symbols: list[str] = Field(default_factory=list)
@@ -367,6 +371,17 @@ def underlying_metrics(req: MetricsRequest):
         return engine.run_underlying_metrics(req.tickers, lang=req.lang)
     except Exception as e:
         raise HTTPException(500, f"underlying metrics failed: {e}")
+
+
+@app.post("/api/quotes")
+def quotes(req: QuotesRequest):
+    """Fast last-price + day-change per symbol for the live ticker tape — Yahoo
+    fast_info only (no .info / options / history). Best-effort; a symbol that
+    fails returns nulls so the tape degrades cleanly."""
+    try:
+        return engine.run_quotes(req.symbols)
+    except Exception as e:
+        raise HTTPException(500, f"quotes failed: {e}")
 
 
 @app.post("/api/report")

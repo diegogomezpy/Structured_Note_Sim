@@ -1026,6 +1026,31 @@ def run_underlying_metrics(tickers: dict, *, lang: str = "en") -> list[dict]:
     return out
 
 
+def run_quotes(symbols: list[str]) -> dict:
+    """Fast last-price + day-change per symbol for the live ticker tape. Uses
+    Yahoo fast_info only (no .info / options / history), so it's cheap enough to
+    poll. Best-effort: a symbol that fails returns nulls."""
+    import yfinance as yf
+    out: dict[str, dict] = {}
+    for sym in symbols:
+        rec = {"price": None, "change": None}
+        try:
+            fi = yf.Ticker(sym).fast_info
+            last = getattr(fi, "last_price", None)
+            prev = getattr(fi, "previous_close", None)
+            if last is None and hasattr(fi, "get"):
+                last = fi.get("lastPrice")
+                prev = fi.get("previousClose")
+            if last is not None:
+                rec["price"] = float(last)
+                if prev:
+                    rec["change"] = float(last) / float(prev) - 1.0
+        except Exception as e:
+            print(f"[quotes] {sym} failed: {e}")
+        out[sym] = rec
+    return out
+
+
 # ── description prefill (Yahoo business summaries) ───────────────────────────────
 def run_describe(*, issuer: str | None = None, symbols: list[str] | None = None,
                  lang: str = "en") -> dict:

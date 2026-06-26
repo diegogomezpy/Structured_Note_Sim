@@ -42,7 +42,7 @@ export default function MonteCarloPanel({ result, terms }: { result: SimResult; 
       </div>
 
       {sub === 'summary' && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }} className="fade-up">
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }} className="stagger">
           <Panel title={t('outcomes')} right={`${summary.n_paths.toLocaleString()} ${t('paths').toLowerCase()} · ${summary.engine}`} pad={14}>
             <div style={{ height: 210 }}><Figure fig={figures.outcome} name="outcome_breakdown" /></div>
           </Panel>
@@ -56,7 +56,7 @@ export default function MonteCarloPanel({ result, terms }: { result: SimResult; 
       )}
 
       {sub === 'fans' && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }} className="fade-up">
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }} className="stagger">
           <Panel title={t('worst_of_fan')} pad={14}>
             <div style={{ height: CHART_H }}><Figure fig={figures.wof_fan} name="worst_of_fan" /></div>
           </Panel>
@@ -95,7 +95,7 @@ export default function MonteCarloPanel({ result, terms }: { result: SimResult; 
       )}
 
       {sub === 'correlation' && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }} className="fade-up">
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }} className="stagger">
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(360px, 1fr))', gap: 18 }}>
             <Panel title={t('corr_input')} pad={14}>
               <div style={{ height: 360 }}><Figure fig={figures.corr_input} name="corr_input" /></div>

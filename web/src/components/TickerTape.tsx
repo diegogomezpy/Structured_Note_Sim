@@ -1,24 +1,32 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import { api } from '../api/client'
 import { useI18n } from '../i18n/I18nProvider'
 import { fetchUnderlyingMetricsCached } from '../lib/metricsStore'
 import { price as fmtPrice } from '../lib/format'
+import AnimatedNumber from './AnimatedNumber'
 import type { NoteTerms, UnderlyingMetric } from '../api/types'
 
 /** Quote-screen ticker tape — Mercator · Elements. An ink bar with a viridian
     LIVE chip, then a divided row of the note's underlyings (ticker · last price ·
-    signed day-change ▲/▼). All data is real (the underlying-metrics endpoint);
-    no arrow is shown when the day-change is unavailable. */
+    signed day-change ▲/▼). Seeds from the underlying-metrics endpoint, then polls
+    a lightweight quotes endpoint so it genuinely updates: the price counts to its
+    new value and the cell flashes on a change. All data is real. */
+const POLL_MS = 30000
+
 export default function TickerTape({ terms }: { terms: NoteTerms }) {
   const { lang } = useI18n()
   const tickers = terms.tickers ?? {}
-  const key = Object.keys(tickers).sort().join(',') + '|' + lang
-  const [rows, setRows] = useState<UnderlyingMetric[] | null>(null)
+  const syms = Object.keys(tickers)
+  const key = syms.slice().sort().join(',') + '|' + lang
 
-  // Re-runs only when the symbol set / language (the key) changes. No ref guard:
-  // under StrictMode that would swallow the second mount's fetch and leave rows
-  // null forever. The promise cache dedupes the actual network call.
+  const [rows, setRows] = useState<UnderlyingMetric[] | null>(null)
+  const [quotes, setQuotes] = useState<Record<string, { price: number | null; change: number | null }>>({})
+  const [flash, setFlash] = useState<Record<string, 'up' | 'down'>>({})
+  const prevPrice = useRef<Record<string, number>>({})
+
+  // Seed the tape from the (cached) metrics endpoint.
   useEffect(() => {
-    if (!Object.keys(tickers).length) { setRows(null); return }
+    if (!syms.length) { setRows(null); return }
     let alive = true
     fetchUnderlyingMetricsCached(tickers, lang)
       .then((r) => { if (alive) setRows(r) })
@@ -27,7 +35,34 @@ export default function TickerTape({ terms }: { terms: NoteTerms }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [key])
 
-  // Invert {sym: name} so we can show the ticker symbol on each cell.
+  // Poll fast quotes; flash the cells whose price moved.
+  useEffect(() => {
+    if (!syms.length) return
+    let alive = true
+    const poll = async () => {
+      try {
+        const q = await api.quotes(syms)
+        if (!alive) return
+        const f: Record<string, 'up' | 'down'> = {}
+        for (const s of syms) {
+          const p = q[s]?.price
+          const prev = prevPrice.current[s]
+          if (p != null && prev != null && p !== prev) f[s] = p > prev ? 'up' : 'down'
+          if (p != null) prevPrice.current[s] = p
+        }
+        setQuotes(q)
+        if (Object.keys(f).length) {
+          setFlash(f)
+          setTimeout(() => { if (alive) setFlash({}) }, 850)
+        }
+      } catch { /* keep the seeded values */ }
+    }
+    poll()
+    const id = setInterval(poll, POLL_MS)
+    return () => { alive = false; clearInterval(id) }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [key])
+
   const nameToSym: Record<string, string> = {}
   for (const [sym, name] of Object.entries(tickers)) nameToSym[name] = sym
 
@@ -42,18 +77,24 @@ export default function TickerTape({ terms }: { terms: NoteTerms }) {
         fontFamily: 'var(--font-mono)', fontSize: 10, fontWeight: 600, letterSpacing: '0.14em',
         textTransform: 'uppercase', color: PAPER, whiteSpace: 'nowrap', flexShrink: 0,
       }}>LIVE ·</div>
-      <div className="mono" style={{ flex: 1, display: 'flex', alignItems: 'center', overflowX: 'auto', whiteSpace: 'nowrap', scrollbarWidth: 'none' }}>
+      <div className="mono stagger" style={{ flex: 1, display: 'flex', alignItems: 'stretch', overflowX: 'auto', whiteSpace: 'nowrap', scrollbarWidth: 'none' }}>
         {rows.map((m, i) => {
           const sym = m.symbol || nameToSym[m.name] || m.name
-          const dc = m.day_change
+          const price = quotes[sym]?.price ?? m.last_price
+          const dc = quotes[sym]?.change ?? m.day_change
           const tone = dc == null ? LIGHT : dc >= 0 ? UP : DOWN
+          const fl = flash[sym]
           return (
-            <span key={m.name} title={m.name} style={{
-              display: 'inline-flex', alignItems: 'baseline', gap: 8, padding: '11px 18px',
-              borderRight: i < rows.length - 1 ? `1px solid ${RULE}` : 'none', fontSize: 12,
-            }}>
+            <span key={m.name} title={m.name}
+              className={fl === 'up' ? 'tick-up' : fl === 'down' ? 'tick-down' : undefined}
+              style={{
+                display: 'inline-flex', alignItems: 'baseline', gap: 8, padding: '11px 18px',
+                borderRight: i < rows.length - 1 ? `1px solid ${RULE}` : 'none', fontSize: 12,
+              }}>
               <span style={{ fontWeight: 600, color: PAPER }}>{sym}</span>
-              <span style={{ color: LIGHT }}>{fmtPrice(m.last_price)}</span>
+              <span style={{ color: LIGHT }}>
+                {price != null ? <AnimatedNumber value={price} format={fmtPrice} duration={500} /> : '—'}
+              </span>
               {dc != null && (
                 <span style={{ color: tone }}>{dc >= 0 ? '▲' : '▼'} {Math.abs(dc * 100).toFixed(2)}%</span>
               )}

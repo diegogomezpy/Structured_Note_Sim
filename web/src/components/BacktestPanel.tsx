@@ -32,7 +32,7 @@ function StatGroup({ title, children }: { title: string; children: ReactNode }) 
   return (
     <div>
       <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-muted)', marginBottom: 10 }}>{title}</div>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 14 }}>{children}</div>
+      <div className="stagger" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 14 }}>{children}</div>
     </div>
   )
 }
@@ -136,7 +136,7 @@ export default function BacktestPanel({ result, terms, range, onApplyRange }: {
       <Tabs tabs={[{ id: 'outcomes', label: t('bt_sub_outcomes') }, { id: 'prices', label: t('bt_sub_prices') }, { id: 'sample', label: t('bt_sub_sample') }, { id: 'explorer', label: t('bt_sub_explorer') }]} active={sub} onChange={setSub} />
 
       {sub === 'outcomes' && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }} className="fade-up">
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }} className="stagger">
       <Panel title={t('bt_outcomes')} right={`${n} ${t('bt_issues').toLowerCase()}`}>
         <div style={{ display: 'flex', height: 28, borderRadius: 8, overflow: 'hidden', background: 'var(--surface-2)' }}>
           {segs.map((s) => (

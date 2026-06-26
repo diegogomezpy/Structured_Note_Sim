@@ -28,14 +28,14 @@ function Group({ title, cards }: { title: string; cards: Card[] }) {
   return (
     <div>
       <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-muted)', marginBottom: 10 }}>{title}</div>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 14 }}>
+      <div className="stagger" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 14 }}>
         {cards.map((c) => (
-          <div key={c.label} className="card lift fade-up" title={c.tip} style={{ padding: '18px 20px', cursor: 'help' }}>
+          <div key={c.label} className="card lift" title={c.tip} style={{ padding: '18px 20px', cursor: 'help' }}>
             <div className="eyebrow" style={{ marginBottom: 12, display: 'flex', alignItems: 'center', gap: 5 }}>
               {c.label}<span style={{ color: 'var(--text-faint)', fontWeight: 400 }}>ⓘ</span>
             </div>
             <div className="mono" style={{ fontSize: 33, fontWeight: 600, color: toneColor[c.tone], lineHeight: 0.95, letterSpacing: '-0.02em', display: 'flex', alignItems: 'baseline', gap: 1 }}>
-              <AnimatedNumber value={c.value} format={c.format} />
+              <AnimatedNumber value={c.value} format={c.format} animateOnMount />
               {c.unit && <span className="fig-unit" style={{ color: c.tone === 'plain' ? 'var(--text-faint)' : 'inherit', opacity: c.tone === 'plain' ? 1 : 0.7 }}>{c.unit}</span>}
             </div>
             {c.hint && <div className="mono" style={{ fontSize: 11, color: 'var(--text-faint)', marginTop: 10 }}>{c.hint}</div>}
