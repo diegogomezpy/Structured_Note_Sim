@@ -335,3 +335,12 @@ export interface LogoData {
   base: string // URL template containing "{sym}"
   issuers: Record<string, string>
 }
+
+export interface CoverPhoto {
+  id: number
+  thumb: string
+  src: string
+  photographer: string | null
+  alt: string
+  term?: string
+}

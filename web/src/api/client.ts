@@ -1,5 +1,5 @@
 import type {
-  BacktestResult, BtRange, ConfigMeta, DescribeResult, ExplorerData, Health, InspectFilters,
+  BacktestResult, BtRange, ConfigMeta, CoverPhoto, DescribeResult, ExplorerData, Health, InspectFilters,
   InspectResult, LiveResult, LogoData, NoteTerms, ReportRequest, SimResult, SimulateRequest,
   UnderlyingMetric, UnderlyingOption,
 } from './types'
@@ -44,6 +44,10 @@ export const api = {
     jpost<DescribeResult>('/api/describe', { issuer, symbols, lang }),
   brandingList: () => jget<{ file: string; firm_name: string }[]>('/api/branding'),
   branding: (file: string) => jget<Record<string, unknown>>(`/api/branding/${file}`),
+  coverSectors: () => jget<{ available: boolean; sectors: string[] }>('/api/cover/sectors'),
+  coverPhotos: (sector: string) =>
+    jget<{ available: boolean; sector: string; photos: CoverPhoto[] }>(`/api/cover/photos?sector=${encodeURIComponent(sector)}`),
+  coverPhotoProxy: (u: string) => `/api/cover/photo?u=${encodeURIComponent(u)}`,
   report: async (body: ReportRequest): Promise<Response> => {
     const r = await fetch('/api/report', {
       method: 'POST',

@@ -6,6 +6,7 @@ import Panel from './Panel'
 import Icon from './Icon'
 import { Select } from './fields'
 import FolderConnect from './FolderConnect'
+import CoverPhotoPicker from './CoverPhotoPicker'
 import { useLocalFolder } from '../lib/localFolder'
 import type { Branding, NoteTerms } from '../api/types'
 import type { RunOpts } from './SetupRail'
@@ -371,6 +372,12 @@ export default function ReportPanel({ terms, opts }: { terms: NoteTerms; opts: R
                          value={brand.cover_overlay_opacity != null ? String(brand.cover_overlay_opacity) : ''}
                          onChange={(e) => setBrandField('cover_overlay_opacity', e.target.value)} />
                 </Field>
+              </div>
+              {/* Cover-photo library — professional photos by sector, suggested from
+                  the note's underlyings. Sets the cover image (overlay still applies). */}
+              <div style={{ marginTop: 14 }}>
+                <div style={{ fontSize: 11.5, color: 'var(--text-muted)', marginBottom: 2 }}>{t('cover_lib')}</div>
+                <CoverPhotoPicker terms={terms} onPick={(d) => setBrandField('cover_image_base64', d)} />
               </div>
             </div>
 

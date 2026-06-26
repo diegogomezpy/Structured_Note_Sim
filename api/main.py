@@ -11,6 +11,7 @@ The React front-end (web/) calls these endpoints; figures come back as Plotly JS
 from __future__ import annotations
 
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -180,6 +181,145 @@ def logo_proxy(u: str):
     _LOGO_PROXY_CACHE[u] = (body, ctype)
     if len(_LOGO_PROXY_CACHE) > _LOGO_PROXY_MAX:
         _LOGO_PROXY_CACHE.popitem(last=False)
+    return Response(body, media_type=ctype, headers={"Cache-Control": "public, max-age=86400"})
+
+
+# ── industry cover-photo library (Pexels) ──────────────────────────────────────
+# A built-in library of professional cover photos, keyed by industry sector, so a
+# tech note can take a server-rack / chip-wafer / fibre-optics shot, an energy note
+# an oil-refinery / wind-farm one, etc. The frontend suggests the sector from the
+# note's underlyings (overridable) and embeds the chosen photo into the branding.
+# Powered by the Pexels API (free, commercial use) — set PEXELS_API_KEY on the
+# deploy; without it the picker hides cleanly and manual upload still works.
+_SECTOR_QUERIES: "dict[str, list[str]]" = {
+    "technology":         ["server rack data center", "silicon chip wafer", "fiber optic cables"],
+    "energy":             ["oil refinery industrial", "offshore wind farm", "solar panel field"],
+    "financials":         ["stock exchange trading floor", "financial district skyscrapers", "bank architecture"],
+    "healthcare":         ["pharmaceutical laboratory", "modern hospital interior", "dna research microscope"],
+    "consumer_cyclical":  ["luxury retail storefront", "automobile assembly line", "shopping mall interior"],
+    "consumer_defensive": ["supermarket shelves", "packaged food factory", "grocery aisle"],
+    "industrials":        ["factory robotics", "industrial machinery", "cargo shipping logistics"],
+    "materials":          ["steel mill foundry", "open pit mine", "chemical plant"],
+    "utilities":          ["power transmission lines", "electric power plant", "water treatment plant"],
+    "real_estate":        ["modern office tower", "city skyline aerial", "apartment construction site"],
+    "communication":      ["telecom broadcast tower", "network data servers", "media broadcast studio"],
+    "markets":            ["global stock market", "abstract finance data", "world trade charts"],
+}
+_YAHOO_SECTOR_ALIAS = {
+    "technology": "technology", "energy": "energy",
+    "financial services": "financials", "financials": "financials", "financial": "financials",
+    "healthcare": "healthcare", "health care": "healthcare",
+    "consumer cyclical": "consumer_cyclical", "consumer discretionary": "consumer_cyclical",
+    "consumer defensive": "consumer_defensive", "consumer staples": "consumer_defensive",
+    "industrials": "industrials",
+    "basic materials": "materials", "materials": "materials",
+    "utilities": "utilities", "real estate": "real_estate",
+    "communication services": "communication", "communication": "communication",
+}
+_COVER_CACHE: "dict[str, list]" = {}
+_COVER_IMG_CACHE: "_OD[str, tuple[bytes, str]]" = _OD()
+
+
+def _pexels_key() -> str:
+    return os.environ.get("PEXELS_API_KEY", "").strip()
+
+
+def _normalize_sector(s: str | None) -> str:
+    if not s:
+        return "markets"
+    k = str(s).strip().lower()
+    if k in _SECTOR_QUERIES:
+        return k
+    return _YAHOO_SECTOR_ALIAS.get(k, "markets")
+
+
+def _pexels_search(query: str, per_page: int = 2) -> list[dict]:
+    key = _pexels_key()
+    if not key:
+        return []
+    url = "https://api.pexels.com/v1/search?" + _uparse.urlencode(
+        {"query": query, "per_page": per_page, "orientation": "landscape", "size": "large"})
+    try:
+        req = _ureq.Request(url, headers={"Authorization": key, "User-Agent": "StructuredNoteSim/1.0"})
+        with _ureq.urlopen(req, timeout=8) as resp:
+            data = json.loads(resp.read(2_000_000))
+    except Exception:
+        return []
+    out = []
+    for p in data.get("photos", []):
+        src = p.get("src", {})
+        full = src.get("large") or src.get("large2x") or src.get("original")
+        if not full:
+            continue
+        out.append({
+            "id": p.get("id"),
+            "thumb": src.get("medium") or src.get("small") or full,
+            "src": full,
+            "photographer": p.get("photographer"),
+            "alt": p.get("alt") or query,
+        })
+    return out
+
+
+@app.get("/api/cover/sectors")
+def cover_sectors():
+    """Industry sector keys for the cover-photo picker dropdown (the client maps
+    each to a localized label). `available` reflects whether a Pexels key is set."""
+    return {"available": bool(_pexels_key()), "sectors": list(_SECTOR_QUERIES.keys())}
+
+
+@app.get("/api/cover/photos")
+def cover_photos(sector: str = "markets"):
+    """A few professional cover photos for the given sector (or the Yahoo sector
+    string, normalized). Cached per sector. Returns the resolved sector key so the
+    client can highlight the suggested option."""
+    resolved = _normalize_sector(sector)
+    if not _pexels_key():
+        return {"available": False, "sector": resolved, "photos": []}
+    cached = _COVER_CACHE.get(resolved)
+    if cached is not None:
+        return {"available": True, "sector": resolved, "photos": cached}
+    photos: list[dict] = []
+    seen: set = set()
+    for term in _SECTOR_QUERIES.get(resolved, _SECTOR_QUERIES["markets"]):
+        for ph in _pexels_search(term, per_page=2):
+            if ph["id"] in seen:
+                continue
+            seen.add(ph["id"])
+            ph["term"] = term
+            photos.append(ph)
+    if photos:
+        _COVER_CACHE[resolved] = photos
+    return {"available": True, "sector": resolved, "photos": photos}
+
+
+@app.get("/api/cover/photo")
+def cover_photo_proxy(u: str):
+    """Stream a Pexels image same-origin (images.pexels.com only) so the client can
+    embed it into the branding config without a cross-origin canvas taint."""
+    try:
+        parsed = _uparse.urlparse(u)
+        if parsed.scheme != "https" or parsed.hostname != "images.pexels.com":
+            raise ValueError("host not allowed")
+    except Exception:
+        raise HTTPException(status_code=400, detail="bad photo url")
+    hit = _COVER_IMG_CACHE.get(u)
+    if hit is not None:
+        _COVER_IMG_CACHE.move_to_end(u)
+        body, ctype = hit
+        return Response(body, media_type=ctype, headers={"Cache-Control": "public, max-age=86400"})
+    try:
+        req = _ureq.Request(u, headers={"User-Agent": "StructuredNoteSim/1.0"})
+        with _ureq.urlopen(req, timeout=10) as resp:
+            body = resp.read(8_000_000)                 # cap at 8 MB
+            ctype = resp.headers.get("Content-Type", "image/jpeg").split(";")[0].strip() or "image/jpeg"
+    except Exception:
+        raise HTTPException(status_code=404, detail="photo unavailable")
+    if not body or not ctype.startswith("image/"):
+        raise HTTPException(status_code=404, detail="not an image")
+    _COVER_IMG_CACHE[u] = (body, ctype)
+    if len(_COVER_IMG_CACHE) > 128:
+        _COVER_IMG_CACHE.popitem(last=False)
     return Response(body, media_type=ctype, headers={"Cache-Control": "public, max-age=86400"})
 
 
