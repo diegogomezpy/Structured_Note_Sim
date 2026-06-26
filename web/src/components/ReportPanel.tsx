@@ -4,7 +4,7 @@ import { useI18n } from '../i18n/I18nProvider'
 import { useToast } from './Toast'
 import Panel from './Panel'
 import Icon from './Icon'
-import { Select, Segmented } from './fields'
+import { Select } from './fields'
 import FolderConnect from './FolderConnect'
 import CoverPhotoPicker from './CoverPhotoPicker'
 import { useLocalFolder } from '../lib/localFolder'
@@ -53,22 +53,34 @@ const TREE: Group[] = [
 
 // Report presets — one click selects a sensible set of sections for an audience.
 // Keys are intersected with what's actually available (e.g. the live group only
-// when the note has an issue date). "Custom" keeps the current selection so the
-// user can hand-tune; it's also the mode any manual toggle drops into.
-const PRESET_KEYS: Record<'client' | 'analyst', string[]> = {
+// when the note has an issue date). "full" / "custom" are handled specially.
+// "Custom" is the mode any manual toggle drops into, and it is persisted.
+const PRESET_KEYS: Record<string, string[]> = {
   // Client fact sheet — what the note is: terms, structure, underlyings. No
-  // simulation or backtest analysis.
+  // simulation / backtest analysis.
   client: ['cover', 'note_description', 'note_diagram', 'note_terms', 'obs_schedule', 'issuer_info', 'underlying_breakdown'],
-  // Risk analyst — the quantitative analysis: full Monte Carlo, backtest,
-  // calibration and current performance, plus the terms for context. Skips the
-  // branded cover and the marketing description.
+  // Bare term sheet — the legal essentials only.
+  term_sheet: ['cover', 'note_terms', 'note_diagram', 'obs_schedule', 'issuer_info'],
+  // Sales one-pager — the appealing bits: structure, underlyings and headline
+  // results, without the heavy diagnostics.
+  marketing: ['cover', 'note_description', 'note_diagram', 'underlying_breakdown', 'mc_metrics', 'mc_outcome', 'live_metrics', 'live_chart'],
+  // Investment-committee pack — a balanced decision view.
+  ic: ['note_terms', 'note_diagram', 'underlying_breakdown', 'mc_metrics', 'mc_outcome', 'mc_autocall', 'mc_wof', 'bt_metrics', 'bt_outcome', 'live_metrics'],
+  // Risk analyst — the full quantitative analysis plus terms for context. Skips
+  // the branded cover and the marketing description.
   analyst: ['note_terms', 'note_diagram', 'obs_schedule', 'issuer_info', 'underlying_breakdown',
             'mc_metrics', 'mc_outcome', 'mc_autocall', 'mc_irr', 'mc_wof', 'mc_sample', 'mc_fans', 'calib_corr', 'calib_table',
             'bt_metrics', 'bt_outcome', 'bt_pie', 'bt_irr', 'bt_prices',
             'live_metrics', 'live_asset_table', 'live_obs_table', 'live_chart'],
+  // Model review — Monte Carlo internals, calibration and correlation diagnostics.
+  quant: ['note_terms', 'mc_metrics', 'mc_irr', 'mc_wof', 'mc_fans', 'calib_corr', 'calib_table'],
 }
-const PRESET_ORDER = ['full', 'client', 'analyst', 'custom'] as const
+const PRESET_ORDER = ['full', 'client', 'term_sheet', 'marketing', 'ic', 'analyst', 'quant', 'custom'] as const
 type Preset = (typeof PRESET_ORDER)[number]
+const CUSTOM_LS = 'mercator_report_custom'
+const loadCustom = (): string[] | null => {
+  try { const r = localStorage.getItem(CUSTOM_LS); return r ? (JSON.parse(r) as string[]) : null } catch { return null }
+}
 
 function filenameFrom(res: Response, fallback: string): string {
   const cd = res.headers.get('Content-Disposition') || ''
@@ -94,8 +106,12 @@ export default function ReportPanel({ terms, opts }: { terms: NoteTerms; opts: R
   const groups = useMemo(() => TREE.filter((g) => g.key !== 'live' || hasLive), [hasLive])
   const allKeys = useMemo(() => groups.flatMap((g) => g.items.map((i) => i[0])), [groups])
 
-  const [sel, setSel] = useState<Set<string>>(() => new Set(allKeys))
-  const [preset, setPreset] = useState<Preset>('full')
+  // A saved custom selection (persisted) is restored on load, so the user's own
+  // section choice survives across sessions.
+  const savedCustom = useMemo(() => loadCustom(), [])
+  const [sel, setSel] = useState<Set<string>>(() =>
+    new Set(savedCustom ? savedCustom.filter((k) => allKeys.includes(k)) : allKeys))
+  const [preset, setPreset] = useState<Preset>(savedCustom ? 'custom' : 'full')
   const [brandOpen, setBrandOpen] = useState(false)
   const [brand, setBrand] = useState<Branding>({})
   const [presets, setPresets] = useState<{ file: string; firm_name: string }[]>([])
@@ -185,14 +201,25 @@ export default function ReportPanel({ terms, opts }: { terms: NoteTerms; opts: R
     setStatus('idle')
   }
   // Apply a named preset: select its sections (intersected with what's available).
-  // "Custom" leaves the current selection untouched so the user can fine-tune.
+  // "Custom" restores the saved custom selection (or, if none, keeps the current
+  // one so the user can start fine-tuning from where they are).
   const applyPreset = (p: Preset) => {
     setPreset(p)
     setStatus('idle')
-    if (p === 'custom') return
-    const keys = p === 'full' ? allKeys : PRESET_KEYS[p].filter((k) => allKeys.includes(k))
+    if (p === 'custom') {
+      const saved = loadCustom()
+      if (saved) setSel(new Set(saved.filter((k) => allKeys.includes(k))))
+      return
+    }
+    const keys = p === 'full' ? allKeys : (PRESET_KEYS[p] ?? []).filter((k) => allKeys.includes(k))
     setSel(new Set(keys))
   }
+
+  // Persist the custom selection whenever it changes, so it's there next session.
+  useEffect(() => {
+    if (preset !== 'custom') return
+    try { localStorage.setItem(CUSTOM_LS, JSON.stringify([...sel])) } catch { /* ignore */ }
+  }, [sel, preset])
   const setBrandField = (k: keyof Branding, v: string) => setBrand((b) => ({ ...b, [k]: v || undefined }))
   const onImage = (field: keyof Branding, file: File | undefined) => {
     if (!file) return
@@ -254,11 +281,16 @@ export default function ReportPanel({ terms, opts }: { terms: NoteTerms; opts: R
 
       <Panel title={t('report_sections')}>
         <div style={{ marginBottom: 18 }}>
-          <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--text-muted)', marginBottom: 8 }}>{t('rep_preset')}</div>
-          <Segmented value={preset} ariaLabel={t('rep_preset')}
-                     options={PRESET_ORDER.map((p) => ({ value: p, label: t(`rep_preset_${p}`) }))}
-                     onChange={(p) => applyPreset(p as Preset)} />
-          <div style={{ fontSize: 11.5, color: 'var(--text-faint)', marginTop: 8, lineHeight: 1.5 }}>{t(`rep_preset_${preset}_desc`)}</div>
+          <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--text-muted)', marginBottom: 9 }}>{t('rep_preset')}</div>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7 }}>
+            {PRESET_ORDER.map((p) => (
+              <button key={p} type="button" className="preset-pill" data-on={preset === p}
+                      title={t(`rep_preset_${p}_desc`)} onClick={() => applyPreset(p)}>
+                {t(`rep_preset_${p}`)}
+              </button>
+            ))}
+          </div>
+          <div style={{ fontSize: 11.5, color: 'var(--text-faint)', marginTop: 9, lineHeight: 1.5 }}>{t(`rep_preset_${preset}_desc`)}</div>
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(230px, 1fr))', gap: '4px 28px' }}>
           {groups.map((g) => {

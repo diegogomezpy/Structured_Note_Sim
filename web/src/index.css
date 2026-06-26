@@ -325,20 +325,22 @@ input:focus, select:focus { outline: none; border-color: var(--accent); box-shad
    exactly one half (-50%) loops seamlessly. Pauses on hover so you can read a
    ticker (and its hover quote card sits still). */
 .ticker-marquee { flex: 1; min-width: 0; overflow: hidden; position: relative; }
-/* Soft fade at both edges so cells scroll in/out rather than hard-clipping. */
-.ticker-marquee::before, .ticker-marquee::after {
-  content: ''; position: absolute; top: 0; bottom: 0; width: 28px; z-index: 1; pointer-events: none;
-}
-.ticker-marquee::before { left: 0; background: linear-gradient(90deg, #1c241f, transparent); }
-.ticker-marquee::after { right: 0; background: linear-gradient(270deg, #1c241f, transparent); }
-.ticker-track { display: flex; width: max-content; will-change: transform; animation: tickerScroll linear infinite; }
+.ticker-track { display: flex; width: max-content; }
 .ticker-seq { display: flex; flex-shrink: 0; }
 @keyframes tickerScroll { from { transform: translateX(0); } to { transform: translateX(-50%); } }
-.ticker-marquee:hover .ticker-track { animation-play-state: paused; }
+/* Animate + edge-fade + pause-on-hover only when the content actually overflows
+   (data-scroll="true"); a short tape sits static and left-aligned. */
+.ticker-marquee[data-scroll='true'] .ticker-track { will-change: transform; animation: tickerScroll linear infinite; }
+.ticker-marquee[data-scroll='true']:hover .ticker-track { animation-play-state: paused; }
+.ticker-marquee[data-scroll='true']::before, .ticker-marquee[data-scroll='true']::after {
+  content: ''; position: absolute; top: 0; bottom: 0; width: 28px; z-index: 1; pointer-events: none;
+}
+.ticker-marquee[data-scroll='true']::before { left: 0; background: linear-gradient(90deg, #1c241f, transparent); }
+.ticker-marquee[data-scroll='true']::after { right: 0; background: linear-gradient(270deg, #1c241f, transparent); }
 @media (prefers-reduced-motion: reduce) {
-  .ticker-track { animation: none; transform: none; }
-  .ticker-marquee { overflow-x: auto; scrollbar-width: none; }
-  .ticker-marquee::before, .ticker-marquee::after { display: none; }
+  .ticker-marquee[data-scroll='true'] .ticker-track { animation: none; transform: none; }
+  .ticker-marquee[data-scroll='true'] { overflow-x: auto; scrollbar-width: none; }
+  .ticker-marquee[data-scroll='true']::before, .ticker-marquee[data-scroll='true']::after { display: none; }
 }
 
 /* Staggered children reveal — sequence cards/panels in rather than snapping them
@@ -579,6 +581,16 @@ input.slider-val-input:focus { background: var(--surface); border-color: var(--a
 .range-dual input[type='range']::-moz-range-thumb { pointer-events: auto; }
 .range-dual .range-track { position: absolute; top: 50%; left: 0; right: 0; height: 4px; background: var(--border-strong); border-radius: 999px; transform: translateY(-50%); }
 .range-dual .range-fill { position: absolute; top: 50%; height: 4px; background: var(--accent); border-radius: 999px; transform: translateY(-50%); }
+
+/* Report-preset pills — a wrapping group of audience presets (Client, IC, …). */
+.preset-pill {
+  font-family: var(--font-sans); font-size: 12px; line-height: 1;
+  padding: 6px 12px; border-radius: 999px; cursor: pointer;
+  border: 1px solid var(--border-strong); background: var(--surface); color: var(--text-muted);
+  transition: border-color var(--dur-micro) var(--ease-settle), background var(--dur-micro) var(--ease-settle), color var(--dur-micro) var(--ease-settle);
+}
+.preset-pill:hover { border-color: var(--accent); color: var(--text); }
+.preset-pill[data-on='true'] { background: var(--accent); border-color: var(--accent); color: #fffefb; }
 
 /* Status / dot pill (header run-status, Feller, sentiment). */
 .pill {

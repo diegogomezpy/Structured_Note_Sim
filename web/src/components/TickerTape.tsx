@@ -37,13 +37,13 @@ export default function TickerTape({ terms }: { terms: NoteTerms }) {
   const [flash, setFlash] = useState<Record<string, 'up' | 'down'>>({})
   const [hover, setHover] = useState<{ sym: string; rect: DOMRect } | null>(null)
   const prevPrice = useRef<Record<string, number>>({})
-  // Continuous-scroll marquee: render the row enough times to overfill the
-  // viewport (`reps` copies on each half), then translate by exactly one half so
-  // the loop is seamless. Duration scales with content width so the speed stays
-  // constant regardless of how many underlyings there are.
+  // Marquee: only scroll when the (unique) content actually overflows the bar —
+  // otherwise it sits static, so a short tape never repeats the same symbols to
+  // fill space. When it does scroll, a second identical copy + translateX(-50%)
+  // makes the loop seamless; the duration scales with width for a constant speed.
   const viewportRef = useRef<HTMLDivElement>(null)
   const seqRef = useRef<HTMLDivElement>(null)
-  const [reps, setReps] = useState(1)
+  const [scroll, setScroll] = useState(false)
   const [dur, setDur] = useState(24)
 
   // Seed the tape from the (cached) metrics endpoint.
@@ -122,53 +122,76 @@ export default function TickerTape({ terms }: { terms: NoteTerms }) {
     return () => clearTimeout(t)
   }, [display])
 
-  // Fit the marquee: render enough copies to overfill the viewport and set a
-  // duration that holds the scroll speed constant as the row's width changes.
-  const displaySig = display.map((c) => c.m.name).join(',')
+  // Build the tape's cells: each underlying's headline (price + change) plus a
+  // few DISTINCT live-session figures (volume, day range, 52-week range). No
+  // datum repeats, and none of these duplicate the underlying-breakdown section
+  // (RSI / implied vol / market cap live there, not here).
+  type Item =
+    | { key: string; sym: string; leaving: boolean; kind: 'price'; price: number | null; change: number | null }
+    | { key: string; sym: string; leaving: boolean; kind: 'stat'; label: string; value: string }
+  const items: Item[] = []
+  for (const { m, leaving } of display) {
+    const sym = rowSym(m)
+    const q = quotes[sym]
+    items.push({ key: `${sym}#p`, sym, leaving, kind: 'price', price: q?.price ?? m.last_price, change: q?.change ?? m.day_change })
+    if (!leaving && q) {
+      if (q.volume != null) items.push({ key: `${sym}#v`, sym, leaving, kind: 'stat', label: 'Vol', value: compact(q.volume) })
+      if (q.day_low != null && q.day_high != null) items.push({ key: `${sym}#d`, sym, leaving, kind: 'stat', label: 'Day', value: `${fmtPrice(q.day_low)}–${fmtPrice(q.day_high)}` })
+      if (q.year_low != null && q.year_high != null) items.push({ key: `${sym}#y`, sym, leaving, kind: 'stat', label: '52W', value: `${fmtPrice(q.year_low)}–${fmtPrice(q.year_high)}` })
+    }
+  }
+  const cellSig = items.map((i) => i.key).join(',')
+
+  // Scroll only when the unique content overflows the bar; otherwise it stays put
+  // (no repeating to fill). When it scrolls, the duration tracks the width for a
+  // constant speed.
   useLayoutEffect(() => {
     const measure = () => {
       const vp = viewportRef.current, seq = seqRef.current
       if (!vp || !seq) return
       const seqW = seq.scrollWidth, vpW = vp.clientWidth
       if (seqW <= 0 || vpW <= 0) return
-      const r = Math.max(1, Math.ceil(vpW / seqW))
-      setReps(r)
-      setDur(Math.max(14, (r * seqW) / SPEED))
+      const willScroll = seqW > vpW + 4
+      setScroll(willScroll)
+      if (willScroll) setDur(Math.max(12, seqW / SPEED))
     }
     measure()
     window.addEventListener('resize', measure)
     return () => window.removeEventListener('resize', measure)
-  }, [displaySig])
+  }, [cellSig])
 
   if (!display.length) return null
 
   const UP = '#5fb89a', DOWN = '#d98b80', LIGHT = '#c8d0c9', PAPER = '#f7f5ef', RULE = '#313a33'
 
+  const LABEL = '#727b73'
   const hoverM = hover ? (rows ?? []).find((mm) => rowSym(mm) === hover.sym) ?? null : null
 
-  // One ticker cell. Repeated across marquee copies, so it's keyed by symbol
-  // within each copy (the copy index keys the outer list).
-  const cell = (m: UnderlyingMetric, leaving: boolean) => {
-    const sym = rowSym(m)
-    const price = quotes[sym]?.price ?? m.last_price
-    const dc = quotes[sym]?.change ?? m.day_change
-    const tone = dc == null ? LIGHT : dc >= 0 ? UP : DOWN
-    const fl = flash[sym]
-    const cls = [leaving ? 'tick-leaving' : '', fl === 'up' ? 'tick-up' : fl === 'down' ? 'tick-down' : ''].filter(Boolean).join(' ')
+  // Render one cell. `dupe` keys the second (seamless-loop) copy distinctly.
+  const wrap = (item: Item, dupe = false) => {
+    const fl = flash[item.sym]
+    const cls = [item.leaving ? 'tick-leaving' : '', fl === 'up' ? 'tick-up' : fl === 'down' ? 'tick-down' : ''].filter(Boolean).join(' ')
     return (
-      <span key={m.name} className={cls || undefined}
-        onMouseEnter={(e) => setHover({ sym, rect: e.currentTarget.getBoundingClientRect() })}
-        onMouseLeave={() => setHover((h) => (h?.sym === sym ? null : h))}
+      <span key={dupe ? `${item.key}#2` : item.key} className={cls || undefined}
+        onMouseEnter={(e) => setHover({ sym: item.sym, rect: e.currentTarget.getBoundingClientRect() })}
+        onMouseLeave={() => setHover((h) => (h?.sym === item.sym ? null : h))}
         style={{
           display: 'inline-flex', alignItems: 'baseline', gap: 8, padding: '11px 18px', overflow: 'hidden',
           borderRight: `1px solid ${RULE}`, fontSize: 12, cursor: 'default',
         }}>
-        <span style={{ fontWeight: 600, color: PAPER }}>{sym}</span>
-        <span style={{ color: LIGHT }}>
-          {price != null ? <AnimatedNumber value={price} format={fmtPrice} duration={500} /> : '—'}
-        </span>
-        {dc != null && (
-          <span style={{ color: tone }}>{dc >= 0 ? '▲' : '▼'} {Math.abs(dc * 100).toFixed(2)}%</span>
+        <span style={{ fontWeight: 600, color: PAPER }}>{item.sym}</span>
+        {item.kind === 'price' ? (
+          <>
+            <span style={{ color: LIGHT }}>{item.price != null ? <AnimatedNumber value={item.price} format={fmtPrice} duration={500} /> : '—'}</span>
+            {item.change != null && (
+              <span style={{ color: item.change >= 0 ? UP : DOWN }}>{item.change >= 0 ? '▲' : '▼'} {Math.abs(item.change * 100).toFixed(2)}%</span>
+            )}
+          </>
+        ) : (
+          <>
+            <span style={{ fontSize: 9, fontWeight: 600, letterSpacing: '0.09em', textTransform: 'uppercase', color: LABEL }}>{item.label}</span>
+            <span style={{ color: LIGHT }}>{item.value}</span>
+          </>
         )}
       </span>
     )
@@ -182,13 +205,10 @@ export default function TickerTape({ terms }: { terms: NoteTerms }) {
         fontFamily: 'var(--font-mono)', fontSize: 10, fontWeight: 600, letterSpacing: '0.14em',
         textTransform: 'uppercase', color: PAPER, whiteSpace: 'nowrap', flexShrink: 0,
       }}>LIVE ·</div>
-      <div ref={viewportRef} className="ticker-marquee mono">
-        <div className="ticker-track" style={{ animationDuration: `${dur}s` }}>
-          {Array.from({ length: 2 * reps }).map((_, copy) => (
-            <div key={copy} ref={copy === 0 ? seqRef : undefined} className="ticker-seq" aria-hidden={copy > 0 || undefined}>
-              {display.map(({ m, leaving }) => cell(m, leaving))}
-            </div>
-          ))}
+      <div ref={viewportRef} className="ticker-marquee mono" data-scroll={scroll}>
+        <div className="ticker-track" style={scroll ? { animationDuration: `${dur}s` } : undefined}>
+          <div ref={seqRef} className="ticker-seq">{items.map((it) => wrap(it))}</div>
+          {scroll && <div className="ticker-seq" aria-hidden>{items.map((it) => wrap(it, true))}</div>}
         </div>
       </div>
     </div>
@@ -242,7 +262,6 @@ function QuoteDetail({ sym, rect, q, m }: { sym: string; rect: DOMRect; q: Quote
   const top = rect.bottom + 8
   const price = q?.price ?? m?.last_price ?? null
   const change = q?.change ?? m?.day_change ?? null
-  const mktcap = q?.market_cap ?? m?.market_cap ?? null
   const name = m?.long_name || m?.name || sym
   const tone = change == null ? 'var(--text-muted)' : change >= 0 ? 'var(--accent-text)' : 'var(--red)'
   return createPortal(
@@ -265,9 +284,6 @@ function QuoteDetail({ sym, rect, q, m }: { sym: string; rect: DOMRect; q: Quote
         <Stat label={t('tk_open')} value={q?.open != null ? fmtPrice(q.open) : '—'} />
         <Stat label={t('tk_prev_close')} value={q?.prev_close != null ? fmtPrice(q.prev_close) : '—'} />
         <Stat label={t('tk_volume')} value={compact(q?.volume)} />
-        <Stat label={t('tk_mktcap')} value={compact(mktcap)} />
-        {m?.iv_3m != null && <Stat label={t('tk_iv')} value={`${(m.iv_3m * 100).toFixed(1)}%`} />}
-        {m?.rsi_14 != null && <Stat label={t('tk_rsi')} value={m.rsi_14.toFixed(0)} />}
       </div>
     </div>,
     document.body,
