@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { api } from '../api/client'
 import { useI18n } from '../i18n/I18nProvider'
+import { useToast } from './Toast'
 import Panel from './Panel'
 import Icon from './Icon'
 import type { Branding, NoteTerms } from '../api/types'
@@ -65,6 +66,7 @@ function Check({ on, indeterminate }: { on: boolean; indeterminate?: boolean }) 
 
 export default function ReportPanel({ terms, opts }: { terms: NoteTerms; opts: RunOpts }) {
   const { t, lang } = useI18n()
+  const toast = useToast()
   const hasLive = !!terms.issue_date
   const groups = useMemo(() => TREE.filter((g) => g.key !== 'live' || hasLive), [hasLive])
   const allKeys = useMemo(() => groups.flatMap((g) => g.items.map((i) => i[0])), [groups])
@@ -167,9 +169,13 @@ export default function ReportPanel({ terms, opts }: { terms: NoteTerms; opts: R
       })
       const blob = await res.blob()
       const url = URL.createObjectURL(blob)
-      const a = document.createElement('a'); a.href = url; a.download = filenameFrom(res, 'structured_note_report.pdf')
+      const filename = filenameFrom(res, 'structured_note_report.pdf')
+      const a = document.createElement('a'); a.href = url; a.download = filename
       document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url)
       setStatus('done')
+      const mb = blob.size / 1048576
+      const size = mb >= 1 ? `${mb.toFixed(1)} MB` : `${Math.max(1, Math.round(blob.size / 1024))} KB`
+      toast.push({ title: t('report_downloaded'), sub: `${filename} · ${size}` })
     } catch (e) { setError(String(e instanceof Error ? e.message : e)); setStatus('error') }
   }
 

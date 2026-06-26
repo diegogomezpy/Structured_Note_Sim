@@ -25,7 +25,7 @@ function Group({ title, cards }: { title: string; cards: Card[] }) {
       <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-muted)', marginBottom: 10 }}>{title}</div>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 14 }}>
         {cards.map((c) => (
-          <div key={c.label} className="card fade-up" title={c.tip} style={{ padding: '18px 20px', cursor: 'help' }}>
+          <div key={c.label} className="card lift fade-up" title={c.tip} style={{ padding: '18px 20px', cursor: 'help' }}>
             <div className="eyebrow" style={{ marginBottom: 12, display: 'flex', alignItems: 'center', gap: 5 }}>
               {c.label}<span style={{ color: 'var(--text-faint)', fontWeight: 400 }}>ⓘ</span>
             </div>

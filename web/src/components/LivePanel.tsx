@@ -19,7 +19,7 @@ function Stat({ label, value, sub, subTone, help, children }: {
   label: string; value: string; sub?: string; subTone?: string; help?: string; children?: React.ReactNode
 }) {
   return (
-    <div className="card" style={{ padding: '14px 16px' }} title={help}>
+    <div className="card lift" style={{ padding: '14px 16px' }} title={help}>
       <div style={{ fontSize: 10.5, fontWeight: 600, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--text-muted)', marginBottom: 8 }}>{label}</div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
         {children}
@@ -101,7 +101,7 @@ export default function LivePanel({ result }: { result: LiveResult; terms: NoteT
           {assets.map((a) => {
             const d = a.perf != null ? a.perf - 1 : null
             return (
-              <div key={a.name} className="card" style={{ padding: '12px 14px' }}>
+              <div key={a.name} className="card lift" style={{ padding: '12px 14px' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
                   <TickerLogo symbol={a.symbol || a.name} name={a.name} size={18} />
                   <span style={{ fontSize: 12.5, fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{a.name}</span>

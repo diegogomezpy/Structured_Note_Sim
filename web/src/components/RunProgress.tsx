@@ -24,7 +24,7 @@ export default function RunProgress() {
       <div style={{ height: 3, borderRadius: 999, background: 'var(--border)', overflow: 'hidden' }}>
         <div style={{
           height: '100%', width: `${((step + 1) / stages.length) * 100}%`,
-          background: 'var(--accent)', borderRadius: 999, transition: 'width 0.5s ease',
+          background: 'var(--accent)', borderRadius: 999, transition: 'width 0.5s var(--ease-enter)',
         }} />
       </div>
       <div className="mono" style={{ fontSize: 11, letterSpacing: '0.04em', display: 'flex', gap: 7, flexWrap: 'wrap' }}>

@@ -3,7 +3,9 @@ import { createPortal } from 'react-dom'
 import Icon from './Icon'
 
 /** Centered modal overlay. Closes on Escape or backdrop click; locks body
-    scroll while open. Sticky header + optional sticky footer; the body scrolls. */
+    scroll while open. Sticky header + optional sticky footer; the body scrolls.
+    Enter motion (Motion · V): scrim fades (.modal-scrim, base/settle), card rises
+    8px + scales from .98 (.modal-card, enter) — both as CSS animations. */
 export default function Modal({
   title, onClose, children, footer, width = 980,
 }: { title: ReactNode; onClose: () => void; children: ReactNode; footer?: ReactNode; width?: number }) {
@@ -17,13 +19,14 @@ export default function Modal({
 
   return createPortal((
     <div
+      className="modal-scrim"
       onMouseDown={(e) => { if (e.target === e.currentTarget) onClose() }}
       style={{
         position: 'fixed', inset: 0, zIndex: 1000, background: 'rgba(20, 28, 23, 0.46)',
         display: 'flex', alignItems: 'flex-start', justifyContent: 'center',
         padding: '4vh 16px', overflow: 'auto',
       }}>
-      <div className="fade-up" style={{
+      <div className="modal-card" style={{
         background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 12,
         boxShadow: 'var(--shadow)', width: `min(${width}px, 100%)`, maxHeight: '92vh',
         display: 'flex', flexDirection: 'column',
