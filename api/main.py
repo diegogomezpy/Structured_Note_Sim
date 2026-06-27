@@ -305,7 +305,9 @@ def _cover_pool(resolved: str) -> list[dict]:
         return pool
     pool, seen = [], set()
     for term in _SECTOR_QUERIES.get(resolved, _SECTOR_QUERIES["markets"]):
-        for ph in _pexels_search(term, per_page=3):
+        # 6 per subject term × ~8 terms → a ~40-50 deep pool, so 16-per-refresh
+        # has plenty of room to rotate without repeating the same shots.
+        for ph in _pexels_search(term, per_page=6):
             if ph["id"] in seen:
                 continue
             seen.add(ph["id"])
@@ -317,7 +319,7 @@ def _cover_pool(resolved: str) -> list[dict]:
 
 
 @app.get("/api/cover/photos")
-def cover_photos(sector: str = "markets", n: int = 6, exclude: str = ""):
+def cover_photos(sector: str = "markets", n: int = 16, exclude: str = ""):
     """A varied set of professional cover photos for the given sector (or the
     Yahoo sector string, normalized). Returns a RANDOM sample of `n` from the
     cached per-sector pool, so each (re)load — i.e. the refresh button — shows
@@ -330,9 +332,16 @@ def cover_photos(sector: str = "markets", n: int = 6, exclude: str = ""):
         return {"available": False, "sector": resolved, "photos": []}
     pool = _cover_pool(resolved)
     ex = {x.strip() for x in exclude.split(",") if x.strip()}
-    candidates = [p for p in pool if str(p["id"]) not in ex] or list(pool)
-    k = min(max(1, n), len(candidates))
-    photos = _rnd.sample(candidates, k) if candidates else []
+    k = min(max(1, n), len(pool))
+    fresh = [p for p in pool if str(p["id"]) not in ex]
+    if len(fresh) >= k:
+        photos = _rnd.sample(fresh, k)
+    else:
+        # Not enough unseen left — show all the fresh ones and top up randomly
+        # from the rest, so the grid stays full instead of shrinking on refresh.
+        rest = [p for p in pool if str(p["id"]) in ex]
+        photos = list(fresh) + _rnd.sample(rest, k - len(fresh))
+        _rnd.shuffle(photos)
     return {"available": True, "sector": resolved, "photos": photos}
 
 

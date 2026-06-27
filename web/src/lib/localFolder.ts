@@ -104,6 +104,95 @@ async function writeFile(key: string, name: string, obj: unknown): Promise<strin
 }
 /* eslint-enable @typescript-eslint/no-explicit-any */
 
+// ── image-folder variant (for the report photo pool) ─────────────────────────
+export interface ImageFile { name: string; dataUrl: string }
+const IMG_RE = /\.(png|jpe?g|webp|avif|gif|bmp)$/i
+
+function blobToDataURL(b: Blob): Promise<string> {
+  return new Promise((res, rej) => {
+    const r = new FileReader(); r.onload = () => res(String(r.result)); r.onerror = rej; r.readAsDataURL(b)
+  })
+}
+/* eslint-disable @typescript-eslint/no-explicit-any */
+async function scanImages(dir: any): Promise<ImageFile[]> {
+  const out: ImageFile[] = []
+  for await (const [name, h] of dir.entries()) {
+    if (h.kind === 'file' && IMG_RE.test(name)) {
+      try { out.push({ name: name.replace(IMG_RE, ''), dataUrl: await blobToDataURL(await h.getFile()) }) }
+      catch { /* skip unreadable */ }
+    }
+  }
+  return out.sort((a, b) => a.name.localeCompare(b.name))
+}
+async function pickImages(key: string) {
+  const dir = await (window as any).showDirectoryPicker({ id: key, mode: 'read' })
+  await idbSet(key, dir).catch(() => {})
+  return { name: dir.name as string, files: await scanImages(dir) }
+}
+async function restoreImages(key: string) {
+  const dir = await idbGet<any>(key).catch(() => undefined)
+  if (!dir) return null
+  const perm = await dir.queryPermission({ mode: 'read' })
+  if (perm === 'granted') return { name: dir.name as string, files: await scanImages(dir), needsGrant: false }
+  return { name: dir.name as string, files: [] as ImageFile[], needsGrant: true }
+}
+async function reconnectImages(key: string) {
+  const dir = await idbGet<any>(key).catch(() => undefined)
+  if (!dir) return null
+  if (await dir.requestPermission({ mode: 'read' }) !== 'granted') return null
+  return { name: dir.name as string, files: await scanImages(dir) }
+}
+/* eslint-enable @typescript-eslint/no-explicit-any */
+
+/** React state for a connected local folder of IMAGES — auto-detected and offered
+    as report photos. Read-only (no save); otherwise mirrors `useLocalFolder`. */
+export function useLocalImages(key: string) {
+  const [files, setFiles] = useState<ImageFile[]>([])
+  const [folder, setFolder] = useState<string | null>(null)
+  const [needsGrant, setNeedsGrant] = useState(false)
+  const [busy, setBusy] = useState(false)
+
+  useEffect(() => {
+    if (!fsSupported) return
+    restoreImages(key)
+      .then((r) => { if (r) { setFolder(r.name); setFiles(r.files); setNeedsGrant(r.needsGrant) } })
+      .catch(() => {})
+  }, [key])
+
+  const connect = async () => {
+    setBusy(true)
+    try { const r = await pickImages(key); setFolder(r.name); setFiles(r.files); setNeedsGrant(false) }
+    catch { /* cancelled */ } finally { setBusy(false) }
+  }
+  const reconnect = async () => {
+    setBusy(true)
+    try { const r = await reconnectImages(key); if (r) { setFolder(r.name); setFiles(r.files); setNeedsGrant(false) } }
+    catch { /* denied */ } finally { setBusy(false) }
+  }
+  const refresh = async () => {
+    if (needsGrant) return reconnect()
+    setBusy(true)
+    try { const r = await restoreImages(key); if (r) { setFiles(r.files); setNeedsGrant(r.needsGrant) } }
+    catch { /* gone */ } finally { setBusy(false) }
+  }
+  const disconnect = async () => {
+    await idbDel(key).catch(() => {})
+    setFolder(null); setFiles([]); setNeedsGrant(false)
+  }
+  // Browsers without the FS Access API: one-shot <input webkitdirectory> import.
+  const importFiles = async (list: FileList | null) => {
+    if (!list?.length) return
+    const out: ImageFile[] = []
+    for (const f of Array.from(list)) {
+      if (!IMG_RE.test(f.name)) continue
+      try { out.push({ name: f.name.replace(IMG_RE, ''), dataUrl: await blobToDataURL(f) }) } catch { /* skip */ }
+    }
+    if (out.length) { setFiles(out.sort((a, b) => a.name.localeCompare(b.name))); setFolder('imported') }
+  }
+
+  return { supported: fsSupported, files, folder, needsGrant, busy, connect, reconnect, refresh, disconnect, importFiles }
+}
+
 /** React state for a connected local folder of JSONs (configs or branding).
     `key` namespaces the persisted handle so configs and branding stay separate. */
 export function useLocalFolder(key: string) {

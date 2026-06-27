@@ -1,13 +1,26 @@
 import { useRef } from 'react'
 import Icon from './Icon'
 import { useI18n } from '../i18n/I18nProvider'
-import type { useLocalFolder } from '../lib/localFolder'
 
-/** Compact controls for a connected local folder (configs or branding). The
-    parent owns the useLocalFolder state (so it can merge the scanned files into
-    its selector); this just renders connect / reconnect / refresh / disconnect.
+/** Just the fields FolderConnect renders — so it works for either a JSON folder
+    (`useLocalFolder`) or an image folder (`useLocalImages`). */
+export interface FolderControls {
+  supported: boolean
+  folder: string | null
+  needsGrant: boolean
+  busy: boolean
+  files: readonly unknown[]
+  connect: () => void | Promise<void>
+  refresh: () => void | Promise<void>
+  disconnect: () => void | Promise<void>
+  importFiles: (l: FileList | null) => void | Promise<void>
+}
+
+/** Compact controls for a connected local folder (configs, branding or images).
+    The parent owns the folder state (so it can merge the scanned files into its
+    selector); this just renders connect / reconnect / refresh / disconnect.
     Browsers without the File System Access API get a one-shot folder import. */
-export default function FolderConnect({ fld }: { fld: ReturnType<typeof useLocalFolder> }) {
+export default function FolderConnect({ fld }: { fld: FolderControls }) {
   const { t } = useI18n()
   const importRef = useRef<HTMLInputElement>(null)
   const { supported, folder, needsGrant, busy, files, connect, refresh, disconnect, importFiles } = fld

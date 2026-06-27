@@ -2,7 +2,9 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { api } from '../api/client'
 import { useI18n } from '../i18n/I18nProvider'
 import { fetchUnderlyingMetricsCached } from '../lib/metricsStore'
+import { useLocalImages } from '../lib/localFolder'
 import { Select } from './fields'
+import FolderConnect from './FolderConnect'
 import Icon from './Icon'
 import type { CoverPhoto, NoteTerms } from '../api/types'
 
@@ -12,16 +14,16 @@ import type { CoverPhoto, NoteTerms } from '../api/types'
 const _sectorMemo = new Map<string, string>()
 
 /** Industry report-photo picker — a built-in library (via Pexels) of professional
-    photos keyed by sector. The sector is suggested from the note's underlyings
-    (and overridable). This is a MULTI-select: every chosen photo is embedded into
-    the branding's image pool (`filler_images_base64`), which drives the cover, the
-    back page and the empty-space filler bands — each band cycles to the next photo
-    so a report with several gaps shows variety instead of one repeated image.
-    Hidden cleanly when no Pexels key is configured; manual upload still works. */
-export default function CoverPhotoPicker({ terms, selected, onChange }: {
+    photos keyed by sector, PLUS your own uploads / a connected image folder. This
+    is a MULTI-select: the chosen pool (`filler_images_base64`) drives the cover
+    (1st), the back page (2nd) and the empty-space filler bands (the rest, in
+    order). The selected strip is drag-reorderable and capped to `max` — how many
+    photos the current report can actually show. */
+export default function CoverPhotoPicker({ terms, selected, onChange, max }: {
   terms: NoteTerms
   selected: string[]
   onChange: (urls: string[]) => void
+  max?: number
 }) {
   const { t, lang } = useI18n()
   const [available, setAvailable] = useState<boolean | null>(null)
@@ -36,11 +38,27 @@ export default function CoverPhotoPicker({ terms, selected, onChange }: {
   // True once the user manually picks a sector → stop auto-re-suggesting on note
   // changes so their choice sticks.
   const userPicked = useRef(false)
-  // Latest shown photos, read inside the refresh handler without re-subscribing.
-  const photosRef = useRef<CoverPhoto[]>([])
-  photosRef.current = photos
-  // Signature of the current underlyings; drives the re-suggest effect so the
-  // grid tracks whichever note is loaded.
+  // Rolling history of recently shown photo ids → held back on refresh so the
+  // grid keeps cycling through the pool instead of repeating the same shots.
+  const seenRef = useRef<number[]>([])
+  const SHOWN = 16        // photos per (re)load
+  const SEEN_CAP = 40     // how many recent ids to remember
+  // Drag-to-reorder state for the selected strip.
+  const [dragIdx, setDragIdx] = useState<number | null>(null)
+  // A connected local folder of images, auto-detected and offered as photos.
+  const imgFolder = useLocalImages('report-images')
+
+  const atCap = max != null && selected.length >= max
+  const addUrl = (u: string) => {
+    if (!selected.includes(u) && (max == null || selected.length < max)) onChange([...selected, u])
+  }
+  const toggleUrl = (u: string) => (selected.includes(u) ? onChange(selected.filter((x) => x !== u)) : addUrl(u))
+  const reorder = (from: number, to: number) => {
+    if (from === to || from < 0 || to < 0) return
+    const next = [...selected]; const [m] = next.splice(from, 1); next.splice(to, 0, m); onChange(next)
+  }
+
+  // Signature of the current underlyings; drives the re-suggest effect.
   const tickKey = useMemo(
     () => Object.keys(terms.tickers ?? {}).sort().join(','), [terms.tickers])
 
@@ -49,28 +67,28 @@ export default function CoverPhotoPicker({ terms, selected, onChange }: {
   }, [])
 
   // Fetch photos for a sector. `refresh` requests a fresh random sample and
-  // holds back the ids already on screen / selected so the set actually changes.
+  // holds back recently shown / selected ids so the set actually changes.
   const load = async (sec: string, refresh = false) => {
     setLoading(true)
     try {
+      const selIds = Object.entries(idToUrl)
+        .filter(([, u]) => selected.includes(u)).map(([id]) => Number(id))
       const exclude = refresh
-        ? [...photosRef.current.map((p) => p.id),
-           ...Object.entries(idToUrl).filter(([, u]) => selected.includes(u)).map(([id]) => id)]
+        ? Array.from(new Set([...seenRef.current, ...selIds]))
         : undefined
-      const r = await api.coverPhotos(sec, refresh ? { exclude } : undefined)
+      const r = await api.coverPhotos(sec, { n: SHOWN, exclude })
       setSector(r.sector); setPhotos(r.photos)
+      const ids = r.photos.map((p) => p.id)
+      seenRef.current = refresh ? [...seenRef.current, ...ids].slice(-SEEN_CAP) : ids
     } catch { setPhotos([]) }
     finally { setLoading(false) }
   }
 
   // Suggest + load the sector from the underlyings' dominant Yahoo sector.
   // Re-runs whenever the loaded note's underlyings change (so the image section
-  // tracks the note), unless the user has manually chosen a sector. Resolves
-  // instantly from the per-note memo / cached metrics when possible.
+  // tracks the note), unless the user has manually chosen a sector.
   useEffect(() => {
     if (available !== true) return
-    // First availability OR a freshly loaded note (tickKey changed) → resume
-    // auto-suggestion; a manual sector pick only sticks for the current note.
     userPicked.current = false
     const memo = _sectorMemo.get(tickKey)
     if (memo) { load(memo); return }
@@ -96,12 +114,9 @@ export default function CoverPhotoPicker({ terms, selected, onChange }: {
   }
 
   const toggle = async (p: CoverPhoto) => {
-    // Already in the pool → remove it.
     const existing = idToUrl[p.id]
-    if (existing && selected.includes(existing)) {
-      onChange(selected.filter((u) => u !== existing))
-      return
-    }
+    if (existing && selected.includes(existing)) { onChange(selected.filter((u) => u !== existing)); return }
+    if (atCap) return                       // at capacity — can't add more
     setBusyId(p.id)
     try {
       const resp = await fetch(api.coverPhotoProxy(p.src))
@@ -111,23 +126,36 @@ export default function CoverPhotoPicker({ terms, selected, onChange }: {
         const fr = new FileReader(); fr.onload = () => res(String(fr.result)); fr.onerror = rej; fr.readAsDataURL(blob)
       })
       setIdToUrl((m) => ({ ...m, [p.id]: dataUrl }))
-      if (!selected.includes(dataUrl)) onChange([...selected, dataUrl])
+      addUrl(dataUrl)
     } catch { /* leave unchanged */ }
     finally { setBusyId(null) }
   }
 
-  // The chosen-pool strip (incl. images loaded from a branding file) — shown
-  // regardless of Pexels availability so the pool can always be reviewed/removed.
-  // Order matters: 1st = cover, 2nd = back page, rest cycle into the filler bands.
+  // Small drop-target wrapper for the strip tiles → drag to reorder.
+  const dragProps = (i: number) => ({
+    draggable: true,
+    onDragStart: () => setDragIdx(i),
+    onDragOver: (e: React.DragEvent) => { e.preventDefault() },
+    onDrop: (e: React.DragEvent) => { e.preventDefault(); if (dragIdx != null) reorder(dragIdx, i); setDragIdx(null) },
+    onDragEnd: () => setDragIdx(null),
+  })
+
+  // The chosen-pool strip — shown regardless of Pexels availability so the pool
+  // can always be reviewed, reordered and removed. Order matters: 1st = cover,
+  // 2nd = back page, the rest cycle into the filler bands (drag to change).
   const selectedStrip = selected.length > 0 && (
     <div style={{ marginBottom: 10 }}>
-      <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 5 }}>
-        {t('cover_lib_selected', { n: selected.length })}
+      <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 5, display: 'flex', gap: 8, alignItems: 'baseline', flexWrap: 'wrap' }}>
+        <span>{max != null ? t('cover_lib_selected_max', { n: selected.length, max }) : t('cover_lib_selected', { n: selected.length })}</span>
+        {selected.length > 1 && <span style={{ fontSize: 10, color: 'var(--text-faint)' }}>{t('cover_lib_reorder')}</span>}
       </div>
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7 }}>
         {selected.map((u, i) => (
-          <div key={i} style={{ position: 'relative', width: 78, aspectRatio: '16 / 10', borderRadius: 7, overflow: 'hidden', border: '1px solid var(--border)' }}>
-            <img src={u} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+          <div key={i} {...dragProps(i)}
+               style={{ position: 'relative', width: 78, aspectRatio: '16 / 10', borderRadius: 7, overflow: 'hidden',
+                        border: dragIdx === i ? '1px dashed var(--accent)' : '1px solid var(--border)',
+                        cursor: 'grab', opacity: dragIdx === i ? 0.4 : 1 }}>
+            <img src={u} alt="" draggable={false} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
             <span style={{ position: 'absolute', top: 2, left: 3, fontSize: 9.5, fontWeight: 700, color: '#fff', textShadow: '0 1px 2px rgba(0,0,0,.7)' }}>
               {i === 0 ? t('cover_role_cover') : i === 1 ? t('cover_role_back') : `#${i + 1}`}
             </span>
@@ -141,12 +169,48 @@ export default function CoverPhotoPicker({ terms, selected, onChange }: {
     </div>
   )
 
-  if (available === null) return selectedStrip ? <div style={{ marginTop: 4 }}>{selectedStrip}</div> : null
+  // Connected image-folder section (works with or without Pexels). Each detected
+  // image is a tile that toggles into the pool.
+  const folderSection = imgFolder.supported && (
+    <div style={{ marginTop: 12 }}>
+      <div style={{ fontSize: 11.5, color: 'var(--text-muted)', marginBottom: 2 }}>{t('cover_folder')}</div>
+      <div style={{ fontSize: 11, color: 'var(--text-faint)', lineHeight: 1.5 }}>{t('cover_folder_hint')}</div>
+      <FolderConnect fld={imgFolder} />
+      {imgFolder.files.length > 0 && (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(96px, 1fr))', gap: 8, marginTop: 9 }}>
+          {imgFolder.files.map((f) => {
+            const on = selected.includes(f.dataUrl)
+            const disabled = atCap && !on
+            return (
+              <button key={f.name + f.dataUrl.slice(-12)} onClick={() => toggleUrl(f.dataUrl)} title={f.name}
+                      disabled={disabled} className="lift"
+                      style={{ position: 'relative', padding: 0, cursor: disabled ? 'not-allowed' : 'pointer', overflow: 'hidden',
+                               borderRadius: 9, aspectRatio: '16 / 10', background: 'var(--surface-2)', opacity: disabled ? 0.45 : 1,
+                               border: on ? '2px solid var(--accent)' : '1px solid var(--border)' }}>
+                <img src={f.dataUrl} alt={f.name} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+                {on && (
+                  <div style={{ position: 'absolute', top: 4, right: 4, width: 18, height: 18, borderRadius: '50%', background: 'var(--accent)', color: '#fffefb', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <Icon name="check" size={12} />
+                  </div>
+                )}
+              </button>
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
+
+  if (available === null) {
+    return (selectedStrip || folderSection)
+      ? <div style={{ marginTop: 4 }}>{selectedStrip}{folderSection}</div> : null
+  }
   if (available === false) {
     return (
       <div style={{ marginTop: 4 }}>
         {selectedStrip}
         <div style={{ fontSize: 11.5, color: 'var(--text-faint)', lineHeight: 1.5 }}>{t('cover_lib_unconfigured')}</div>
+        {folderSection}
       </div>
     )
   }
@@ -172,29 +236,35 @@ export default function CoverPhotoPicker({ terms, selected, onChange }: {
           {t('cover_lib_refresh')}
         </button>
       </div>
+      {atCap && <div style={{ fontSize: 11, color: 'var(--amber)', marginBottom: 7 }}>{t('cover_lib_at_cap', { max: max ?? 0 })}</div>}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(112px, 1fr))', gap: 8 }}>
-        {photos.map((p) => (
-          <button key={p.id} onClick={() => toggle(p)} title={p.alt} className="lift"
-                  style={{
-                    position: 'relative', padding: 0, cursor: 'pointer', overflow: 'hidden',
-                    borderRadius: 9, aspectRatio: '16 / 10', background: 'var(--surface-2)',
-                    border: isPicked(p) ? '2px solid var(--accent)' : '1px solid var(--border)',
-                  }}>
-            <img src={p.thumb} alt={p.alt} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
-            {busyId === p.id && (
-              <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(15,18,16,.45)', color: '#fff' }}>
-                <Icon name="spinner" size={18} />
-              </div>
-            )}
-            {isPicked(p) && busyId !== p.id && (
-              <div style={{ position: 'absolute', top: 4, right: 4, width: 18, height: 18, borderRadius: '50%', background: 'var(--accent)', color: '#fffefb', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                <Icon name="check" size={12} />
-              </div>
-            )}
-          </button>
-        ))}
+        {photos.map((p) => {
+          const picked = isPicked(p)
+          const disabled = atCap && !picked
+          return (
+            <button key={p.id} onClick={() => toggle(p)} title={p.alt} className="lift" disabled={disabled && busyId !== p.id}
+                    style={{
+                      position: 'relative', padding: 0, cursor: disabled ? 'not-allowed' : 'pointer', overflow: 'hidden',
+                      borderRadius: 9, aspectRatio: '16 / 10', background: 'var(--surface-2)', opacity: disabled ? 0.45 : 1,
+                      border: picked ? '2px solid var(--accent)' : '1px solid var(--border)',
+                    }}>
+              <img src={p.thumb} alt={p.alt} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+              {busyId === p.id && (
+                <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(15,18,16,.45)', color: '#fff' }}>
+                  <Icon name="spinner" size={18} />
+                </div>
+              )}
+              {picked && busyId !== p.id && (
+                <div style={{ position: 'absolute', top: 4, right: 4, width: 18, height: 18, borderRadius: '50%', background: 'var(--accent)', color: '#fffefb', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <Icon name="check" size={12} />
+                </div>
+              )}
+            </button>
+          )
+        })}
       </div>
       {!loading && !photos.length && <div style={{ fontSize: 11.5, color: 'var(--text-faint)', marginTop: 4 }}>{t('cover_lib_empty')}</div>}
+      {folderSection}
     </div>
   )
 }

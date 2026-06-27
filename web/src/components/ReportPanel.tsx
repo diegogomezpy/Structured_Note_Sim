@@ -266,7 +266,8 @@ export default function ReportPanel({ terms, opts }: { terms: NoteTerms; opts: R
       const r = new FileReader(); r.onload = () => res(String(r.result)); r.onerror = rej; r.readAsDataURL(f)
     }))).then((urls) => setBrand((b) => {
       const cur = (b.filler_images_base64 as string[] | undefined) ?? []
-      return { ...b, filler_images_base64: [...cur, ...urls] }
+      const room = Math.max(0, maxPhotos - cur.length)      // respect the report's photo capacity
+      return { ...b, filler_images_base64: [...cur, ...urls.slice(0, room)] }
     })).catch(() => {})
   }
   // Cover KEY TERMS the user can choose to show on the at-a-glance rail. Order
@@ -329,13 +330,17 @@ export default function ReportPanel({ terms, opts }: { terms: NoteTerms; opts: R
   }
 
   const none = sel.size === 0
+  // How many report photos can actually appear: cover + back + ~one filler band
+  // per couple of included sections (pages). A rough but sensible cap so the user
+  // doesn't pick more photos than the report will ever show. Clamped to [4, 12].
+  const maxPhotos = Math.max(4, Math.min(12, 2 + Math.ceil(sel.size / 2)))
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }} className="fade-up">
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16 }}>
         <div style={{ fontSize: 12.5, color: 'var(--text-muted)' }}>{t('report_intro')}</div>
         <button className="btn btn--ghost" style={{ padding: '7px 12px', whiteSpace: 'nowrap', flexShrink: 0 }}
-                onClick={() => startTour(reportTour(t))}>
+                onClick={() => { setBrandOpen(true); startTour(reportTour(t)) }}>
           <Icon name="info" size={14} /> {t('rep_tutorial')}
         </button>
       </div>
@@ -379,7 +384,7 @@ export default function ReportPanel({ terms, opts }: { terms: NoteTerms; opts: R
       </Panel>
 
       {/* Branding (collapsible) */}
-      <div data-tour="rep-branding"><Panel pad={0}>
+      <Panel pad={0}>
         <button onClick={() => setBrandOpen((v) => !v)}
           style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 9, background: 'transparent', border: 'none', cursor: 'pointer', fontFamily: 'inherit', padding: '14px 16px', color: 'var(--text)' }}>
           <span style={{ transition: 'transform 0.15s', transform: brandOpen ? 'rotate(90deg)' : 'none', color: 'var(--text-faint)' }}>›</span>
@@ -428,6 +433,8 @@ export default function ReportPanel({ terms, opts }: { terms: NoteTerms; opts: R
         )}
         {brandOpen && (
           <div style={{ padding: '0 16px 18px', display: 'flex', flexDirection: 'column', gap: 18 }}>
+            {/* Core identity (firm, logo, colours, fonts) — the "Brand it" tour step. */}
+            <div data-tour="rep-branding" style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
             {/* Identity */}
             <div>
               <SubHead>{t('brand_identity')}</SubHead>
@@ -484,6 +491,7 @@ export default function ReportPanel({ terms, opts }: { terms: NoteTerms; opts: R
               </div>
               <div style={{ fontSize: 11, color: 'var(--text-faint)', marginTop: 5 }}>{t('brand_font_hint')}</div>
             </div>
+            </div>{/* /rep-branding core */}
 
             {/* Cover */}
             <div>
@@ -544,7 +552,7 @@ export default function ReportPanel({ terms, opts }: { terms: NoteTerms; opts: R
                   <input ref={fillerRef} type="file" accept="image/*" multiple style={{ display: 'none' }}
                          onChange={(e) => { onFillerUpload(e.target.files); e.target.value = '' }} />
                 </div>
-                <CoverPhotoPicker terms={terms}
+                <CoverPhotoPicker terms={terms} max={maxPhotos}
                                   selected={brand.filler_images_base64 ?? []}
                                   onChange={(urls) => setBrandField('filler_images_base64', urls)} />
               </div>
@@ -574,7 +582,7 @@ export default function ReportPanel({ terms, opts }: { terms: NoteTerms; opts: R
             </div>
           </div>
         )}
-      </Panel></div>
+      </Panel>
 
       <div data-tour="rep-generate" style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
         <button className="btn btn--primary" onClick={generate} disabled={status === 'running' || none} style={{ padding: '12px 22px', fontSize: 14 }}>
