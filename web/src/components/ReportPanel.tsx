@@ -358,7 +358,7 @@ export default function ReportPanel({ terms, opts }: { terms: NoteTerms; opts: R
                 {brandFolder.canSave && (
                   <button className="btn" style={{ padding: '7px 12px' }} disabled={brandSaving} onClick={saveBrandingToFolder}
                           title={brandLocalName ? t('cfg_save_over_hint', { name: brandLocalName }) : t('cfg_save_to_folder_hint')}>
-                    <Icon name={brandSaving ? 'spinner' : 'save'} size={13} /> {t('brand_save_to_folder_btn')}
+                    <Icon name={brandSaving ? 'spinner' : 'save'} size={13} /> {brandLocalName ? t('cfg_save_changes', { name: brandLocalName }) : t('brand_save_to_folder_btn')}
                   </button>
                 )}
               </div>

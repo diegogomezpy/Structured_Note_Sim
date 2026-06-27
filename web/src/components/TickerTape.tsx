@@ -122,25 +122,14 @@ export default function TickerTape({ terms }: { terms: NoteTerms }) {
     return () => clearTimeout(t)
   }, [display])
 
-  // Build the tape's cells: each underlying's headline (price + change) plus a
-  // few DISTINCT live-session figures (volume, day range, 52-week range). No
-  // datum repeats, and none of these duplicate the underlying-breakdown section
-  // (RSI / implied vol / market cap live there, not here).
-  type Item =
-    | { key: string; sym: string; leaving: boolean; kind: 'price'; price: number | null; change: number | null }
-    | { key: string; sym: string; leaving: boolean; kind: 'stat'; label: string; value: string }
-  const items: Item[] = []
-  for (const { m, leaving } of display) {
-    const sym = rowSym(m)
-    const q = quotes[sym]
-    items.push({ key: `${sym}#p`, sym, leaving, kind: 'price', price: q?.price ?? m.last_price, change: q?.change ?? m.day_change })
-    if (!leaving && q) {
-      if (q.volume != null) items.push({ key: `${sym}#v`, sym, leaving, kind: 'stat', label: 'Vol', value: compact(q.volume) })
-      if (q.day_low != null && q.day_high != null) items.push({ key: `${sym}#d`, sym, leaving, kind: 'stat', label: 'Day', value: `${fmtPrice(q.day_low)}–${fmtPrice(q.day_high)}` })
-      if (q.year_low != null && q.year_high != null) items.push({ key: `${sym}#y`, sym, leaving, kind: 'stat', label: '52W', value: `${fmtPrice(q.year_low)}–${fmtPrice(q.year_high)}` })
-    }
-  }
-  const cellSig = items.map((i) => i.key).join(',')
+  // One cell per underlying: the symbol ONCE, then its headline (price + change)
+  // and a few DISTINCT live-session figures (volume, day range, 52-week range)
+  // inline — so the tape reads "SYM price ▲% · VOL · DAY · 52W" then the next
+  // symbol, never repeating the same ticker across adjacent cells. None of these
+  // duplicate the underlying-breakdown section (RSI / IV / market cap live there).
+  // Re-measure the marquee when quotes arrive (the stats widen each cell).
+  const cellSig = display.map((c) => rowSym(c.m) + (c.leaving ? '!' : '')).join(',')
+    + '|' + syms.filter((s) => quotes[s]).join(',')
 
   // Scroll only when the unique content overflows the bar; otherwise it stays put
   // (no repeating to fill). When it scrolls, the duration tracks the width for a
@@ -167,32 +156,39 @@ export default function TickerTape({ terms }: { terms: NoteTerms }) {
   const LABEL = '#727b73'
   const hoverM = hover ? (rows ?? []).find((mm) => rowSym(mm) === hover.sym) ?? null : null
 
-  // Render one cell. `dupe` keys the second (seamless-loop) copy distinctly.
-  const wrap = (item: Item, dupe = false) => {
-    const fl = flash[item.sym]
-    const cls = [item.leaving ? 'tick-leaving' : '', fl === 'up' ? 'tick-up' : fl === 'down' ? 'tick-down' : ''].filter(Boolean).join(' ')
+  // A small inline label·value stat group within a cell (Vol / Day / 52W).
+  const stat = (label: string, value: string) => (
+    <span style={{ display: 'inline-flex', alignItems: 'baseline', gap: 5 }}>
+      <span style={{ fontSize: 9, fontWeight: 600, letterSpacing: '0.09em', textTransform: 'uppercase', color: LABEL }}>{label}</span>
+      <span style={{ color: LIGHT }}>{value}</span>
+    </span>
+  )
+
+  // Render one underlying as a single cell: symbol · price · change · stats.
+  // `dupe` keys the second (seamless-loop) copy distinctly.
+  const wrap = ({ m, leaving }: { m: UnderlyingMetric; leaving: boolean }, dupe = false) => {
+    const sym = rowSym(m)
+    const q = quotes[sym]
+    const price = q?.price ?? m.last_price
+    const change = q?.change ?? m.day_change
+    const fl = flash[sym]
+    const cls = [leaving ? 'tick-leaving' : '', fl === 'up' ? 'tick-up' : fl === 'down' ? 'tick-down' : ''].filter(Boolean).join(' ')
     return (
-      <span key={dupe ? `${item.key}#2` : item.key} className={cls || undefined}
-        onMouseEnter={(e) => setHover({ sym: item.sym, rect: e.currentTarget.getBoundingClientRect() })}
-        onMouseLeave={() => setHover((h) => (h?.sym === item.sym ? null : h))}
+      <span key={dupe ? `${sym}#2` : sym} className={cls || undefined}
+        onMouseEnter={(e) => setHover({ sym, rect: e.currentTarget.getBoundingClientRect() })}
+        onMouseLeave={() => setHover((h) => (h?.sym === sym ? null : h))}
         style={{
-          display: 'inline-flex', alignItems: 'baseline', gap: 8, padding: '11px 18px', overflow: 'hidden',
-          borderRight: `1px solid ${RULE}`, fontSize: 12, cursor: 'default',
+          display: 'inline-flex', alignItems: 'baseline', gap: 12, padding: '11px 18px', overflow: 'hidden',
+          borderRight: `1px solid ${RULE}`, fontSize: 12, cursor: 'default', whiteSpace: 'nowrap',
         }}>
-        <span style={{ fontWeight: 600, color: PAPER }}>{item.sym}</span>
-        {item.kind === 'price' ? (
-          <>
-            <span style={{ color: LIGHT }}>{item.price != null ? <AnimatedNumber value={item.price} format={fmtPrice} duration={500} /> : '—'}</span>
-            {item.change != null && (
-              <span style={{ color: item.change >= 0 ? UP : DOWN }}>{item.change >= 0 ? '▲' : '▼'} {Math.abs(item.change * 100).toFixed(2)}%</span>
-            )}
-          </>
-        ) : (
-          <>
-            <span style={{ fontSize: 9, fontWeight: 600, letterSpacing: '0.09em', textTransform: 'uppercase', color: LABEL }}>{item.label}</span>
-            <span style={{ color: LIGHT }}>{item.value}</span>
-          </>
+        <span style={{ fontWeight: 600, color: PAPER }}>{sym}</span>
+        <span style={{ color: LIGHT }}>{price != null ? <AnimatedNumber value={price} format={fmtPrice} duration={500} /> : '—'}</span>
+        {change != null && (
+          <span style={{ color: change >= 0 ? UP : DOWN }}>{change >= 0 ? '▲' : '▼'} {Math.abs(change * 100).toFixed(2)}%</span>
         )}
+        {!leaving && q?.volume != null && stat('Vol', compact(q.volume))}
+        {!leaving && q?.day_low != null && q?.day_high != null && stat('Day', `${fmtPrice(q.day_low)}–${fmtPrice(q.day_high)}`)}
+        {!leaving && q?.year_low != null && q?.year_high != null && stat('52W', `${fmtPrice(q.year_low)}–${fmtPrice(q.year_high)}`)}
       </span>
     )
   }
@@ -207,8 +203,8 @@ export default function TickerTape({ terms }: { terms: NoteTerms }) {
       }}>LIVE ·</div>
       <div ref={viewportRef} className="ticker-marquee mono" data-scroll={scroll}>
         <div className="ticker-track" style={scroll ? { animationDuration: `${dur}s` } : undefined}>
-          <div ref={seqRef} className="ticker-seq">{items.map((it) => wrap(it))}</div>
-          {scroll && <div className="ticker-seq" aria-hidden>{items.map((it) => wrap(it, true))}</div>}
+          <div ref={seqRef} className="ticker-seq">{display.map((c) => wrap(c))}</div>
+          {scroll && <div className="ticker-seq" aria-hidden>{display.map((c) => wrap(c, true))}</div>}
         </div>
       </div>
     </div>

@@ -97,14 +97,6 @@ export default function SetupRail({
           <label style={{ fontSize: 12, color: 'var(--text-muted)' }}>{t('config_label')}</label>
           <div style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
             <AddNoteHelp />
-            {local.canSave && (
-              <button className="btn btn--ghost" style={{ padding: '3px 7px' }} disabled={saving}
-                      onClick={saveToFolder}
-                      title={activeLocalName ? t('cfg_save_over_hint', { name: activeLocalName }) : t('cfg_save_to_folder_hint')}
-                      aria-label={t('cfg_save_to_folder')}>
-                <Icon name={saving ? 'spinner' : 'save'} size={14} />
-              </button>
-            )}
             <button className="btn btn--ghost" style={{ padding: '3px 7px' }}
                     onClick={downloadConfig} title={t('download_config_hint')} aria-label={t('download_config')}>
               <Icon name="download" size={14} />
@@ -130,6 +122,19 @@ export default function SetupRail({
                   } else { setLocalSel(null); onSelectConfig(v) }
                 }} />
         <FolderConnect fld={local} />
+        {/* Clear, labelled save-back action — overwrites the loaded folder file
+            in place, or creates a new one when the note didn't come from the
+            folder. Only shown once a writable folder is connected. */}
+        {local.canSave && (
+          <>
+            <button className="btn" style={{ marginTop: 8, width: '100%', justifyContent: 'center' }}
+                    disabled={saving} onClick={saveToFolder}>
+              <Icon name={saving ? 'spinner' : 'save'} size={14} />
+              {activeLocalName ? t('cfg_save_changes', { name: activeLocalName }) : t('cfg_save_new_file')}
+            </button>
+            <div style={{ fontSize: 11, color: 'var(--text-faint)', marginTop: 5 }}>{t('folder_save_hint')}</div>
+          </>
+        )}
         {uploadErr && <div style={{ fontSize: 11.5, color: 'var(--red)', marginTop: 5 }}>{uploadErr}</div>}
       </div>
 

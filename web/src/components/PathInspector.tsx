@@ -325,7 +325,11 @@ function InspectorPanel({ fetcher, terms, label, onRemove }: {
       ) : fig ? (
         <>
           {title && <div style={{ fontSize: 13.5, fontWeight: 600, marginBottom: 6 }}>{title}</div>}
-          <div style={{ height: 360 }}><Figure fig={fig} name="path_inspector" /></div>
+          {/* Key by the loaded path so the draw-in animation replays on every new
+              path (random / next / prev), not just on first mount. */}
+          <div style={{ height: 360 }}>
+            <Figure key={data?.path_index ?? data?.position ?? 0} fig={fig} name="path_inspector" />
+          </div>
           {outcomeLine && <div style={{ fontSize: 13, color: 'var(--text-muted)', margin: '8px 0 12px' }}>{outcomeLine}</div>}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12, marginBottom: 12 }}>
             <Metric label={t('insp_m_principal')} value={pct(data?.metrics?.principal, 2)} />

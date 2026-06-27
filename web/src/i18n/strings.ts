@@ -52,6 +52,9 @@ export const S: Dict = {
   cfg_saved:        { en: 'Saved to your folder', es: 'Guardado en tu carpeta' },
   cfg_save_failed:  { en: 'Could not save', es: 'No se pudo guardar' },
   cfg_save_failed_sub: { en: 'Folder write access was denied', es: 'Se denegó el acceso de escritura a la carpeta' },
+  cfg_save_changes: { en: 'Save changes to {name}.json', es: 'Guardar cambios en {name}.json' },
+  cfg_save_new_file: { en: 'Save note to folder', es: 'Guardar nota en la carpeta' },
+  folder_save_hint: { en: 'Edits to a note loaded from this folder save back to its own file.', es: 'Los cambios a una nota cargada desde esta carpeta se guardan en su propio archivo.' },
 
   // local folder (File System Access)
   folder_connect:   { en: 'Connect a folder', es: 'Conectar una carpeta' },
