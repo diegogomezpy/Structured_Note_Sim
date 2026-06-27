@@ -1195,12 +1195,17 @@ class _NotePDF(FPDF):
         if self._is_cover or self.page_no() in self._cover_pages:
             return
         y = self.get_y() + 4.0
-        bottom = self.h - 26.0          # stay above the footer rule (h-22)
-        gap = bottom - y
+        # Hard floor for ALL decoration: a clear margin above the footer rule
+        # (drawn at h-22) and its text, so a graphic NEVER overlaps the footnote.
+        floor = self.h - 28.0
+        gap = floor - y
         if gap < min_gap:
             return
         x0 = self.l_margin
         x1 = self.w - self.r_margin
+        # A hex-cluster's lowest shape can reach ~1.4x its scale below the origin
+        # (see _hex_cluster layouts) — account for that so it stays above `floor`.
+        HEX_VEXT = 1.45
         try:
             # Big sigil watermark — centred in the void, bleeding off the right.
             sig = getattr(self, "cover_sigil_bytes", None)
@@ -1212,17 +1217,19 @@ class _NotePDF(FPDF):
                 with self.local_context(fill_opacity=0.07):
                     self.image(io.BytesIO(sig), x=x1 - sw * 0.60,
                                y=y + (gap - sh) / 2.0, w=sw, h=sh)
-            # Hex cluster anchored low-left, bleeding off the left edge.
-            scale = min(gap * 0.6, 60.0)
-            _hex_cluster(self, x0 - scale * 0.22, bottom - scale, scale,
-                         self.primary_color, variant=variant, opacity=0.13)
+            # Hex cluster anchored low-left — placed so its FULL extent (incl. the
+            # downward overflow) ends at `floor`, never reaching the footnote.
+            scale = min(gap / HEX_VEXT, 52.0)
+            if scale >= 12:
+                _hex_cluster(self, x0 - scale * 0.22, floor - scale * HEX_VEXT,
+                             scale, self.primary_color, variant=variant, opacity=0.13)
             # Tall voids: two small outlined hexes mid-band tie the corners.
-            if gap > 105:
+            if gap > 120:
                 cxm = (x0 + x1) / 2
-                _stroke_chamfer(self, cxm - 10, y + gap * 0.30, 18, 18,
+                _stroke_chamfer(self, cxm - 10, y + gap * 0.28, 18, 18,
                                 self.primary_color, c=3.6, q=1.1, r=3.6,
                                 line_w=0.45, opacity=0.11)
-                _stroke_chamfer(self, cxm + 20, y + gap * 0.30 + 17, 11, 11,
+                _stroke_chamfer(self, cxm + 20, y + gap * 0.28 + 17, 11, 11,
                                 self.lime, c=2.2, q=0.7, r=2.2,
                                 line_w=0.45, opacity=0.18)
         except Exception:
