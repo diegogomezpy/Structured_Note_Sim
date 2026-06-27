@@ -1184,35 +1184,57 @@ class _NotePDF(FPDF):
         self.set_y(ry + 4)
         self.set_text_color(*_TEXT)
 
-    def _decorate_void(self, variant: int = 0, min_gap: float = 70.0,
-                       sigil: bytes | None = None) -> None:
-        """If a large empty band remains before the footer, fill it with a faint
-        brand decoration bleeding off the bottom-right corner — the sigil motif
-        when supplied, else a hex-cluster. Decoration only: drawn well clear of
-        any text, never on a cover page."""
+    def _decorate_void(self, variant: int = 0, min_gap: float = 44.0) -> None:
+        """Fill a large empty band before the footer with a deliberate brand
+        composition so a short page reads as composed rather than empty: a big
+        sigil watermark (centred in the void, bleeding off the right edge), a
+        hex-cluster anchored low-left bleeding off the left edge, and — for very
+        tall voids — a couple of small outlined hexes mid-band so the centre is
+        not a dead zone. Sized to the void; visible but unobtrusive; kept clear
+        of the footer and never drawn on a cover page."""
         if self._is_cover or self.page_no() in self._cover_pages:
             return
-        y = self.get_y()
-        bottom = self.h - 26
-        if bottom - y < min_gap:
+        y = self.get_y() + 4.0
+        bottom = self.h - 26.0          # stay above the footer rule (h-22)
+        gap = bottom - y
+        if gap < min_gap:
             return
+        x0 = self.l_margin
+        x1 = self.w - self.r_margin
         try:
-            if sigil:
+            # Big sigil watermark — centred in the void, bleeding off the right.
+            sig = getattr(self, "cover_sigil_bytes", None)
+            if sig:
                 from PIL import Image
-                iw, ih = Image.open(io.BytesIO(sigil)).size
-                sw = 78.0
-                sh = sw * ih / iw
-                with self.local_context(fill_opacity=0.05):
-                    self.image(io.BytesIO(sigil),
-                               x=self.w - self.r_margin - sw * 0.55,
-                               y=bottom - sh * 0.62, w=sw, h=sh)
-            else:
-                scale = 42.0
-                _hex_cluster(self, self.w - self.r_margin - scale * 0.66,
-                             bottom - scale * 0.66, scale, self.primary_color,
-                             variant=variant, opacity=0.06)
+                iw, ih = Image.open(io.BytesIO(sig)).size
+                sh = min(gap * 0.92, 150.0)
+                sw = sh * iw / ih
+                with self.local_context(fill_opacity=0.07):
+                    self.image(io.BytesIO(sig), x=x1 - sw * 0.60,
+                               y=y + (gap - sh) / 2.0, w=sw, h=sh)
+            # Hex cluster anchored low-left, bleeding off the left edge.
+            scale = min(gap * 0.6, 60.0)
+            _hex_cluster(self, x0 - scale * 0.22, bottom - scale, scale,
+                         self.primary_color, variant=variant, opacity=0.13)
+            # Tall voids: two small outlined hexes mid-band tie the corners.
+            if gap > 105:
+                cxm = (x0 + x1) / 2
+                _stroke_chamfer(self, cxm - 10, y + gap * 0.30, 18, 18,
+                                self.primary_color, c=3.6, q=1.1, r=3.6,
+                                line_w=0.45, opacity=0.11)
+                _stroke_chamfer(self, cxm + 20, y + gap * 0.30 + 17, 11, 11,
+                                self.lime, c=2.2, q=0.7, r=2.2,
+                                line_w=0.45, opacity=0.18)
         except Exception:
             pass
+
+    # Decorate the page we're leaving (cursor is at the content end here) so any
+    # short content page gets its void filled automatically — except covers.
+    def add_page(self, *args, **kwargs):
+        if (self.page_no() > 0 and not self._is_cover
+                and self.page_no() not in self._cover_pages):
+            self._decorate_void(variant=self.page_no() % 3)
+        return super().add_page(*args, **kwargs)
 
     def section_divider(self, number: str, kicker: str, heading: str):
         """Primary section head for an analytical lens (Monte Carlo → Backtest →
@@ -1736,7 +1758,6 @@ class _NotePDF(FPDF):
                 self.cell(chip_w, 5, self._safe(val), align="C")
                 cx += chip_w + gap
         self.set_y(y0 + box_h + 4)
-        self._decorate_void(variant=1)
 
     def underlying_block(self, long_name: str, logo_bytes: bytes | None,
                          subtitle: str, metrics: list[tuple[str, str]],
@@ -1843,8 +1864,6 @@ class _NotePDF(FPDF):
             except Exception:
                 pass
             self.set_y(top + ch + 2 * fpad + 4)
-        # Fill any remaining empty band with a faint hex decoration.
-        self._decorate_void(variant=2)
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -3075,22 +3094,30 @@ def _cover_page(
         _ld = ((logo_overrides or {}).get(nm)
                or _load_ticker_logo(nm, (logo_urls or {}).get(nm, ""),
                                     (logo_tickers or {}).get(nm)))
+        # Uniform white rounded tile per underlying so the (differently-coloured)
+        # brand logos read as a clean, consistent set instead of clashing squares.
+        _TS = 8.5
+        pdf.set_fill_color(*_WHITE)
+        pdf.set_draw_color(*pdf.rule_soft)
+        pdf.set_line_width(0.2)
+        try:
+            pdf.rect(Rx + 5, yy - 0.5, _TS, _TS, style="DF",
+                     round_corners=True, corner_radius=1.8)
+        except TypeError:
+            pdf.rect(Rx + 5, yy - 0.5, _TS, _TS, style="DF")
         _drew = False
         if _ld:
             try:
-                pdf.image(io.BytesIO(_ld), x=Rx + 5, y=yy - 0.4, w=8, h=8)
+                pdf.image(io.BytesIO(_ld), x=Rx + 5 + 1.1, y=yy - 0.5 + 1.1,
+                          w=_TS - 2.2, h=_TS - 2.2)
                 _drew = True
             except Exception:
                 _drew = False
         if not _drew:
-            tk = (logo_tickers or {}).get(nm) or str(nm)[:5].upper()
-            pdf.set_fill_color(*_cols[i])
-            try:
-                pdf.rect(Rx + 5, yy, 11, 6, style="F", round_corners=True, corner_radius=1.2)
-            except TypeError:
-                pdf.rect(Rx + 5, yy, 11, 6, style="F")
-            pdf.set_xy(Rx + 5, yy + 0.7); pdf._sf(6.3, "bold"); pdf.set_text_color(*_WHITE)
-            pdf.cell(11, 5, _safe(tk), align="C")
+            tk = (logo_tickers or {}).get(nm) or str(nm)[:4].upper()
+            pdf.set_xy(Rx + 5, yy + 1.3)
+            pdf._sf(6.0, "bold"); pdf.set_text_color(*_cols[i])
+            pdf.cell(_TS, 4, _safe(tk[:4]), align="C")
         pdf.set_xy(Rx + 18, yy + 0.9)
         _nm_w = Rw - 18 - 4
         pdf._fit_font(_safe(nm), _nm_w, 8.0, "regular", min_size=5.5)
@@ -3203,26 +3230,29 @@ def _cover_page(
             for leaf in leaves:
                 _toc_leaf(leaf)
 
-    # Client / short reports leave a big empty band below both stacks — fill it
-    # with a faint brand decoration (the sigil motif, else a hex cluster) so the
-    # page doesn't read as half-empty.
-    _void_top = max(ly, _yc[0]) + 6
-    if (pdf.h - 16) - _void_top > 55:
+    # Client / short reports leave a big empty band below the stacks — compose
+    # the void with a large sigil watermark (bleeding off the right) plus a
+    # hex-cluster in the shorter left column, so the page reads as designed.
+    _bottom = pdf.h - 18.0
+    _void_top = max(ly, _yc[0]) + 8.0
+    try:
         _sig = getattr(pdf, "cover_sigil_bytes", None)
-        try:
-            if _sig:
-                from PIL import Image as _Img
-                _iw, _ih = _Img.open(io.BytesIO(_sig)).size
-                _sw = 96.0; _sh = _sw * _ih / _iw
-                with pdf.local_context(fill_opacity=0.05):
-                    pdf.image(io.BytesIO(_sig), x=(pdf.w - _sw) / 2,
-                              y=_void_top + ((pdf.h - 16 - _void_top) - _sh) / 2,
-                              w=_sw, h=_sh)
-            else:
-                _hex_cluster(pdf, pdf.w - pdf.r_margin - 46, pdf.h - 16 - 46,
-                             46, pdf.primary_color, variant=0, opacity=0.06)
-        except Exception:
-            pass
+        if _sig and _bottom - _void_top > 40:
+            from PIL import Image as _Img
+            _iw, _ih = _Img.open(io.BytesIO(_sig)).size
+            _sh = min((_bottom - _void_top) * 0.95, 150.0); _sw = _sh * _iw / _ih
+            with pdf.local_context(fill_opacity=0.07):
+                pdf.image(io.BytesIO(_sig), x=pdf.w - pdf.r_margin - _sw * 0.60,
+                          y=_void_top + ((_bottom - _void_top) - _sh) / 2.0,
+                          w=_sw, h=_sh)
+        # Left column is much shorter than the right (client report) → fill its
+        # void with a hex cluster bleeding off the left edge.
+        if ly + 45 < _yc[0] and _bottom - ly > 50:
+            _sc = min((_bottom - ly) * 0.5, 54.0)
+            _hex_cluster(pdf, x0 - _sc * 0.2, _bottom - _sc, _sc,
+                         pdf.primary_color, variant=1, opacity=0.13)
+    except Exception:
+        pass
 
     pdf._is_cover = False
     # Re-enable auto-page-break for all content pages that follow
@@ -4078,4 +4108,7 @@ def _build_pdf_report(
             pdf.ln(2.5)
         pdf.set_text_color(*_TEXT)
 
+    # The final page never triggers add_page, so decorate its void directly
+    # (no-op on a full-bleed disclaimer / cover page).
+    pdf._decorate_void()
     return bytes(pdf.output())
