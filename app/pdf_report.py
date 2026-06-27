@@ -128,6 +128,7 @@ _KNOWN_BRANDING_KEYS = {
     "cover_sigil_base64",   # NEW — optional emblem/sigil shown on the cover (≠ wordmark)
     "cover_image_base64",   # NEW — optional full-bleed cover background photo
     "back_image_base64",    # NEW — optional full-bleed photo for the disclaimer back page
+    "filler_images_base64", # NEW — pool of report photos (cover/back fallback + void-filler bands cycle through it)
     "cover_overlay_color",  # NEW — colour of the overlay drawn over the cover/back photo
     "cover_overlay_opacity",# NEW — 0..1 opacity of that overlay
     "title_font", "body_font",  # NEW — custom report fonts (see _register_brand_fonts)
@@ -917,6 +918,9 @@ class _NotePDF(FPDF):
         self._is_cover     = False
         self._cover_pages  = set()   # page numbers with no running header/footer (covers)
         self._fig_no       = 0
+        # Round-robin cursor into `filler_image_list` so successive egregious-void
+        # photo bands cycle through the chosen images instead of repeating one.
+        self._void_photo_idx = 0
         # Locale-neutral numeric timestamp so the footer never shows an English
         # month abbreviation in a Spanish report.
         self._gen_dt       = datetime.datetime.now().strftime("%Y-%m-%d  %H:%M")
@@ -1218,9 +1222,16 @@ class _NotePDF(FPDF):
             return
         x0 = self.l_margin
         x1 = self.w - self.r_margin
-        filler = getattr(self, "cover_image_bytes", None) or getattr(self, "back_image_bytes", None)
-        if gap >= self._EGREGIOUS_VOID and filler:
+        # Draw from the chosen pool of report images, cycling so each egregious
+        # void gets the next image rather than repeating one (falls back to the
+        # single cover/back photo when only one image is available).
+        pool = getattr(self, "filler_image_list", None) or [
+            b for b in (getattr(self, "cover_image_bytes", None),
+                        getattr(self, "back_image_bytes", None)) if b]
+        if gap >= self._EGREGIOUS_VOID and pool:
+            filler = pool[self._void_photo_idx % len(pool)]
             if self._decorate_void_photo(x0, x1, y, floor, gap, filler):
+                self._void_photo_idx += 1
                 return
         # A hex-cluster's lowest shape can reach ~1.4x its scale below the origin
         # (see _hex_cluster layouts) — account for that so it stays above `floor`.
@@ -3688,12 +3699,37 @@ def _build_pdf_report(
         except Exception as _e:
             print(f"[PDF cover] image skipped: {_e}")
             return None
-    pdf.cover_image_bytes = _decode_b64_img(_b.get("cover_image_base64"))
+    # `filler_images_base64` is an optional POOL of report photos (the multi-pick
+    # cover-photo library). The cover/back faces fall back to it, and the
+    # egregious-void filler bands cycle through it for variety. Decode + dedupe by
+    # content so the same image isn't embedded twice.
+    _pool_raw = _b.get("filler_images_base64") or []
+    if isinstance(_pool_raw, str):            # tolerate a single string
+        _pool_raw = [_pool_raw]
+    _pool, _seen = [], set()
+    for _item in _pool_raw:
+        _img = _decode_b64_img(_item)
+        if _img and _img not in _seen:
+            _seen.add(_img); _pool.append(_img)
     pdf.cover_logo_bytes  = _decode_b64_img(_b.get("cover_logo_base64"))
     pdf.cover_sigil_bytes = _decode_b64_img(_b.get("cover_sigil_base64"))
-    # Back (disclaimer) page photo — falls back to the cover photo when not set
-    # separately, so a brand can supply one image for both faces.
-    pdf.back_image_bytes  = _decode_b64_img(_b.get("back_image_base64")) or pdf.cover_image_bytes
+    # Cover face: explicit `cover_image_base64`, else the first pooled photo.
+    pdf.cover_image_bytes = _decode_b64_img(_b.get("cover_image_base64")) or (_pool[0] if _pool else None)
+    # Back (disclaimer) face: explicit `back_image_base64`, else the SECOND pooled
+    # photo (so front/back differ when a pool is given), else the cover photo.
+    pdf.back_image_bytes  = (_decode_b64_img(_b.get("back_image_base64"))
+                             or (_pool[1] if len(_pool) > 1 else None)
+                             or pdf.cover_image_bytes)
+    # Void-filler pool: the explicit pool when given, else the cover/back photos
+    # (deduped, non-null) so single-image brands still get a filler band.
+    if _pool:
+        pdf.filler_image_list = _pool
+    else:
+        _fb, _fbseen = [], set()
+        for _img in (pdf.cover_image_bytes, pdf.back_image_bytes):
+            if _img and _img not in _fbseen:
+                _fbseen.add(_img); _fb.append(_img)
+        pdf.filler_image_list = _fb
     pdf.cover_overlay_color = _branding_color(branding, "cover_overlay_color", primary_color)
     try:
         pdf.cover_overlay_opacity = float(_b.get("cover_overlay_opacity", 0.55))

@@ -511,7 +511,11 @@ export const S: Dict = {
   tk_rsi:         { en: 'RSI (14)', es: 'RSI (14)' },
 
   // cover-photo library
-  cover_lib:        { en: 'Cover photo library', es: 'Biblioteca de portadas' },
+  cover_lib:        { en: 'Report photo library', es: 'Biblioteca de fotos del informe' },
+  cover_lib_multi_hint: { en: 'Pick several — the cover, back page and empty-space filler bands cycle through your selection.', es: 'Elige varias — la portada, la contraportada y las franjas que rellenan los espacios vacíos rotan entre tu selección.' },
+  cover_lib_selected: { en: 'Selected ({n})', es: 'Seleccionadas ({n})' },
+  cover_role_cover: { en: 'Cover', es: 'Portada' },
+  cover_role_back:  { en: 'Back', es: 'Contra' },
   cover_lib_sector: { en: 'Industry', es: 'Industria' },
   cover_lib_empty:  { en: 'No photos found — try another industry.', es: 'No se encontraron fotos — prueba otra industria.' },
   cover_lib_unconfigured: { en: 'The photo library needs a Pexels API key (set PEXELS_API_KEY on the server). You can still upload a cover image above.', es: 'La biblioteca de fotos necesita una clave de Pexels (define PEXELS_API_KEY en el servidor). Aún puedes subir una imagen de portada arriba.' },

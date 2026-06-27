@@ -323,6 +323,7 @@ export interface Branding {
   cover_sigil_base64?: string     // emblem/sigil shown on the cover (≠ wordmark)
   cover_image_base64?: string     // full-bleed cover background photo
   back_image_base64?: string      // full-bleed photo for the disclaimer back page
+  filler_images_base64?: string[] // pool of report photos: cover/back fallback + void-filler bands cycle through it
   cover_overlay_color?: string    // overlay colour over the cover/back photo
   cover_overlay_opacity?: string | number  // 0..1
   title_font?: string             // headings font (fonts/brand/<Name>-Bold.ttf)

@@ -220,7 +220,10 @@ export default function ReportPanel({ terms, opts }: { terms: NoteTerms; opts: R
     if (preset !== 'custom') return
     try { localStorage.setItem(CUSTOM_LS, JSON.stringify([...sel])) } catch { /* ignore */ }
   }, [sel, preset])
-  const setBrandField = (k: keyof Branding, v: string) => setBrand((b) => ({ ...b, [k]: v || undefined }))
+  const setBrandField = <K extends keyof Branding>(k: K, v: Branding[K]) => setBrand((b) => {
+    const empty = v === '' || v == null || (Array.isArray(v) && v.length === 0)
+    return { ...b, [k]: empty ? undefined : v }
+  })
   const onImage = (field: keyof Branding, file: File | undefined) => {
     if (!file) return
     const r = new FileReader(); r.onload = () => setBrandField(field, String(r.result)); r.readAsDataURL(file)
@@ -467,11 +470,16 @@ export default function ReportPanel({ terms, opts }: { terms: NoteTerms; opts: R
                          onChange={(e) => setBrandField('cover_overlay_opacity', e.target.value)} />
                 </Field>
               </div>
-              {/* Cover-photo library — professional photos by sector, suggested from
-                  the note's underlyings. Sets the cover image (overlay still applies). */}
+              {/* Report-photo library — professional photos by sector, suggested
+                  from the note's underlyings. MULTI-select: the chosen pool drives
+                  the cover, the back page and the empty-space filler bands (each
+                  gap cycles to the next photo). Overlay still applies. */}
               <div style={{ marginTop: 14 }}>
                 <div style={{ fontSize: 11.5, color: 'var(--text-muted)', marginBottom: 2 }}>{t('cover_lib')}</div>
-                <CoverPhotoPicker terms={terms} onPick={(d) => setBrandField('cover_image_base64', d)} />
+                <div style={{ fontSize: 11, color: 'var(--text-faint)', marginBottom: 6, lineHeight: 1.5 }}>{t('cover_lib_multi_hint')}</div>
+                <CoverPhotoPicker terms={terms}
+                                  selected={brand.filler_images_base64 ?? []}
+                                  onChange={(urls) => setBrandField('filler_images_base64', urls)} />
               </div>
             </div>
 
