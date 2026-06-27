@@ -70,6 +70,7 @@ import warnings
 import numpy as np
 from pathlib import Path
 from fpdf import FPDF
+from fpdf.drawing import DeviceRGB
 
 _REPO_ROOT       = Path(__file__).parent.parent
 _TICKER_LOGO_DIR = _REPO_ROOT / "branding" / "ticker_logos"
@@ -92,8 +93,25 @@ _HAIRLINE         = (203, 213, 225) # cool grey  #cbd5e1
 _RULE_LIGHT       = (226, 232, 240) # slate-100  #e2e8f0
 _ROW_ALT          = (245, 246, 250) # slate-50   #F5F6FA — zebra rows
 _WHITE            = (255, 255, 255)
+_BLACK            = (0,   0,   0)
 _COVER_BAND_H     = 38              # mm — height of the top cover band
 _DEFAULT_SECONDARY = (198, 148, 38) # warm institutional gold #C69426 — 2nd chart category
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Mercator/CADIEM green design language — palette-driven tokens
+# ──────────────────────────────────────────────────────────────────────────────
+# The green design language derives every identity colour from the brand palette
+# so ANY brand inherits the same layout in its own colours (CADIEM's green config
+# reproduces the reference sample; a red-primary brand gets red banners, etc.).
+# Per-instance tokens are computed in _NotePDF.__init__ from the resolved palette;
+# the few here are brand-neutral constants the design shares.
+_AMBER            = (201, 119,  45)  # #C9772D — downside / capital-loss (brand has NO red)
+_AMBER_DARK       = (154, 123,  18)  # #9A7B12 — deep amber (knock-in)
+_MUTED            = (139, 151, 160)  # #8B97A0 — eyebrow/label grey
+_BODY_INK         = ( 36,  59,  51)  # #243B33 — paragraph text on white
+_RULE_SOFT        = (201, 210, 204)  # #C9D2CC — secondary-head hairline
+_PANEL_TINT       = (236, 241, 246)  # #ECF1F6 — card/tile fill (default panel)
+_FOOTNOTE_GREY    = (166, 176, 184)  # #A6B0B8 — footnote / caption
 
 # The full branding schema. Anything outside this set warns (mirrors
 # NoteTerms.from_dict) so a typo like "primary_colour" surfaces immediately
@@ -197,6 +215,104 @@ def _resolve_palette(branding: dict | None) -> tuple[
 
 
 # ──────────────────────────────────────────────────────────────────────────────
+# The CADIEM "hexagon" — a rectangular chamfer (rectangle with the top-right and
+# bottom-left corners cut at 45°, all corners rounded). Reproduced as a true
+# vector path (PaintedPath) so it scales crisply at any size — used for the dark
+# mastheads/banners, the lime number chips, and faint watermark clusters.
+# ──────────────────────────────────────────────────────────────────────────────
+def _dev_rgb(t: tuple[int, int, int]) -> DeviceRGB:
+    return DeviceRGB(t[0] / 255.0, t[1] / 255.0, t[2] / 255.0)
+
+
+def _chamfer_outline(path, x: float, y: float, w: float, h: float,
+                     c: float, q: float, r: float) -> None:
+    """Trace the chamfer path into `path`. Transcribes the prototype's
+    hexPath(W,H,c,q,r): chamfer depth `c`, chamfer-corner round `q`, normal
+    corner radius `r`. (x, y) = top-left in mm."""
+    s = q * 0.70710678
+    X = lambda v: x + v
+    Y = lambda v: y + v
+    path.move_to(X(r), Y(0))
+    path.line_to(X(w - c - q), Y(0))
+    path.quadratic_curve_to(X(w - c), Y(0), X(w - c + s), Y(s))
+    path.line_to(X(w - s), Y(c - s))
+    path.quadratic_curve_to(X(w), Y(c), X(w), Y(c + q))
+    path.line_to(X(w), Y(h - r))
+    path.quadratic_curve_to(X(w), Y(h), X(w - r), Y(h))
+    path.line_to(X(c + q), Y(h))
+    path.quadratic_curve_to(X(c), Y(h), X(c - s), Y(h - s))
+    path.line_to(X(s), Y(h - c + s))
+    path.quadratic_curve_to(X(0), Y(h - c), X(0), Y(h - c - q))
+    path.line_to(X(0), Y(r))
+    path.quadratic_curve_to(X(0), Y(0), X(r), Y(0))
+    path.close()
+
+
+def _chamfer_dims(w: float, h: float, c=None, q=None, r=None):
+    """Default chamfer parameters proportional to the shape; any may be pinned."""
+    m = min(w, h)
+    if c is None:
+        c = m * 0.14
+    if q is None:
+        q = c * 0.28
+    if r is None:
+        r = min(m * 0.10, 6.0)
+    return c, q, r
+
+
+def _fill_chamfer(pdf, x: float, y: float, w: float, h: float,
+                  rgb: tuple[int, int, int], c=None, q=None, r=None,
+                  opacity: float = 1.0) -> None:
+    """Draw a filled chamfer-hexagon panel (banner / chip / masthead)."""
+    c, q, r = _chamfer_dims(w, h, c, q, r)
+    with pdf.new_path() as p:
+        p.style.fill_color = _dev_rgb(rgb)
+        p.style.stroke_color = None
+        if opacity != 1.0:
+            p.style.fill_opacity = opacity
+        _chamfer_outline(p, x, y, w, h, c, q, r)
+
+
+def _stroke_chamfer(pdf, x: float, y: float, w: float, h: float,
+                    rgb: tuple[int, int, int], c=None, q=None, r=None,
+                    line_w: float = 0.4, opacity: float = 1.0) -> None:
+    """Draw an unfilled chamfer-hexagon outline (watermark decoration)."""
+    c, q, r = _chamfer_dims(w, h, c, q, r)
+    with pdf.new_path() as p:
+        p.style.fill_color = None
+        p.style.stroke_color = _dev_rgb(rgb)
+        p.style.stroke_width = line_w
+        if opacity != 1.0:
+            p.style.stroke_opacity = opacity
+        _chamfer_outline(p, x, y, w, h, c, q, r)
+
+
+def _hex_cluster(pdf, x: float, y: float, scale: float,
+                 rgb: tuple[int, int, int], variant: int = 0,
+                 opacity: float = 0.5) -> None:
+    """A faint decorative cluster of 2–3 varied chamfer-hexagons (outlines plus
+    one filled), bleeding from (x, y). Brand-graphic only — callers place it in
+    genuinely empty space, behind content, never over text. `variant` 0/1/2
+    picks one of three arrangements so the clusters differ page-to-page."""
+    # (dx, dy, size, filled) tuples in `scale` units — three hand-tuned layouts.
+    layouts = [
+        [(0.0, 0.0, 1.0, False), (0.72, 0.46, 0.62, True), (0.30, 0.92, 0.44, False)],
+        [(0.0, 0.30, 0.82, False), (0.58, 0.0, 1.0, False), (0.94, 0.66, 0.5, True)],
+        [(0.0, 0.0, 0.7, True), (0.46, 0.36, 1.0, False), (1.04, 0.10, 0.5, False)],
+    ]
+    for dx, dy, sz, filled in layouts[variant % len(layouts)]:
+        s = scale * sz
+        bx, by = x + scale * dx, y + scale * dy
+        if filled:
+            _fill_chamfer(pdf, bx, by, s, s, rgb,
+                          c=s * 0.2, q=s * 0.06, r=s * 0.2, opacity=opacity)
+        else:
+            _stroke_chamfer(pdf, bx, by, s, s, rgb,
+                            c=s * 0.2, q=s * 0.06, r=s * 0.2,
+                            line_w=max(0.25, s * 0.02), opacity=opacity)
+
+
+# ──────────────────────────────────────────────────────────────────────────────
 # Translations
 # ──────────────────────────────────────────────────────────────────────────────
 _LABELS: dict[str, dict[str, str]] = {
@@ -274,6 +390,13 @@ _LABELS: dict[str, dict[str, str]] = {
     "expected_total_return": {"en": "Expected total return",             "es": "Retorno total esperado"},
     "total_return_short":    {"en": "Total return",                      "es": "Retorno total"},
     "in_this_report":        {"en": "In this report",                    "es": "En este informe"},
+    "mean_hist_irr":         {"en": "Mean historical IRR",               "es": "TIR media histórica"},
+    "payoff_scenarios":      {"en": "Payoff scenarios",                  "es": "Escenarios de pago"},
+    "payoff_prob":           {"en": "Probability",                       "es": "Probabilidad"},
+    "payoff_irr":            {"en": "IRR p.a.",                          "es": "TIR anual"},
+    "outcome_autocalled":    {"en": "Autocalled",                        "es": "Autocancelado"},
+    "outcome_held":          {"en": "Held to maturity",                  "es": "Mantenido al venc."},
+    "outcome_loss":          {"en": "Capital loss",                      "es": "Pérdida de capital"},
     "expected_coupon":       {"en": "Expected coupon income",            "es": "Cupón total esperado"},
     "prob_autocall":         {"en": "P(autocall)",                       "es": "P(autocall)"},
     "avg_time_autocall":     {"en": "Avg. time to call",                 "es": "T. medio a autocall"},
@@ -313,6 +436,16 @@ _LABELS: dict[str, dict[str, str]] = {
     "lens_q_mc":             {"en": "What could happen?",           "es": "¿Qué podría pasar?"},
     "lens_q_bt":             {"en": "What would have happened?",    "es": "¿Qué habría pasado?"},
     "lens_q_live":           {"en": "What is happening now?",       "es": "¿Qué está pasando ahora?"},
+    # Institutional section headings for the analytical-lens primary banners
+    # (the prototype uses statements, not questions — see section_divider).
+    "sec_mc_heading":        {"en": "Projected Outcomes",           "es": "Resultados Proyectados"},
+    "sec_bt_heading":        {"en": "Realised Outcomes",            "es": "Resultados Históricos"},
+    "sec_live_heading":      {"en": "Position to Date",             "es": "Posición a la Fecha"},
+    # Eyebrow kickers for the reference-section secondary heads.
+    "kick_note_terms":       {"en": "NOTE TERMS",                   "es": "TÉRMINOS DE LA NOTA"},
+    "nt_page_title":         {"en": "Terms & Structure",            "es": "Términos y Estructura"},
+    "kick_issuer":           {"en": "ISSUER",                       "es": "EMISOR"},
+    "kick_underlying":       {"en": "UNDERLYING",                   "es": "SUBYACENTE"},
     # Section titles for the per-subtab analyses (mirror the dashboard tabs).
     # Prefix-free: they sit under their lens divider, which names the lens.
     "mc_subtab_payoff":      {"en": "Payoff & Distribution",
@@ -705,6 +838,9 @@ def _register_brand_fonts(pdf, branding: dict | None) -> None:
         bfam, bl = body
         pdf._sf_map["regular"] = (bfam, "")
         pdf._sf_map["light"]   = (bfam, "")
+        # Tracked eyebrows/kickers use the BODY font bold (per the reference),
+        # not the title face — keep a dedicated semantic weight for them.
+        pdf._sf_map["body_bold"] = (bfam, "B" if "B" in bl else "")
         pdf._sf_map["italic"]  = (bfam, "I" if "I" in bl else "")
         pdf._sf_map["bold_italic"] = (bfam, "BI" if "BI" in bl else ("I" if "I" in bl else ""))
         if not title and "B" in bl:   # no title font → body bold also carries headings
@@ -750,6 +886,23 @@ class _NotePDF(FPDF):
         # CADIEM pins its mint green that a 7% teal tint would wash out).
         self.panel_color = (panel_color if panel_color is not None
                             else _blend(primary_color, _WHITE, 0.93))
+        # ── Green design-language tokens (palette-driven) ──────────────────
+        # Identity colours derived from the resolved palette so ANY brand
+        # inherits the layout in its own colours. `ink` = a darkened primary
+        # (mastheads / banners / stat values); `lime` = the section-rule colour
+        # (keylines, number chips, accents); `teal` = the accent (secondary
+        # series, kickers). Downside stays amber (the brand has no red). The
+        # neutral tokens (muted/body_ink/rule_soft/footnote_grey) match the
+        # reference's grey-green family; `panel` is the card/tile fill.
+        self.ink           = _blend(primary_color, _BLACK, 0.46)
+        self.lime          = section_rule_color
+        self.teal          = accent_color
+        self.amber         = _AMBER
+        self.amber_dark    = _AMBER_DARK
+        self.muted         = _MUTED
+        self.body_ink      = _BODY_INK
+        self.rule_soft     = _RULE_SOFT
+        self.footnote_grey = _FOOTNOTE_GREY
         self.firm_name     = firm_name
         self.firm_logo_bytes = firm_logo_bytes
         # Optional branding content (B5). report_title overrides the default
@@ -777,6 +930,7 @@ class _NotePDF(FPDF):
             self._sf_map = {
                 "regular":     ("IBMPlexSans",      ""),
                 "bold":        ("IBMPlexSans",      "B"),
+                "body_bold":   ("IBMPlexSans",      "B"),
                 "bold_italic": ("IBMPlexSans",      "BI"),
                 "italic":      ("IBMPlexSans",      "I"),
                 "semibold":    ("IBMPlexSansSB",    ""),
@@ -789,6 +943,7 @@ class _NotePDF(FPDF):
             self._sf_map = {
                 "regular":     ("Helvetica", ""),
                 "bold":        ("Helvetica", "B"),
+                "body_bold":   ("Helvetica", "B"),
                 "bold_italic": ("Helvetica", "BI"),
                 "italic":      ("Helvetica", "I"),
                 "semibold":    ("Helvetica", "B"),
@@ -868,15 +1023,15 @@ class _NotePDF(FPDF):
         # the right, vertically centred on the logo's centreline (logo at y=8,
         # height 6 → centre y=11; a 4.5mm cell centres at y = 11 - 4.5/2 = 8.75).
         _row_y = 8.75
-        self._sf(7, "light")
-        self.set_text_color(*_TEXT_SOFT)
-        self.set_xy(self.w - self.r_margin - 85, _row_y)
+        self._sf(7, "regular")
+        self.set_text_color(*self.muted)
+        self.set_xy(self.w - self.r_margin - 95, _row_y)
         note_label = self._safe(self.doc_ref.split("|")[-1].strip() if "|" in self.doc_ref else self.doc_ref)
-        self.cell(85, 4.5, note_label, align="R")
+        self.cell(95, 4.5, note_label, align="R")
 
-        # ── Thin rule below header ────────────────────────────────────
-        self.set_draw_color(*_HAIRLINE)
-        self.set_line_width(0.3)
+        # ── 2px primary rule below the header (prototype interior chrome) ──
+        self.set_draw_color(*self.primary_color)
+        self.set_line_width(0.6)
         self.line(self.l_margin, 16.5, self.w - self.r_margin, 16.5)
         self.set_text_color(*_TEXT)
         self.set_y(21)
@@ -888,20 +1043,20 @@ class _NotePDF(FPDF):
         if self._is_cover or self.page_no() in self._cover_pages:
             return
         # ── Thin rule above footer ────────────────────────────────────
-        self.set_draw_color(*_HAIRLINE)
+        self.set_draw_color(*self.rule_soft)
         self.set_line_width(0.2)
         self.line(self.l_margin, self.h - 22, self.w - self.r_margin, self.h - 22)
 
         # ── Disclaimer line (branding may override with footer_note) ───
         self.set_y(-20)
         self._sf(6, "light")
-        self.set_text_color(*_TEXT_SOFT)
+        self.set_text_color(*self.footnote_grey)
         self.multi_cell(0, 2.9, self.footer_note or _t("footer_line", self.lang), align="L")
 
         # ── Page number + generation datetime ────────────────────────
         self.set_y(-11)
         self._sf(6.5, "light")
-        self.set_text_color(*_TEXT_SOFT)
+        self.set_text_color(*self.footnote_grey)
         self.cell(0, 4.5, self._safe(self._gen_dt), align="L")
         self.set_y(-11)
         _page = _t("page_of", self.lang)
@@ -930,36 +1085,102 @@ class _NotePDF(FPDF):
             self.ln(6)   # generous separation between stacked sections
         self.section_title(text)
 
-    def section_title(self, text: str):
-        """Section title in the brand primary colour + a thin filled-rect band below.
+    def _eyebrow(self, x: float, y: float, text: str, color: tuple,
+                 size: float = 7.0, tracking: float = 0.4,
+                 w: float = 0.0, align: str = "L") -> None:
+        """A tracked uppercase label — the design's 'eyebrow'/kicker. Uses the
+        BODY font bold (per the reference) and letter-spacing, then resets it."""
+        self._sf(size, "body_bold")
+        self.set_text_color(*color)
+        try:
+            self.set_char_spacing(tracking)
+        except Exception:
+            pass
+        self.set_xy(x, y)
+        self.cell(w, size * 0.55, self._safe(str(text).upper()), align=align)
+        try:
+            self.set_char_spacing(0)
+        except Exception:
+            pass
 
-        The band is a thin filled rectangle in section_rule_color, ~0.6mm tall,
-        spanning the full usable width. No drawn lines anywhere.
-        """
+    def section_title(self, text: str):
+        """Generic section title — an ink heading over a short lime keyline on a
+        soft full-width hairline. Used for un-numbered sections (glossary,
+        calibration) and as the generic block title; the numbered reference
+        heads use secondary_head() and the analytical lenses use
+        section_divider()."""
         if self.get_y() > self.h - 60:
             self.add_page()
         self.ln(4)
-        self._sf(13, "semibold")           # slightly larger than the old 11pt — factsheet titles are ~13pt
-        self.set_text_color(*self.primary_color)
+        self._sf(13, "bold")
+        self.set_text_color(*self.ink)
         self.cell(0, 8, text, new_x="LMARGIN", new_y="NEXT")
-        # Thin band in section_rule_color, full width.
-        band_h = 0.6   # mm — thin section rule
         band_w = self.w - self.l_margin - self.r_margin
-        self.set_fill_color(*self.section_rule_color)
-        self.rect(self.l_margin, self.get_y(), band_w, band_h, style="F")
-        self.ln(band_h + 4)
+        y = self.get_y()
+        # Soft full-width hairline with a short lime keyline overlaid at the left.
+        self.set_fill_color(*self.rule_soft)
+        self.rect(self.l_margin, y + 0.4, band_w, 0.4, style="F")
+        self.set_fill_color(*self.lime)
+        self.rect(self.l_margin, y, 22, 1.2, style="F")
+        self.ln(5)
         self.set_text_color(*_TEXT)
 
-    def section_divider(self, name: str, question: str):
-        """Part divider for one of the three analysis lenses (Monte Carlo →
-        Backtest → Live). Always opens a fresh page so the three lenses are
-        clearly delineated, then draws a band: the lens name in brand primary
-        (larger than a section title) above the question the lens answers, in
-        soft grey. Section content flows below it. Deliberately unnumbered — the
-        build-report panel can include any subset of lenses, so a fixed 01/02/03
-        would leave gaps (e.g. just '02', or '01' then '03')."""
-        # A part break always starts a new page (unless we're already at the top
-        # of a blank one), so each lens reads as a distinct chapter.
+    def secondary_head(self, number: str, kicker: str, title: str,
+                       min_room: float = 40.0, badge: str | None = None,
+                       badge_color: tuple | None = None):
+        """Reference-section secondary head: a lime chamfer number-chip beside a
+        green eyebrow kicker over an ink title, on a soft rule (Note Terms,
+        Issuer, each Underlying). An optional right-aligned `badge` prints a
+        small filled ticker/sector chip (used by the underlying pages)."""
+        if self.page_no() == 0:
+            self.add_page()
+        elif self.get_y() > self.h - self.b_margin - min_room:
+            self.add_page()
+        else:
+            self.ln(4)
+        x0 = self.l_margin
+        w  = self.w - self.l_margin - self.r_margin
+        y0 = self.get_y()
+        chip = 12.0
+        _fill_chamfer(self, x0, y0, chip, chip, self.lime, c=2.4, q=0.9, r=2.4)
+        self.set_xy(x0, y0 + 2.6)
+        self._sf(11, "bold")
+        self.set_text_color(*self.ink)
+        self.cell(chip, 7, number, align="C")
+        tx = x0 + chip + 5
+        tw = w - chip - 5
+        self._eyebrow(tx, y0 + 0.5, kicker, self.primary_color,
+                      size=7.0, tracking=0.5, w=tw)
+        # Optional right-aligned ticker badge (filled chip), e.g. "DELL".
+        if badge:
+            bc = badge_color or self.primary_color
+            self._sf(8, "bold")
+            bw = self.get_string_width(self._safe(badge)) + 5
+            self.set_fill_color(*bc)
+            self.rect(x0 + w - bw, y0 + 4.5, bw, 6.5, style="F",
+                      round_corners=True, corner_radius=1.4)
+            self.set_xy(x0 + w - bw, y0 + 5.0)
+            self.set_text_color(*_WHITE)
+            self.cell(bw, 5.5, self._safe(badge), align="C")
+            tw -= bw + 3
+        self.set_xy(tx, y0 + 4.8)
+        self._fit_font(self._safe(title), tw, 15, "bold")
+        self.set_text_color(*self.ink)
+        self.cell(tw, 7, self._safe(title))
+        ry = y0 + chip + 2
+        self.set_fill_color(*self.rule_soft)
+        self.rect(x0, ry, w, 0.4, style="F")
+        self.set_y(ry + 4)
+        self.set_text_color(*_TEXT)
+
+    def section_divider(self, number: str, kicker: str, heading: str):
+        """Primary section head for an analytical lens (Monte Carlo → Backtest →
+        Current Performance): a full-width dark chamfer banner carrying a big
+        lime section number, a thin divider, a lime eyebrow kicker over a white
+        heading, and a faint hex watermark. Always opens a fresh page so each
+        lens reads as a distinct chapter. Numbers (04/05/06) are FIXED per lens
+        (the prototype's identifiers), so a toggled-off lens never renumbers the
+        others."""
         if self.page_no() == 0:
             self.add_page()
         elif self.get_y() > self.t_margin + 2:
@@ -967,20 +1188,30 @@ class _NotePDF(FPDF):
         x0 = self.l_margin
         w  = self.w - self.l_margin - self.r_margin
         y0 = self.get_y() + 2
-        # Lens name (primary) above the question (soft grey), at the left margin.
-        self.set_xy(x0, y0)
-        self._sf(17, "semibold")
-        self.set_text_color(*self.primary_color)
-        self.cell(w, 9, self._safe(name), new_x="LMARGIN", new_y="NEXT")
-        self.set_xy(x0, y0 + 9)
-        self._sf(10, "regular")
-        self.set_text_color(*_TEXT_SOFT)
-        self.cell(w, 5, self._safe(question))
-        # Accent rule under the band — slightly bolder than a section rule.
-        ry = y0 + 16
-        self.set_fill_color(*self.section_rule_color)
-        self.rect(x0, ry, w, 0.9, style="F")
-        self.set_y(ry + 1)
+        H  = 30.0
+        _fill_chamfer(self, x0, y0, w, H, self.ink, c=4.4, q=1.3, r=3.4)
+        # Faint hex watermark, top-right, bleeding toward the banner edge.
+        try:
+            _var = int(str(number)) % 3
+        except ValueError:
+            _var = 0
+        _hex_cluster(self, x0 + w - 30, y0 - 5, 20, _WHITE, variant=_var, opacity=0.10)
+        # Big lime section number (Neulis), vertically centred.
+        self.set_xy(x0 + 9, y0 + 9)
+        self._sf(26, "bold")
+        self.set_text_color(*self.lime)
+        self.cell(20, 12, str(number), align="L")
+        # Thin vertical divider (a muted tint of the ink).
+        self.set_fill_color(*_blend(self.ink, _WHITE, 0.30))
+        self.rect(x0 + 31, y0 + 7, 0.5, H - 14, style="F")
+        # Lime kicker over the white heading.
+        self._eyebrow(x0 + 37, y0 + 7.5, kicker, self.lime,
+                      size=7.0, tracking=0.6, w=w - 50)
+        self.set_xy(x0 + 37, y0 + 12.5)
+        self._sf(16, "bold")
+        self.set_text_color(*_WHITE)
+        self.cell(w - 50, 9, self._safe(heading))
+        self.set_y(y0 + H + 6)
         self.set_text_color(*_TEXT)
 
     def subsection(self, text: str, min_room: float = 27.0):
@@ -1054,20 +1285,21 @@ class _NotePDF(FPDF):
         _use_round = [False]
 
         def _header_row(rounded_card: bool = False):
-            # Header strip: rounded-top green card (so the table's top corners
-            # round) with transparent text cells, else a plain green filled row.
+            # Header strip: rounded-top ink card (so the table's top corners round)
+            # with transparent text cells, else a plain ink filled row. First column
+            # header reads in lime, the rest white (per the prototype).
             if rounded_card:
-                self.set_fill_color(*self.primary_color)
+                self.set_fill_color(*self.ink)
                 try:
                     self.rect(self.l_margin, self.get_y(), tbl_w, 9, style="F",
                               round_corners=("TOP_LEFT", "TOP_RIGHT"), corner_radius=_CR)
                 except TypeError:
                     self.rect(self.l_margin, self.get_y(), tbl_w, 9, style="F")
             else:
-                self.set_fill_color(*self.primary_color)
-            self.set_text_color(*_WHITE)
-            self._sf(7.5, "semibold")
-            for h, w, a in zip(headers, col_widths, aligns):
+                self.set_fill_color(*self.ink)
+            self._sf(7.5, "body_bold")
+            for idx, (h, w, a) in enumerate(zip(headers, col_widths, aligns)):
+                self.set_text_color(*(self.lime if idx == 0 else _WHITE))
                 self.cell(w, 9, f" {h} ", border=0, fill=not rounded_card, align=a)
             self.ln()
             self.set_text_color(*_TEXT)
@@ -1153,17 +1385,17 @@ class _NotePDF(FPDF):
 
         def _header_row(rounded_card: bool = False):
             if rounded_card:
-                self.set_fill_color(*self.primary_color)
+                self.set_fill_color(*self.ink)
                 try:
                     self.rect(self.l_margin, self.get_y(), tbl_w, HEAD_H, style="F",
                               round_corners=("TOP_LEFT", "TOP_RIGHT"), corner_radius=_CR)
                 except TypeError:
                     self.rect(self.l_margin, self.get_y(), tbl_w, HEAD_H, style="F")
             else:
-                self.set_fill_color(*self.primary_color)
-            self.set_text_color(*_WHITE)
-            self._sf(7.5, "semibold")
-            for h, w, a in zip(headers, col_widths, aligns):
+                self.set_fill_color(*self.ink)
+            self._sf(7.5, "body_bold")
+            for idx, (h, w, a) in enumerate(zip(headers, col_widths, aligns)):
+                self.set_text_color(*(self.lime if idx == 0 else _WHITE))
                 self.cell(w, HEAD_H, f" {h} ", border=0, fill=not rounded_card, align=a)
             self.ln()
             self.set_text_color(*_TEXT)
@@ -1245,48 +1477,65 @@ class _NotePDF(FPDF):
         self.ln(4)
 
     def metric_band(self, metrics: list[tuple[str, str]]):
-        """Horizontal band of key metrics. No top rule — the section's rule
-        band already separates it (avoids a 'double bar' under the header)."""
+        """A row of metric tiles — each an ECF1F6 card with a tracked muted label
+        and an ink (or amber, when negative) Neulis value. Mirrors the prototype's
+        MC / Backtest / Current-Performance metric strips."""
         n = len(metrics)
         usable = self.w - self.l_margin - self.r_margin
-        w = usable / n
+        gap = 3.0
+        # Up to 4 across; beyond that, wrap to rows of 3 (the prototype's layout)
+        # so labels never get squeezed into clipping-narrow tiles.
+        per_row = n if n <= 4 else 3
+        nrows = (n + per_row - 1) // per_row
+        w = (usable - gap * (per_row - 1)) / per_row
         y0 = self.get_y()
-
-        x = self.l_margin
-        for label, value in metrics:
-            lbl  = self._safe(label.upper())
-            size = 6.5
-            self._sf(size, "semibold")
-            while self.get_string_width(lbl) > (w - 3) and size > 4.5:
+        h = 19.0
+        for i, (label, value) in enumerate(metrics):
+            r, c = divmod(i, per_row)
+            x = self.l_margin + c * (w + gap)
+            yr = y0 + r * (h + gap)
+            self.set_fill_color(*self.panel_color)
+            try:
+                self.rect(x, yr, w, h, style="F", round_corners=True, corner_radius=2)
+            except TypeError:
+                self.rect(x, yr, w, h, style="F")
+            # Tracked muted label.
+            lbl = self._safe(label.upper())
+            size = 6.3
+            self._sf(size, "body_bold")
+            while self.get_string_width(lbl) > (w - 6) and size > 4.4:
                 size -= 0.2
-                self._sf(size, "semibold")
-            self.set_xy(x, y0 + 3)
-            self.set_text_color(*_TEXT_SOFT)
-            self.cell(w - 2, 3.5, lbl)
-
-            # Value. Numbers fit at the big 13pt size, but a long free-text value
-            # (e.g. a worst-asset name) would otherwise overflow into the next
-            # metric — cell() neither wraps nor clips. Shrink it to the column and,
-            # if it still doesn't fit, wrap it onto two lines within the column.
-            self.set_text_color(*self.primary_color)
-            val   = self._safe(str(value))
-            vsize = 13.0
+                self._sf(size, "body_bold")
+            self.set_xy(x + 4, yr + 3.6)
+            self.set_text_color(*self.muted)
+            try:
+                self.set_char_spacing(0.3)
+            except Exception:
+                pass
+            self.cell(w - 6, 3.3, lbl)
+            try:
+                self.set_char_spacing(0)
+            except Exception:
+                pass
+            # Value — ink, or amber when negative; shrink/wrap a long free-text value.
+            val = self._safe(str(value))
+            self.set_text_color(*(self.amber if val.strip().startswith("-") else self.ink))
+            vsize = 14.0
             self._sf(vsize, "bold")
-            while self.get_string_width(val) > (w - 2) and vsize > 9.0:
+            while self.get_string_width(val) > (w - 6) and vsize > 8.5:
                 vsize -= 0.3
                 self._sf(vsize, "bold")
-            if self.get_string_width(val) > (w - 2):
-                self.set_xy(x, y0 + 7)
-                self.multi_cell(w - 2, vsize * 0.42, val,
+            if self.get_string_width(val) > (w - 6):
+                self.set_xy(x + 4, yr + 8.2)
+                self.multi_cell(w - 6, vsize * 0.42, val,
                                 align="L", new_x="LMARGIN", new_y="TOP")
             else:
-                self.set_xy(x, y0 + 8.5)
-                self.cell(w - 2, 7, val)
-            x += w
+                self.set_xy(x + 4, yr + 9.6)
+                self.cell(w - 6, 7, val)
 
-        self.set_y(y0 + 18)
+        self.set_y(y0 + nrows * h + (nrows - 1) * gap)
         self.set_text_color(*_TEXT)
-        self.ln(4)
+        self.ln(5)
 
     def figure(self, img_bytes: bytes | None, caption: str, source: str,
                w: float = 172, h: float | None = None, max_h: float = 118):
@@ -1315,53 +1564,61 @@ class _NotePDF(FPDF):
         # now drives the chart series palette, and a caption that tracks the chart
         # lines looked off — the caption is chrome, so it stays on the brand head
         # colour like every other heading.
-        self._sf(8.5, "semibold")
-        self.set_text_color(*self.primary_color)
+        self._sf(8.5, "bold")
+        self.set_text_color(*self.ink)
         self.multi_cell(0, 4.5, f"{_t('figure_word', self.lang)} {self._fig_no}: {caption}", align="C")
         self.ln(1)
         x = (self.w - w) / 2
-        # Faint rounded panel behind the chart, matching the text/issuer panels.
+        # White rounded card with a hairline border behind the chart (the
+        # prototype frames every figure in a white bordered card).
         self.ln(_fpad)
         _img_y = self.get_y()
-        self.set_fill_color(*self.panel_color)   # brand-tinted panel
+        self.set_fill_color(*_WHITE)
+        self.set_draw_color(*self.rule_soft)
+        self.set_line_width(0.2)
         try:
             self.rect(x - _fpad, _img_y - _fpad, w + 2 * _fpad, h + 2 * _fpad,
-                      style="F", round_corners=True, corner_radius=2)
+                      style="DF", round_corners=True, corner_radius=2)
         except TypeError:
-            self.rect(x - _fpad, _img_y - _fpad, w + 2 * _fpad, h + 2 * _fpad, style="F")
+            self.rect(x - _fpad, _img_y - _fpad, w + 2 * _fpad, h + 2 * _fpad, style="DF")
         self.image(io.BytesIO(img_bytes), x=x, y=_img_y, w=w, h=h)
         self.set_y(_img_y + h + _fpad)
         self.ln(1.5)
-        # Source line — Light 7pt
-        self._sf(7, "light")
-        self.set_text_color(*_TEXT_SOFT)
+        # Source line — italic muted, like the prototype caption source.
+        self._sf(7, "italic")
+        self.set_text_color(*self.muted)
         self.cell(0, 3.5, source, align="C", new_x="LMARGIN", new_y="NEXT")
         self.set_text_color(*_TEXT)
         self.ln(3.5)
 
     def callout(self, title: str, text: str, w: float | None = None):
+        """A light-tinted blurb panel with a green left keyline (the prototype's
+        'Model & Methodology' box). Title in ink, body in body-ink."""
         if w is None:
             w = self.w - self.l_margin - self.r_margin
         x0, y0 = self.l_margin, self.get_y()
         self._sf(8, "regular")
-        lines = self.multi_cell(w - 8, 4.3, self._safe(text), dry_run=True, output="LINES")
-        box_h = 10 + len(lines) * 4.3 + 4
+        lines = self.multi_cell(w - 12, 4.3, self._safe(text), dry_run=True, output="LINES")
+        box_h = 11 + len(lines) * 4.3 + 4
         if y0 + box_h > self.h - 28:
             self.add_page()
             y0 = self.get_y()
-        self.set_fill_color(*self.panel_color)   # brand-tinted blurb panel
+        # Very light green-tinted panel + a 1.4mm green left bar.
+        self.set_fill_color(*_blend(self.primary_color, _WHITE, 0.94))
         try:
             self.rect(x0, y0, w, box_h, style="F", round_corners=True, corner_radius=2)
         except TypeError:
             self.rect(x0, y0, w, box_h, style="F")
-        self.set_xy(x0 + 6, y0 + 3.5)
-        self._sf(8.5, "semibold")
-        self.set_text_color(*_TEXT)
-        self.cell(w - 10, 5, title)
-        self.set_xy(x0 + 6, y0 + 10)
+        self.set_fill_color(*self.primary_color)
+        self.rect(x0, y0, 1.4, box_h, style="F")
+        self.set_xy(x0 + 7, y0 + 4.0)
+        self._sf(8.5, "bold")
+        self.set_text_color(*self.ink)
+        self.cell(w - 11, 5, title)
+        self.set_xy(x0 + 7, y0 + 10.5)
         self._sf(8, "regular")
-        self.set_text_color(*_TEXT)
-        self.multi_cell(w - 10, 4.3, text)
+        self.set_text_color(*self.body_ink)
+        self.multi_cell(w - 11, 4.3, text)
         self.set_y(y0 + box_h + 4)
 
     def issuer_info_block(self, name: str, logo_bytes: bytes | None,
@@ -1405,15 +1662,15 @@ class _NotePDF(FPDF):
             except Exception:
                 pass
         self.set_xy(tx, cy + 1.0)
-        self._sf(11, "semibold")
-        self.set_text_color(*self.primary_color)
+        self._sf(13, "bold")
+        self.set_text_color(*self.ink)
         self.cell(inner_w, 6, self._safe(name))
         cy += name_h
         # Description
         if description:
             self.set_xy(x0 + pad, cy + 2)
             self._sf(8, "regular")
-            self.set_text_color(*_TEXT_SOFT)
+            self.set_text_color(*self.body_ink)
             self.multi_cell(inner_w, 4.2, self._safe(description))
             cy = self.get_y()
         # Rating chips (white rounded boxes, label over value)
@@ -1429,13 +1686,13 @@ class _NotePDF(FPDF):
                 except TypeError:
                     self.rect(cx, cy, chip_w, chip_h, style="F")
                 self.set_xy(cx, cy + 1.5)
-                self._sf(7, "semibold")
-                self.set_text_color(*self.primary_color)
+                self._sf(6.8, "body_bold")
+                self.set_text_color(*self.muted)
                 self.cell(chip_w, 3.5, self._safe(lbl), align="C")
-                self.set_xy(cx, cy + 6)
-                self._sf(8.5, "semibold")
-                self.set_text_color(*_TEXT)
-                self.cell(chip_w, 4, self._safe(val), align="C")
+                self.set_xy(cx, cy + 5.5)
+                self._sf(11, "bold")
+                self.set_text_color(*self.primary_color)
+                self.cell(chip_w, 5, self._safe(val), align="C")
                 cx += chip_w + gap
         self.set_y(y0 + box_h + 4)
 
@@ -1444,159 +1701,105 @@ class _NotePDF(FPDF):
                          description: str, chart_png: bytes | None,
                          chart_caption: str, section_title: str | None = None,
                          analyst: list[tuple[str, float, tuple]] | None = None,
-                         analyst_title: str = ""):
-        """Self-contained per-underlying card — a tinted rounded panel, like the
-        issuer block: logo + name + a type·sector line, the key figures as white
-        chips (market cap / 3M IV / last price / RSI), the company description, and
-        the trailing-1Y price chart (transparent, so the panel tint shows through).
-        The whole card is measured up front and moved to a fresh page if it would
-        not fit, so it never splits across a page break.
-
-        ``section_title`` (passed only for the FIRST card) draws the section header
-        as part of the same atomic unit, so the title is never stranded on the
-        previous page above a card that breaks over."""
+                         analyst_title: str = "", ticker: str | None = None,
+                         color: tuple | None = None):
+        """One full page per underlying (prototype layout): a '03 · Underlying'
+        secondary head with the company name and a small ticker badge, a type·sector
+        eyebrow, a row of ECF1F6 metric tiles (market cap / 3M vol / last / RSI), the
+        company description, an optional analyst-consensus bar, and the trailing
+        12-month price chart in a white bordered card. `section_title` and
+        `logo_bytes` are accepted for backward compatibility; each page is now
+        self-headed by the secondary head (the badge identifies the underlying)."""
         x0 = self.l_margin
         w  = self.w - self.l_margin - self.r_margin
-        pad     = 6.0
-        inner_w = w - 2 * pad
-        gap     = 4.0
-        n_chips = max(1, len(metrics))
-        header_h, chip_h = 13.0, 13.0
-        chart_w = inner_w
-        chart_h = (chart_w * 0.40) if chart_png else 0.0   # PNG aspect = 900x360
-        cap_h   = 5.5 if chart_png else 0.0
-        # Measure the (wrapped) description so the panel sizes to its content.
-        self._sf(8.5, "regular")
-        desc_lines = (self.multi_cell(inner_w, 4.3, self._safe(description),
-                                      dry_run=True, output="LINES") if description else [])
-        desc_h = len(desc_lines) * 4.3
-        analyst_h = 12.5 if analyst else 0.0
-        box_h = (pad + header_h + chip_h
-                 + (3 + analyst_h if analyst else 0)
-                 + (3 + desc_h if description else 0)
-                 + (4 + cap_h + chart_h if chart_png else 0)
-                 + pad)
-        title_h = 18.0 if section_title else 0.0
-        y0 = self.get_y()
-        # Keep the (optional) section title + the whole card together — break
-        # before the unit rather than split it.
-        if y0 + title_h + box_h > self.h - 28:
-            self.add_page()
-            y0 = self.get_y()
-        if section_title:
-            self.section_title(section_title)
-            y0 = self.get_y()
-        # Panel.
-        self.set_fill_color(*self.panel_color)
-        try:
-            self.rect(x0, y0, w, box_h, style="F", round_corners=True, corner_radius=2)
-        except TypeError:
-            self.rect(x0, y0, w, box_h, style="F")
-        # Header: logo + name (brand primary) + soft type·sector line.
-        cy = y0 + pad
-        tx = x0 + pad
-        if logo_bytes:
-            try:
-                self.image(io.BytesIO(logo_bytes), x=x0 + pad, y=cy, w=9, h=9)
-                tx = x0 + pad + 12
-            except Exception:
-                pass
-        self.set_xy(tx, cy + 0.4)
-        self._sf(11.5, "semibold")
-        self.set_text_color(*self.primary_color)
-        self.cell(x0 + pad + inner_w - tx, 5.5, self._safe(long_name))
+        self.add_page()
+        self.secondary_head("03", _t("kick_underlying", self.lang),
+                            self._safe(long_name), badge=ticker,
+                            badge_color=(color or self.primary_color))
         if subtitle:
-            self.set_xy(tx, cy + 6.2)
-            self._sf(8, "regular")
-            self.set_text_color(*_TEXT_SOFT)
-            self.cell(x0 + pad + inner_w - tx, 4, self._safe(subtitle))
-        cy += header_h
-        # Metric chips — white rounded boxes, label over value (like rating chips).
-        chip_w = (inner_w - (n_chips - 1) * gap) / n_chips
-        cx = x0 + pad
-        for lbl, val in metrics:
-            self.set_fill_color(*_WHITE)
-            try:
-                self.rect(cx, cy, chip_w, chip_h, style="F", round_corners=True, corner_radius=1.5)
-            except TypeError:
-                self.rect(cx, cy, chip_w, chip_h, style="F")
-            # Label (auto-shrunk to the chip width).
-            self.set_text_color(*_TEXT_SOFT)
-            self._fit_font(lbl.upper(), chip_w - 2, 6.5, "semibold", min_size=5.0)
-            self.set_xy(cx, cy + 1.8)
-            self.cell(chip_w, 3, self._safe(lbl.upper()), align="C")
-            # Value (brand primary, auto-shrunk).
-            self.set_text_color(*self.primary_color)
-            self._fit_font(str(val), chip_w - 3, 11.0, "bold", min_size=7.0)
-            self.set_xy(cx, cy + 6.0)
-            self.cell(chip_w, 5, self._safe(str(val)), align="C")
-            cx += chip_w + gap
-        cy += chip_h
-        # Analyst consensus (optional): a thin rounded buy/hold/sell pill on a
-        # light track + a dot legend, matching the web card.
+            self._eyebrow(x0, self.get_y(), subtitle, self.muted,
+                          size=7.5, tracking=0.4, w=w)
+            self.ln(6)
+        # ECF1F6 metric tiles.
+        if metrics:
+            self.metric_band(list(metrics))
+        # Company description (justified body).
+        if description:
+            self._sf(8.5, "regular")
+            self.set_text_color(*self.body_ink)
+            self.multi_cell(w, 4.6, self._safe(description), align="J")
+            self.ln(3)
+        # Analyst consensus bar (optional) — matches the web card.
         if analyst:
-            cy += 3.5
-            self.set_xy(x0 + pad, cy)
-            self._sf(6.5, "semibold")
-            self.set_text_color(*_TEXT_SOFT)
-            self.cell(inner_w, 3, self._safe(analyst_title.upper()))
-            cy += 4.2
-            bar_h = 2.6
+            cy = self.get_y() + 1
+            self._eyebrow(x0, cy, analyst_title, self.muted, size=7.0,
+                          tracking=0.4, w=w)
+            cy += 4.6
+            bar_h = 2.8
             rad = bar_h / 2
-            self.set_fill_color(*_blend(_TEXT_SOFT, _WHITE, 0.84))     # rounded track
+            self.set_fill_color(*_blend(self.muted, _WHITE, 0.84))
             try:
-                self.rect(x0 + pad, cy, inner_w, bar_h, style="F", round_corners=True, corner_radius=rad)
+                self.rect(x0, cy, w, bar_h, style="F", round_corners=True, corner_radius=rad)
             except TypeError:
-                self.rect(x0 + pad, cy, inner_w, bar_h, style="F")
-            segs = [(c, inner_w * max(0.0, f)) for (_l, f, c) in analyst if f > 0.001]
-            bx = x0 + pad
-            for _i, (_col, _w) in enumerate(segs):
+                self.rect(x0, cy, w, bar_h, style="F")
+            segs = [(c, w * max(0.0, f)) for (_l, f, c) in analyst if f > 0.001]
+            bx = x0
+            for _i, (_col, _wd) in enumerate(segs):
                 self.set_fill_color(*_col)
                 _corn = (True if len(segs) == 1 else
                          ("TOP_LEFT", "BOTTOM_LEFT") if _i == 0 else
                          ("TOP_RIGHT", "BOTTOM_RIGHT") if _i == len(segs) - 1 else None)
                 try:
                     if _corn is True:
-                        self.rect(bx, cy, _w, bar_h, style="F", round_corners=True, corner_radius=rad)
+                        self.rect(bx, cy, _wd, bar_h, style="F", round_corners=True, corner_radius=rad)
                     elif _corn:
-                        self.rect(bx, cy, _w, bar_h, style="F", round_corners=_corn, corner_radius=rad)
+                        self.rect(bx, cy, _wd, bar_h, style="F", round_corners=_corn, corner_radius=rad)
                     else:
-                        self.rect(bx, cy, _w, bar_h, style="F")
+                        self.rect(bx, cy, _wd, bar_h, style="F")
                 except TypeError:
-                    self.rect(bx, cy, _w, bar_h, style="F")
-                bx += _w
-            cy += bar_h + 2.4
+                    self.rect(bx, cy, _wd, bar_h, style="F")
+                bx += _wd
+            cy += bar_h + 3.0
             self._sf(7, "regular")
-            lx = x0 + pad
+            lx = x0
             for _lbl, _frac, _col in analyst:
                 self.set_fill_color(*_col)
                 self.ellipse(lx, cy - 1.9, 1.8, 1.8, style="F")
                 self.set_xy(lx + 2.8, cy - 2.6)
-                self.set_text_color(*_TEXT_SOFT)
+                self.set_text_color(*self.body_ink)
                 _txt = f"{_lbl} {_frac:.0%}"
                 self.cell(self.get_string_width(_txt) + 1, 3.2, self._safe(_txt))
                 lx += 2.8 + self.get_string_width(_txt) + 6
-            cy += 3.0
-        # Company description (optional — blank hides it, like the issuer blurb).
-        if description:
-            self.set_xy(x0 + pad, cy + 3)
-            self._sf(8.5, "regular")
-            self.set_text_color(*_TEXT_SOFT)
-            self.multi_cell(inner_w, 4.3, self._safe(description))
-            cy = self.get_y()
-        # Trailing-1Y chart: caption + the transparent PNG directly on the panel.
+            self.set_y(cy + 3.0)
+        # Trailing-12M price chart in a white bordered card.
         if chart_png:
-            cy += 4
-            self.set_xy(x0 + pad, cy)
-            self._sf(8.5, "semibold")
-            self.set_text_color(*self.primary_color)
-            self.cell(inner_w, cap_h, self._safe(chart_caption), align="C")
-            cy += cap_h
+            self.ln(2)
+            self._eyebrow(x0, self.get_y(), chart_caption, self.muted,
+                          size=8.0, tracking=0.4, w=w)
+            self.ln(5.5)
             try:
-                self.image(io.BytesIO(chart_png), x=x0 + pad, y=cy, w=chart_w, h=chart_h)
+                from PIL import Image
+                iw, ih = Image.open(io.BytesIO(chart_png)).size
+                ch = min(w * ih / iw, 80.0)
+                cw = ch * iw / ih
+            except Exception:
+                cw, ch = w, w * 0.4
+            fpad = 3.0
+            top = self.get_y()
+            imgx = x0 + (w - cw) / 2
+            self.set_fill_color(*_WHITE)
+            self.set_draw_color(*self.rule_soft)
+            self.set_line_width(0.2)
+            try:
+                self.rect(x0, top, w, ch + 2 * fpad, style="DF",
+                          round_corners=True, corner_radius=2)
+            except TypeError:
+                self.rect(x0, top, w, ch + 2 * fpad, style="DF")
+            try:
+                self.image(io.BytesIO(chart_png), x=imgx, y=top + fpad, w=cw, h=ch)
             except Exception:
                 pass
-        self.set_y(y0 + box_h + 5)
+            self.set_y(top + ch + 2 * fpad + 4)
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -1881,6 +2084,19 @@ def _build_color_remap(primary: tuple, accent: tuple, secondary: tuple) -> dict:
         extras[0]:  _blend(secondary, white, 0.40),
         extras[1]:  primary,
         extras[2]:  secondary,
+        # Downside stays a "warning" colour but in the brand's amber, not red —
+        # the green design language has no red. Semantics are preserved (amber is
+        # still clearly downside); only branded reports rebrand, so the default
+        # navy report keeps its conventional red.
+        (220, 38, 38): _AMBER,
+        (239, 68, 68): _AMBER,
+        # Outcome-breakdown autocall ramp (charts.py `blues`): a fixed blue ramp
+        # unique to that chart — map it onto a dark→light brand-green ramp so the
+        # dominant autocall bar isn't blue on a green report.
+        (30,  58, 138): _blend(primary, _BLACK, 0.45),   # #1e3a8a  P1 deepest
+        (29,  78, 216): _blend(primary, _BLACK, 0.12),   # #1d4ed8  P2
+        (59, 130, 246): _blend(primary, white, 0.28),    # #3b82f6  P4
+        (147, 197, 253): _blend(primary, white, 0.55),   # #93c5fd  lightest
     }
 
 
@@ -2345,87 +2561,82 @@ def _front_cover_page(pdf: _NotePDF, terms, lang: str, report_title: str, websit
             except Exception:
                 pass
 
-    # Logo (white wordmark), centred in the upper third. A brand may supply a
-    # white knockout logo (`cover_logo_base64`) for the coloured cover; otherwise
-    # the normal logo is used (which may be low-contrast on a brand background).
-    logo_b = getattr(pdf, "cover_logo_bytes", None) or pdf.firm_logo_bytes
-    if logo_b:
-        try:
-            lh = 22.0
-            lw = min(lh * pdf.firm_logo_aspect, 96.0)
-            pdf.image(io.BytesIO(logo_b), x=cx - lw / 2, y=H * 0.17, w=lw, h=lh)
-        except Exception:
-            pass
-
-    # Eyebrow ("STRUCTURED NOTE"), letter-spaced, white — the cover's hero line.
-    eb = (report_title or _t("report_eyebrow", lang)).upper()
-    _rule_y = H * 0.17 + 50
-    pdf.set_xy(0, H * 0.17 + 27)
-    pdf._sf(32, "light")
-    pdf.set_text_color(255, 255, 255)
-    try:
-        pdf.set_char_spacing(2.4)
-    except Exception:
-        pass
-    pdf.cell(W, 16, _safe(eb), align="C")
-    try:
-        pdf.set_char_spacing(0)
-    except Exception:
-        pass
-    # Accent rule under the eyebrow.
-    pdf.set_draw_color(*pdf.section_rule_color)
-    pdf.set_line_width(0.9)
-    pdf.line(cx - 40, _rule_y, cx + 40, _rule_y)
-
-    # Optional emblem / sigil — a brand mark distinct from the wordmark logo,
-    # sized to fill the open space between the accent rule and the note name.
+    ml = pdf.l_margin
+    inner = W - 2 * ml
+    # Faint sigil/arcs motif, bleeding off the top-right (decorative, like the
+    # prototype). Knocked white via the brand's white sigil when supplied.
     sig_b = getattr(pdf, "cover_sigil_bytes", None)
     if sig_b:
         try:
-            _name_y = H * 0.64
-            _gap = _name_y - _rule_y
-            sh = _gap * 0.86
-            sw = sh * _logo_aspect(sig_b, default=1.0)
-            sy = _rule_y + (_gap - sh) / 2.0
-            pdf.image(io.BytesIO(sig_b), x=cx - sw / 2, y=sy, w=sw, h=sh)
+            sw = W * 0.58
+            sh = sw * _logo_aspect(sig_b, default=1.0)
+            with pdf.local_context(fill_opacity=0.22):
+                pdf.image(io.BytesIO(sig_b), x=W - sw * 0.62, y=-sh * 0.30,
+                          w=sw, h=sh)
         except Exception:
             pass
 
-    # Note name — split into a bold title + an optional subtitle on a separator.
-    _parts = re.split(r"\s+[—\-/:]\s+", terms.name or "", maxsplit=1)
-    _title = _safe((_parts[0] or "").upper())
-    _subt  = _safe((_parts[1] if len(_parts) > 1 else "").upper())
-    pdf.set_xy(0, H * 0.64)
-    pdf._sf(21, "bold")
+    # Logo (white wordmark) top-left. A brand may supply a white knockout logo
+    # (`cover_logo_base64`); otherwise the normal logo is used.
+    logo_b = getattr(pdf, "cover_logo_bytes", None) or pdf.firm_logo_bytes
+    if logo_b:
+        try:
+            lh = 16.0
+            lw = min(lh * pdf.firm_logo_aspect, 90.0)
+            pdf.image(io.BytesIO(logo_b), x=ml, y=H * 0.07, w=lw, h=lh)
+        except Exception:
+            pass
+
+    # Hero block, left-aligned in the lower-middle of the page.
+    eb = (report_title or _t("report_eyebrow", lang)).upper()
+    today = _fmt_long_date(datetime.date.today(), lang)
+    hero_y = H * 0.40
+    pdf._eyebrow(ml, hero_y, f"{eb}  ·  {today}", pdf.section_rule_color,
+                 size=11.0, tracking=1.6, w=inner)
+    # Big white Neulis title — wraps to as many lines as needed.
+    _name = _safe(terms.name)
+    _ts = 40.0
+    pdf._sf(_ts, "bold")
+    while _ts > 22.0 and pdf.get_string_width(_name) > inner * 2.4:
+        _ts -= 1.0
+        pdf._sf(_ts, "bold")
+    pdf.set_xy(ml, hero_y + 9)
     pdf.set_text_color(255, 255, 255)
-    pdf.cell(W, 9, _title, align="C", new_x="LMARGIN", new_y="NEXT")
-    if _subt:
-        pdf.set_x(0)
-        pdf._sf(12, "semibold")
-        pdf.cell(W, 6, _subt, align="C", new_x="LMARGIN", new_y="NEXT")
+    pdf.multi_cell(inner, _ts * 0.40, _name, align="L")
+    # Tickers sub-line (muted mint).
+    _tk = " / ".join(str(tk) for tk in (getattr(terms, "tickers", {}) or {}).keys())
+    if _tk:
+        pdf.ln(2)
+        pdf.set_x(ml)
+        pdf._sf(13, "regular")
+        pdf.set_text_color(159, 196, 179)
+        pdf.cell(inner, 7, _safe(_tk))
+    # Short lime rule beneath.
+    pdf.ln(8)
+    pdf.set_fill_color(*pdf.section_rule_color)
+    pdf.rect(ml, pdf.get_y(), 22, 1.6, style="F")
 
-    # Report month (accent colour).
-    pdf.ln(7)
-    pdf.set_x(0)
-    pdf._sf(14, "bold")
-    pdf.set_text_color(*pdf.section_rule_color)
-    pdf.cell(W, 8, _safe(_fmt_month_year(datetime.date.today(), lang).upper()),
-             align="C", new_x="LMARGIN", new_y="NEXT")
-
-    # Website at the foot.
+    # ── Bottom band: 3 key terms + website ────────────────────────────────
+    band_h = 30.0
+    band_y = H - band_h
+    pdf.set_fill_color(*pdf.ink)
+    pdf.rect(0, band_y, W, band_h, style="F")
+    _kt = [
+        (_t("coupon_pa", lang),        f"{terms.coupon_pa * 100:.2f}%"),
+        (_t("maturity", lang),         f"{terms.maturity:g}Y"),
+        (_t("ki_barrier", lang).split(' (')[0], f"{terms.knock_in_barrier:.0%}"),
+    ]
+    kx = ml
+    for lbl, val in _kt:
+        pdf._eyebrow(kx, band_y + 9, lbl, (159, 196, 179), size=7.5,
+                     tracking=0.4, w=44)
+        pdf.set_xy(kx, band_y + 14)
+        pdf._sf(15, "bold"); pdf.set_text_color(255, 255, 255)
+        pdf.cell(44, 8, _safe(val))
+        kx += 46
     if website:
-        pdf.set_xy(0, H - 20)
-        pdf._sf(9, "regular")
-        pdf.set_text_color(255, 255, 255)
-        try:
-            pdf.set_char_spacing(1.6)
-        except Exception:
-            pass
-        pdf.cell(W, 5, _safe(website), align="C")
-        try:
-            pdf.set_char_spacing(0)
-        except Exception:
-            pass
+        pdf._eyebrow(W - ml - 70, band_y + 12.5, website, pdf.section_rule_color,
+                     size=10.0, tracking=0.6, w=70, align="R")
     pdf._is_cover = False
 
 
@@ -2500,8 +2711,11 @@ def _full_bleed_disclaimer(pdf: _NotePDF, lang: str, text: str, website: str = "
     pdf._sf(16, "bold")
     pdf.set_text_color(255, 255, 255)
     pdf.cell(0, 8, _safe(_t("disclaimer_title", lang)), new_x="LMARGIN", new_y="NEXT")
+    # Lime keyline under the title (mirrors the prototype).
+    pdf.set_fill_color(*pdf.section_rule_color)
+    pdf.rect(pdf.l_margin, 50.5, 18, 1.4, style="F")
 
-    pdf.set_xy(pdf.l_margin, 54)
+    pdf.set_xy(pdf.l_margin, 55)
     for _i, _para in enumerate(_paras):
         pdf.set_x(pdf.l_margin)
         pdf._sf(7.6, "bold" if _i == len(_paras) - 1 else "regular")
@@ -2509,15 +2723,24 @@ def _full_bleed_disclaimer(pdf: _NotePDF, lang: str, text: str, website: str = "
         pdf.multi_cell(inner, 4.0, _safe(_para), align="J")
         pdf.ln(2.6)
 
+    # Footer: lime top hairline, website in lime, grey copyright (prototype).
+    pdf.set_fill_color(*pdf.section_rule_color)
+    try:
+        with pdf.local_context(fill_opacity=0.4):
+            pdf.rect(pdf.l_margin, H - 26, W - 2 * pdf.l_margin, 0.4, style="F")
+    except Exception:
+        pdf.rect(pdf.l_margin, H - 26, W - 2 * pdf.l_margin, 0.4, style="F")
     if website:
         pdf.set_xy(0, H - 22)
-        pdf._sf(8.5, "regular")
-        pdf.set_text_color(255, 255, 255)
-        pdf.cell(W, 5, _safe(website), align="C")
-    pdf.set_xy(0, H - 14)
+        pdf._sf(9, "bold")
+        pdf.set_text_color(*pdf.section_rule_color)
+        pdf.cell(W - pdf.r_margin, 5, _safe(website), align="R")
+    pdf.set_xy(0, H - 15)
     pdf._sf(7, "light")
-    pdf.set_text_color(*_blend(pdf.primary_color, _WHITE, 0.65))
-    pdf.cell(W, 4, _safe(f"© {datetime.date.today().year} {pdf.firm_name} — All Rights Reserved."), align="C")
+    pdf.set_text_color(159, 196, 179)
+    pdf.cell(W - pdf.r_margin, 4,
+             _safe(f"© {datetime.date.today().year} {pdf.firm_name} — All Rights Reserved."),
+             align="R")
     pdf._is_cover = False
 
 
@@ -2540,314 +2763,273 @@ def _cover_page(
     if inc is None:
         inc = lambda _k: True
     pdf._is_cover = True
-    # Disable auto-page-break for the cover so overflowing content (long note
-    # names, many bullets) does NOT automatically insert a blank page 2.
+    # No auto-page-break: the summary is a single designed page — overflow must
+    # never spill a blank page 2 (the TOC compresses to fit instead).
     pdf.set_auto_page_break(auto=False)
     pdf.add_page()
     # Remember which page is the cover so footer() suppresses the running footer
-    # there even after _is_cover is reset (footer fires lazily on the next
-    # add_page, by which point _is_cover is already False).
+    # there even after _is_cover is reset (footer fires lazily on the next page).
     pdf._cover_pages.add(pdf.page_no())
 
-    # ── Clean header — the real logo on white, no colored band ────────────
-    # A full-width brand band forced a white-knockout of the logo, which flattens
-    # a multi-colour wordmark (e.g. a navy mark with a coloured glyph) to a solid
-    # white silhouette. Instead the cover header is white and shows the logo in
-    # its own colours; brand presence comes from a thin accent rule beneath it
-    # plus the note name, sidebar accent stripe and table headers throughout.
-    band_h = _COVER_BAND_H
-    logo_x   = pdf.l_margin
+    x0 = pdf.l_margin
+    W  = pdf.w - pdf.l_margin - pdf.r_margin
+    today_long = _fmt_long_date(datetime.date.today(), lang)
+    eyebrow    = (pdf.report_title or _t("report_eyebrow", lang)).upper()
+    INK_SUB    = (159, 196, 179)   # muted mint for sub-text on the ink masthead
+    KV_GREY    = (80, 90, 84)      # key-term label grey-green
+
+    def _ul_colors(n):
+        base = [pdf.primary_color, pdf.teal,
+                _blend(pdf.primary_color, pdf.lime, 0.55),
+                pdf.amber_dark, _blend(pdf.teal, _BLACK, 0.30)]
+        return [base[i % len(base)] for i in range(max(1, n))]
+
+    # ── Header — logo left, eyebrow + date right, 2px primary rule ──────────
     has_logo = False
     if pdf.firm_logo_bytes:
         try:
-            lh = 14.0
-            lw = min(lh * pdf.firm_logo_aspect, 66.0)
-            pdf.image(io.BytesIO(pdf.firm_logo_bytes),
-                      x=logo_x, y=(band_h - lh) / 2 - 2, w=lw, h=lh)
+            lh = 11.0
+            lw = min(lh * pdf.firm_logo_aspect, 60.0)
+            pdf.image(io.BytesIO(pdf.firm_logo_bytes), x=x0, y=8.5, w=lw, h=lh)
             has_logo = True
         except Exception:
             has_logo = False
+    if not has_logo:
+        pdf.set_xy(x0, 10)
+        pdf._sf(14, "bold"); pdf.set_text_color(*pdf.primary_color)
+        pdf.cell(120, 8, _safe(pdf.firm_name))
+    rx, rw = pdf.w - pdf.r_margin - 95, 95
+    pdf._eyebrow(rx, 9.0, eyebrow, pdf.primary_color, size=8.0, tracking=0.8,
+                 w=rw, align="R")
+    pdf.set_xy(rx, 14.6); pdf._sf(8, "light"); pdf.set_text_color(*pdf.muted)
+    pdf.cell(rw, 4.5, _safe(today_long), align="R")
+    pdf.set_draw_color(*pdf.primary_color); pdf.set_line_width(0.7)
+    pdf.line(x0, 23.5, pdf.w - pdf.r_margin, 23.5)
 
-    _today_long = _fmt_long_date(datetime.date.today(), lang)
-    # B5: a branding report_title overrides the default eyebrow / subtitle.
-    _eyebrow = (pdf.report_title or _t("report_eyebrow", lang)).upper()
-    if has_logo:
-        # Logo carries identity on the left; eyebrow (brand colour) + date (grey)
-        # form a clean right-aligned block, vertically centred against the logo.
-        rx, rw = pdf.w - pdf.r_margin - 100, 100
-        pdf.set_xy(rx, 12)
-        pdf._sf(8, "semibold")
-        pdf.set_text_color(*pdf.primary_color)
-        try:
-            pdf.set_char_spacing(1.4)
-        except Exception:
-            pass
-        pdf.cell(rw, 5, _eyebrow, align="R")
-        try:
-            pdf.set_char_spacing(0)
-        except Exception:
-            pass
-        pdf.set_xy(rx, 18.5)
-        pdf._sf(8, "light")
-        pdf.set_text_color(*_TEXT_SOFT)
-        pdf.cell(rw, 5, _today_long, align="R")
+    # ── Masthead — dark chamfer panel + KPI strip ──────────────────────────
+    y_m, MH, pad = 28.5, 58.0, 9.0
+    _fill_chamfer(pdf, x0, y_m, W, MH, pdf.ink, c=7.5, q=2.0, r=5.0)
+    _hex_cluster(pdf, x0 + W - 42, y_m - 6, 30, _WHITE, variant=0, opacity=0.12)
+    pdf._eyebrow(x0 + pad, y_m + 7, f"{eyebrow}  ·  {today_long}", pdf.lime,
+                 size=8.0, tracking=0.9, w=W - 2 * pad)
+    # Title (Neulis): one big line, shrinking to fit; if a very long note name
+    # still overflows at the floor, wrap it onto two smaller lines.
+    _name = _safe(terms.name)
+    avail = W - 2 * pad
+    _ts = 21.0
+    pdf._sf(_ts, "bold")
+    while _ts > 13.0 and pdf.get_string_width(_name) > avail:
+        _ts -= 0.4
+        pdf._sf(_ts, "bold")
+    pdf.set_text_color(*_WHITE)
+    if pdf.get_string_width(_name) <= avail:
+        pdf.set_xy(x0 + pad, y_m + 12)
+        pdf.cell(avail, 10, _name)
+        _sub_y = y_m + 24
     else:
-        # No logo: firm wordmark in brand colour, eyebrow + date in grey.
-        pdf.set_xy(pdf.l_margin, 8)
-        pdf._sf(8, "semibold")
-        pdf.set_text_color(*_TEXT_SOFT)
-        try:
-            pdf.set_char_spacing(1.2)
-        except Exception:
-            pass
-        pdf.cell(120, 5, _eyebrow)
-        try:
-            pdf.set_char_spacing(0)
-        except Exception:
-            pass
-        pdf.set_xy(pdf.w - pdf.r_margin - 55, 8)
-        pdf._sf(7.5, "light")
-        pdf.set_text_color(*_TEXT_SOFT)
-        pdf.cell(55, 5, _today_long, align="R")
-        pdf.set_xy(pdf.l_margin, 15)
-        pdf._sf(15, "bold")
-        pdf.set_text_color(*pdf.primary_color)
-        pdf.cell(140, 8, _safe(pdf.firm_name))
+        pdf._sf(14.0, "bold")
+        pdf.set_xy(x0 + pad, y_m + 9.5)
+        pdf.multi_cell(avail, 6.0, _name, align="L")
+        _sub_y = pdf.get_y() + 1.5
+    _tk = " / ".join((logo_tickers or {}).get(nm) or str(nm)[:5].upper()
+                     for nm in (asset_names or []))
+    _sub = pdf.report_title or _t("series_title", lang)
+    if _tk:
+        _sub = f"{_sub}  ·  {_tk}"
+    pdf.set_xy(x0 + pad, _sub_y)
+    pdf._sf(9.5, "regular"); pdf.set_text_color(*INK_SUB)
+    pdf.cell(W - 2 * pad, 5, _safe(_sub))
 
-    # Thin rule at the base of the header — section_rule_color (in line with the
-    # section bands), full width, 0.6mm.
-    pdf.set_draw_color(*pdf.section_rule_color)
-    pdf.set_line_width(0.6)
-    pdf.line(pdf.l_margin, band_h - 3, pdf.w - pdf.r_margin, band_h - 3)
+    # KPI strip — adaptive (analytical when the sim ran, else terms-based).
+    _has_mc = len(results.get("annualized_returns", [])) > 0
+    if _has_mc:
+        kpis = [(_t("expected_irr", lang),  f"{results.get('expected_irr', 0):.2%}"),
+                (_t("prob_autocall", lang), f"{results.get('prob_autocall', 0):.1%}"),
+                (_t("prob_knock_in", lang), f"{results.get('prob_knock_in_total', 0):.2%}")]
+        if bt_summary:
+            kpis.append((_t("mean_hist_irr", lang), f"{bt_summary.get('mean_irr', 0):.2%}"))
+        else:
+            kpis.append((_t("expected_total_return", lang),
+                         f"{results.get('expected_total_return', 0):.2%}"))
+    elif bt_summary:
+        kpis = [(_t("mean_hist_irr", lang),  f"{bt_summary.get('mean_irr', 0):.2%}"),
+                (_t("p_autocall", lang),     f"{bt_summary.get('prob_called', 0):.1%}"),
+                (_t("prob_knock_in", lang),  f"{bt_summary.get('prob_knock_in', 0):.2%}"),
+                (_t("coupon_pa", lang),      f"{terms.coupon_pa * 100:.2f}%")]
+    else:
+        kpis = [(_t("coupon_pa", lang),         f"{terms.coupon_pa * 100:.2f}%"),
+                (_t("maturity", lang),          f"{terms.maturity:g}Y"),
+                (_t("autocall_barrier", lang),  f"{terms.autocall_barrier:.0%}"),
+                (_t("ki_barrier", lang).split(' (')[0], f"{terms.knock_in_barrier:.0%}")]
 
-    # ── Sidebar panel (right column) ──────────────────────────────────────
-    sb_x, sb_w = 138, pdf.w - pdf.r_margin - 138
-    sb_y_top   = band_h + 4
-    sb_h       = 170
+    strip_y = y_m + MH - 24
+    pdf.set_fill_color(*_blend(pdf.ink, _WHITE, 0.18))
+    pdf.rect(x0 + pad, strip_y, W - 2 * pad, 0.3, style="F")
+    kw = (W - 2 * pad) / len(kpis)
+    for i, (lbl, val) in enumerate(kpis):
+        cx = x0 + pad + i * kw
+        pdf.set_fill_color(*pdf.lime)
+        pdf.rect(cx, strip_y + 4, 0.8, 14, style="F")
+        pdf.set_xy(cx + 3, strip_y + 4)
+        pdf._sf(6.3, "body_bold"); pdf.set_text_color(*INK_SUB)
+        pdf.multi_cell(kw - 4, 3.1, _safe(lbl.upper()), align="L")
+        pdf.set_xy(cx + 3, strip_y + 12)
+        pdf._sf(13.5, "bold"); pdf.set_text_color(*_WHITE)
+        pdf.cell(kw - 4, 7, _safe(val))
 
-    pdf.set_fill_color(*pdf.panel_color)
-    try:
-        pdf.rect(sb_x, sb_y_top, sb_w, sb_h, style="F",
-                 round_corners=True, corner_radius=3)
-    except TypeError:
-        pdf.rect(sb_x, sb_y_top, sb_w, sb_h, style="F")
+    # ── Body: two vertical stacks (left ≈ 100mm, right rail ≈ 70mm) ─────────
+    Lw, Rx, Rw = 100.0, x0 + 108.0, W - 108.0
+    y_body = y_m + MH + 7.0
+    ly = ry = y_body
 
-    # Solid top stripe (rounded top corners to match the panel)
-    pdf.set_fill_color(*pdf.sidebar_bar_color)
-    try:
-        pdf.rect(sb_x, sb_y_top, sb_w, 3.0, style="F",
-                 round_corners=("TOP_LEFT", "TOP_RIGHT"), corner_radius=3)
-    except TypeError:
-        pdf.rect(sb_x, sb_y_top, sb_w, 1.5, style="F")
+    def _l_head(y, text):
+        pdf._eyebrow(x0, y, text, pdf.muted, size=8.0, tracking=0.6, w=Lw)
+        pdf.set_fill_color(*pdf.lime)
+        pdf.rect(x0, y + 4.6, 18, 1.2, style="F")
+        return y + 8.5
 
-    def _sb_label(y, txt):
-        pdf.set_xy(sb_x + 5, y)
-        pdf._sf(7, "semibold")
-        pdf.set_text_color(*pdf.primary_color)
-        try:
-            pdf.set_char_spacing(0.8)
-        except Exception:
-            pass
-        pdf.cell(sb_w - 10, 4, txt.upper())
-        try:
-            pdf.set_char_spacing(0)
-        except Exception:
-            pass
-        return pdf.get_y() + 4
-
-    def _sb_text(y, txt, weight="regular", size=8, color=_TEXT):
-        pdf.set_xy(sb_x + 5, y)
-        pdf._sf(size, weight)
-        pdf.set_text_color(*color)
-        pdf.multi_cell(sb_w - 10, 4.2, _safe(txt), align="L")
-        return pdf.get_y()
-
-    y = sb_y_top + 5
-    y = _sb_label(y, _t("underlyings", lang))
-
-    _LOGO_H = 8.0
-    _LOGO_W = 8.0
-    _ROW_H  = 11.0
-    for nm in asset_names:
-        logo_url  = (logo_urls or {}).get(nm, "")
-        sym       = (logo_tickers or {}).get(nm)
-        logo_data = (logo_overrides or {}).get(nm) or _load_ticker_logo(nm, logo_url, sym)
-        row_y  = y + 1.0
-        text_x = sb_x + 4
-        if logo_data:
-            try:
-                pdf.image(io.BytesIO(logo_data), x=sb_x + 4, y=row_y,
-                          w=_LOGO_W, h=_LOGO_H)
-                text_x = sb_x + 4 + _LOGO_W + 2
-            except Exception:
-                text_x = sb_x + 4
-        # Name on a single line next to the logo: fit the font to the available
-        # width (never wrap/justify, which produced glitched gaps for long names).
-        _nm_w = (sb_x + sb_w - 5) - text_x
-        pdf.set_xy(text_x, row_y + (_LOGO_H - 4.5) / 2)
-        pdf._fit_font(nm, _nm_w, 8.5, "semibold")
-        pdf.set_text_color(*_TEXT)
-        pdf.cell(_nm_w, 4.5, _safe(nm))
-        y = row_y + _ROW_H
-
-    y = _sb_label(y + 3, _t("key_terms", lang))
-    mini = [
-        (_t("maturity", lang),        f"{terms.maturity:g}Y {_fmt_freq(terms.payment_freq, lang)}"),
-        (_t("coupon_pa", lang),        f"{terms.coupon_pa*100:.2f}%"),
-        (_t("autocall_barrier", lang), f"{terms.autocall_barrier:.0%}"),
-        (_t("ki_barrier", lang).split(" (")[0], f"{terms.knock_in_barrier:.1%}"),
-    ]
-    if getattr(terms, "issue_date", None):
-        mini.append((_t("issue_date", lang), terms.issue_date))
-    for k, v in mini:
-        pdf.set_xy(sb_x + 5, y + 0.8)
-        pdf._sf(7, "light")
-        pdf.set_text_color(*_TEXT_SOFT)
-        pdf.cell(sb_w - 10, 3.4, _safe(k))
-        pdf.set_xy(sb_x + 5, y + 4.2)
-        pdf._sf(8.5, "semibold")
-        pdf.set_text_color(*_TEXT)
-        pdf.cell(sb_w - 10, 4, _safe(v))
-        y += 9.5
-
-    # ── Main column ───────────────────────────────────────────────────────
-    main_w = sb_x - pdf.l_margin - 8
-    y_main = band_h + 6
-
-    # Issuer logo + name block
-    pdf.set_xy(pdf.l_margin, y_main)
-    if issuer_logo_bytes:
-        try:
-            pdf.image(io.BytesIO(issuer_logo_bytes),
-                      x=pdf.l_margin, y=y_main, w=11, h=11)
-            pdf.set_xy(pdf.l_margin + 14, y_main + 1.5)
-            pdf._sf(10, "semibold")
-            pdf.set_text_color(*_TEXT_SOFT)
-            pdf.cell(main_w - 14, 6, _safe(pdf.issuer.upper()))
-        except Exception:
-            if pdf.issuer:
-                pdf._sf(10, "semibold")
-                pdf.set_text_color(*_TEXT_SOFT)
-                pdf.cell(main_w, 6, _safe(pdf.issuer.upper()),
-                         new_x="LMARGIN", new_y="NEXT")
-    elif pdf.issuer:
-        pdf._sf(10, "semibold")
-        pdf.set_text_color(*_TEXT_SOFT)
-        pdf.cell(main_w, 6, _safe(pdf.issuer.upper()),
-                 new_x="LMARGIN", new_y="NEXT")
-
-    # Note name — large, primary color
-    y_name = y_main + 14
-    pdf.set_xy(pdf.l_margin, y_name)
-    pdf._sf(18, "bold")
-    pdf.set_text_color(*pdf.primary_color)
-    # Left-align: multi_cell defaults to justified, which stretches the word
-    # spacing of a short wrapped title into ugly gaps (e.g. "Autocall — 12M").
-    pdf.multi_cell(main_w, 9, _safe(terms.name), align="L")
-
-    # Report type subtitle (branding report_title overrides the default)
-    pdf.set_x(pdf.l_margin)
-    pdf._sf(9.5, "light")
-    pdf.set_text_color(*_TEXT_SOFT)
-    pdf.cell(main_w, 6, _safe(pdf.report_title or _t("series_title", lang)),
-             new_x="LMARGIN", new_y="NEXT")
-
-    # Optional firm contact line (B5): website · contact, small and muted.
-    _contact_bits = [b for b in (pdf.website, pdf.contact) if b]
-    if _contact_bits:
-        pdf.set_x(pdf.l_margin)
-        pdf._sf(7.5, "light")
-        pdf.set_text_color(*_TEXT_SOFT)
-        pdf.cell(main_w, 4.5, _safe("  ·  ".join(_contact_bits)),
-                 new_x="LMARGIN", new_y="NEXT")
-
-    # Thin divider
-    pdf.set_draw_color(*_HAIRLINE)
-    pdf.set_line_width(0.2)
-    pdf.line(pdf.l_margin, pdf.get_y() + 1,
-             pdf.l_margin + main_w, pdf.get_y() + 1)
-    pdf.ln(5)
-
-    # Executive summary bullets — only when there ARE bullets (e.g. a terms-only
-    # report has no simulation results, so the title would otherwise sit empty).
+    # 1) Executive summary (only when there are bullets).
     _exec = list(_exec_bullets(terms, results, bt_summary, live_data, lang))
     if _exec:
-        pdf._sf(8.5, "semibold")
-        pdf.set_text_color(*pdf.primary_color)
-        try:
-            pdf.set_char_spacing(0.4)
-        except Exception:
-            pass
-        pdf.cell(main_w, 5, _t("exec_summary", lang).upper(), new_x="LMARGIN", new_y="NEXT")
-        try:
-            pdf.set_char_spacing(0)
-        except Exception:
-            pass
-        pdf.set_draw_color(*pdf.accent_color)
-        pdf.set_line_width(0.25)
-        pdf.line(pdf.l_margin, pdf.get_y(), pdf.l_margin + main_w, pdf.get_y())
-        pdf.ln(2.5)
-
+        ly = _l_head(ly, _t("exec_summary", lang))
         for txt in _exec:
-            pdf.set_x(pdf.l_margin)
-            pdf._sf(8.5, "regular")
-            pdf.set_text_color(*_TEXT)
-            pdf.cell(5, 5.5, "•" if pdf._use_unicode else chr(149))
-            pdf.multi_cell(main_w - 5, 5.5, _safe(txt), align="J")
-            pdf.ln(2)
+            pdf.set_fill_color(*pdf.primary_color)
+            pdf.ellipse(x0, ly + 1.7, 1.5, 1.5, style="F")
+            pdf.set_xy(x0 + 5, ly)
+            pdf._sf(8.2, "regular"); pdf.set_text_color(*pdf.body_ink)
+            pdf.multi_cell(Lw - 5, 4.4, _safe(txt), align="L")
+            ly = pdf.get_y() + 2.0
+        ly += 2.5
 
-    # About this report blurb
-    pdf.ln(3)
-    pdf.set_x(pdf.l_margin)
-    pdf._sf(8, "semibold")
-    pdf.set_text_color(*pdf.primary_color)
-    try:
-        pdf.set_char_spacing(0.4)
-    except Exception:
-        pass
-    pdf.cell(main_w, 5, _t("about_report_head", lang).upper(),
-             new_x="LMARGIN", new_y="NEXT")
-    try:
-        pdf.set_char_spacing(0)
-    except Exception:
-        pass
-    pdf.set_draw_color(*_RULE_LIGHT)
-    pdf.set_line_width(0.2)
-    pdf.line(pdf.l_margin, pdf.get_y(), pdf.l_margin + main_w, pdf.get_y())
-    pdf.ln(2)
-    pdf.set_x(pdf.l_margin)
-    pdf._sf(7.5, "light")
-    pdf.set_text_color(*_TEXT_SOFT)
-    pdf.multi_cell(main_w, 4, _safe(_about_this_report(
+    # 2) About this report.
+    ly = _l_head(ly, _t("about_report_head", lang))
+    pdf.set_xy(x0, ly)
+    pdf._sf(8.0, "regular"); pdf.set_text_color(*pdf.body_ink)
+    pdf.multi_cell(Lw, 4.3, _safe(_about_this_report(
         lang, inc, results, bt_summary, live_data, len(asset_names or []))))
+    ly = pdf.get_y() + 5.0
 
-    # Contents block
-    pdf.ln(3)
-    pdf.set_x(pdf.l_margin)
-    pdf._sf(8, "semibold")
-    pdf.set_text_color(*pdf.primary_color)
+    # 3) Payoff scenarios panel (only when the sim ran).
+    if _has_mc:
+        ar = np.asarray(results.get("annualized_returns", []), dtype=float)
+        _ap = results.get("autocall_period")
+        ap = np.asarray(_ap, dtype=int) if _ap is not None else np.array([], dtype=int)
+        p_ac = float(results.get("prob_autocall", 0.0))
+        p_ki = float(results.get("prob_knock_in_total", 0.0))
+        p_held = max(0.0, 1.0 - p_ac - p_ki)
+        if ar.size and ap.size == ar.size and bool((ap > 0).any()):
+            irr_ac = float(ar[ap > 0].mean())
+        else:
+            irr_ac = float(terms.coupon_pa)
+        irr_loss = results.get("loss_given_knock_in", None)
+        if irr_loss is None or (isinstance(irr_loss, float) and np.isnan(irr_loss)):
+            irr_loss = -(1.0 - float(terms.knock_in_barrier))
+        prows = [
+            (_t("outcome_autocalled", lang), f"{p_ac:.1%}",   f"{irr_ac:+.1%}",        pdf.primary_color),
+            (_t("outcome_held", lang),       f"{p_held:.1%}", f"{terms.coupon_pa:+.1%}", pdf.teal),
+            (_t("outcome_loss", lang),       f"{p_ki:.1%}",   f"{float(irr_loss):+.1%}", pdf.amber),
+        ]
+        ph = 10.5 + len(prows) * 8.0 + 3.0
+        pdf.set_fill_color(*pdf.panel_color)
+        try:
+            pdf.rect(x0, ly, Lw, ph, style="F", round_corners=True, corner_radius=2)
+            pdf.set_fill_color(*pdf.primary_color)
+            pdf.rect(x0, ly, Lw, 1.1, style="F",
+                     round_corners=("TOP_LEFT", "TOP_RIGHT"), corner_radius=2)
+        except TypeError:
+            pdf.rect(x0, ly, Lw, ph, style="F")
+            pdf.set_fill_color(*pdf.primary_color)
+            pdf.rect(x0, ly, Lw, 1.1, style="F")
+        pdf._eyebrow(x0 + 4, ly + 4, _t("payoff_scenarios", lang), pdf.muted,
+                     size=7.0, tracking=0.4, w=52)
+        pdf._eyebrow(x0 + Lw - 44, ly + 4.2, _t("payoff_prob", lang),
+                     _FOOTNOTE_GREY, size=5.6, tracking=0.2, w=22, align="R")
+        pdf._eyebrow(x0 + Lw - 22, ly + 4.2, _t("payoff_irr", lang),
+                     _FOOTNOTE_GREY, size=5.6, tracking=0.2, w=18, align="R")
+        yy = ly + 10.5
+        for lab, p, v, col in prows:
+            pdf.set_draw_color(*_RULE_SOFT); pdf.set_line_width(0.2)
+            pdf.line(x0 + 4, yy, x0 + Lw - 4, yy)
+            pdf.set_fill_color(*col)
+            pdf.rect(x0 + 4, yy + 2.7, 2.4, 2.4, style="F")
+            pdf.set_xy(x0 + 9, yy + 1.5)
+            pdf._sf(8.2, "regular"); pdf.set_text_color(*pdf.body_ink)
+            pdf.cell(Lw - 9 - 46, 5, _safe(lab))
+            pdf.set_xy(x0 + Lw - 46, yy + 1.6)
+            pdf._sf(8.0, "regular"); pdf.set_text_color(*KV_GREY)
+            pdf.cell(22, 5, _safe(p), align="R")
+            pdf.set_xy(x0 + Lw - 24, yy + 1.2)
+            pdf._sf(10.0, "bold"); pdf.set_text_color(*col)
+            pdf.cell(20, 5, _safe(v), align="R")
+            yy += 8.0
+        ly += ph + 5.0
+
+    # ── Right rail: underlyings + key terms panel ──────────────────────────
+    mini = [
+        (_t("maturity", lang),         f"{terms.maturity:g}Y {_fmt_freq(terms.payment_freq, lang)}"),
+        (_t("coupon_pa", lang),        f"{terms.coupon_pa * 100:.2f}%"),
+        (_t("autocall_barrier", lang), f"{terms.autocall_barrier:.0%}"),
+        (_t("ki_barrier", lang).split(' (')[0], f"{terms.knock_in_barrier:.1%}"),
+    ]
+    if getattr(terms, "issue_date", None):
+        mini.append((_t("issue_date", lang), str(terms.issue_date)))
+    if pdf.issuer:
+        mini.append((_t("issuer", lang), pdf.issuer))
+    n_a = len(asset_names or [])
+    rail_h = 5.0 + 5.5 + n_a * 8.5 + 5.0 + 5.5 + len(mini) * 8.0 + 3.0
+    pdf.set_fill_color(*pdf.panel_color)
     try:
-        pdf.set_char_spacing(0.4)
-    except Exception:
-        pass
-    pdf.cell(main_w, 5, _t("in_this_report", lang).upper(), new_x="LMARGIN", new_y="NEXT")
-    try:
-        pdf.set_char_spacing(0)
-    except Exception:
-        pass
-    pdf.set_draw_color(*_HAIRLINE)
-    pdf.set_line_width(0.2)
-    pdf.line(pdf.l_margin, pdf.get_y() + 0.5, pdf.l_margin + main_w, pdf.get_y() + 0.5)
-    pdf.ln(2)
-    # The contents mirror the body's three-lens structure: a lens lists as a
-    # group header (Monte Carlo / Backtest / Live) with its sub-sections indented
-    # beneath, so the map matches the part dividers in the body. A lens appears
-    # only when at least one of its items is included. The opening (Note Terms /
-    # Issuer) and closing (Glossary / Disclaimer) groups are flat.
+        pdf.rect(Rx, ry, Rw, rail_h, style="F", round_corners=True, corner_radius=3)
+        pdf.set_fill_color(*pdf.primary_color)
+        pdf.rect(Rx, ry, Rw, 1.1, style="F",
+                 round_corners=("TOP_LEFT", "TOP_RIGHT"), corner_radius=3)
+    except TypeError:
+        pdf.rect(Rx, ry, Rw, rail_h, style="F")
+        pdf.set_fill_color(*pdf.primary_color)
+        pdf.rect(Rx, ry, Rw, 1.1, style="F")
+    yy = ry + 5.0
+    pdf._eyebrow(Rx + 5, yy, _t("underlyings", lang), pdf.muted,
+                 size=7.0, tracking=0.6, w=Rw - 10)
+    yy += 5.5
+    _cols = _ul_colors(n_a)
+    for i, nm in enumerate(asset_names or []):
+        tk = (logo_tickers or {}).get(nm) or str(nm)[:5].upper()
+        pdf.set_fill_color(*_cols[i])
+        try:
+            pdf.rect(Rx + 5, yy, 11, 6, style="F", round_corners=True, corner_radius=1.2)
+        except TypeError:
+            pdf.rect(Rx + 5, yy, 11, 6, style="F")
+        pdf.set_xy(Rx + 5, yy + 0.7); pdf._sf(6.3, "bold"); pdf.set_text_color(*_WHITE)
+        pdf.cell(11, 5, _safe(tk), align="C")
+        pdf.set_xy(Rx + 19, yy + 0.9)
+        _nm_w = Rw - 19 - 4
+        pdf._fit_font(_safe(nm), _nm_w, 8.0, "regular", min_size=5.5)
+        pdf.set_text_color(*pdf.body_ink)
+        pdf.cell(_nm_w, 4.4, _safe(nm))
+        yy += 8.5
+    yy += 1.0
+    pdf.set_draw_color(*_RULE_SOFT); pdf.set_line_width(0.2)
+    pdf.line(Rx + 5, yy, Rx + Rw - 5, yy)
+    yy += 4.0
+    pdf._eyebrow(Rx + 5, yy, _t("key_terms", lang), pdf.muted,
+                 size=7.0, tracking=0.6, w=Rw - 10)
+    yy += 5.5
+    for k, v in mini:
+        pdf.set_xy(Rx + 5, yy); pdf._sf(7.5, "regular"); pdf.set_text_color(*KV_GREY)
+        pdf.cell((Rw - 10) * 0.5, 4.6, _safe(k))
+        pdf.set_xy(Rx + 5, yy)
+        pdf._fit_font(_safe(v), (Rw - 10) * 0.5, 8.5, "bold", min_size=6.0)
+        pdf.set_text_color(*pdf.ink)
+        pdf.cell(Rw - 10, 4.6, _safe(v), align="R")
+        pdf.set_draw_color(*_RULE_SOFT)
+        pdf.line(Rx + 5, yy + 5.6, Rx + Rw - 5, yy + 5.6)
+        yy += 8.0
+    ry += rail_h + 6.0
+
+    # ── Right rail: In this report (grouped, numbered contents) ────────────
     _n_assets = len(asset_names or [])
     _any_fan  = any(inc(f"mc_fan_{i}") for i in range(_n_assets))
-    toc_groups = []  # (header|None, [leaf titles])
-
+    toc_groups = []
     _top = []
     if inc("note_terms"):
         _top.append(_t("note_terms", lang))
@@ -2857,7 +3039,6 @@ def _cover_page(
         _top.append(_t("underlying_breakdown", lang))
     if _top:
         toc_groups.append((None, _top))
-
     _mc = []
     if inc("mc_metrics") or inc("mc_irr") or inc("mc_autocall"):
         _mc.append(_t("mc_subtab_payoff", lang))
@@ -2869,7 +3050,6 @@ def _cover_page(
         _mc.append(_t("calibration", lang))
     if _mc:
         toc_groups.append((_t("lens_mc", lang), _mc))
-
     _bt = []
     if bt_summary and (inc("bt_metrics") or inc("bt_outcome") or inc("bt_pie") or inc("bt_irr")):
         _bt.append(_t("bt_subtab_outcomes", lang))
@@ -2877,7 +3057,6 @@ def _cover_page(
         _bt.append(_t("bt_subtab_prices", lang))
     if _bt:
         toc_groups.append((_t("lens_bt", lang), _bt))
-
     if live_data and (inc("live_metrics") or inc("live_asset_table")
                       or inc("live_obs_table") or inc("live_chart")):
         _live = []
@@ -2886,55 +3065,53 @@ def _cover_page(
         if inc("live_obs_table"):
             _live.append(_t("live_obs_history", lang))
         toc_groups.append((_t("lens_live", lang), _live))
-
     toc_groups.append((None, [_t("glossary_title", lang), _t("disclaimer_title", lang)]))
 
-    # The contents must fit between here and the fixed micro-disclaimer near the
-    # page foot. A full report (all three lenses + every sub-section) is ~15 rows
-    # and overflows at the default 5.5 mm row height, so compress rows to fit the
-    # available band when needed. Common (partial) reports stay at full height.
-    _toc_top    = pdf.get_y()
-    _toc_bottom = pdf.h - 22 - 4.0          # keep clear of the micro-disclaimer
+    pdf._eyebrow(Rx, ry, _t("in_this_report", lang), pdf.muted,
+                 size=8.0, tracking=0.6, w=Rw)
+    pdf.set_fill_color(*pdf.lime); pdf.rect(Rx, ry + 4.6, 18, 1.2, style="F")
+    ry += 8.0
+
+    _toc_top    = ry
+    _toc_bottom = pdf.h - 14.0
     _toc_avail  = _toc_bottom - _toc_top
-    _gap        = 1.2                        # extra space before each lens header
+    _gap        = 1.2
     _n_heads    = sum(1 for nm, _ in toc_groups if nm is not None)
     _n_rows     = sum(len(lv) for _, lv in toc_groups) + _n_heads
-    _row_h      = 5.5
+    _row_h      = 5.4
     if _n_rows > 0 and (_n_rows * _row_h + _n_heads * _gap) > _toc_avail:
-        _scale = max(0.0, _toc_avail - _n_heads * _gap) / (_n_rows * _row_h)
-        _scale = min(1.0, _scale)
+        _scale = min(1.0, max(0.0, _toc_avail - _n_heads * _gap) / (_n_rows * _row_h))
         _row_h = max(3.9, _row_h * _scale)
         _gap   = _gap * _scale
+    _yc = [ry]
+    _ix = [1]
 
     def _toc_leaf(text, indent=0.0):
-        pdf.set_x(pdf.l_margin + indent)
-        pdf._sf(8.5, "regular")
-        pdf.set_text_color(*_TEXT)
-        pdf.cell(main_w - indent, _row_h, text, new_x="LMARGIN", new_y="NEXT")
-        pdf.set_draw_color(*_RULE_LIGHT)
-        pdf.line(pdf.l_margin, pdf.get_y(), pdf.l_margin + main_w, pdf.get_y())
+        pdf.set_xy(Rx + indent, _yc[0])
+        pdf._sf(7.5, "bold"); pdf.set_text_color(*pdf.lime)
+        pdf.cell(7.0, _row_h, f"{_ix[0]:02d}")
+        _ix[0] += 1
+        pdf.set_xy(Rx + indent + 7.0, _yc[0])
+        pdf._sf(8.0, "regular"); pdf.set_text_color(*pdf.body_ink)
+        pdf.cell(Rw - indent - 7.0, _row_h, _safe(text))
+        pdf.set_draw_color(*_RULE_SOFT); pdf.set_line_width(0.2)
+        pdf.line(Rx, _yc[0] + _row_h, Rx + Rw, _yc[0] + _row_h)
+        _yc[0] += _row_h
 
     def _toc_head(name):
-        pdf.ln(_gap)
-        pdf.set_x(pdf.l_margin)
-        pdf._sf(8.5, "semibold")
-        pdf.set_text_color(*pdf.primary_color)
-        pdf.cell(main_w, _row_h, name, new_x="LMARGIN", new_y="NEXT")
-        pdf.set_draw_color(*_RULE_LIGHT)
-        pdf.line(pdf.l_margin, pdf.get_y(), pdf.l_margin + main_w, pdf.get_y())
+        _yc[0] += _gap
+        pdf._eyebrow(Rx, _yc[0] + 0.4, name, pdf.primary_color,
+                     size=7.0, tracking=0.5, w=Rw)
+        _yc[0] += _row_h
 
     for name, leaves in toc_groups:
         if name is not None:
             _toc_head(name)
             for leaf in leaves:
-                _toc_leaf(leaf, indent=7.0)
+                _toc_leaf(leaf, indent=3.0)
         else:
             for leaf in leaves:
                 _toc_leaf(leaf)
-
-    # (The cover's "this document was generated by an automated simulation tool"
-    # micro-disclaimer was removed at the client's request; the Important
-    # Information section at the end still carries the full disclaimer.)
 
     pdf._is_cover = False
     # Re-enable auto-page-break for all content pages that follow
@@ -2959,8 +3136,10 @@ def _draw_note_diagram(pdf, terms, lang: str) -> None:
     fpdf primitives — wrapped so a drawing glitch can never abort the report."""
     try:
         from datetime import date, timedelta
-        C_COUPON, C_KI, C_OS = (8, 145, 178), (220, 38, 38), (22, 163, 74)
-        C_PROT, C_RISK = (22, 163, 74), (220, 38, 38)
+        # Green design language: autocall / One-Star in green, coupon / knock-in
+        # in amber (the brand has no red), protected zone green, at-risk amber.
+        C_COUPON, C_KI, C_OS = pdf.amber, pdf.amber_dark, pdf.primary_color
+        C_PROT, C_RISK = pdf.primary_color, pdf.amber
         # Centre the plot box on the page with symmetric side margins (left holds
         # the y-axis ticks, right holds the floating barrier labels), and make it
         # tall enough to read as a proper chart rather than a thin strip.
@@ -3104,7 +3283,7 @@ def _draw_note_diagram(pdf, terms, lang: str) -> None:
         # floating barrier labels (right gutter): name over value on two lines so
         # they stay narrow and the plot box can sit centred on the page.
         lx = x1 + 4
-        entries = [(ac_y, pdf.accent_color, _t("diag_autocall", lang), f"{ac:.0%}")]
+        entries = [(ac_y, pdf.primary_color, _t("diag_autocall", lang), f"{ac:.0%}")]
         if barriers_equal:
             entries.append((ki_y, C_COUPON, f"{_t('diag_coupon', lang)} / {_t('diag_knockin', lang)}", f"{cp:.0%}"))
         else:
@@ -3310,22 +3489,24 @@ def _build_pdf_report(
     if _show_terms or _show_obs or _show_diag or _show_desc:
         pdf.add_page()
         usable = pdf.w - pdf.l_margin - pdf.r_margin
+        # 01 · Note Terms secondary head for the whole reference section.
+        pdf.secondary_head("01", _t("kick_note_terms", lang), _t("nt_page_title", lang))
         if _show_desc:
             # Systematic prose blurb (override or auto-generated from the terms).
             from core.note_description import describe_note
             _nd = (getattr(terms, "note_description", "") or "").strip() or describe_note(terms, lang)
-            pdf.section_title(_t("note_desc_title", lang))
             pdf.set_font(pdf._font_family, "", 9.5)
-            pdf.set_text_color(70, 84, 105)
-            pdf.multi_cell(usable, 5.0, pdf._safe(_nd))
+            pdf.set_text_color(*pdf.body_ink)
+            pdf.multi_cell(usable, 5.0, pdf._safe(_nd), align="J")
             pdf.ln(3)
         if _show_diag:
-            pdf.section_title(_t("note_diagram", lang))
+            pdf.subsection(_t("note_diagram", lang))
             _draw_note_diagram(pdf, terms, lang)
             pdf.ln(2)
         if _show_terms:
-            pdf.section_title(_t("note_terms", lang))
             _term_data = _term_rows(terms, lang)
+            pdf.subsection(_t("note_terms", lang),
+                           min_room=14 + _table_room(len(_term_data)))
             pdf.data_table(
                 [_t("key_terms_col_characteristic", lang), _t("key_terms_col_description", lang)],
                 [[k, v] for k, v in _term_data],
@@ -3334,12 +3515,10 @@ def _build_pdf_report(
                 rounded=True,
             )
         if _show_obs:
-            # A sub-header under Note Terms, or its own section title when Note
-            # Terms is toggled off so the schedule isn't left unlabelled.
-            if _show_terms:
-                pdf.subsection(_t("obs_schedule", lang), min_room=14 + _table_room(terms.n_obs))
-            else:
-                pdf.section_title(_t("obs_schedule", lang))
+            # A sub-header under Note Terms (always a sub-label now — the 01 head
+            # labels the section).
+            pdf.subsection(_t("obs_schedule", lang),
+                           min_room=14 + _table_room(terms.n_obs))
             obs_times = terms.obs_times()
             sched     = terms.autocall_barrier_schedule()
             ac_rows = []
@@ -3372,7 +3551,8 @@ def _build_pdf_report(
             (_t("rating_fitch", lang), getattr(terms, "issuer_rating_fitch", "") or ""),
         ]
         _ratings = [(l, v) for l, v in _ratings if v.strip()]
-        pdf.start_section(_t("issuer_info", lang), min_room=70.0)
+        pdf.secondary_head("02", _t("kick_issuer", lang), _t("issuer_info", lang),
+                           min_room=70.0)
         pdf.issuer_info_block(pdf.issuer, issuer_logo_bytes, _issuer_desc, _ratings)
 
     # ── 2c. Underlying Breakdown (per-underlying summary + 1Y price chart) ───
@@ -3381,11 +3561,13 @@ def _build_pdf_report(
     # wins, and 'description' is the curated company blurb.
     if underlying_metrics and _inc("underlying_breakdown"):
         _uls = getattr(terms, "underlyings", {}) or {}
-        # The section title is drawn by the FIRST card (section_title=...) so it
-        # stays glued to that card instead of being stranded above one that breaks
-        # to the next page. Each card is atomic — see underlying_block.
-        _ul_first = True
-        for _nm in asset_names:
+        # Each underlying renders on its own page via underlying_block (one page
+        # per underlying, like the prototype). Series-colour cycle for the ticker
+        # badges mirrors the summary rail.
+        _ul_pal = [primary_color, accent_color,
+                   _blend(primary_color, section_rule_color, 0.55),
+                   _AMBER_DARK, _blend(accent_color, _BLACK, 0.30)]
+        for _ai, _nm in enumerate(asset_names):
             _m  = underlying_metrics.get(_nm, {}) or {}
             _ov = _uls.get(_nm, {}) or {}
 
@@ -3426,11 +3608,12 @@ def _build_pdf_report(
                         (_t("sent_hold", lang), float(_an_ov.get("hold", 0) or 0) / _tot, (245, 158, 11)),
                         (_t("sent_sell", lang), float(_an_ov.get("sell", 0) or 0) / _tot, (220, 38, 38)),
                     ]
+            _tk  = (logo_tickers or {}).get(_nm) or str(_nm)[:5].upper()
+            _col = _ul_pal[_ai % len(_ul_pal)]
             pdf.underlying_block(
                 _long, _logo, _sub, _band, _desc, _png, _cap,
-                section_title=(_t("underlying_breakdown", lang) if _ul_first else None),
-                analyst=_analyst, analyst_title=_t("u_analyst", lang))
-            _ul_first = False
+                analyst=_analyst, analyst_title=_t("u_analyst", lang),
+                ticker=_tk, color=_col)
 
     # ── 3. Monte Carlo ─────────────────────────────────────────────────────
     # Low min_room: the metric band + first figure caption pack onto the Note
@@ -3444,13 +3627,13 @@ def _build_pdf_report(
                secondary_color=secondary_color)
     src_mc = f"{_t('src_mc', lang)}, {n_paths_val:,} {_t('paths_word', lang)}"
 
-    def _lazy_divider(name, question):
-        """Emit a three-lens part divider at most once, when the lens's first
+    def _lazy_divider(number, kicker, heading):
+        """Emit a three-lens primary banner at most once, when the lens's first
         included item is drawn — so a fully-toggled-off lens leaves no divider."""
         state = {"done": False}
         def ensure():
             if not state["done"]:
-                pdf.section_divider(name, question)
+                pdf.section_divider(number, kicker, heading)
                 state["done"] = True
         return ensure
 
@@ -3471,7 +3654,7 @@ def _build_pdf_report(
 
     # Lens 1 of 3 — the forward-looking model. Drawn once, before whichever MC
     # sub-section renders first.
-    _mc_div = _lazy_divider(_t("lens_mc", lang), _t("lens_q_mc", lang))
+    _mc_div = _lazy_divider("04", _t("lens_mc", lang), _t("sec_mc_heading", lang))
 
     # 3a. Payoff & Distribution — summary metrics, IRR distribution, autocall table.
     # Reserve enough room for the metric band + the IRR figure so the section
@@ -3610,7 +3793,7 @@ def _build_pdf_report(
     # ── 5. Historical backtest ─────────────────────────────────────────────
     bt_figures = bt_figures or {}
     # Lens 2 of 3 — the realised-history lens.
-    _bt_div = _lazy_divider(_t("lens_bt", lang), _t("lens_q_bt", lang))
+    _bt_div = _lazy_divider("05", _t("lens_bt", lang), _t("sec_bt_heading", lang))
     # 5a. Outcomes & Summary — metrics, outcome bar, worst-asset pie, IRR scatter.
     # Same keep-together reserve as the MC payoff section (band + first chart).
     _sec = _lazy_section(_t("bt_subtab_outcomes", lang), min_room=150.0, before=_bt_div)
@@ -3672,7 +3855,7 @@ def _build_pdf_report(
     if live_data:
         # Lens 3 of 3 — the live, today lens. No section_title: the divider names
         # it; the metric band and the asset/observation sub-tables follow.
-        _live_div = _lazy_divider(_t("lens_live", lang), _t("lens_q_live", lang))
+        _live_div = _lazy_divider("06", _t("lens_live", lang), _t("sec_live_heading", lang))
         if _inc("live_metrics"):
             _live_div()
             pdf.metric_band([
