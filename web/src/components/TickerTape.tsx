@@ -151,16 +151,19 @@ export default function TickerTape({ terms }: { terms: NoteTerms }) {
 
   if (!display.length) return null
 
-  const UP = '#5fb89a', DOWN = '#d98b80', LIGHT = '#c8d0c9', PAPER = '#f7f5ef', RULE = '#313a33'
+  // Brightened for legibility on the dark bar — values near-white, labels a
+  // clearly-readable grey (deliberately off-palette so the data is easy to read
+  // in passing), change arrows in vivid green/coral.
+  const UP = '#62d0a6', DOWN = '#f0998a', LIGHT = '#eef2ec', PAPER = '#ffffff', RULE = '#384640'
 
-  const LABEL = '#727b73'
+  const LABEL = '#9aa49b'
   const hoverM = hover ? (rows ?? []).find((mm) => rowSym(mm) === hover.sym) ?? null : null
 
   // A small inline label·value stat group within a cell (Vol / Day / 52W).
   const stat = (label: string, value: string) => (
     <span style={{ display: 'inline-flex', alignItems: 'baseline', gap: 5 }}>
-      <span style={{ fontSize: 9, fontWeight: 600, letterSpacing: '0.09em', textTransform: 'uppercase', color: LABEL }}>{label}</span>
-      <span style={{ color: LIGHT }}>{value}</span>
+      <span style={{ fontSize: 9.5, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: LABEL }}>{label}</span>
+      <span style={{ color: LIGHT, fontWeight: 500 }}>{value}</span>
     </span>
   )
 
@@ -179,12 +182,12 @@ export default function TickerTape({ terms }: { terms: NoteTerms }) {
         onMouseLeave={() => setHover((h) => (h?.sym === sym ? null : h))}
         style={{
           display: 'inline-flex', alignItems: 'baseline', gap: 12, padding: '11px 18px', overflow: 'hidden',
-          borderRight: `1px solid ${RULE}`, fontSize: 12, cursor: 'default', whiteSpace: 'nowrap',
+          borderRight: `1px solid ${RULE}`, fontSize: 12.5, cursor: 'default', whiteSpace: 'nowrap',
         }}>
-        <span style={{ fontWeight: 600, color: PAPER }}>{sym}</span>
-        <span style={{ color: LIGHT }}>{price != null ? <AnimatedNumber value={price} format={fmtPrice} duration={500} /> : '—'}</span>
+        <span style={{ fontWeight: 700, color: PAPER, letterSpacing: '0.02em' }}>{sym}</span>
+        <span style={{ color: LIGHT, fontWeight: 500 }}>{price != null ? <AnimatedNumber value={price} format={fmtPrice} duration={500} /> : '—'}</span>
         {change != null && (
-          <span style={{ color: change >= 0 ? UP : DOWN }}>{change >= 0 ? '▲' : '▼'} {Math.abs(change * 100).toFixed(2)}%</span>
+          <span style={{ color: change >= 0 ? UP : DOWN, fontWeight: 600 }}>{change >= 0 ? '▲' : '▼'} {Math.abs(change * 100).toFixed(2)}%</span>
         )}
         {!leaving && q?.volume != null && stat('Vol', compact(q.volume))}
         {!leaving && q?.day_low != null && q?.day_high != null && stat('Day', `${fmtPrice(q.day_low)}–${fmtPrice(q.day_high)}`)}
