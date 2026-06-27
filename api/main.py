@@ -352,16 +352,11 @@ def cover_photo_proxy(u: str):
 
 @app.get("/api/configs")
 def list_configs():
-    """Bundled note term-sheet configs."""
-    out = []
-    for p in sorted(_CONFIG_DIR.glob("*.json")):
-        try:
-            d = json.loads(p.read_text())
-            out.append({"file": p.name, "name": d.get("name", p.stem),
-                        "issuer": d.get("issuer", "")})
-        except Exception:
-            continue
-    return out
+    """Note term-sheet configs are intentionally NOT auto-discovered from the
+    repo — the app starts on a blank note and users load their own via the folder
+    picker or the upload button. The example JSONs stay in note_configs/ for
+    reference only, so this returns an empty list."""
+    return []
 
 
 class ParseConfigRequest(BaseModel):
@@ -496,15 +491,10 @@ def backtest_inspect(req: BacktestInspectRequest):
 
 @app.get("/api/branding")
 def list_branding():
-    """Bundled branding presets in branding/ (auto-discovered, like configs)."""
-    out = []
-    for p in sorted(_BRANDING_DIR.glob("*.json")):
-        try:
-            d = json.loads(p.read_text())
-            out.append({"file": p.name, "firm_name": d.get("firm_name", p.stem)})
-        except Exception:
-            continue
-    return out
+    """Branding presets are intentionally NOT auto-discovered from the repo —
+    users load branding via the folder picker or the upload button. The example
+    JSON stays in branding/ for reference only, so this returns an empty list."""
+    return []
 
 
 @app.get("/api/branding/{file}")
