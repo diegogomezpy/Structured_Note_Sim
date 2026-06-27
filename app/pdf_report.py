@@ -1184,14 +1184,29 @@ class _NotePDF(FPDF):
         self.set_y(ry + 4)
         self.set_text_color(*_TEXT)
 
+    # Voids at/above this height read as egregiously empty — fill them with an
+    # actual brand photo band rather than only a faint sigil/hex composition.
+    # (The 52mm band-height floor in `_decorate_void_photo` is the real cutoff
+    # for very small voids; this just keeps mid-size voids on the photo tier.)
+    _EGREGIOUS_VOID = 70.0
+
     def _decorate_void(self, variant: int = 0, min_gap: float = 44.0) -> None:
-        """Fill a large empty band before the footer with a deliberate brand
-        composition so a short page reads as composed rather than empty: a big
-        sigil watermark (centred in the void, bleeding off the right edge), a
-        hex-cluster anchored low-left bleeding off the left edge, and — for very
-        tall voids — a couple of small outlined hexes mid-band so the centre is
-        not a dead zone. Sized to the void; visible but unobtrusive; kept clear
-        of the footer and never drawn on a cover page."""
+        """Fill a large empty band before the footer so a short page reads as
+        composed rather than empty. Two tiers:
+
+        * **Egregious void** (>= `_EGREGIOUS_VOID`, and a brand photo exists) →
+          a full-width photo band anchored low in the void: the brand/sector
+          image (centre-cropped, object-fit cover), a light brand tint so it
+          harmonises with the palette, a lime accent rule, and a white-knockout
+          sigil in the corner. This is the user-requested "cover the white space
+          with an image" treatment.
+        * **Moderate void** (or no photo available) → the lighter graphic
+          composition: a faint sigil watermark, a low-left hex-cluster, and (for
+          tall voids) a couple of outlined hexes mid-band.
+
+        Both tiers are sized to the void and kept clear of the footer rule
+        (drawn at h-22) so a graphic NEVER overlaps the footnote, and neither is
+        ever drawn on a cover page."""
         if self._is_cover or self.page_no() in self._cover_pages:
             return
         y = self.get_y() + 4.0
@@ -1203,6 +1218,10 @@ class _NotePDF(FPDF):
             return
         x0 = self.l_margin
         x1 = self.w - self.r_margin
+        filler = getattr(self, "cover_image_bytes", None) or getattr(self, "back_image_bytes", None)
+        if gap >= self._EGREGIOUS_VOID and filler:
+            if self._decorate_void_photo(x0, x1, y, floor, gap, filler):
+                return
         # A hex-cluster's lowest shape can reach ~1.4x its scale below the origin
         # (see _hex_cluster layouts) — account for that so it stays above `floor`.
         HEX_VEXT = 1.45
@@ -1234,6 +1253,63 @@ class _NotePDF(FPDF):
                                 line_w=0.45, opacity=0.18)
         except Exception:
             pass
+
+    def _decorate_void_photo(self, x0: float, x1: float, y: float,
+                             floor: float, gap: float, filler: bytes) -> bool:
+        """Render the egregious-void photo band (see `_decorate_void`). Returns
+        True on success so the caller can skip the graphic composition; False on
+        any failure so it falls through to the lighter treatment."""
+        try:
+            pad_top = 13.0                       # breathing room below the content
+            band_w = x1 - x0
+            band_h = min(gap - pad_top, 104.0)   # a band, not a giant square
+            if band_h < 52.0:
+                return False
+            by = floor - band_h                  # anchored at the floor
+            # Shift the crop window per page so a repeated filler photo shows a
+            # different region (left / centre / right · top / centre / bottom)
+            # rather than the identical band on consecutive short pages.
+            _bx = (-0.6, 0.0, 0.6)[self.page_no() % 3]
+            _by = (0.0, -0.5, 0.5)[(self.page_no() // 3) % 3]
+            cropped = _cover_crop(filler, band_w / band_h, bias_x=_bx, bias_y=_by) or filler
+            # Re-encode the band as JPEG (each page gets a distinct crop, so fpdf2
+            # can't dedupe them) — a PNG photo per page would bloat the PDF, JPEG
+            # keeps a multi-photo report a few hundred KB instead of multi-MB.
+            try:
+                from PIL import Image
+                _bim = Image.open(io.BytesIO(cropped)).convert("RGB")
+                _buf = io.BytesIO(); _bim.save(_buf, "JPEG", quality=78, optimize=True)
+                cropped = _buf.getvalue()
+            except Exception:
+                pass
+            self.image(io.BytesIO(cropped), x=x0, y=by, w=band_w, h=band_h)
+            # Light brand tint so the photo harmonises with the palette without
+            # hiding it — this is meant to read as an image, not a colour block.
+            tint = getattr(self, "cover_overlay_color", self.primary_color)
+            with self.local_context(fill_opacity=0.30):
+                self.set_fill_color(*tint)
+                self.rect(x0, by, band_w, band_h, style="F")
+            # A darker brand wash along the bottom edge grounds the band and lets
+            # the corner sigil read; kept short so the photo stays visible.
+            with self.local_context(fill_opacity=0.34):
+                self.set_fill_color(*self.ink)
+                self.rect(x0, floor - 16.0, band_w, 16.0, style="F")
+            # Lime accent rule across the top edge — the brand's signature line.
+            self.set_fill_color(*self.lime)
+            self.rect(x0, by, band_w, 1.5, style="F")
+            # White-knockout sigil tucked into the bottom-right corner.
+            sig = getattr(self, "cover_sigil_bytes", None)
+            if sig:
+                from PIL import Image
+                iw, ih = Image.open(io.BytesIO(sig)).size
+                sh = min(band_h * 0.42, 26.0)
+                sw = sh * iw / ih
+                with self.local_context(fill_opacity=0.55):
+                    self.image(io.BytesIO(sig), x=x1 - sw - 6.0,
+                               y=floor - sh - 3.5, w=sw, h=sh)
+            return True
+        except Exception:
+            return False
 
     # Decorate the page we're leaving (cursor is at the content end here) so any
     # short content page gets its void filled automatically — except covers.
@@ -2601,10 +2677,14 @@ def _exec_bullets(terms, results, bt_summary, live_data, lang: str) -> list[str]
     return b
 
 
-def _cover_crop(raw: bytes | None, aspect: float) -> bytes | None:
-    """Center-crop an image to `aspect` (= width / height) so a full-bleed
-    placement fills the box without stretching (CSS object-fit: cover). Returns
-    PNG bytes; on any failure returns the input unchanged."""
+def _cover_crop(raw: bytes | None, aspect: float,
+                bias_x: float = 0.0, bias_y: float = 0.0) -> bytes | None:
+    """Crop an image to `aspect` (= width / height) so a full-bleed placement
+    fills the box without stretching (CSS object-fit: cover). `bias_x`/`bias_y`
+    in [-1, 1] shift the crop window off-centre (0 = centred, -1 = left/top,
+    +1 = right/bottom) — used to show different regions of the same source on
+    successive pages so a repeated filler photo doesn't read as identical.
+    Returns PNG bytes; on any failure returns the input unchanged."""
     if not raw:
         return raw
     try:
@@ -2612,13 +2692,17 @@ def _cover_crop(raw: bytes | None, aspect: float) -> bytes | None:
         im = Image.open(io.BytesIO(raw)).convert("RGB")
         w, h = im.size
         cur = w / h
-        if abs(cur - aspect) < 1e-3:
+        if abs(cur - aspect) < 1e-3 and not (bias_x or bias_y):
             return raw
         if cur > aspect:                       # too wide → crop the sides
-            nw = int(round(h * aspect)); x0 = (w - nw) // 2
+            nw = int(round(h * aspect))
+            x0 = int(round((w - nw) * (0.5 + 0.5 * max(-1.0, min(1.0, bias_x)))))
+            x0 = max(0, min(w - nw, x0))
             im = im.crop((x0, 0, x0 + nw, h))
         else:                                  # too tall → crop top/bottom
-            nh = int(round(w / aspect)); y0 = (h - nh) // 2
+            nh = int(round(w / aspect))
+            y0 = int(round((h - nh) * (0.5 + 0.5 * max(-1.0, min(1.0, bias_y)))))
+            y0 = max(0, min(h - nh, y0))
             im = im.crop((0, y0, w, y0 + nh))
         buf = io.BytesIO(); im.save(buf, "PNG")
         return buf.getvalue()
@@ -4097,6 +4181,10 @@ def _build_pdf_report(
             pdf.write(4.4, pdf._safe(_defn))
             pdf.ln(6.2)
     pdf.set_text_color(*_TEXT)
+    # The disclaimer back page sets `_is_cover` before its add_page, so the
+    # add_page override won't decorate the glossary's (often large) trailing
+    # void — fill it explicitly here while this is still a content page.
+    pdf._decorate_void(variant=pdf.page_no() % 3)
 
     # ── 8. Disclaimers (own back page) ─────────────────────────────────────
     _disclaimer_text = (_brand_text(_b.get("disclaimer_body"), lang)
