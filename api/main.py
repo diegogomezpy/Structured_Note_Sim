@@ -260,12 +260,13 @@ def _normalize_sector(s: str | None) -> str:
     return _YAHOO_SECTOR_ALIAS.get(k, "markets")
 
 
-def _pexels_search(query: str, per_page: int = 2) -> list[dict]:
+def _pexels_search(query: str, per_page: int = 2, page: int = 1) -> list[dict]:
     key = _pexels_key()
     if not key:
         return []
     url = "https://api.pexels.com/v1/search?" + _uparse.urlencode(
-        {"query": query, "per_page": per_page, "orientation": "landscape", "size": "large"})
+        {"query": query, "per_page": per_page, "page": page,
+         "orientation": "landscape", "size": "large"})
     try:
         req = _ureq.Request(url, headers={"Authorization": key, "User-Agent": "StructuredNoteSim/1.0"})
         with _ureq.urlopen(req, timeout=8) as resp:
@@ -295,28 +296,43 @@ def cover_sectors():
     return {"available": bool(_pexels_key()), "sectors": list(_SECTOR_QUERIES.keys())}
 
 
-@app.get("/api/cover/photos")
-def cover_photos(sector: str = "markets"):
-    """A few professional cover photos for the given sector (or the Yahoo sector
-    string, normalized). Cached per sector. Returns the resolved sector key so the
-    client can highlight the suggested option."""
-    resolved = _normalize_sector(sector)
-    if not _pexels_key():
-        return {"available": False, "sector": resolved, "photos": []}
-    cached = _COVER_CACHE.get(resolved)
-    if cached is not None:
-        return {"available": True, "sector": resolved, "photos": cached}
-    photos: list[dict] = []
-    seen: set = set()
+def _cover_pool(resolved: str) -> list[dict]:
+    """Full per-sector photo pool (cached). Fetched a few deep per subject term
+    so there's a well to draw varied random samples from on each refresh without
+    re-hitting Pexels every time."""
+    pool = _COVER_CACHE.get(resolved)
+    if pool is not None:
+        return pool
+    pool, seen = [], set()
     for term in _SECTOR_QUERIES.get(resolved, _SECTOR_QUERIES["markets"]):
-        for ph in _pexels_search(term, per_page=2):
+        for ph in _pexels_search(term, per_page=3):
             if ph["id"] in seen:
                 continue
             seen.add(ph["id"])
             ph["term"] = term
-            photos.append(ph)
-    if photos:
-        _COVER_CACHE[resolved] = photos
+            pool.append(ph)
+    if pool:
+        _COVER_CACHE[resolved] = pool
+    return pool
+
+
+@app.get("/api/cover/photos")
+def cover_photos(sector: str = "markets", n: int = 6, exclude: str = ""):
+    """A varied set of professional cover photos for the given sector (or the
+    Yahoo sector string, normalized). Returns a RANDOM sample of `n` from the
+    cached per-sector pool, so each (re)load — i.e. the refresh button — shows
+    different photos. `exclude` is a comma-separated list of photo ids the client
+    already shows/has selected; they're held out of the sample (relaxed only if
+    too few would remain). Returns the resolved sector key for highlighting."""
+    import random as _rnd
+    resolved = _normalize_sector(sector)
+    if not _pexels_key():
+        return {"available": False, "sector": resolved, "photos": []}
+    pool = _cover_pool(resolved)
+    ex = {x.strip() for x in exclude.split(",") if x.strip()}
+    candidates = [p for p in pool if str(p["id"]) not in ex] or list(pool)
+    k = min(max(1, n), len(candidates))
+    photos = _rnd.sample(candidates, k) if candidates else []
     return {"available": True, "sector": resolved, "photos": photos}
 
 

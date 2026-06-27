@@ -37,6 +37,22 @@ export function mainTour(t: (k: string) => string): TourStep[] {
   ]
 }
 
+/** The report-maker tour — a focused walkthrough of building & branding a PDF,
+    launched from the "Tutorial" button on the Report tab. Targets are
+    `data-tour="rep-…"` landmarks inside the report panel. */
+export function reportTour(t: (k: string) => string): TourStep[] {
+  return [
+    { title: t('rtour_welcome_t'), body: t('rtour_welcome_b') },
+    { target: '[data-tour="rep-presets"]', title: t('rtour_presets_t'), body: t('rtour_presets_b'), placement: 'bottom' },
+    { target: '[data-tour="rep-sections"]', title: t('rtour_sections_t'), body: t('rtour_sections_b'), placement: 'top' },
+    { target: '[data-tour="rep-branding"]', title: t('rtour_branding_t'), body: t('rtour_branding_b'), placement: 'top' },
+    { target: '[data-tour="rep-photos"]', title: t('rtour_photos_t'), body: t('rtour_photos_b'), placement: 'top' },
+    { target: '[data-tour="rep-metrics"]', title: t('rtour_metrics_t'), body: t('rtour_metrics_b'), placement: 'top' },
+    { target: '[data-tour="rep-generate"]', title: t('rtour_generate_t'), body: t('rtour_generate_b'), placement: 'top' },
+    { title: t('rtour_done_t'), body: t('rtour_done_b') },
+  ]
+}
+
 const CARD_W = 326
 const GAP = 14
 const MARGIN = 12

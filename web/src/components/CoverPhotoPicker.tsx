@@ -1,10 +1,15 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { api } from '../api/client'
 import { useI18n } from '../i18n/I18nProvider'
 import { fetchUnderlyingMetricsCached } from '../lib/metricsStore'
 import { Select } from './fields'
 import Icon from './Icon'
 import type { CoverPhoto, NoteTerms } from '../api/types'
+
+// Remember the sector resolved for a given underlying set so re-opening a note
+// we've seen before paints the grid immediately instead of waiting on the
+// (network) metrics lookup again. Module-level → survives remounts this session.
+const _sectorMemo = new Map<string, string>()
 
 /** Industry report-photo picker — a built-in library (via Pexels) of professional
     photos keyed by sector. The sector is suggested from the note's underlyings
@@ -28,34 +33,62 @@ export default function CoverPhotoPicker({ terms, selected, onChange }: {
   // Maps a library photo's id → the data URL we fetched for it this session, so
   // we can show a check on already-picked tiles and toggle them back off.
   const [idToUrl, setIdToUrl] = useState<Record<number, string>>({})
-  const suggested = useRef(false)
+  // True once the user manually picks a sector → stop auto-re-suggesting on note
+  // changes so their choice sticks.
+  const userPicked = useRef(false)
+  // Latest shown photos, read inside the refresh handler without re-subscribing.
+  const photosRef = useRef<CoverPhoto[]>([])
+  photosRef.current = photos
+  // Signature of the current underlyings; drives the re-suggest effect so the
+  // grid tracks whichever note is loaded.
+  const tickKey = useMemo(
+    () => Object.keys(terms.tickers ?? {}).sort().join(','), [terms.tickers])
 
   useEffect(() => {
     api.coverSectors().then((r) => { setAvailable(r.available); setSectors(r.sectors) }).catch(() => setAvailable(false))
   }, [])
 
-  const load = async (sec: string) => {
+  // Fetch photos for a sector. `refresh` requests a fresh random sample and
+  // holds back the ids already on screen / selected so the set actually changes.
+  const load = async (sec: string, refresh = false) => {
     setLoading(true)
-    try { const r = await api.coverPhotos(sec); setSector(r.sector); setPhotos(r.photos) }
-    catch { setPhotos([]) }
+    try {
+      const exclude = refresh
+        ? [...photosRef.current.map((p) => p.id),
+           ...Object.entries(idToUrl).filter(([, u]) => selected.includes(u)).map(([id]) => id)]
+        : undefined
+      const r = await api.coverPhotos(sec, refresh ? { exclude } : undefined)
+      setSector(r.sector); setPhotos(r.photos)
+    } catch { setPhotos([]) }
     finally { setLoading(false) }
   }
 
-  // Suggest the sector once from the underlyings' dominant Yahoo sector.
+  // Suggest + load the sector from the underlyings' dominant Yahoo sector.
+  // Re-runs whenever the loaded note's underlyings change (so the image section
+  // tracks the note), unless the user has manually chosen a sector. Resolves
+  // instantly from the per-note memo / cached metrics when possible.
   useEffect(() => {
-    if (suggested.current || available !== true) return
+    if (available !== true) return
+    // First availability OR a freshly loaded note (tickKey changed) → resume
+    // auto-suggestion; a manual sector pick only sticks for the current note.
+    userPicked.current = false
+    const memo = _sectorMemo.get(tickKey)
+    if (memo) { load(memo); return }
     const tickers = terms.tickers ?? {}
-    if (!Object.keys(tickers).length) { load('markets'); suggested.current = true; return }
+    if (!Object.keys(tickers).length) { load('markets'); return }
+    let cancelled = false
     fetchUnderlyingMetricsCached(tickers, lang).then((rows) => {
-      if (suggested.current) return
+      if (cancelled || userPicked.current) return
       const counts: Record<string, number> = {}
       for (const r of rows) { const s = (r.sector || '').trim(); if (s) counts[s] = (counts[s] ?? 0) + 1 }
       const dom = Object.entries(counts).sort((a, b) => b[1] - a[1])[0]?.[0]
-      suggested.current = true
-      load(dom || 'markets')
-    }).catch(() => { suggested.current = true; load('markets') })
+      const sec = dom || 'markets'
+      _sectorMemo.set(tickKey, sec)
+      load(sec)
+    }).catch(() => { if (!cancelled && !userPicked.current) load('markets') })
+    return () => { cancelled = true }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [available])
+  }, [available, tickKey])
 
   const isPicked = (p: CoverPhoto) => {
     const u = idToUrl[p.id]
@@ -123,10 +156,21 @@ export default function CoverPhotoPicker({ terms, selected, onChange }: {
       {selectedStrip}
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 9 }}>
         <div style={{ minWidth: 190 }}>
-          <Select value={sector} onChange={load} ariaLabel={t('cover_lib_sector')}
+          <Select value={sector} onChange={(s) => { userPicked.current = true; load(s) }}
+                  ariaLabel={t('cover_lib_sector')}
                   options={sectors.map((s) => ({ value: s, label: t(`sector_${s}`) }))} />
         </div>
-        {loading && <Icon name="spinner" size={15} />}
+        <button onClick={() => load(sector, true)} disabled={loading} title={t('cover_lib_refresh')}
+                aria-label={t('cover_lib_refresh')} className="lift"
+                style={{
+                  display: 'inline-flex', alignItems: 'center', gap: 6, padding: '7px 11px',
+                  borderRadius: 8, border: '1px solid var(--border)', background: 'var(--surface-2)',
+                  color: 'var(--text)', cursor: loading ? 'default' : 'pointer', fontSize: 12,
+                  opacity: loading ? 0.6 : 1,
+                }}>
+          <Icon name={loading ? 'spinner' : 'refresh'} size={14} />
+          {t('cover_lib_refresh')}
+        </button>
       </div>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(112px, 1fr))', gap: 8 }}>
         {photos.map((p) => (

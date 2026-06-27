@@ -45,8 +45,12 @@ export const api = {
   brandingList: () => jget<{ file: string; firm_name: string }[]>('/api/branding'),
   branding: (file: string) => jget<Record<string, unknown>>(`/api/branding/${file}`),
   coverSectors: () => jget<{ available: boolean; sectors: string[] }>('/api/cover/sectors'),
-  coverPhotos: (sector: string) =>
-    jget<{ available: boolean; sector: string; photos: CoverPhoto[] }>(`/api/cover/photos?sector=${encodeURIComponent(sector)}`),
+  coverPhotos: (sector: string, opts?: { n?: number; exclude?: (number | string)[] }) => {
+    const q = new URLSearchParams({ sector })
+    if (opts?.n) q.set('n', String(opts.n))
+    if (opts?.exclude?.length) q.set('exclude', opts.exclude.join(','))
+    return jget<{ available: boolean; sector: string; photos: CoverPhoto[] }>(`/api/cover/photos?${q.toString()}`)
+  },
   coverPhotoProxy: (u: string) => `/api/cover/photo?u=${encodeURIComponent(u)}`,
   report: async (body: ReportRequest): Promise<Response> => {
     const r = await fetch('/api/report', {

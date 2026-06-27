@@ -2722,6 +2722,54 @@ def _cover_crop(raw: bytes | None, aspect: float,
         return raw
 
 
+def _cover_left_photo(pdf: "_NotePDF", x0: float, top: float, w: float,
+                      bottom: float, img: bytes) -> bool:
+    """Fill the summary page's short left column with a tall (portrait) brand
+    photo so a client / terms-only report doesn't leave that column half-empty.
+    Mirrors the in-body egregious-void band treatment (brand tint + lime accent
+    rule + corner sigil) but vertical. Returns True on success; False to fall
+    back to the lighter hex/sigil composition."""
+    try:
+        avail = bottom - top
+        if avail < 58.0 or w < 40.0:
+            return False
+        cropped = _cover_crop(img, w / avail) or img
+        # Re-encode as JPEG so a photo on the cover doesn't bloat the PDF.
+        try:
+            from PIL import Image
+            _im = Image.open(io.BytesIO(cropped)).convert("RGB")
+            _buf = io.BytesIO(); _im.save(_buf, "JPEG", quality=80, optimize=True)
+            cropped = _buf.getvalue()
+        except Exception:
+            pass
+        pdf.image(io.BytesIO(cropped), x=x0, y=top, w=w, h=avail)
+        # Light brand tint so the photo harmonises with the palette without
+        # hiding it — meant to read as an image, not a colour block.
+        tint = getattr(pdf, "cover_overlay_color", pdf.primary_color)
+        with pdf.local_context(fill_opacity=0.26):
+            pdf.set_fill_color(*tint)
+            pdf.rect(x0, top, w, avail, style="F")
+        # Darker brand wash along the bottom edge grounds the band + corner sigil.
+        with pdf.local_context(fill_opacity=0.34):
+            pdf.set_fill_color(*pdf.ink)
+            pdf.rect(x0, bottom - 18.0, w, 18.0, style="F")
+        # Lime accent rule across the top edge — the brand's signature line.
+        pdf.set_fill_color(*pdf.lime)
+        pdf.rect(x0, top, w, 1.5, style="F")
+        # White-knockout sigil tucked into the bottom-left corner.
+        sig = getattr(pdf, "cover_sigil_bytes", None)
+        if sig:
+            from PIL import Image
+            iw, ih = Image.open(io.BytesIO(sig)).size
+            sh = min(avail * 0.30, 24.0); sw = sh * iw / ih
+            with pdf.local_context(fill_opacity=0.55):
+                pdf.image(io.BytesIO(sig), x=x0 + 5.0, y=bottom - sh - 4.0,
+                          w=sw, h=sh)
+        return True
+    except Exception:
+        return False
+
+
 def _front_cover_page(pdf: _NotePDF, terms, lang: str, report_title: str, website: str):
     """Full-bleed branded cover (page 1, toggleable): brand-colour background, the
     centred firm logo, a 'Nota Estructurada' eyebrow, the note name and the report
@@ -3164,16 +3212,32 @@ def _cover_page(
         ly += ph + 5.0
 
     # ── Right rail: underlyings + key terms panel ──────────────────────────
-    mini = [
-        (_t("maturity", lang),         f"{terms.maturity:g}Y {_fmt_freq(terms.payment_freq, lang)}"),
-        (_t("coupon_pa", lang),        f"{terms.coupon_pa * 100:.2f}%"),
-        (_t("autocall_barrier", lang), f"{terms.autocall_barrier:.0%}"),
-        (_t("ki_barrier", lang).split(' (')[0], f"{terms.knock_in_barrier:.1%}"),
-    ]
-    if getattr(terms, "issue_date", None):
-        mini.append((_t("issue_date", lang), str(terms.issue_date)))
-    if pdf.issuer:
-        mini.append((_t("issuer", lang), pdf.issuer))
+    # Which KEY TERMS appear in the at-a-glance rail (and their order) is
+    # user-selectable via branding `cover_metrics`; absent → the default set
+    # (issue date / issuer only when present on the note).
+    _ki_lbl = _t("ki_barrier", lang).split(' (')[0]
+    _metric_catalog = {
+        "maturity":         (_t("maturity", lang),         f"{terms.maturity:g}Y {_fmt_freq(terms.payment_freq, lang)}"),
+        "coupon_pa":        (_t("coupon_pa", lang),        f"{terms.coupon_pa * 100:.2f}%"),
+        "coupon_barrier":   (_t("coupon_barrier", lang),   f"{terms.coupon_barrier:.0%}"),
+        "autocall_barrier": (_t("autocall_barrier", lang), f"{terms.autocall_barrier:.0%}"),
+        "knock_in_barrier": (_ki_lbl,                      f"{terms.knock_in_barrier:.1%}"),
+        "issue_date":       (_t("issue_date", lang),       str(getattr(terms, "issue_date", "") or "")),
+        "issuer":           (_t("issuer", lang),           pdf.issuer or ""),
+    }
+    _sel_metrics = getattr(pdf, "cover_metrics", None)
+    if _sel_metrics:
+        mini = [_metric_catalog[k] for k in _sel_metrics
+                if k in _metric_catalog and _metric_catalog[k][1] != ""]
+    else:
+        mini = [_metric_catalog["maturity"], _metric_catalog["coupon_pa"],
+                _metric_catalog["autocall_barrier"], _metric_catalog["knock_in_barrier"]]
+        if getattr(terms, "issue_date", None):
+            mini.append(_metric_catalog["issue_date"])
+        if pdf.issuer:
+            mini.append(_metric_catalog["issuer"])
+    if not mini:                                   # never render an empty rail
+        mini = [_metric_catalog["maturity"], _metric_catalog["coupon_pa"]]
     n_a = len(asset_names or [])
     rail_h = 5.0 + 5.5 + n_a * 9.0 + 5.0 + 5.5 + len(mini) * 8.0 + 3.0
     pdf.set_fill_color(*pdf.panel_color)
@@ -3196,35 +3260,40 @@ def _cover_page(
         _ld = ((logo_overrides or {}).get(nm)
                or _load_ticker_logo(nm, (logo_urls or {}).get(nm, ""),
                                     (logo_tickers or {}).get(nm)))
-        # Uniform white rounded tile per underlying so the (differently-coloured)
-        # brand logos read as a clean, consistent set instead of clashing squares.
-        _TS = 8.5
-        pdf.set_fill_color(*_WHITE)
-        pdf.set_draw_color(*pdf.rule_soft)
-        pdf.set_line_width(0.2)
-        try:
-            pdf.rect(Rx + 5, yy - 0.5, _TS, _TS, style="DF",
-                     round_corners=True, corner_radius=1.8)
-        except TypeError:
-            pdf.rect(Rx + 5, yy - 0.5, _TS, _TS, style="DF")
+        # Logo drawn directly — no white backing tile — and fit to a consistent
+        # square box (aspect preserved, so wide/tall marks aren't squashed).
+        _LS = 9.5
         _drew = False
         if _ld:
             try:
-                pdf.image(io.BytesIO(_ld), x=Rx + 5 + 1.1, y=yy - 0.5 + 1.1,
-                          w=_TS - 2.2, h=_TS - 2.2)
+                _ar = _logo_aspect(_ld, default=1.0)        # height / width
+                if _ar <= 1.0:
+                    _lw, _lh = _LS, _LS * _ar
+                else:
+                    _lw, _lh = _LS / _ar, _LS
+                pdf.image(io.BytesIO(_ld), x=Rx + 5 + (_LS - _lw) / 2.0,
+                          y=yy - 0.7 + (_LS - _lh) / 2.0, w=_lw, h=_lh)
                 _drew = True
             except Exception:
                 _drew = False
         if not _drew:
             tk = (logo_tickers or {}).get(nm) or str(nm)[:4].upper()
-            pdf.set_xy(Rx + 5, yy + 1.3)
+            # Subtle tinted chip (NOT white) behind the ticker fallback.
+            pdf.set_fill_color(*_blend(_cols[i], _WHITE, 0.86))
+            try:
+                pdf.rect(Rx + 5, yy - 0.7, _LS, _LS, style="F",
+                         round_corners=True, corner_radius=1.8)
+            except TypeError:
+                pdf.rect(Rx + 5, yy - 0.7, _LS, _LS, style="F")
+            pdf.set_xy(Rx + 5, yy + 1.6)
             pdf._sf(6.0, "bold"); pdf.set_text_color(*_cols[i])
-            pdf.cell(_TS, 4, _safe(tk[:4]), align="C")
-        pdf.set_xy(Rx + 18, yy + 0.9)
+            pdf.cell(_LS, 4, _safe(tk[:4]), align="C")
+        # Company name — larger and bolder so it reads as the primary label.
+        pdf.set_xy(Rx + 18, yy + 0.5)
         _nm_w = Rw - 18 - 4
-        pdf._fit_font(_safe(nm), _nm_w, 8.0, "regular", min_size=5.5)
-        pdf.set_text_color(*pdf.body_ink)
-        pdf.cell(_nm_w, 4.4, _safe(nm))
+        pdf._fit_font(_safe(nm), _nm_w, 9.6, "bold", min_size=6.5)
+        pdf.set_text_color(*pdf.ink)
+        pdf.cell(_nm_w, 5.4, _safe(nm))
         yy += 9.0
     yy += 1.0
     pdf.set_draw_color(*_RULE_SOFT); pdf.set_line_width(0.2)
@@ -3332,12 +3401,22 @@ def _cover_page(
             for leaf in leaves:
                 _toc_leaf(leaf)
 
-    # Client / short reports leave a big empty band below the stacks — compose
-    # the void with a large sigil watermark (bleeding off the right) plus a
-    # hex-cluster in the shorter left column, so the page reads as designed.
+    # Client / short reports leave a big empty band below the left stack — fill
+    # the shorter left column with a tall brand photo when one is available
+    # (client-version request), else compose the void with the lighter graphic
+    # treatment (sigil watermark + low-left hex-cluster).
     _bottom = pdf.h - 18.0
     _void_top = max(ly, _yc[0]) + 8.0
+    _left_filled = False
     try:
+        # Prefer a pooled image OTHER than the front cover's (index 0) so the
+        # summary's vertical photo and the cover don't show the same shot.
+        _pool = getattr(pdf, "filler_image_list", None) or []
+        _vimg = (_pool[1] if len(_pool) > 1 else (_pool[0] if _pool else None))
+        if ly + 45 < _yc[0] and _vimg is not None:
+            _left_filled = _cover_left_photo(pdf, x0, ly + 6.0, Lw, _bottom, _vimg)
+        # Sigil watermark — only in a void below BOTH stacks (rare on client
+        # reports, where the TOC runs long); harmless alongside the left photo.
         _sig = getattr(pdf, "cover_sigil_bytes", None)
         if _sig and _bottom - _void_top > 40:
             from PIL import Image as _Img
@@ -3347,9 +3426,8 @@ def _cover_page(
                 pdf.image(io.BytesIO(_sig), x=pdf.w - pdf.r_margin - _sw * 0.60,
                           y=_void_top + ((_bottom - _void_top) - _sh) / 2.0,
                           w=_sw, h=_sh)
-        # Left column is much shorter than the right (client report) → fill its
-        # void with a hex cluster bleeding off the left edge.
-        if ly + 45 < _yc[0] and _bottom - ly > 50:
+        # No photo for the left column → fall back to the hex cluster.
+        if not _left_filled and ly + 45 < _yc[0] and _bottom - ly > 50:
             _sc = min((_bottom - ly) * 0.5, 54.0)
             _hex_cluster(pdf, x0 - _sc * 0.2, _bottom - _sc, _sc,
                          pdf.primary_color, variant=1, opacity=0.13)
@@ -3735,6 +3813,10 @@ def _build_pdf_report(
         pdf.cover_overlay_opacity = float(_b.get("cover_overlay_opacity", 0.55))
     except Exception:
         pdf.cover_overlay_opacity = 0.55
+    # Optional user-selected KEY TERMS for the at-a-glance cover rail (list of
+    # metric keys). None → the default set (see `_cover_page`).
+    _cm = _b.get("cover_metrics")
+    pdf.cover_metrics = list(_cm) if isinstance(_cm, (list, tuple)) and _cm else None
 
     # ── 0. Front cover (toggleable, default on) ────────────────────────────
     if _inc("cover"):

@@ -7,6 +7,7 @@ import Icon from './Icon'
 import { Select } from './fields'
 import FolderConnect from './FolderConnect'
 import CoverPhotoPicker from './CoverPhotoPicker'
+import { useTour, reportTour } from './Tour'
 import { useLocalFolder } from '../lib/localFolder'
 import type { Branding, NoteTerms } from '../api/types'
 import type { RunOpts } from './SetupRail'
@@ -88,6 +89,32 @@ function filenameFrom(res: Response, fallback: string): string {
   return m ? m[1] : fallback
 }
 
+/** Normalize an image value for an <img> src. A loaded branding config may store
+    the image as raw base64 WITHOUT the `data:` URL prefix (the PDF backend
+    tolerates that; the browser doesn't, hence the broken-image previews). Sniff
+    the format from the leading base64 bytes so the preview renders. */
+function dataUrl(v?: string): string | undefined {
+  if (!v) return undefined
+  if (v.startsWith('data:') || v.startsWith('http') || v.startsWith('/')) return v
+  let mime = 'image/png'
+  if (v.startsWith('/9j/')) mime = 'image/jpeg'
+  else if (v.startsWith('R0lGOD')) mime = 'image/gif'
+  else if (v.startsWith('UklGR')) mime = 'image/webp'
+  else if (v.startsWith('iVBOR')) mime = 'image/png'
+  else if (v.includes('ftyp') || v.startsWith('AAAA')) mime = 'image/avif'
+  return `data:${mime};base64,${v}`
+}
+
+/** Image preview that normalizes the src and, if the image still fails to load,
+    simply renders nothing instead of a broken-image icon. */
+function ImgPreview({ src, style }: { src?: string; style?: React.CSSProperties }) {
+  const [ok, setOk] = useState(true)
+  const url = dataUrl(src)
+  useEffect(() => { setOk(true) }, [url])
+  if (!url || !ok) return null
+  return <img src={url} alt="" onError={() => setOk(false)} style={style} />
+}
+
 function Check({ on, indeterminate }: { on: boolean; indeterminate?: boolean }) {
   return (
     <span style={{
@@ -102,6 +129,7 @@ function Check({ on, indeterminate }: { on: boolean; indeterminate?: boolean }) 
 export default function ReportPanel({ terms, opts }: { terms: NoteTerms; opts: RunOpts }) {
   const { t, lang } = useI18n()
   const toast = useToast()
+  const { start: startTour } = useTour()
   const hasLive = !!terms.issue_date
   const groups = useMemo(() => TREE.filter((g) => g.key !== 'live' || hasLive), [hasLive])
   const allKeys = useMemo(() => groups.flatMap((g) => g.items.map((i) => i[0])), [groups])
@@ -126,6 +154,7 @@ export default function ReportPanel({ terms, opts }: { terms: NoteTerms; opts: R
   const coverImgRef = useRef<HTMLInputElement>(null)
   const sigilRef = useRef<HTMLInputElement>(null)
   const backImgRef = useRef<HTMLInputElement>(null)
+  const fillerRef = useRef<HTMLInputElement>(null)
   const brandCfgRef = useRef<HTMLInputElement>(null)
   const titleFontRef = useRef<HTMLInputElement>(null)
   const bodyFontRef = useRef<HTMLInputElement>(null)
@@ -228,6 +257,29 @@ export default function ReportPanel({ terms, opts }: { terms: NoteTerms; opts: R
     if (!file) return
     const r = new FileReader(); r.onload = () => setBrandField(field, String(r.result)); r.readAsDataURL(file)
   }
+  // Append one or more uploaded photos to the report-image pool
+  // (`filler_images_base64`) — the same pool the cover, back page and mid-report
+  // filler bands draw from. Lets a brand add its own imagery without Pexels.
+  const onFillerUpload = (files: FileList | null) => {
+    if (!files || !files.length) return
+    Promise.all(Array.from(files).map((f) => new Promise<string>((res, rej) => {
+      const r = new FileReader(); r.onload = () => res(String(r.result)); r.onerror = rej; r.readAsDataURL(f)
+    }))).then((urls) => setBrand((b) => {
+      const cur = (b.filler_images_base64 as string[] | undefined) ?? []
+      return { ...b, filler_images_base64: [...cur, ...urls] }
+    })).catch(() => {})
+  }
+  // Cover KEY TERMS the user can choose to show on the at-a-glance rail. Order
+  // here is the order they render. Absent selection → the PDF's default set.
+  const COVER_METRIC_KEYS = ['maturity', 'coupon_pa', 'coupon_barrier', 'autocall_barrier', 'knock_in_barrier', 'issue_date', 'issuer'] as const
+  const COVER_METRIC_DEFAULT = ['maturity', 'coupon_pa', 'autocall_barrier', 'knock_in_barrier', 'issue_date', 'issuer']
+  const metricLabel = (k: string) => k === 'issuer' ? t('issuer_name') : t(k)
+  const coverMetricsSel = (brand.cover_metrics as string[] | undefined) ?? COVER_METRIC_DEFAULT
+  const toggleCoverMetric = (k: string) => {
+    const base = (brand.cover_metrics as string[] | undefined) ?? COVER_METRIC_DEFAULT
+    const next = base.includes(k) ? base.filter((m) => m !== k) : [...COVER_METRIC_KEYS].filter((m) => base.includes(m) || m === k)
+    setBrandField('cover_metrics', next.length ? next : undefined)
+  }
   // Embed TTF/OTF font files (base64, keyed by inferred style) into the config so
   // the fonts travel with it and render on the deploy. Style is read off the
   // filename (…Bold, …Italic, …BoldItalic, else Regular) — same convention as
@@ -280,10 +332,16 @@ export default function ReportPanel({ terms, opts }: { terms: NoteTerms; opts: R
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }} className="fade-up">
-      <div style={{ fontSize: 12.5, color: 'var(--text-muted)' }}>{t('report_intro')}</div>
+      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16 }}>
+        <div style={{ fontSize: 12.5, color: 'var(--text-muted)' }}>{t('report_intro')}</div>
+        <button className="btn btn--ghost" style={{ padding: '7px 12px', whiteSpace: 'nowrap', flexShrink: 0 }}
+                onClick={() => startTour(reportTour(t))}>
+          <Icon name="info" size={14} /> {t('rep_tutorial')}
+        </button>
+      </div>
 
       <Panel title={t('report_sections')}>
-        <div style={{ marginBottom: 18 }}>
+        <div style={{ marginBottom: 18 }} data-tour="rep-presets">
           <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--text-muted)', marginBottom: 9 }}>{t('rep_preset')}</div>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7 }}>
             {PRESET_ORDER.map((p) => (
@@ -295,7 +353,7 @@ export default function ReportPanel({ terms, opts }: { terms: NoteTerms; opts: R
           </div>
           <div style={{ fontSize: 11.5, color: 'var(--text-faint)', marginTop: 9, lineHeight: 1.5 }}>{t(`rep_preset_${preset}_desc`)}</div>
         </div>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(230px, 1fr))', gap: '4px 28px' }}>
+        <div data-tour="rep-sections" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(230px, 1fr))', gap: '4px 28px' }}>
           {groups.map((g) => {
             const ks = g.items.map((i) => i[0])
             const onCount = ks.filter((k) => sel.has(k)).length
@@ -321,7 +379,7 @@ export default function ReportPanel({ terms, opts }: { terms: NoteTerms; opts: R
       </Panel>
 
       {/* Branding (collapsible) */}
-      <Panel pad={0}>
+      <div data-tour="rep-branding"><Panel pad={0}>
         <button onClick={() => setBrandOpen((v) => !v)}
           style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 9, background: 'transparent', border: 'none', cursor: 'pointer', fontFamily: 'inherit', padding: '14px 16px', color: 'var(--text)' }}>
           <span style={{ transition: 'transform 0.15s', transform: brandOpen ? 'rotate(90deg)' : 'none', color: 'var(--text-faint)' }}>›</span>
@@ -381,7 +439,7 @@ export default function ReportPanel({ terms, opts }: { terms: NoteTerms; opts: R
                 <Field label={t('brand_logo')}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                     <button className="btn" style={{ padding: '7px 12px' }} onClick={() => logoRef.current?.click()}><Icon name="upload" size={13} /> {t('det_upload_logo')}</button>
-                    {brand.logo_base64 && <img src={brand.logo_base64} alt="logo" style={{ height: 26, borderRadius: 5 }} />}
+                    <ImgPreview src={brand.logo_base64} style={{ height: 26, borderRadius: 5 }} />
                     {brand.logo_base64 && <button className="btn btn--ghost" style={{ padding: '4px 8px', fontSize: 11.5 }} onClick={() => setBrandField('logo_base64', '')}>{t('det_reset_logo')}</button>}
                     <input ref={logoRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={(e) => onImage('logo_base64', e.target.files?.[0])} />
                   </div>
@@ -434,7 +492,7 @@ export default function ReportPanel({ terms, opts }: { terms: NoteTerms; opts: R
                 <Field label={t('brand_alt_logo')}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                     <button className="btn" style={{ padding: '7px 12px' }} onClick={() => altLogoRef.current?.click()}><Icon name="upload" size={13} /> {t('det_upload_logo')}</button>
-                    {brand.cover_logo_base64 && <img src={brand.cover_logo_base64} alt="alt logo" style={{ height: 26, borderRadius: 5, background: brand.primary_color ?? '#1a2e4a', padding: 2 }} />}
+                    <ImgPreview src={brand.cover_logo_base64} style={{ height: 26, borderRadius: 5, background: brand.primary_color ?? '#1a2e4a', padding: 2 }} />
                     {brand.cover_logo_base64 && <button className="btn btn--ghost" style={{ padding: '4px 8px', fontSize: 11.5 }} onClick={() => setBrandField('cover_logo_base64', '')}>{t('det_reset_logo')}</button>}
                     <input ref={altLogoRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={(e) => onImage('cover_logo_base64', e.target.files?.[0])} />
                   </div>
@@ -442,7 +500,7 @@ export default function ReportPanel({ terms, opts }: { terms: NoteTerms; opts: R
                 <Field label={t('brand_cover_sigil')}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                     <button className="btn" style={{ padding: '7px 12px' }} onClick={() => sigilRef.current?.click()}><Icon name="upload" size={13} /> {t('det_upload_logo')}</button>
-                    {brand.cover_sigil_base64 && <img src={brand.cover_sigil_base64} alt="sigil" style={{ height: 26, borderRadius: 5, background: brand.primary_color ?? '#1a2e4a', padding: 2 }} />}
+                    <ImgPreview src={brand.cover_sigil_base64} style={{ height: 26, borderRadius: 5, background: brand.primary_color ?? '#1a2e4a', padding: 2 }} />
                     {brand.cover_sigil_base64 && <button className="btn btn--ghost" style={{ padding: '4px 8px', fontSize: 11.5 }} onClick={() => setBrandField('cover_sigil_base64', '')}>{t('det_reset_logo')}</button>}
                     <input ref={sigilRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={(e) => onImage('cover_sigil_base64', e.target.files?.[0])} />
                   </div>
@@ -450,7 +508,7 @@ export default function ReportPanel({ terms, opts }: { terms: NoteTerms; opts: R
                 <Field label={t('brand_cover_image')}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                     <button className="btn" style={{ padding: '7px 12px' }} onClick={() => coverImgRef.current?.click()}><Icon name="upload" size={13} /> {t('brand_upload_image')}</button>
-                    {brand.cover_image_base64 && <img src={brand.cover_image_base64} alt="cover" style={{ height: 26, borderRadius: 5 }} />}
+                    <ImgPreview src={brand.cover_image_base64} style={{ height: 26, borderRadius: 5 }} />
                     {brand.cover_image_base64 && <button className="btn btn--ghost" style={{ padding: '4px 8px', fontSize: 11.5 }} onClick={() => setBrandField('cover_image_base64', '')}>{t('det_reset_logo')}</button>}
                     <input ref={coverImgRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={(e) => onImage('cover_image_base64', e.target.files?.[0])} />
                   </div>
@@ -458,7 +516,7 @@ export default function ReportPanel({ terms, opts }: { terms: NoteTerms; opts: R
                 <Field label={t('brand_back_image')}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                     <button className="btn" style={{ padding: '7px 12px' }} onClick={() => backImgRef.current?.click()}><Icon name="upload" size={13} /> {t('brand_upload_image')}</button>
-                    {brand.back_image_base64 && <img src={brand.back_image_base64} alt="back" style={{ height: 26, borderRadius: 5 }} />}
+                    <ImgPreview src={brand.back_image_base64} style={{ height: 26, borderRadius: 5 }} />
                     {brand.back_image_base64 && <button className="btn btn--ghost" style={{ padding: '4px 8px', fontSize: 11.5 }} onClick={() => setBrandField('back_image_base64', '')}>{t('det_reset_logo')}</button>}
                     <input ref={backImgRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={(e) => onImage('back_image_base64', e.target.files?.[0])} />
                   </div>
@@ -474,12 +532,35 @@ export default function ReportPanel({ terms, opts }: { terms: NoteTerms; opts: R
                   from the note's underlyings. MULTI-select: the chosen pool drives
                   the cover, the back page and the empty-space filler bands (each
                   gap cycles to the next photo). Overlay still applies. */}
-              <div style={{ marginTop: 14 }}>
+              <div style={{ marginTop: 14 }} data-tour="rep-photos">
                 <div style={{ fontSize: 11.5, color: 'var(--text-muted)', marginBottom: 2 }}>{t('cover_lib')}</div>
-                <div style={{ fontSize: 11, color: 'var(--text-faint)', marginBottom: 6, lineHeight: 1.5 }}>{t('cover_lib_multi_hint')}</div>
+                <div style={{ fontSize: 11, color: 'var(--text-faint)', marginBottom: 8, lineHeight: 1.5 }}>{t('cover_lib_multi_hint')}</div>
+                {/* Upload your own report photos straight into the pool — works
+                    independently of the Pexels library. */}
+                <div style={{ marginBottom: 8 }}>
+                  <button className="btn" style={{ padding: '7px 12px' }} onClick={() => fillerRef.current?.click()}>
+                    <Icon name="upload" size={13} /> {t('rep_photos_upload')}
+                  </button>
+                  <input ref={fillerRef} type="file" accept="image/*" multiple style={{ display: 'none' }}
+                         onChange={(e) => { onFillerUpload(e.target.files); e.target.value = '' }} />
+                </div>
                 <CoverPhotoPicker terms={terms}
                                   selected={brand.filler_images_base64 ?? []}
                                   onChange={(urls) => setBrandField('filler_images_base64', urls)} />
+              </div>
+
+              {/* Cover key terms — pick which metrics show on the at-a-glance rail. */}
+              <div style={{ marginTop: 16 }} data-tour="rep-metrics">
+                <div style={{ fontSize: 11.5, color: 'var(--text-muted)', marginBottom: 2 }}>{t('cover_metrics')}</div>
+                <div style={{ fontSize: 11, color: 'var(--text-faint)', marginBottom: 8, lineHeight: 1.5 }}>{t('cover_metrics_hint')}</div>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7 }}>
+                  {COVER_METRIC_KEYS.map((k) => (
+                    <button key={k} type="button" className="preset-pill" data-on={coverMetricsSel.includes(k)}
+                            onClick={() => toggleCoverMetric(k)}>
+                      {metricLabel(k)}
+                    </button>
+                  ))}
+                </div>
               </div>
             </div>
 
@@ -493,9 +574,9 @@ export default function ReportPanel({ terms, opts }: { terms: NoteTerms; opts: R
             </div>
           </div>
         )}
-      </Panel>
+      </Panel></div>
 
-      <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+      <div data-tour="rep-generate" style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
         <button className="btn btn--primary" onClick={generate} disabled={status === 'running' || none} style={{ padding: '12px 22px', fontSize: 14 }}>
           <Icon name={status === 'running' ? 'spinner' : 'chart'} size={16} />
           {status === 'running' ? t('report_generating') : t('report_generate')}
