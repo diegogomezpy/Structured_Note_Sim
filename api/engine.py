@@ -594,10 +594,13 @@ def run_backtest_api(terms: NoteTerms, *, history_years: float | None = None,
     bt = bt.copy()
     bt["Outcome"] = [_label(cq, ki) for cq, ki in zip(bt["Call Quarter"], bt["Knock-in"])]
     ac_periods = sorted({int(cq) for cq in bt["Call Quarter"] if int(cq) > 0})
-    color_map = {"Held to maturity": "#334155", "Knock-in": "#dc2626"}
+    # Green design language: autocall periods on a light-emerald→ink green ramp,
+    # held = teal, knock-in = amber (no red). Greens/teal/amber pass through the
+    # PDF rebrand unchanged, so the backtest charts read on-brand in both views.
+    color_map = {"Held to maturity": "#2e7e8c", "Knock-in": "#c9772d"}
     for i, q in enumerate(ac_periods):
         t = i / max(1, len(ac_periods) - 1)
-        color_map[f"Autocalled P{q}"] = _lerp_hex("#93c5fd", "#1e3a8a", t)
+        color_map[f"Autocalled P{q}"] = _lerp_hex("#9bd8b4", "#0b3d2e", t)
 
     figures = {
         "worst_asset_pie": _fig(charts.build_worst_asset_pie(bt, tr)),
@@ -1124,9 +1127,9 @@ def _backtest_for_pdf(terms: NoteTerms, tr, history_years: float | None) -> tupl
         return "Knock-in" if bool(ki) else "Held to maturity"
     bt["Outcome"] = [_label(cq, ki) for cq, ki in zip(bt["Call Quarter"], bt["Knock-in"])]
     ac_periods = sorted({int(cq) for cq in bt["Call Quarter"] if int(cq) > 0})
-    color_map = {"Held to maturity": "#334155", "Knock-in": "#dc2626"}
+    color_map = {"Held to maturity": "#2e7e8c", "Knock-in": "#c9772d"}
     for i, q in enumerate(ac_periods):
-        color_map[f"Autocalled P{q}"] = _lerp_hex("#93c5fd", "#1e3a8a", i / max(1, len(ac_periods) - 1))
+        color_map[f"Autocalled P{q}"] = _lerp_hex("#9bd8b4", "#0b3d2e", i / max(1, len(ac_periods) - 1))
 
     bt_summary = dict(summary)
     ki_rows = bt[bt["Knock-in"]]

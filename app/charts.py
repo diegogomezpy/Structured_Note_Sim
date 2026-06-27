@@ -43,6 +43,9 @@ _RED          = "#dc2626"   # barrier / loss / negative
 _GREY         = "#6b7280"   # warm grey — secondary lines/text
 _GREEN        = "#16a34a"   # coupon paid / positive event
 _WHITE        = "white"
+# Brand-neutral green/teal categorical ramp for discrete multi-slice charts
+# (e.g. the worst-asset donut) so they read on-brand instead of a clashing blue.
+_CATEGORICAL  = ["#007953", "#2e7e8c", "#9aa80f", "#2bc275", "#0b3d2e", "#1c5566"]
 
 # Extra categorical colours for multi-asset charts (>3 underlyings)
 _SERIES_COLORS = [_BLUE, _NAVY, _BLUE_LIGHT, "#0891b2", "#7c3aed", "#0d9488"]
@@ -694,9 +697,11 @@ def build_worst_asset_pie(
         names=tr("asset"),
         values=tr("count"),
         title=title,
-        hole=0.4,
-        color_discrete_sequence=[_BLUE, _BLUE_LIGHT, _NAVY],
+        hole=0.55,
+        color_discrete_sequence=_CATEGORICAL,
     )
+    fig.update_traces(marker=dict(line=dict(color="#ffffff", width=1.5)),
+                      textposition="inside", textinfo="percent")
     return _apply_theme(fig)
 
 

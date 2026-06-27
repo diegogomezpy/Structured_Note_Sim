@@ -1127,11 +1127,13 @@ class _NotePDF(FPDF):
 
     def secondary_head(self, number: str, kicker: str, title: str,
                        min_room: float = 40.0, badge: str | None = None,
-                       badge_color: tuple | None = None):
+                       badge_color: tuple | None = None,
+                       badge_logo: bytes | None = None):
         """Reference-section secondary head: a lime chamfer number-chip beside a
         green eyebrow kicker over an ink title, on a soft rule (Note Terms,
-        Issuer, each Underlying). An optional right-aligned `badge` prints a
-        small filled ticker/sector chip (used by the underlying pages)."""
+        Issuer, each Underlying). A right-aligned company logo (`badge_logo`)
+        takes precedence; otherwise an optional `badge` prints a small filled
+        ticker chip (used by the underlying pages)."""
         if self.page_no() == 0:
             self.add_page()
         elif self.get_y() > self.h - self.b_margin - min_room:
@@ -1151,7 +1153,16 @@ class _NotePDF(FPDF):
         tw = w - chip - 5
         self._eyebrow(tx, y0 + 0.5, kicker, self.primary_color,
                       size=7.0, tracking=0.5, w=tw)
-        # Optional right-aligned ticker badge (filled chip), e.g. "DELL".
+        # Right-aligned identity: the company logo when available, else a small
+        # filled ticker chip.
+        if badge_logo:
+            try:
+                lw = 12.0
+                self.image(io.BytesIO(badge_logo), x=x0 + w - lw, y=y0, w=lw, h=lw)
+                tw -= lw + 3
+                badge = None
+            except Exception:
+                badge_logo = None
         if badge:
             bc = badge_color or self.primary_color
             self._sf(8, "bold")
@@ -1172,6 +1183,36 @@ class _NotePDF(FPDF):
         self.rect(x0, ry, w, 0.4, style="F")
         self.set_y(ry + 4)
         self.set_text_color(*_TEXT)
+
+    def _decorate_void(self, variant: int = 0, min_gap: float = 70.0,
+                       sigil: bytes | None = None) -> None:
+        """If a large empty band remains before the footer, fill it with a faint
+        brand decoration bleeding off the bottom-right corner — the sigil motif
+        when supplied, else a hex-cluster. Decoration only: drawn well clear of
+        any text, never on a cover page."""
+        if self._is_cover or self.page_no() in self._cover_pages:
+            return
+        y = self.get_y()
+        bottom = self.h - 26
+        if bottom - y < min_gap:
+            return
+        try:
+            if sigil:
+                from PIL import Image
+                iw, ih = Image.open(io.BytesIO(sigil)).size
+                sw = 78.0
+                sh = sw * ih / iw
+                with self.local_context(fill_opacity=0.05):
+                    self.image(io.BytesIO(sigil),
+                               x=self.w - self.r_margin - sw * 0.55,
+                               y=bottom - sh * 0.62, w=sw, h=sh)
+            else:
+                scale = 42.0
+                _hex_cluster(self, self.w - self.r_margin - scale * 0.66,
+                             bottom - scale * 0.66, scale, self.primary_color,
+                             variant=variant, opacity=0.06)
+        except Exception:
+            pass
 
     def section_divider(self, number: str, kicker: str, heading: str):
         """Primary section head for an analytical lens (Monte Carlo → Backtest →
@@ -1695,6 +1736,7 @@ class _NotePDF(FPDF):
                 self.cell(chip_w, 5, self._safe(val), align="C")
                 cx += chip_w + gap
         self.set_y(y0 + box_h + 4)
+        self._decorate_void(variant=1)
 
     def underlying_block(self, long_name: str, logo_bytes: bytes | None,
                          subtitle: str, metrics: list[tuple[str, str]],
@@ -1715,7 +1757,8 @@ class _NotePDF(FPDF):
         self.add_page()
         self.secondary_head("03", _t("kick_underlying", self.lang),
                             self._safe(long_name), badge=ticker,
-                            badge_color=(color or self.primary_color))
+                            badge_color=(color or self.primary_color),
+                            badge_logo=logo_bytes)
         if subtitle:
             self._eyebrow(x0, self.get_y(), subtitle, self.muted,
                           size=7.5, tracking=0.4, w=w)
@@ -1800,6 +1843,8 @@ class _NotePDF(FPDF):
             except Exception:
                 pass
             self.set_y(top + ch + 2 * fpad + 4)
+        # Fill any remaining empty band with a faint hex decoration.
+        self._decorate_void(variant=2)
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -2530,6 +2575,32 @@ def _exec_bullets(terms, results, bt_summary, live_data, lang: str) -> list[str]
     return b
 
 
+def _cover_crop(raw: bytes | None, aspect: float) -> bytes | None:
+    """Center-crop an image to `aspect` (= width / height) so a full-bleed
+    placement fills the box without stretching (CSS object-fit: cover). Returns
+    PNG bytes; on any failure returns the input unchanged."""
+    if not raw:
+        return raw
+    try:
+        from PIL import Image
+        im = Image.open(io.BytesIO(raw)).convert("RGB")
+        w, h = im.size
+        cur = w / h
+        if abs(cur - aspect) < 1e-3:
+            return raw
+        if cur > aspect:                       # too wide → crop the sides
+            nw = int(round(h * aspect)); x0 = (w - nw) // 2
+            im = im.crop((x0, 0, x0 + nw, h))
+        else:                                  # too tall → crop top/bottom
+            nh = int(round(w / aspect)); y0 = (h - nh) // 2
+            im = im.crop((0, y0, w, y0 + nh))
+        buf = io.BytesIO(); im.save(buf, "PNG")
+        return buf.getvalue()
+    except Exception as e:
+        print(f"[PDF cover] crop skipped: {e}")
+        return raw
+
+
 def _front_cover_page(pdf: _NotePDF, terms, lang: str, report_title: str, website: str):
     """Full-bleed branded cover (page 1, toggleable): brand-colour background, the
     centred firm logo, a 'Nota Estructurada' eyebrow, the note name and the report
@@ -2549,7 +2620,8 @@ def _front_cover_page(pdf: _NotePDF, terms, lang: str, report_title: str, websit
     pdf.rect(0, 0, W, H, style="F")
     if getattr(pdf, "cover_image_bytes", None):
         try:
-            pdf.image(io.BytesIO(pdf.cover_image_bytes), x=0, y=0, w=W, h=H)
+            _cov = _cover_crop(pdf.cover_image_bytes, W / H)
+            pdf.image(io.BytesIO(_cov), x=0, y=0, w=W, h=H)
         except Exception:
             pass
         _op = getattr(pdf, "cover_overlay_opacity", 0.0)
@@ -2655,7 +2727,8 @@ def _full_bleed_disclaimer(pdf: _NotePDF, lang: str, text: str, website: str = "
     # the back page matches the cover treatment.
     if getattr(pdf, "back_image_bytes", None):
         try:
-            pdf.image(io.BytesIO(pdf.back_image_bytes), x=0, y=0, w=W, h=H)
+            _bk = _cover_crop(pdf.back_image_bytes, W / H)
+            pdf.image(io.BytesIO(_bk), x=0, y=0, w=W, h=H)
         except Exception:
             pass
         _op = getattr(pdf, "cover_overlay_opacity", 0.0)
@@ -2806,8 +2879,16 @@ def _cover_page(
     pdf.set_draw_color(*pdf.primary_color); pdf.set_line_width(0.7)
     pdf.line(x0, 23.5, pdf.w - pdf.r_margin, 23.5)
 
-    # ── Masthead — dark chamfer panel + KPI strip ──────────────────────────
-    y_m, MH, pad = 28.5, 58.0, 9.0
+    # ── Masthead — dark chamfer panel (+ KPI strip only when analytics exist) ──
+    # The analytical KPIs (IRR / autocall / knock-in / mean historical IRR) are
+    # only shown when the report carries Monte-Carlo or backtest output. For a
+    # client / terms-only report there is no analysis and the would-be KPIs are
+    # just the key terms already in the rail — so drop the strip and use a
+    # compact masthead instead of leaving a big empty band.
+    _has_mc = len(results.get("annualized_returns", [])) > 0
+    _show_kpis = _has_mc or bool(bt_summary)
+    y_m, pad = 28.5, 9.0
+    MH = 58.0 if _show_kpis else 34.0
     _fill_chamfer(pdf, x0, y_m, W, MH, pdf.ink, c=7.5, q=2.0, r=5.0)
     _hex_cluster(pdf, x0 + W - 42, y_m - 6, 30, _WHITE, variant=0, opacity=0.12)
     pdf._eyebrow(x0 + pad, y_m + 7, f"{eyebrow}  ·  {today_long}", pdf.lime,
@@ -2840,42 +2921,39 @@ def _cover_page(
     pdf._sf(9.5, "regular"); pdf.set_text_color(*INK_SUB)
     pdf.cell(W - 2 * pad, 5, _safe(_sub))
 
-    # KPI strip — adaptive (analytical when the sim ran, else terms-based).
-    _has_mc = len(results.get("annualized_returns", [])) > 0
-    if _has_mc:
-        kpis = [(_t("expected_irr", lang),  f"{results.get('expected_irr', 0):.2%}"),
-                (_t("prob_autocall", lang), f"{results.get('prob_autocall', 0):.1%}"),
-                (_t("prob_knock_in", lang), f"{results.get('prob_knock_in_total', 0):.2%}")]
-        if bt_summary:
-            kpis.append((_t("mean_hist_irr", lang), f"{bt_summary.get('mean_irr', 0):.2%}"))
-        else:
-            kpis.append((_t("expected_total_return", lang),
-                         f"{results.get('expected_total_return', 0):.2%}"))
-    elif bt_summary:
-        kpis = [(_t("mean_hist_irr", lang),  f"{bt_summary.get('mean_irr', 0):.2%}"),
-                (_t("p_autocall", lang),     f"{bt_summary.get('prob_called', 0):.1%}"),
-                (_t("prob_knock_in", lang),  f"{bt_summary.get('prob_knock_in', 0):.2%}"),
-                (_t("coupon_pa", lang),      f"{terms.coupon_pa * 100:.2f}%")]
-    else:
-        kpis = [(_t("coupon_pa", lang),         f"{terms.coupon_pa * 100:.2f}%"),
-                (_t("maturity", lang),          f"{terms.maturity:g}Y"),
-                (_t("autocall_barrier", lang),  f"{terms.autocall_barrier:.0%}"),
-                (_t("ki_barrier", lang).split(' (')[0], f"{terms.knock_in_barrier:.0%}")]
+    # KPI strip — analytical only (Monte Carlo and/or backtest). Skipped for a
+    # client / terms-only report (compact masthead), where these would just echo
+    # the key-terms rail.
+    if _show_kpis:
+        if _has_mc:
+            kpis = [(_t("expected_irr", lang),  f"{results.get('expected_irr', 0):.2%}"),
+                    (_t("prob_autocall", lang), f"{results.get('prob_autocall', 0):.1%}"),
+                    (_t("prob_knock_in", lang), f"{results.get('prob_knock_in_total', 0):.2%}")]
+            if bt_summary:
+                kpis.append((_t("mean_hist_irr", lang), f"{bt_summary.get('mean_irr', 0):.2%}"))
+            else:
+                kpis.append((_t("expected_total_return", lang),
+                             f"{results.get('expected_total_return', 0):.2%}"))
+        else:  # backtest only
+            kpis = [(_t("mean_hist_irr", lang),  f"{bt_summary.get('mean_irr', 0):.2%}"),
+                    (_t("p_autocall", lang),     f"{bt_summary.get('prob_called', 0):.1%}"),
+                    (_t("prob_knock_in", lang),  f"{bt_summary.get('prob_knock_in', 0):.2%}"),
+                    (_t("coupon_pa", lang),      f"{terms.coupon_pa * 100:.2f}%")]
 
-    strip_y = y_m + MH - 24
-    pdf.set_fill_color(*_blend(pdf.ink, _WHITE, 0.18))
-    pdf.rect(x0 + pad, strip_y, W - 2 * pad, 0.3, style="F")
-    kw = (W - 2 * pad) / len(kpis)
-    for i, (lbl, val) in enumerate(kpis):
-        cx = x0 + pad + i * kw
-        pdf.set_fill_color(*pdf.lime)
-        pdf.rect(cx, strip_y + 4, 0.8, 14, style="F")
-        pdf.set_xy(cx + 3, strip_y + 4)
-        pdf._sf(6.3, "body_bold"); pdf.set_text_color(*INK_SUB)
-        pdf.multi_cell(kw - 4, 3.1, _safe(lbl.upper()), align="L")
-        pdf.set_xy(cx + 3, strip_y + 12)
-        pdf._sf(13.5, "bold"); pdf.set_text_color(*_WHITE)
-        pdf.cell(kw - 4, 7, _safe(val))
+        strip_y = y_m + MH - 24
+        pdf.set_fill_color(*_blend(pdf.ink, _WHITE, 0.18))
+        pdf.rect(x0 + pad, strip_y, W - 2 * pad, 0.3, style="F")
+        kw = (W - 2 * pad) / len(kpis)
+        for i, (lbl, val) in enumerate(kpis):
+            cx = x0 + pad + i * kw
+            pdf.set_fill_color(*pdf.lime)
+            pdf.rect(cx, strip_y + 4, 0.8, 14, style="F")
+            pdf.set_xy(cx + 3, strip_y + 4)
+            pdf._sf(6.3, "body_bold"); pdf.set_text_color(*INK_SUB)
+            pdf.multi_cell(kw - 4, 3.1, _safe(lbl.upper()), align="L")
+            pdf.set_xy(cx + 3, strip_y + 12)
+            pdf._sf(13.5, "bold"); pdf.set_text_color(*_WHITE)
+            pdf.cell(kw - 4, 7, _safe(val))
 
     # ── Body: two vertical stacks (left ≈ 100mm, right rail ≈ 70mm) ─────────
     Lw, Rx, Rw = 100.0, x0 + 108.0, W - 108.0
@@ -2976,7 +3054,7 @@ def _cover_page(
     if pdf.issuer:
         mini.append((_t("issuer", lang), pdf.issuer))
     n_a = len(asset_names or [])
-    rail_h = 5.0 + 5.5 + n_a * 8.5 + 5.0 + 5.5 + len(mini) * 8.0 + 3.0
+    rail_h = 5.0 + 5.5 + n_a * 9.0 + 5.0 + 5.5 + len(mini) * 8.0 + 3.0
     pdf.set_fill_color(*pdf.panel_color)
     try:
         pdf.rect(Rx, ry, Rw, rail_h, style="F", round_corners=True, corner_radius=3)
@@ -2993,20 +3071,32 @@ def _cover_page(
     yy += 5.5
     _cols = _ul_colors(n_a)
     for i, nm in enumerate(asset_names or []):
-        tk = (logo_tickers or {}).get(nm) or str(nm)[:5].upper()
-        pdf.set_fill_color(*_cols[i])
-        try:
-            pdf.rect(Rx + 5, yy, 11, 6, style="F", round_corners=True, corner_radius=1.2)
-        except TypeError:
-            pdf.rect(Rx + 5, yy, 11, 6, style="F")
-        pdf.set_xy(Rx + 5, yy + 0.7); pdf._sf(6.3, "bold"); pdf.set_text_color(*_WHITE)
-        pdf.cell(11, 5, _safe(tk), align="C")
-        pdf.set_xy(Rx + 19, yy + 0.9)
-        _nm_w = Rw - 19 - 4
+        # Company logo when available; fall back to a colored ticker chip.
+        _ld = ((logo_overrides or {}).get(nm)
+               or _load_ticker_logo(nm, (logo_urls or {}).get(nm, ""),
+                                    (logo_tickers or {}).get(nm)))
+        _drew = False
+        if _ld:
+            try:
+                pdf.image(io.BytesIO(_ld), x=Rx + 5, y=yy - 0.4, w=8, h=8)
+                _drew = True
+            except Exception:
+                _drew = False
+        if not _drew:
+            tk = (logo_tickers or {}).get(nm) or str(nm)[:5].upper()
+            pdf.set_fill_color(*_cols[i])
+            try:
+                pdf.rect(Rx + 5, yy, 11, 6, style="F", round_corners=True, corner_radius=1.2)
+            except TypeError:
+                pdf.rect(Rx + 5, yy, 11, 6, style="F")
+            pdf.set_xy(Rx + 5, yy + 0.7); pdf._sf(6.3, "bold"); pdf.set_text_color(*_WHITE)
+            pdf.cell(11, 5, _safe(tk), align="C")
+        pdf.set_xy(Rx + 18, yy + 0.9)
+        _nm_w = Rw - 18 - 4
         pdf._fit_font(_safe(nm), _nm_w, 8.0, "regular", min_size=5.5)
         pdf.set_text_color(*pdf.body_ink)
         pdf.cell(_nm_w, 4.4, _safe(nm))
-        yy += 8.5
+        yy += 9.0
     yy += 1.0
     pdf.set_draw_color(*_RULE_SOFT); pdf.set_line_width(0.2)
     pdf.line(Rx + 5, yy, Rx + Rw - 5, yy)
@@ -3112,6 +3202,27 @@ def _cover_page(
         else:
             for leaf in leaves:
                 _toc_leaf(leaf)
+
+    # Client / short reports leave a big empty band below both stacks — fill it
+    # with a faint brand decoration (the sigil motif, else a hex cluster) so the
+    # page doesn't read as half-empty.
+    _void_top = max(ly, _yc[0]) + 6
+    if (pdf.h - 16) - _void_top > 55:
+        _sig = getattr(pdf, "cover_sigil_bytes", None)
+        try:
+            if _sig:
+                from PIL import Image as _Img
+                _iw, _ih = _Img.open(io.BytesIO(_sig)).size
+                _sw = 96.0; _sh = _sw * _ih / _iw
+                with pdf.local_context(fill_opacity=0.05):
+                    pdf.image(io.BytesIO(_sig), x=(pdf.w - _sw) / 2,
+                              y=_void_top + ((pdf.h - 16 - _void_top) - _sh) / 2,
+                              w=_sw, h=_sh)
+            else:
+                _hex_cluster(pdf, pdf.w - pdf.r_margin - 46, pdf.h - 16 - 46,
+                             46, pdf.primary_color, variant=0, opacity=0.06)
+        except Exception:
+            pass
 
     pdf._is_cover = False
     # Re-enable auto-page-break for all content pages that follow
@@ -3920,19 +4031,34 @@ def _build_pdf_report(
     if bt_summary:                                      _g_active.add("bt")
     if underlying_metrics:                              _g_active.add("ul")
     _glos = _GLOSSARY.get(lang, _GLOSSARY["en"])
+    _entries = []
     for _i, (_term, _defn) in enumerate(_glos):
         _tags = _GLOSSARY_TAGS[_i] if _i < len(_GLOSSARY_TAGS) else {"core"}
         if _g_active.isdisjoint(_tags):
             continue
-        if pdf.get_y() > pdf.h - 34:
-            pdf.add_page()
-        pdf._sf(8, "semibold")
-        pdf.set_text_color(*pdf.primary_color)
-        pdf.write(4.4, pdf._safe(f"{_term} — "))
-        pdf._sf(8, "regular")
-        pdf.set_text_color(*_TEXT)
-        pdf.write(4.4, pdf._safe(_defn))
-        pdf.ln(6.2)
+        _entries.append((_term, _defn))
+    # Two-column flow (the prototype layout): green bold term + ' — ' + grey
+    # definition, each a break-avoiding paragraph, balanced across the columns.
+    pdf.ln(1)
+    try:
+        with pdf.text_columns(ncols=2, gutter=9, balance=True) as _cols:
+            for _term, _defn in _entries:
+                _par = _cols.paragraph(bottom_margin=2.4, line_height=1.35)
+                pdf._sf(8, "semibold"); pdf.set_text_color(*pdf.primary_color)
+                _par.write(pdf._safe(f"{_term} — "))
+                pdf._sf(8, "regular"); pdf.set_text_color(*pdf.body_ink)
+                _par.write(pdf._safe(_defn))
+                _cols.end_paragraph()
+    except Exception as _e:                     # robust fallback to single-column flow
+        print(f"[report] glossary columns fell back: {_e}")
+        for _term, _defn in _entries:
+            if pdf.get_y() > pdf.h - 34:
+                pdf.add_page()
+            pdf._sf(8, "semibold"); pdf.set_text_color(*pdf.primary_color)
+            pdf.write(4.4, pdf._safe(f"{_term} — "))
+            pdf._sf(8, "regular"); pdf.set_text_color(*pdf.body_ink)
+            pdf.write(4.4, pdf._safe(_defn))
+            pdf.ln(6.2)
     pdf.set_text_color(*_TEXT)
 
     # ── 8. Disclaimers (own back page) ─────────────────────────────────────
