@@ -2,9 +2,9 @@
 
 A Python framework for calibrating, simulating, and pricing a **multi-asset Heston stochastic volatility model** against real market data, with a full structured product engine for **autocallable and structured notes** — Phoenix Memory, Reverse Convertible, Growth/Classic (step-down) autocalls, and Capital-Protected notes, with an optional One Star best-of overlay — on any basket of equity underlyings (single-asset notes supported).
 
-Built as an internal tool and deployed as an interactive dashboard with a branded, bilingual PDF report.
+Built as an internal tool and deployed as a single-page **React** web app backed by a **FastAPI** service, with a branded, bilingual PDF report.
 
-**▶️ Live app: [structurednotesim.streamlit.app](https://structurednotesim.streamlit.app/)**
+**▶️ Live app: [structured-note-sim-doemm2affa-tl.a.run.app](https://structured-note-sim-doemm2affa-tl.a.run.app/)**
 
 ---
 
@@ -16,7 +16,7 @@ The project covers the full quantitative workflow:
 2. **Simulation** — simulate correlated multi-asset paths under the physical measure with Milstein discretisation, antithetic variates, and a Student-t copula
 3. **Pricing** — evaluate autocallable note payoffs across all simulated scenarios with full memory coupon, guaranteed coupon, and growth-autocall premium support
 4. **Backtesting** — replay the note on every historical issue date using realized prices
-5. **Dashboard** — interactive bilingual (EN/ES) Streamlit app that frames the note through three lenses (simulate → backtest → live), with a setup page, live "Current Performance" tracking, and a branded one-click PDF report
+5. **Web app** — interactive bilingual (EN/ES) React single-page app (FastAPI backend) that frames the note through three lenses (simulate → backtest → live), with a setup page, live "Current Performance" tracking, and a branded one-click PDF report
 
 ---
 
@@ -24,34 +24,45 @@ The project covers the full quantitative workflow:
 
 ```
 .
-├── core/
-│   ├── calibrator.py          # Historical Heston calibration pipeline
-│   ├── simulator.py           # Multi-asset Heston Monte Carlo engine (run(engine=...))
-│   ├── simulator_cpp.py       # Thin wrapper over the optional compiled C++ engine
-│   ├── note.py                # NoteTerms dataclass + vectorized payoff engine
-│   ├── backtest.py            # Historical backtest using realized prices
-│   └── __init__.py            # Public API: HestonParams, NoteTerms, price_note, ...
+├── core/                      # Pure-quant library (no web / Plotly / file-I/O imports)
+│   ├── calibrator.py          #   Historical Heston calibration pipeline
+│   ├── simulator.py           #   Multi-asset Heston Monte Carlo engine (run(engine=...))
+│   ├── simulator_cpp.py       #   Thin wrapper over the optional compiled C++ engine
+│   ├── note.py                #   NoteTerms dataclass + vectorized payoff engine
+│   ├── note_description.py    #   Natural-language note summary generator
+│   ├── backtest.py            #   Historical backtest using realized prices
+│   └── __init__.py            #   Public API: HestonParams, NoteTerms, price_note, ...
 │
 ├── data/
-│   ├── loader.py              # load_prices() — yfinance / CSV / DataFrame backends
+│   ├── loader.py              # load_prices() / load_dividends() — yfinance / CSV / DataFrame
 │   └── __init__.py
 │
-├── app/
-│   ├── app.py                 # Streamlit dashboard (setup page + results dashboard)
-│   ├── charts.py              # All Plotly figure builders as pure functions
-│   ├── pdf_report.py          # Branded PDF report generator (fpdf2 + kaleido)
-│   ├── translations.py        # Bilingual string registry (EN/ES)
-│   ├── underlyings.py         # Selectable ticker universe + logo maps
-│   ├── style.css              # Streamlit theme (matches the PDF)
+├── api/                       # FastAPI backend — serves the JSON API *and* the built React bundle
+│   ├── main.py                #   Routes (simulate, backtest, report, quotes, cover photos, ...)
+│   ├── engine.py              #   Wires core/ + data/ → JSON for the UI; reuses app/ figures + PDF
+│   ├── requirements.txt       #   fastapi + uvicorn (quant deps live in the root requirements.txt)
 │   └── __init__.py
 │
-├── note_configs/             # 10 ready-to-use JSON term sheets (upload in the app)
+├── app/                       # Quant-only helpers shared by the API (no UI framework)
+│   ├── charts.py              #   All Plotly figure builders as pure functions (→ JSON)
+│   ├── pdf_report.py          #   Branded bilingual PDF generator (fpdf2 + kaleido)
+│   ├── translations.py        #   Bilingual string registry (EN/ES) — PDF + chart labels
+│   ├── underlyings.py         #   Selectable ticker universe + logo maps
+│   └── __init__.py
+│
+├── web/                       # React + TypeScript + Vite single-page front-end
+│   ├── src/                   #   App.tsx, components/, lib/, i18n/, theme/, api/
+│   ├── public/
+│   ├── package.json
+│   └── vite.config.ts         #   dev server proxies /api → http://localhost:8010
+│
+├── note_configs/             # 10 ready-to-use JSON term sheets (load in the app)
 │                             #   HSBC ×2, BBVA, Citi, Santander ×3, Barclays,
 │                             #   BNP Paribas, Julius Baer
 ├── branding/                 # Firm branding JSON + bundled ticker logos
 │   ├── branding_example.json #   documented template (all keys)
 │   └── ticker_logos/         #   optional local PNG logos
-├── fonts/                    # IBM Plex Sans (embedded in the PDF)
+├── fonts/                    # IBM Plex Sans (embedded in the PDF); fonts/brand/ for custom TTFs
 ├── cpp/                      # Optional compiled engine (pybind11 + block-SIMD + std::thread)
 │   ├── heston_kernel.cpp     #   the kernel; validated against numpy by convergence
 │   ├── CMakeLists.txt        #   build (scikit-build-core); `pip install ./cpp`
@@ -60,11 +71,9 @@ The project covers the full quantitative workflow:
 │   ├── verify_pdf.py         # Standalone PDF-render harness (needs PyMuPDF)
 │   └── compare_engines.py    # Validate + benchmark the C++ engine vs numpy
 │
-├── .streamlit/
-│   └── config.toml           # Light theme + navy/blue palette
-│
-├── packages.txt              # apt packages for Streamlit Cloud (chromium → PDF export)
-├── requirements.txt
+├── design_lang/              # Design-system reference (Mercator tokens + page snapshots)
+├── Dockerfile                # Single-image build: Vite bundle + C++ wheel + FastAPI runtime
+├── requirements.txt          # Quant / runtime Python deps
 └── README.md
 ```
 
@@ -129,7 +138,7 @@ sim.run()                 # numpy reference (default) — what the app uses
 sim.run(engine="cpp")     # compiled engine; raises ImportError if not built
 ```
 
-It is block-SIMD (the per-step `exp`/`sqrt`/`sin`/`cos` vectorise across a contiguous block of paths via a vector libm) with a branch-free Box–Muller xoshiro256++ RNG, and parallelised across path-blocks with `std::thread` (no OpenMP/libomp dependency). It keeps full daily paths and is validated against numpy by **convergence of statistics**, not bit-equality (different RNG stream). Build it with `pip install ./cpp`; in the app, pick the engine in *Simulation engine settings*. See [`cpp/README.md`](cpp/README.md) for build, benchmarks, and the threads knob (`HESTON_NUM_THREADS`).
+It is block-SIMD (the per-step `exp`/`sqrt`/`sin`/`cos` vectorise across a contiguous block of paths via a vector libm) with a branch-free Box–Muller xoshiro256++ RNG, and parallelised across path-blocks with `std::thread` (no OpenMP/libomp dependency). It keeps full daily paths and is validated against numpy by **convergence of statistics**, not bit-equality (different RNG stream). The Docker image **builds and bundles this engine** (a portable wheel compiled in a dedicated stage), so `engine="cpp"` is available in production and the app falls back to numpy if it's ever absent. For local Python use, build it with `pip install ./cpp` into the same interpreter that runs the API; in the app, pick the engine in the run settings. See [`cpp/README.md`](cpp/README.md) for build, benchmarks, and the threads knob (`HESTON_NUM_THREADS`).
 
 ---
 
@@ -218,7 +227,7 @@ The `NoteTerms` dataclass captures the full specification of an autocallable not
 
 ### Reference Term Sheets
 
-Thirteen real term sheets are included as ready-to-use JSON configs (upload any of them on the setup page):
+Ten real term sheets are included as ready-to-use JSON configs (load any of them on the setup page):
 
 | File | Issuer | Type | Underlyings | Tenor | Coupon | KI |
 |------|--------|------|-------------|-------|--------|-----|
@@ -328,25 +337,36 @@ print(f"Knock-in:    {summary['prob_knock_in']:.1%}")
 
 ---
 
-## Dashboard
+## Web App
+
+The front-end is a React + TypeScript (Vite) single-page app; the FastAPI backend
+serves both the JSON API and the built bundle. For local development run the two
+side by side — Vite proxies `/api` to the backend:
 
 ```bash
-pip install -r requirements.txt
-streamlit run app/app.py
+# Terminal 1 — backend (FastAPI on :8010)
+pip install -r requirements.txt -r api/requirements.txt
+uvicorn api.main:app --reload --port 8010
+
+# Terminal 2 — front-end (Vite dev server on :5173, proxies /api → :8010)
+cd web && npm install && npm run dev
 ```
+
+Then open http://localhost:5173. To run the production single-image build locally,
+see [Deployment](#deployment).
 
 ### Setup Page
 
 On first load, a stepped full-page setup form collects:
 - **Underlying selection** from ~75 predefined tickers (equity indices, US large caps, European stocks, commodity ETFs) or any custom yfinance symbol — one or more underlyings (single-asset notes are supported)
 - **Note terms** — maturity, coupons, barriers, basket types, and issuer
-- **JSON upload** — drag and drop a config file to populate all fields including underlyings at once. Advanced fields without a UI widget (step-down barrier, growth-autocall premium) are carried through from the loaded config.
+- **JSON config** — load a term-sheet config (upload a file, or connect a local folder of configs that are auto-detected) to populate all fields including underlyings at once. Advanced fields without a UI widget (step-down barrier, growth-autocall premium) are carried through from the loaded config.
 - **Custom logos** — optionally upload your own company logos for the underlyings, used in the app cards and the PDF when a favicon is a poor fit
-- **Download** — export the current configuration as a JSON file
+- **Save / download** — export the current configuration as a JSON file, or save it back into a connected folder
 
-### Dashboard
+### Results
 
-After confirming setup, the dashboard frames the note through three **analysis lenses** — the same note seen forward, backward, and live. Each tab opens with a consistent intro band stating the question it answers:
+After confirming setup, the results view frames the note through three **analysis lenses** — the same note seen forward, backward, and live. Each tab opens with a consistent intro band stating the question it answers:
 
 **Monte Carlo — _"what could happen?"_**
 - Summary metrics — expected IRR, total return, expected coupon, P(autocalled), P(knock-in), and the autocall breakdown by period
@@ -363,68 +383,78 @@ After confirming setup, the dashboard frames the note through three **analysis l
 
 Across all three:
 
-- **PDF report** — a branded, bilingual one-click export (sidebar). A **build-report panel** picks exactly which sections and figures to include, and the report can be generated **without running the simulation first** (it still carries the Monte Carlo section). The PDF mirrors the three-lens structure with numbered part dividers and a grouped table of contents. Per-firm **branding** — colours, logo, report title, disclaimer — is driven by a `branding/branding_*.json` file (see `branding_example.json` for the full key set).
+- **PDF report** — a dedicated **Report** tab builds a branded, bilingual one-click export. Audience **presets** (Client, Term sheet, IC, Analyst, Quant…) and a fine-grained section tree pick exactly which sections and figures to include, and the report can be generated **without running the simulation first** (a terms-only report needs no run; analytical sections use the latest run). The PDF mirrors the three-lens structure with numbered part dividers and a grouped table of contents, and an in-app **tutorial** walks through the builder.
+- **Branding** — per-firm colours, fonts, logos, cover/disclaimer text and selectable cover key-terms, driven by a `branding/branding_*.json` config (see `branding_example.json` for the full key set) or edited live in the Branding panel.
+- **Report photos** — an optional [Pexels](https://www.pexels.com/)-backed photo library (suggested by sector), plus your own uploads or a connected local image folder. The chosen, drag-reorderable pool drives the cover, the back page and the filler bands. The library needs a `PEXELS_API_KEY` on the server; it degrades cleanly without one (uploads/folders still work).
 - **Bilingual** — full EN/ES interface throughout the app and the report
 
 ---
 
 ## Deployment
 
-The app is hosted on **Streamlit Community Cloud** at
-[structurednotesim.streamlit.app](https://structurednotesim.streamlit.app/),
-auto-redeploying from `main` on every push. Notes on running it reliably
-long-term:
+The app ships as a **single Docker image** to **Google Cloud Run** at
+[structured-note-sim-doemm2affa-tl.a.run.app](https://structured-note-sim-doemm2affa-tl.a.run.app/),
+auto-deploying from `main` on every push. The [`Dockerfile`](Dockerfile) is a
+multi-stage build:
 
-- **`requirements.txt` is pinned** with upper bounds so a future rebuild on the
-  cloud can't silently pull a breaking major release. Bump versions
-  deliberately and re-pin.
+1. **node** — builds the React/Vite front-end (`web/` → `web/dist`)
+2. **cpp-build** — compiles the optional C++ Heston engine into a portable wheel
+3. **python runtime** — `uvicorn` serves the FastAPI API *and* the built bundle
+   same-origin, with **chromium** bundled so kaleido can rasterise the PDF figures
+
+Run the production image locally:
+
+```bash
+docker build -t structured-note-sim .
+docker run -p 8080:8080 structured-note-sim   # http://localhost:8080
+```
+
+Notes on running it reliably long-term:
+
+- **Dependencies are pinned** (`requirements.txt` + `api/requirements.txt`) with
+  upper bounds so a future rebuild can't silently pull a breaking major release.
+  Bump versions deliberately and re-pin.
 - **`yfinance` is the single point of failure.** All live data flows through it,
   and Yahoo periodically changes its undocumented endpoints, breaking yfinance
   until it's patched. If the app starts failing to load prices, bump `yfinance`
   first (`pip install -U yfinance`) and re-pin. Data-load failures surface as a
-  clean in-app message (with a retry hint), not a traceback.
-- **Path-count ceiling for memory.** The engine keeps full daily paths, so MC
-  peak memory scales with `n_paths × n_steps × n_assets`. The "Monte Carlo paths"
-  slider is capped at **15,000 on Streamlit Cloud** (auto-detected, ~1 GB tier)
-  and **250,000 locally**; override with the **`SNSIM_MAX_PATHS`** environment
-  variable. Two safeguards back this up: a **live memory estimate** next to the
-  slider warns before you commit, and a **pre-run guard** stops a run whose
-  estimated peak exceeds physical RAM (it would only swap and hang) with a
-  recommended path count instead. The retained per-path arrays are stored
-  compactly (float16 performance + precomputed fan bands; the worst-of is derived
-  on demand), and an optional **"Store paths on disk"** toggle memory-maps them so
-  they live in evictable OS cache rather than process RAM on a tight machine.
-- **Cold starts:** the Community Cloud instance sleeps after inactivity; the
-  first visitor waits ~30 s for it to wake. This is expected, not a failure.
-
-```bash
-# local run
-pip install -r requirements.txt
-streamlit run app/app.py
-
-# local run with a tighter path cap (e.g. on a low-memory machine)
-SNSIM_MAX_PATHS=8000 streamlit run app/app.py
-```
+  clean in-app message, not a traceback.
+- **Memory scales with paths.** The engine keeps full daily paths, so Monte Carlo
+  peak memory scales with `n_paths × n_steps × n_assets`. The API bounds the path
+  count to **1,000–250,000** (default **10,000**); the retained per-path arrays
+  are stored compactly (float16 performance + precomputed percentile fan bands;
+  the worst-of is derived on demand). Size the Cloud Run instance memory for the
+  path counts you intend to allow.
+- **Optional config:** set `PEXELS_API_KEY` to enable the report photo library
+  (it degrades cleanly without one). The compiled C++ engine is built into the
+  image, so `engine="cpp"` works in production and falls back to numpy if absent.
+- **Cold starts:** an idle instance is scaled to zero; the first request after
+  inactivity waits a few seconds for it to start. This is expected, not a failure.
 
 ---
 
 ## Dependencies
 
-Pinned in `requirements.txt` with upper bounds, so a future rebuild can't pull
-an incompatible major release (see [Deployment](#deployment)):
+**Python** — pinned in `requirements.txt` (quant/runtime) and `api/requirements.txt`
+(the FastAPI layer) with upper bounds, so a future rebuild can't pull an
+incompatible major release (see [Deployment](#deployment)):
 
 ```
 numpy >= 2.4, < 3
 pandas >= 3.0, < 4
 scipy >= 1.17, < 2
-matplotlib >= 3.7, < 4   # notebook-only; lazy-imported, never loaded by the app
+matplotlib >= 3.7, < 4       # notebook-only; lazy-imported, never loaded by the app
 plotly >= 6.8, < 7
-yfinance >= 1.4, < 2     # most fragile dep — bump first if live data stops loading
-streamlit >= 1.58, < 2
-fpdf2 >= 2.8, < 3        # PDF report
-kaleido >= 1.3, < 2      # Plotly figure export for the PDF
-Pillow >= 12, < 13       # logo handling in the PDF
+yfinance >= 1.4, < 2         # most fragile dep — bump first if live data stops loading
+deep-translator >= 1.11, < 2 # optional EN→ES machine translation of Yahoo descriptions
+fpdf2 >= 2.8, < 3            # PDF report
+kaleido >= 1.3, < 2          # Plotly figure export for the PDF
+Pillow >= 12, < 13           # image handling in the PDF
+fastapi >= 0.137, < 1        # api/requirements.txt
+uvicorn[standard] >= 0.49, < 1
 ```
+
+**Front-end** — React 19 + TypeScript + Vite + Plotly.js (see `web/package.json`).
 
 `PyMuPDF` is **not** a runtime dependency — it is only used by
 `scripts/verify_pdf.py` to rasterise PDFs for eyeballing. Install it ad hoc.

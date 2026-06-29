@@ -4,15 +4,22 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Running the app
 
+The product is a React (Vite) single-page app served by a FastAPI backend. For local dev, run both:
+
 ```bash
-streamlit run app/app.py
+# backend — FastAPI on :8010
+pip install -r requirements.txt -r api/requirements.txt
+uvicorn api.main:app --reload --port 8010
+
+# front-end — Vite on :5173 (proxies /api → :8010)
+cd web && npm install && npm run dev
 ```
 
-There are no tests and no linter configured. The project requires Python 3.12+ (f-strings use nested same-quote syntax introduced in 3.12).
+Production is a single Docker image (`Dockerfile`): Vite build + compiled C++ wheel + uvicorn serving the API and the built bundle. The Python side has no tests/linter; the front-end lints with `oxlint` (`npm run lint`) and type-checks with `tsc -b` (part of `npm run build`). Python 3.12+ required (f-strings use nested same-quote syntax introduced in 3.12).
 
 ## Architecture
 
-The project is split into a pure-quant library (`core/`, `data/`) and a Streamlit front-end (`app/`). `core/` has no Streamlit, Plotly, or file`` I/O imports and can be used in notebooks independently.
+The project is split into a pure-quant library (`core/`, `data/`), quant-only helpers shared with the API (`app/charts.py`, `app/pdf_report.py`, `app/translations.py`, `app/underlyings.py`), a FastAPI backend (`api/`), and a React front-end (`web/`). `core/` has no web, Plotly, or file I/O imports and can be used in notebooks independently. (The legacy Streamlit UI was removed — the `app/` package now holds only those framework-free helpers.)
 
 ### Data flow
 
@@ -26,11 +33,11 @@ load_prices()       HestonCalibrator          HestonMultiSimulator     price_not
                       .t_dof
 ```
 
-The Streamlit app (`app/app.py`) wires these together. All Plotly figure builders live in `app/charts.py` as pure functions with no Streamlit calls—they take numpy/pandas arguments and return `go.Figure`.
+`api/engine.py` wires these together and serialises everything to JSON for the React UI (and shapes the PDF inputs); `api/main.py` exposes the routes. All Plotly figure builders live in `app/charts.py` as pure functions—they take numpy/pandas arguments and return `go.Figure` (serialised to JSON for the front-end, or exported to PNG by kaleido for the PDF).
 
 ### Simulation engines (numpy default, optional C++)
 
-`HestonMultiSimulator.run(engine="numpy"|"cpp")`. **numpy is the default and the reference**; the app calls `run()` with no argument. The optional C++ engine (`cpp/heston_kernel.cpp`, pybind11, wrapped by `core/simulator_cpp.py`) runs the same model — block-SIMD with a branch-free xoshiro256++/Box–Muller RNG, parallelised across path-blocks with `std::thread` (no OpenMP/libomp). It is **not** bit-identical to numpy (different RNG stream); it is validated by convergence of statistics (`scripts/compare_engines.py`), not bit-equality. `run()` returns the same results dict either way (`_finalize` is the shared tail), so everything downstream is unchanged. Build with `pip install ./cpp` **into the same interpreter that launches the app** (common gotcha: building into `.venv` but running `streamlit` from the system Python). If `"cpp"` is selected but unbuilt, the app catches `ImportError` and falls back to numpy.
+`HestonMultiSimulator.run(engine="numpy"|"cpp")`. **numpy is the default and the reference**; the app calls `run()` with no argument. The optional C++ engine (`cpp/heston_kernel.cpp`, pybind11, wrapped by `core/simulator_cpp.py`) runs the same model — block-SIMD with a branch-free xoshiro256++/Box–Muller RNG, parallelised across path-blocks with `std::thread` (no OpenMP/libomp). It is **not** bit-identical to numpy (different RNG stream); it is validated by convergence of statistics (`scripts/compare_engines.py`), not bit-equality. `run()` returns the same results dict either way (`_finalize` is the shared tail), so everything downstream is unchanged. The Docker image builds + installs the `heston_cpp` wheel so `engine="cpp"` works in production; for local Python use build with `pip install ./cpp` **into the same interpreter that runs uvicorn** (common gotcha: building into `.venv` but launching the API from system Python). If `"cpp"` is selected but unbuilt, the simulator catches `ImportError` and falls back to numpy.
 
 ### Single payoff engine for MC and backtest
 
@@ -87,17 +94,20 @@ Configs live in `note_configs/`. Required fields for `NoteTerms.from_dict`:
 
 Legacy configs that used `final_basket="best_of"` + `final_redemption_barrier` are migrated by `NoteTerms.from_dict` to `one_star_level` (best-of → the barrier value; worst-of/average → `null`). Note this extends the old final-only rescue to the coupon and autocall observations as well.
 
-## Streamlit session state
+## API run/session model
 
-The app has two pages controlled by `st.session_state["page"]`: `"setup"` and `"dashboard"`. Price loads (`_load_prices`) and the backtest (`_run_backtest_cached`, keyed on `tickers_tuple` + `terms.to_json()`) are cached via `@st.cache_data`. The Monte Carlo run is **not** cached — it executes in the dashboard's run block and stores into `st.session_state["results"]` (`None` until "Run Simulation").
+The React SPA is stateless on the wire: it POSTs `/api/simulate` (and `/api/backtest`, `/api/report`, …) and gets JSON back. The server keeps state in `api/engine.py`:
+
+- **`_RUNS`** — an in-memory `OrderedDict[run_id → payload]` capped at `_MAX_RUNS` (8). A `/api/simulate` stores the full run and returns a `run_id`; the path explorer (`/api/runs/{id}/paths`), inspector (`/api/runs/{id}/inspect`) and report re-read that run without re-simulating. Oldest runs are evicted FIFO.
+- **Price cache** (TTL) — `load_prices` results, since the API has no `@st.cache_data` layer. Backtest results (`_BT_CACHE`, keyed on tickers + terms) and translations (`_TR_CACHE`) are cached too.
 
 ### Results storage schema (memory-sensitive — read before touching it)
 
-The engine keeps full daily paths, so **RAM, not CPU, is the ceiling**. `results` deliberately does NOT keep the full float64 cubes. After a run it stores:
+The engine keeps full daily paths, so **RAM, not CPU, is the ceiling**. A stored run deliberately does NOT keep the full float64 cubes. It stores:
 
 - `perf_paths` — per-asset performance (price/S0) as **float16** (bounded ~[0, 20] so it never overflows like raw prices could; the ~5e-4 rounding is display-only). This is the path explorer's only big array.
-- `wof_bands` (7, N+1) and `asset_bands` (n, 7, N+1) — the `[1,5,25,50,75,95,99]` percentile fan envelopes, **precomputed once** so the charts never rescan the full arrays on a rerun.
-- **No `worst_of_paths`** — the explorer derives one path's worst-of from `perf_paths[pn].min(axis=1)` on demand.
+- `wof_bands` (7, N+1) and `asset_bands` (n, 7, N+1) — the `[1,5,25,50,75,95,99]` percentile fan envelopes, **precomputed once** so the charts never rescan the full arrays.
+- **No `worst_of_paths`** — derived from `perf_paths[pn].min(axis=2)` on demand.
 - payoff stats from `price_note` (float64-exact; the float16 is display-only, so coupon/IRR/KI totals are unaffected).
 
-Discipline to preserve: the float64 working set (raw S/V paths, stacked/perf cubes) is `del`'d + `gc.collect()`'d right after the compact copies are stored — don't reintroduce long-lived references. A **memory guard** (`_sim_peak_gb` vs `_physical_ram_gb`) stops a run whose estimated peak exceeds physical RAM before it can swap. An optional `store_on_disk` toggle memory-maps `perf_paths` to a temp `.npy` (`_store_array` / `_purge_mmap_files`). The band-aware chart builders (`build_wof_fan`, `build_fan_chart`) take a `bands=` arg and skip the percentile scan when given.
+Discipline to preserve: don't retain the float64 working set (raw S/V paths, stacked/perf cubes) past building the compact copies; `_RUNS` is capped so memory can't grow unbounded across runs. The band-aware chart builders (`build_wof_fan`, `build_fan_chart`) take a `bands=` arg and skip the percentile scan when given. The API bounds `n_paths` to 1000–250000 (default 10000); size the deploy's memory for the cap you allow.

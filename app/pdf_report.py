@@ -49,8 +49,8 @@ in which case the report renders the field in its own language and falls back to
 the built-in translated default when the requested language is absent (so a
 Spanish-only firm disclaimer no longer bleeds into an English report).
 
-Branding affects the PDF only; the Streamlit UI theme is set separately in
-app/style.css + .streamlit/config.toml. Logo resolution order is local file →
+Branding affects the PDF only; the React UI theme is set separately in
+web/src/index.css + web/src/theme/. Logo resolution order is local file →
 base64 → URL (see _load_logo). Chart colours are remapped from the fixed
 navy/blue source palette of app/charts.py onto (accent, secondary) with the
 green-ramp hue derived from the accent — see _rebrand_figure.
@@ -2438,11 +2438,11 @@ def _theme_figure(fig, primary_color: tuple, accent_color: tuple,
 
 
 # Kaleido v1 drives an external Chrome/Chromium (unlike the self-contained
-# v0.2.x). On a headless host with no browser — e.g. Streamlit Community Cloud
-# without a `packages.txt` that installs `chromium` — every export raises and
-# the report silently drops all figures. We attempt a one-time runtime Chrome
-# download as a fallback so the report still renders charts when the system
-# package is missing. Guarded so we only try once per process.
+# v0.2.x). On a headless host with no browser — every export raises and the
+# report silently drops all figures. The Docker image installs `chromium` (and
+# points kaleido at it via BROWSER_PATH); as a belt-and-suspenders fallback for
+# other environments we attempt a one-time runtime Chrome download so the report
+# still renders charts when the system package is missing. Guarded to try once.
 _CHROME_FETCH_TRIED = False
 
 

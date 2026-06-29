@@ -23,9 +23,6 @@ yfinance>=1.4,<2
 # keeps the original English text if this is missing or the network is down.
 deep-translator>=1.11,<2
 
-# Dashboard
-streamlit>=1.58,<2
-
 # PDF report (fpdf2 builds the document; kaleido exports Plotly figures to PNG)
 fpdf2>=2.8,<3
 kaleido>=1.3,<2

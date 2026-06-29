@@ -109,5 +109,4 @@ RNG, and **`std::thread` multicore** across path-blocks. Remaining levers:
    P-cores barely help. The `nthreads`/env knob already lets you cap the count; a
    thread-affinity hint could squeeze a little more.
 
-Phase 2 (GPU / CUDA) is the higher ceiling (~50–300×) but needs GPU hardware; see
-`docs/architecture_review.md`.
+Phase 2 (GPU / CUDA) is the higher ceiling (~50–300×) but needs GPU hardware.
