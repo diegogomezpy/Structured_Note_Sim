@@ -1,7 +1,7 @@
 import { useId } from 'react'
 import { useI18n } from '../i18n/I18nProvider'
 import { nObs, obsFractions, autocallSchedule, hasStepDown } from '../lib/terms'
-import { pct } from '../lib/format'
+import { pct, pctTrim } from '../lib/format'
 import type { NoteTerms } from '../api/types'
 
 // Payoff-zone schematic: a proper little chart with a worst-of level axis (y) and
@@ -84,22 +84,22 @@ export default function NoteTimeline({ terms }: { terms: NoteTerms }) {
     fracs.forEach((f, i) => { stepPath += ` H ${mapX(f).toFixed(1)} V ${mapY(sched[i]).toFixed(1)}` })
   }
 
-  const acDesc = t(stepped ? 'diag_lgd_autocall_step' : 'diag_lgd_autocall', { lvl: stepped ? `${pct(acLevel, 0)} → ${pct(minAc, 0)}` : pct(acLevel, 0), p: `P${start}` })
-  const cpDesc = t('diag_lgd_coupon', { cpn: pct(terms.coupon_pa, 1), lvl: pct(cpLevel, 0), mem: terms.memory ? t('diag_lgd_coupon_mem') : '' })
-  const kiDesc = t('diag_lgd_knockin', { lvl: pct(kiLevel, 0) })
+  const acDesc = t(stepped ? 'diag_lgd_autocall_step' : 'diag_lgd_autocall', { lvl: stepped ? `${pctTrim(acLevel)} → ${pctTrim(minAc)}` : pctTrim(acLevel), p: `P${start}` })
+  const cpDesc = t('diag_lgd_coupon', { cpn: pct(terms.coupon_pa, 1), lvl: pctTrim(cpLevel), mem: terms.memory ? t('diag_lgd_coupon_mem') : '' })
+  const kiDesc = t('diag_lgd_knockin', { lvl: pctTrim(kiLevel) })
 
   // ── gutter labels: precise barrier level, de-collided, hover = full mechanic ──
   const entries: GutterEntry[] = [{
     target: acY, color: C_AUTOCALL, name: t('autocall_barrier'),
-    value: stepped ? `${pct(acLevel, 0)} → ${pct(minAc, 0)}` : pct(acLevel, 0), desc: acDesc,
+    value: stepped ? `${pctTrim(acLevel)} → ${pctTrim(minAc)}` : pctTrim(acLevel), desc: acDesc,
   }]
   if (barriersEqual) {
-    entries.push({ target: kiY, color: C_COUPON, name: `${t('coupon_barrier')} · ${t('knock_in_barrier')}`, value: pct(cpLevel, 0), desc: `${cpDesc} ${kiDesc}` })
+    entries.push({ target: kiY, color: C_COUPON, name: `${t('coupon_barrier')} · ${t('knock_in_barrier')}`, value: pctTrim(cpLevel), desc: `${cpDesc} ${kiDesc}` })
   } else {
-    entries.push({ target: mapY(cpLevel), color: C_COUPON, name: t('coupon_barrier'), value: pct(cpLevel, 0), desc: cpDesc })
-    entries.push({ target: kiY, color: C_KNOCKIN, name: t('knock_in_barrier'), value: pct(kiLevel, 0), desc: kiDesc })
+    entries.push({ target: mapY(cpLevel), color: C_COUPON, name: t('coupon_barrier'), value: pctTrim(cpLevel), desc: cpDesc })
+    entries.push({ target: kiY, color: C_KNOCKIN, name: t('knock_in_barrier'), value: pctTrim(kiLevel), desc: kiDesc })
   }
-  if (osLevel != null) entries.push({ target: mapY(osLevel), color: C_ONESTAR, name: t('one_star'), value: pct(osLevel, 0), desc: t('diag_lgd_onestar', { lvl: pct(osLevel, 0) }) })
+  if (osLevel != null) entries.push({ target: mapY(osLevel), color: C_ONESTAR, name: t('one_star'), value: pctTrim(osLevel), desc: t('diag_lgd_onestar', { lvl: pctTrim(osLevel) }) })
   const adjY = declutter(entries.map((e) => e.target), 14, Y_TOP + 2, Y_BOT)
 
   // y-axis ticks at round levels inside the domain
@@ -118,7 +118,7 @@ export default function NoteTimeline({ terms }: { terms: NoteTerms }) {
 
   return (
     <div>
-      <svg viewBox={`0 0 ${VIEW_W} ${VIEW_H}`} width="100%" style={{ display: 'block', fontFamily: 'IBM Plex Sans, sans-serif' }}
+      <svg viewBox={`0 0 ${VIEW_W} ${VIEW_H}`} width="100%" style={{ display: 'block', fontFamily: 'var(--font-sans)' }}
            role="img" aria-label="Note payoff structure">
         <title>{t('diag_how_to_read')}</title>
         <defs>

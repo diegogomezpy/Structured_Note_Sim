@@ -3486,6 +3486,11 @@ def _draw_note_diagram(pdf, terms, lang: str) -> None:
         def mapX(frac: float) -> float:
             return x0 + frac * (x1 - x0)
 
+        # Barrier percent with up to 3 decimals, trailing zeros trimmed (50%, not
+        # 50%→51% rounding; 50.5%; 50.125%) so fine barrier levels aren't lost.
+        def _bp(level: float) -> str:
+            return f"{level * 100:.3f}".rstrip("0").rstrip(".") + "%"
+
         n      = terms.n_obs
         ac, cp, ki = terms.autocall_barrier, terms.coupon_barrier, terms.knock_in_barrier
         os_lvl = terms.one_star_level
@@ -3525,13 +3530,13 @@ def _draw_note_diagram(pdf, terms, lang: str) -> None:
         if start <= n:
             pdf.set_fill_color(*_blend(pdf.accent_color, _WHITE, 0.82))
             pdf.rect(acX, top, max(0.0, x1 - acX), max(0.0, ac_y - top), style="F")
-            pdf.set_font(pdf._font_family, "B", 8)
+            pdf._sf(8, "bold")
             pdf.set_text_color(*pdf.accent_color)
             _wl = _t("diag_window", lang)
             pdf.text((acX + x1) / 2 - pdf.get_string_width(_wl) / 2, top + 4.0, _wl)
 
         # y gridlines + tick labels (0 / 50 / 100%)
-        pdf.set_font(pdf._font_family, "", 6.8)
+        pdf._sf(6.8, "regular")
         for lvl in (0.0, 0.5, 1.0):
             gy = mapY(lvl)
             pdf.set_draw_color(223, 229, 237)
@@ -3542,7 +3547,7 @@ def _draw_note_diagram(pdf, terms, lang: str) -> None:
             pdf.text(x0 - 2 - pdf.get_string_width(_tl), gy + 1.0, _tl)
 
         # zone captions
-        pdf.set_font(pdf._font_family, "B", 8)
+        pdf._sf(8, "bold")
         pdf.set_text_color(*C_PROT)
         pdf.text(x0 + 2.5, (par_y + ki_y) / 2 + 1.0, _t("diag_zone_protected", lang))
         if ki_y < bottom - 2:
@@ -3572,7 +3577,7 @@ def _draw_note_diagram(pdf, terms, lang: str) -> None:
         pdf.set_fill_color(150, 162, 180)
         pdf.polygon([(x0 - 1.4, top - 3), (x0 + 1.4, top - 3), (x0, top - 6)], style="F")
         pdf.polygon([(x1 + 4, bottom - 1.4), (x1 + 4, bottom + 1.4), (x1 + 7, bottom)], style="F")
-        pdf.set_font(pdf._font_family, "B", 6.5)
+        pdf._sf(6.5, "bold")
         pdf.set_text_color(150, 162, 180)
         pdf.text(x0 - 3, top - 5.5, _t("diag_axis_level", lang))
 
@@ -3587,23 +3592,23 @@ def _draw_note_diagram(pdf, terms, lang: str) -> None:
             col = pdf.primary_color if is_mat else (pdf.accent_color if is_ac else (205, 214, 228))
             _dot(mapX(f), 1.7 if is_mat else 1.5, col)
             if show_coupon:
-                pdf.set_font(pdf._font_family, "", 6.5)
+                pdf._sf(6.5, "regular")
                 pdf.set_text_color(*C_COUPON)
                 _ct = f"+{coupon_per:.2%}"
                 pdf.text(mapX(f) - pdf.get_string_width(_ct) / 2, par_y - 3.5, _ct)
             if show_yr_ticks and not is_mat:
                 _yt = (f"{f * _mat_yrs:g}").rstrip(".") + "y"
-                pdf.set_font(pdf._font_family, "", 6)
+                pdf._sf(6, "regular")
                 pdf.set_text_color(170, 180, 195)
                 pdf.text(mapX(f) - pdf.get_string_width(_yt) / 2, bottom + 4.6, _yt)
 
         # issue / maturity captions (below the x-axis) + the real date or tenor
-        pdf.set_font(pdf._font_family, "", 7.5)
+        pdf._sf(7.5, "regular")
         pdf.set_text_color(110, 122, 145)
         _iss, _mat = _t("diag_issue", lang), _t("diag_maturity", lang)
         pdf.text(x0 - pdf.get_string_width(_iss) / 2, bottom + 4.6, _iss)
         pdf.text(x1 - pdf.get_string_width(_mat) / 2, bottom + 4.6, _mat)
-        pdf.set_font(pdf._font_family, "", 6.5)
+        pdf._sf(6.5, "regular")
         pdf.set_text_color(150, 162, 180)
         if issue_lbl:
             pdf.text(x0 - pdf.get_string_width(issue_lbl) / 2, bottom + 8.6, issue_lbl)
@@ -3613,14 +3618,14 @@ def _draw_note_diagram(pdf, terms, lang: str) -> None:
         # floating barrier labels (right gutter): name over value on two lines so
         # they stay narrow and the plot box can sit centred on the page.
         lx = x1 + 4
-        entries = [(ac_y, pdf.primary_color, _t("diag_autocall", lang), f"{ac:.0%}")]
+        entries = [(ac_y, pdf.primary_color, _t("diag_autocall", lang), _bp(ac))]
         if barriers_equal:
-            entries.append((ki_y, C_COUPON, f"{_t('diag_coupon', lang)} / {_t('diag_knockin', lang)}", f"{cp:.0%}"))
+            entries.append((ki_y, C_COUPON, f"{_t('diag_coupon', lang)} / {_t('diag_knockin', lang)}", _bp(cp)))
         else:
-            entries.append((mapY(cp), C_COUPON, _t("diag_coupon", lang), f"{cp:.0%}"))
-            entries.append((ki_y, C_KI, _t("diag_knockin", lang), f"{ki:.0%}"))
+            entries.append((mapY(cp), C_COUPON, _t("diag_coupon", lang), _bp(cp)))
+            entries.append((ki_y, C_KI, _t("diag_knockin", lang), _bp(ki)))
         if os_lvl is not None:
-            entries.append((mapY(os_lvl), C_OS, _t("diag_onestar", lang), f"{os_lvl:.0%}"))
+            entries.append((mapY(os_lvl), C_OS, _t("diag_onestar", lang), _bp(os_lvl)))
         entries.sort(key=lambda e: e[0])
         prev_y = -100.0
         for ty, color, name, val in entries:
@@ -3629,10 +3634,10 @@ def _draw_note_diagram(pdf, terms, lang: str) -> None:
             pdf.set_draw_color(190, 198, 210)
             pdf.set_line_width(0.2)
             pdf.line(x1 + 1, ty, lx - 1, ly - 1.0)
-            pdf.set_font(pdf._font_family, "", 7)
+            pdf._sf(7, "regular")
             pdf.set_text_color(*color)
             pdf.text(lx, ly, name)
-            pdf.set_font(pdf._font_family, "B", 8.5)
+            pdf._sf(8.5, "bold")
             pdf.set_text_color(*pdf.primary_color)
             pdf.text(lx, ly + 4.0, val)
 

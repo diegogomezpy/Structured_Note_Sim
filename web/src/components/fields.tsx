@@ -194,6 +194,17 @@ export function NumField({
         value={text}
         onChange={(e) => { setText(e.target.value); commit(e.target.value) }}
         onFocus={(e) => { setFocused(true); e.currentTarget.select() }}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') {
+            // Explicit confirm: apply, flash straight away (skip the debounce),
+            // reformat, and drop focus so the change visibly "lands".
+            e.preventDefault()
+            commit(e.currentTarget.value)
+            clearTimeout(flashT.current)
+            flash()
+            e.currentTarget.blur()
+          }
+        }}
         onBlur={() => { setFocused(false); setText(fmtDisp(value)) }}
         style={tone === 'danger' ? { color: 'var(--red)' } : undefined} />
     </div>

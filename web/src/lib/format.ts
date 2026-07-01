@@ -6,6 +6,13 @@ export function pct(x: number | null | undefined, dp = 1): string {
   return `${(x * 100).toFixed(dp)}%`
 }
 
+/** Percent with up to `dp` decimals but trailing zeros trimmed — 50% (not 50.0%),
+    50.5%, 50.125%. Used for barrier levels, which can carry fine precision. */
+export function pctTrim(x: number | null | undefined, dp = 3): string {
+  if (x == null || !Number.isFinite(x)) return '—'
+  return `${parseFloat((x * 100).toFixed(dp))}%`
+}
+
 export function pctSigned(x: number | null | undefined, dp = 1): string {
   if (x == null || !Number.isFinite(x)) return '—'
   const v = x * 100
