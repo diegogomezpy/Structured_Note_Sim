@@ -566,6 +566,45 @@ def quotes(req: QuotesRequest):
         raise HTTPException(500, f"quotes failed: {e}")
 
 
+_GEO_CACHE: "_OD[str, str]" = _OD()
+
+
+def _geo(ip: str) -> str:
+    """Best-effort IP → coarse location + network, for the generation audit log
+    (tracing who might be using the tool without permission). Cached per IP;
+    skips private/blank addresses; never raises (returns '' on any failure).
+
+    Uses ip-api.com's keyless endpoint, whose FREE tier is NON-COMMERCIAL only —
+    fine for personal audit use, but for a commercial deploy swap in a licensed
+    provider (ipinfo/ipgeolocation with a key) or a self-hosted MaxMind GeoLite2
+    database. Set SNSIM_GEOIP=off to disable geolocation entirely."""
+    if not ip or ip == "?" or os.environ.get("SNSIM_GEOIP", "on").lower() == "off":
+        return ""
+    if ip.startswith(("10.", "127.", "192.168.", "172.16.", "::1", "fc", "fd", "169.254.")):
+        return "private"
+    hit = _GEO_CACHE.get(ip)
+    if hit is not None:
+        _GEO_CACHE.move_to_end(ip)
+        return hit
+    out = ""
+    try:
+        url = ("http://ip-api.com/json/" + _uparse.quote(ip)
+               + "?fields=status,country,regionName,city,isp,as")
+        r = _ureq.Request(url, headers={"User-Agent": "StructuredNoteSim/1.0"})
+        with _ureq.urlopen(r, timeout=2.0) as resp:
+            d = json.loads(resp.read(50_000))
+        if isinstance(d, dict) and d.get("status") == "success":
+            loc = ", ".join(x for x in (d.get("city"), d.get("regionName"), d.get("country")) if x)
+            net = " · ".join(x for x in (d.get("isp"), d.get("as")) if x)
+            out = f"{loc}{(' · ' + net) if net else ''}".strip(" ·,")
+    except Exception:
+        out = ""
+    _GEO_CACHE[ip] = out
+    while len(_GEO_CACHE) > 512:
+        _GEO_CACHE.popitem(last=False)
+    return out
+
+
 @app.post("/api/report")
 def report(req: ReportRequest, request: Request):
     """Build the institutional PDF report and return it as a downloadable file.
@@ -586,9 +625,9 @@ def report(req: ReportRequest, request: Request):
                else (request.client.host if request.client else "?"))
         _tk = "/".join((req.terms.get("tickers") or {}).keys()) if isinstance(req.terms, dict) else ""
         print(f"[report] ts={_dt.datetime.now(_dt.timezone.utc).isoformat()} ip={_ip} "
-              f"note={terms.name!r} tickers={_tk} sections={len(req.sections or [])} "
-              f"n_paths={req.n_paths} lang={req.lang} engine={req.engine} "
-              f"ua={request.headers.get('user-agent', '?')!r}", flush=True)
+              f"geo={_geo(_ip)!r} note={terms.name!r} tickers={_tk} "
+              f"sections={len(req.sections or [])} n_paths={req.n_paths} lang={req.lang} "
+              f"engine={req.engine} ua={request.headers.get('user-agent', '?')!r}", flush=True)
     except Exception:
         pass
     try:
