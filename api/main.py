@@ -419,11 +419,14 @@ def get_config(file: str):
 
 
 @app.post("/api/simulate")
-def simulate(req: SimulateRequest):
+def simulate(req: SimulateRequest, request: Request):
     try:
         terms = NoteTerms.from_dict(req.terms)
     except Exception as e:
         raise HTTPException(400, f"invalid note terms: {e}")
+    # Generation audit (who ran a simulation, when, from where) — server-log only.
+    _audit(request, "simulate", note=terms.name, tickers=_tickers_of(req.terms),
+           n_paths=req.n_paths, seed=req.seed, lang=req.lang, engine=req.engine)
     try:
         return engine.run_simulation(
             terms, n_paths=req.n_paths, seed=req.seed,
@@ -605,6 +608,29 @@ def _geo(ip: str) -> str:
     return out
 
 
+def _audit(request: Request, tag: str, **fields) -> None:
+    """One server-side provenance line: UTC timestamp + geotagged client IP + the
+    given fields + user-agent, e.g. `[simulate] ts=… ip=… geo=… note=… …`. Never
+    raises. The IP/geo stay in the request log (operator-only) and are never
+    embedded in any output document."""
+    try:
+        import datetime as _dt
+        xff = request.headers.get("x-forwarded-for", "")
+        ip = (xff.split(",")[0].strip() if xff
+              else (request.client.host if request.client else "?"))
+        extra = " ".join(f"{k}={v!r}" if isinstance(v, str) else f"{k}={v}"
+                         for k, v in fields.items())
+        print(f"[{tag}] ts={_dt.datetime.now(_dt.timezone.utc).isoformat()} ip={ip} "
+              f"geo={_geo(ip)!r} {extra} ua={request.headers.get('user-agent', '?')!r}",
+              flush=True)
+    except Exception:
+        pass
+
+
+def _tickers_of(terms_dict) -> str:
+    return "/".join((terms_dict.get("tickers") or {}).keys()) if isinstance(terms_dict, dict) else ""
+
+
 @app.post("/api/report")
 def report(req: ReportRequest, request: Request):
     """Build the institutional PDF report and return it as a downloadable file.
@@ -618,18 +644,8 @@ def report(req: ReportRequest, request: Request):
     # — and deliberately NOT embedded in the PDF: the client IP is personal data
     # and the report is white-label / redistributable. For a commercial deploy,
     # mind IP-log retention (GDPR/CCPA).
-    try:
-        import datetime as _dt
-        _xff = request.headers.get("x-forwarded-for", "")
-        _ip = (_xff.split(",")[0].strip() if _xff
-               else (request.client.host if request.client else "?"))
-        _tk = "/".join((req.terms.get("tickers") or {}).keys()) if isinstance(req.terms, dict) else ""
-        print(f"[report] ts={_dt.datetime.now(_dt.timezone.utc).isoformat()} ip={_ip} "
-              f"geo={_geo(_ip)!r} note={terms.name!r} tickers={_tk} "
-              f"sections={len(req.sections or [])} n_paths={req.n_paths} lang={req.lang} "
-              f"engine={req.engine} ua={request.headers.get('user-agent', '?')!r}", flush=True)
-    except Exception:
-        pass
+    _audit(request, "report", note=terms.name, tickers=_tickers_of(req.terms),
+           sections=len(req.sections or []), n_paths=req.n_paths, lang=req.lang, engine=req.engine)
     try:
         pdf = engine.build_report_pdf(
             terms, sections=req.sections, lang=req.lang, n_paths=req.n_paths,
