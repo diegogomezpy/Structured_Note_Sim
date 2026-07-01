@@ -480,7 +480,7 @@ uvicorn[standard] >= 0.49, < 1
 
 ## License
 
-Source-available under the **[PolyForm Shield License 1.0.0](LICENSE.md)** — © 2026 Diego Gómez. You may use, modify, and share the code for almost any purpose **except** providing a product that competes with this software (or with any product the licensor or its affiliates offers using it). See [`LICENSE.md`](LICENSE.md) for the exact terms.
+Source-available under the **[PolyForm Noncommercial License 1.0.0](LICENSE.md)** — © 2026 Diego Sebastian Gomez Harika. Free to use, modify, and share for **noncommercial** purposes (personal use, research, education, evaluation); **any commercial use — by a company or otherwise — requires a separate license from the author**. See [`LICENSE.md`](LICENSE.md) for the exact terms.
 
 Third-party components keep their own licenses (numpy/pandas/scipy BSD, plotly/FastAPI/React MIT, fpdf2 LGPL-3.0, IBM Plex Sans OFL-1.1, …). Note that some **data/content sources are not licensed for commercial use as configured** — Yahoo Finance data (via `yfinance`), Google Translate (via `deep-translator`), and third-party company logos — so a commercial deployment must swap in licensed equivalents.
 
