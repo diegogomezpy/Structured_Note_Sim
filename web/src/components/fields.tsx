@@ -155,13 +155,32 @@ export function NumField({
   const [text, setText] = useState(() => fmtDisp(value))
   useEffect(() => { if (!focused) setText(fmtDisp(value)) }, [value, focused])  // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Brief accent-ring pulse confirming an applied change. Debounced so a burst of
+  // keystrokes yields one flash once typing settles, and only when the value
+  // actually moved. Imperative (className) so a re-render can't cut it short.
+  const inputRef = useRef<HTMLInputElement>(null)
+  const flashT = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+  const flash = () => {
+    const el = inputRef.current
+    if (!el) return
+    el.classList.remove('field-committed')
+    void el.offsetWidth                            // reflow so the animation restarts
+    el.classList.add('field-committed')
+  }
+  useEffect(() => () => clearTimeout(flashT.current), [])
+
   const commit = (raw: string) => {
     let n = parseFloat(raw)
     if (Number.isNaN(n)) return
     n = round(n)                                   // cap to `digits` decimals
     if (min != null) n = Math.max(min, n)
     if (max != null) n = Math.min(max, n)
-    onChange(fromDisp(n))
+    const out = fromDisp(n)
+    onChange(out)
+    if (Math.abs(out - value) > 1e-9) {            // confirm only real changes
+      clearTimeout(flashT.current)
+      flashT.current = setTimeout(flash, 280)
+    }
   }
 
   return (
@@ -170,6 +189,7 @@ export function NumField({
         <FieldLabel label={suffix ? `${label} (${suffix})` : label} tip={tip} />
       </div>
       <input
+        ref={inputRef}
         type="text" inputMode="decimal" aria-label={label} className="mono"
         value={text}
         onChange={(e) => { setText(e.target.value); commit(e.target.value) }}

@@ -341,6 +341,7 @@ input:focus, select:focus { outline: none; border-color: var(--accent); box-shad
   .ticker-marquee[data-scroll='true'] .ticker-track { animation: none; transform: none; }
   .ticker-marquee[data-scroll='true'] { overflow-x: auto; scrollbar-width: none; }
   .ticker-marquee[data-scroll='true']::before, .ticker-marquee[data-scroll='true']::after { display: none; }
+  .field-committed { animation: none; }
 }
 
 /* Staggered children reveal — sequence cards/panels in rather than snapping them
@@ -360,6 +361,15 @@ input:focus, select:focus { outline: none; border-color: var(--accent); box-shad
 @keyframes tickFlashDown { from { background: rgba(217, 122, 110, 0.22); } to { background: transparent; } }
 .tick-up { animation: tickFlashUp 800ms var(--ease-settle); }
 .tick-down { animation: tickFlashDown 800ms var(--ease-settle); }
+
+/* Commit confirmation — a brief accent ring pulse when a typed field value is
+   applied, so a change to a note term is visibly acknowledged. */
+@keyframes fieldCommitFlash {
+  0%   { box-shadow: 0 0 0 2.5px rgba(95, 184, 154, 0.60); }
+  55%  { box-shadow: 0 0 0 2.5px rgba(95, 184, 154, 0.30); }
+  100% { box-shadow: 0 0 0 0 rgba(95, 184, 154, 0); }
+}
+.field-committed { animation: fieldCommitFlash 620ms var(--ease-settle); }
 
 /* Bar fill grows in from the left on reveal (progress bars, meters, barrier band). */
 @keyframes growX { from { transform: scaleX(0); } to { transform: scaleX(1); } }

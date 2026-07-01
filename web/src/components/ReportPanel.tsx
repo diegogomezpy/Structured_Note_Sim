@@ -282,9 +282,10 @@ export default function ReportPanel({ terms, opts }: { terms: NoteTerms; opts: R
   const toggleCoverMetric = (k: string) => {
     const base = (brand.cover_metrics as string[] | undefined) ?? COVER_METRIC_DEFAULT
     const next = base.includes(k) ? base.filter((m) => m !== k) : [...COVER_METRIC_KEYS].filter((m) => base.includes(m) || m === k)
-    // Store even when empty so the whole strip can be switched off (empty array
-    // is respected by the PDF; only a missing value falls back to the default).
-    setBrandField('cover_metrics', next)
+    // Write straight to state (NOT setBrandField, which collapses an empty array
+    // to undefined) so an empty selection sticks and the strip can be fully off —
+    // the PDF treats [] as "hide the strip" and only a missing value as default.
+    setBrand((b) => ({ ...b, cover_metrics: next }))
   }
   // Embed TTF/OTF font files (base64, keyed by inferred style) into the config so
   // the fonts travel with it and render on the deploy. Style is read off the
