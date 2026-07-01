@@ -111,3 +111,14 @@ The engine keeps full daily paths, so **RAM, not CPU, is the ceiling**. A stored
 - payoff stats from `price_note` (float64-exact; the float16 is display-only, so coupon/IRR/KI totals are unaffected).
 
 Discipline to preserve: don't retain the float64 working set (raw S/V paths, stacked/perf cubes) past building the compact copies; `_RUNS` is capped so memory can't grow unbounded across runs. The band-aware chart builders (`build_wof_fan`, `build_fan_chart`) take a `bands=` arg and skip the percentile scan when given. The API bounds `n_paths` to 1000–250000 (default 10000); size the deploy's memory for the cap you allow.
+
+## PDF attribution / provenance metadata
+
+`app/pdf_report.py` stamps every generated PDF's document metadata (see `_stamp_attribution` + `_stamp_provenance`, called from the build tail):
+
+- **`_stamp_attribution`** sets Author/Creator/Producer/Keywords to an author-attribution watermark. The string is base64 in `_A64` (assembled at runtime, not a grep-able literal) and stamped from **two** call sites (after doc build + before `output()`) so deleting one leaves the mark. It's deterrence, not DRM — a source-available build can strip it.
+- **`_stamp_provenance`** sets Title (note/report title), Subject (`Generated <UTC> · <note> · <tickers> · Structured Note Simulator`), and the PDF CreationDate. Deliberately **non-PII** — no IP, since a report is white-label / redistributable.
+
+## Generation audit log (server-side, IP stays out of the PDF)
+
+`api/main.py` logs one provenance line per `/api/simulate` and `/api/report` via the shared `_audit(request, tag, **fields)` helper: `[tag] ts=<UTC> ip=<client IP> geo=… <fields> ua=…`. The client IP comes from `X-Forwarded-For` (first hop; falls back to `request.client.host`). `_geo(ip)` resolves a coarse location + ISP/ASN best-effort via ip-api.com (cached in `_GEO_CACHE`, 2s timeout, skips private IPs, `SNSIM_GEOIP=off` disables it). **Never embed the IP/geo in the PDF** — it's personal data and the doc is redistributable; the audit line is operator-only. ip-api.com's free tier is non-commercial — swap for a licensed provider / self-hosted GeoLite2 for a commercial deploy.

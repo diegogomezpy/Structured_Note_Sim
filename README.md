@@ -425,11 +425,63 @@ Notes on running it reliably long-term:
   are stored compactly (float16 performance + precomputed percentile fan bands;
   the worst-of is derived on demand). Size the Cloud Run instance memory for the
   path counts you intend to allow.
-- **Optional config:** set `PEXELS_API_KEY` to enable the report photo library
-  (it degrades cleanly without one). The compiled C++ engine is built into the
-  image, so `engine="cpp"` works in production and falls back to numpy if absent.
+- **Optional config (env vars):** `PEXELS_API_KEY` enables the report photo
+  library (degrades cleanly without it); `SNSIM_GEOIP=off` disables IP
+  geolocation in the generation audit log (see [Provenance, attribution &
+  audit](#provenance-attribution--audit)). The compiled C++ engine is built into
+  the image, so `engine="cpp"` works in production and falls back to numpy if
+  absent.
 - **Cold starts:** an idle instance is scaled to zero; the first request after
   inactivity waits a few seconds for it to start. This is expected, not a failure.
+
+---
+
+## Provenance, attribution & audit
+
+Every generated report carries lightweight provenance, every model run is logged,
+and the author is credited in-app (header → **About**).
+
+### PDF metadata
+
+Each generated report embeds (invisible) document metadata:
+
+- **Author / Creator / Producer / Keywords** — an author-attribution watermark.
+  It is base64-obfuscated in the source and stamped from two call sites, so it
+  isn't a one-line delete — but it is *deterrence, not DRM*: a source-available
+  build can always strip it.
+- **Title** — the note / report title.
+- **Subject** — a readable, **non-PII** provenance line: `Generated <UTC time> ·
+  <note> · <tickers> · Structured Note Simulator`.
+- **CreationDate** — the UTC generation timestamp.
+
+View it with macOS **Preview → Tools → Show Inspector** (⌘I), Acrobat **File →
+Properties**, or the CLI: `pdfinfo report.pdf`, `exiftool report.pdf`, or
+`python -c "import fitz; print(fitz.open('report.pdf').metadata)"`.
+
+### Generation audit log
+
+`/api/simulate` and `/api/report` each write one server-side log line, so you can
+trace who is *using* the tool (and, for reports, who *exports* one):
+
+```
+[report] ts=<UTC> ip=<client IP> geo='<city, region, country · ISP · ASN>'
+         note='…' tickers='…' sections=N n_paths=… lang=… engine=… ua='…'
+```
+
+- The **client IP is geotagged** (city/region/country + ISP/ASN), best-effort via
+  ip-api.com, cached, with a 2 s timeout; private/blank IPs are skipped.
+- It lives **only in the request log** (operator-visible) and is **never embedded
+  in the PDF** — an IP is personal data and reports are white-label /
+  redistributable.
+- Read it on Cloud Run — **your service → Logs**, or `gcloud run services logs
+  read structured-note-sim --region southamerica-west1` — filtering for
+  `[simulate]` / `[report]`.
+- **`SNSIM_GEOIP=off`** disables geolocation (the line still logs the raw IP).
+
+> **Commercial / privacy note:** an IP address is personal data (GDPR/CCPA). For a
+> commercial deploy, disclose the logging in a privacy policy and set a retention
+> limit. ip-api.com's free tier is **non-commercial** only — swap in a licensed
+> geolocation provider or a self-hosted MaxMind GeoLite2 database.
 
 ---
 
