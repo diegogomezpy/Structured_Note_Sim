@@ -1,12 +1,11 @@
 import type { ReactNode } from 'react'
 import { useI18n } from '../i18n/I18nProvider'
-import { pct } from '../lib/format'
 import { nObs } from '../lib/terms'
 import Modal from './Modal'
 import Icon from './Icon'
 import UnderlyingPicker from './UnderlyingPicker'
 import UnderlyingDetails from './UnderlyingDetails'
-import { Slider, NumberField, SelectField, SegmentedField, ToggleField, TextField } from './fields'
+import { Slider, NumField, NumberField, SelectField, SegmentedField, ToggleField, TextField } from './fields'
 import { NOTE_TYPES, detectNoteType, applyPreset } from '../lib/noteType'
 import type { RunOpts } from './SetupRail'
 import type { Basket, NoteTerms } from '../api/types'
@@ -92,12 +91,16 @@ export default function SettingsOverlay({
 
       <Group n={2} title={t('sec_schedule_coupon')}>
         <Grid>
+          {/* Own row (span all columns) so all four frequency options fit without
+              being clipped, but capped so it isn't stretched on wide screens. */}
+          <div style={{ gridColumn: '1 / -1', maxWidth: 480 }}>
+            <SegmentedField label={t('frequency')} value={terms.payment_freq}
+                            options={FREQS.map((f) => ({ value: f, label: t(`freq_${f}`) }))} onChange={(v) => set('payment_freq', v)} />
+          </div>
           <Slider label={t('maturity')} value={terms.maturity} min={0.25} max={5} step={0.25}
                   editSuffix="y" fmt={(v) => `${v.toFixed(2)} y`} onChange={(v) => set('maturity', v)} />
-          <SegmentedField label={t('frequency')} value={terms.payment_freq}
-                          options={FREQS.map((f) => ({ value: f, label: t(`freq_${f}`) }))} onChange={(v) => set('payment_freq', v)} />
-          <Slider label={t('coupon_pa')} value={terms.coupon_pa} min={0} max={0.3} step={0.005}
-                  pct editSuffix="%" fmt={(v) => pct(v, 1)} onChange={(v) => set('coupon_pa', v)} />
+          <NumField label={t('coupon_pa')} value={terms.coupon_pa} pct suffix="%"
+                    onChange={(v) => set('coupon_pa', v)} />
           <SelectField label={t('coupon_basket')} value={terms.coupon_basket} options={basketOpts} onChange={(v) => set('coupon_basket', v)} />
           <NumberField label={t('coupon_barrier')} value={terms.coupon_barrier} percent suffix="%" min={0} max={100} step={0.5}
                        onChange={(v) => set('coupon_barrier', v)} />

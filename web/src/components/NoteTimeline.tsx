@@ -112,9 +112,14 @@ export default function NoteTimeline({ terms }: { terms: NoteTerms }) {
     </>
   )
 
-  // labels for the shaded zones — placed in clear space, left-aligned inside the plot
+  // labels for the shaded zones — placed in clear space, left-aligned inside the
+  // plot. All three track their band so they move as barriers change: protected
+  // sits between par and knock-in, at-risk between knock-in and the floor, and
+  // the autocall caption centres in its (shrinking) band while staying clear of
+  // the observation dots on the par line.
   const protTextY = (parY + kiY) / 2 + 3
   const riskTextY = (kiY + Y_BOT) / 2 + 3
+  const windowTextY = Math.min((Y_TOP + acY) / 2 + 3, parY - 9)
 
   return (
     <div>
@@ -134,7 +139,7 @@ export default function NoteTimeline({ terms }: { terms: NoteTerms }) {
           <g clipPath={`url(#plot-${uid})`}>
             <rect x={acX} y={Y_TOP} width={X1 - acX} height={Math.max(0, acY - Y_TOP)} fill="var(--accent-weak)" />
             <line x1={acX} y1={Y_TOP} x2={acX} y2={acY} stroke="var(--accent-text)" strokeWidth="0.8" strokeDasharray="2 2" opacity="0.5" />
-            <text x={(acX + X1) / 2} y={Y_TOP + 12} fontSize="9" fontWeight={600} fill="var(--accent-text)" textAnchor="middle" opacity="0.9">{t('diag_window')}</text>
+            <text x={(acX + X1) / 2} y={windowTextY} fontSize="9" fontWeight={600} fill="var(--accent-text)" textAnchor="middle" opacity="0.9">{t('diag_window')}</text>
           </g>
         )}
 

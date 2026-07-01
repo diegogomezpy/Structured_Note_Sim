@@ -3526,14 +3526,17 @@ def _draw_note_diagram(pdf, terms, lang: str) -> None:
         pdf.set_fill_color(*_blend(C_RISK, _WHITE, 0.90))
         pdf.rect(x0, ki_y, x1 - x0, max(0.0, bottom - ki_y), style="F")
 
-        # autocall window: above the autocall barrier, over the callable periods
+        # autocall window: above the autocall barrier, over the callable periods.
+        # Caption centres in its (variable-height) band but stays above the par
+        # line so it never strands outside a thin band or overlaps the dots.
         if start <= n:
             pdf.set_fill_color(*_blend(pdf.accent_color, _WHITE, 0.82))
             pdf.rect(acX, top, max(0.0, x1 - acX), max(0.0, ac_y - top), style="F")
             pdf._sf(8, "bold")
             pdf.set_text_color(*pdf.accent_color)
             _wl = _t("diag_window", lang)
-            pdf.text((acX + x1) / 2 - pdf.get_string_width(_wl) / 2, top + 4.0, _wl)
+            _wy = min((top + ac_y) / 2 + 1.5, par_y - 2.0)
+            pdf.text((acX + x1) / 2 - pdf.get_string_width(_wl) / 2, _wy, _wl)
 
         # y gridlines + tick labels (0 / 50 / 100%)
         pdf._sf(6.8, "regular")
