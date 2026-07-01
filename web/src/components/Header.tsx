@@ -1,9 +1,11 @@
+import { useState } from 'react'
 import { useTheme } from '../theme/ThemeProvider'
 import { useI18n } from '../i18n/I18nProvider'
 import Icon from './Icon'
 import BrandMark from './BrandMark'
 import TickerLogo, { IssuerLogo } from './TickerLogo'
 import { useTour, mainTour } from './Tour'
+import AboutModal from './AboutModal'
 import type { NoteTerms } from '../api/types'
 
 export interface RunMeta { engine: string; nPaths: number; stale: boolean }
@@ -16,6 +18,7 @@ export default function Header({ terms, run }: { terms: NoteTerms | null; run: R
   const { mode, toggle } = useTheme()
   const { lang, setLang, t } = useI18n()
   const { start } = useTour()
+  const [aboutOpen, setAboutOpen] = useState(false)
   const tickers = terms ? Object.entries(terms.tickers ?? {}) : []
 
   return (
@@ -68,6 +71,10 @@ export default function Header({ terms, run }: { terms: NoteTerms | null; run: R
                 style={{ padding: '6px 11px', fontSize: 12.5, gap: 6 }}>
           <Icon name="info" size={15} /> {t('tour_launch')}
         </button>
+        <button className="btn btn--ghost" onClick={() => setAboutOpen(true)}
+                style={{ padding: '6px 11px', fontSize: 12.5 }}>
+          {t('header_about')}
+        </button>
         {run && (
           <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
             <span className="mono" style={{ fontSize: 11, color: 'var(--text-faint)' }}>
@@ -99,6 +106,7 @@ export default function Header({ terms, run }: { terms: NoteTerms | null; run: R
           <Icon name={mode === 'light' ? 'moon' : 'sun'} size={17} />
         </button>
       </div>
+      {aboutOpen && <AboutModal onClose={() => setAboutOpen(false)} />}
     </header>
   )
 }

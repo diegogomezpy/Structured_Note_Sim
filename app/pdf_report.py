@@ -3638,6 +3638,52 @@ def _draw_note_diagram(pdf, terms, lang: str) -> None:
             pass
 
 
+# ── report attribution (invisible metadata watermark) ────────────────────────
+# Authorship baked into every generated PDF's (hidden) document metadata. The
+# string is stored base64-encoded, split across literals, and assembled at call
+# time so it isn't a grep-able plain-text string; `_stamp_attribution` is called
+# from two places (right after the doc is built AND just before output) so
+# deleting one call still leaves the mark. This is DETERRENCE, not DRM — a
+# source-available build can always be edited to strip it; the point is only to
+# make casual removal tedious and to travel invisibly in normal use.
+_A64 = ("U3RydWN0dXJlZCBOb3RlIFNpbXVsYXRvciDCtyDCqSBEaWVnbyBTZWJhc3RpYW4g"
+        "R29tZXogSGFyaWthIDxkaWVnb2dvbWV6enhAZ21haWwuY29tPg==")
+
+
+def _stamp_attribution(_p) -> None:
+    try:
+        _a = base64.b64decode(_A64).decode("utf-8")
+        _p.set_author(_a)
+        _p.set_creator(_a)
+        _p.set_producer(_a)
+        _p.set_keywords(_a)
+    except Exception:
+        pass
+
+
+def _stamp_provenance(_p, terms, report_title: str = "") -> None:
+    """Readable, NON-PII provenance in the PDF metadata: the document title, a UTC
+    generation timestamp, the note + underlyings, and the creation date. Safe to
+    travel with a distributed (white-label) document. The generating user's IP is
+    deliberately NOT embedded here — that's personal data; it belongs in the
+    server request log, visible only to the operator (see api/main.py:report)."""
+    try:
+        now = datetime.datetime.now(datetime.timezone.utc)
+        nm = (getattr(terms, "name", "") or "Structured Note").strip()
+        tks = "/".join((getattr(terms, "tickers", {}) or {}).keys())
+        _p.set_title((report_title or nm)[:120])
+        _subj = f"Generated {now.strftime('%Y-%m-%d %H:%M UTC')} · {nm}"
+        if tks:
+            _subj += f" · {tks}"
+        _p.set_subject(f"{_subj} · Structured Note Simulator")
+        try:
+            _p.creation_date = now
+        except Exception:
+            pass
+    except Exception:
+        pass
+
+
 def generate_pdf_report(*args, **kwargs) -> bytes:
     """Public entry point — see _build_pdf_report for the full signature/docs.
 
@@ -3763,6 +3809,7 @@ def _build_pdf_report(
     # Custom brand typography (title_font / body_font) — no-op + IBM Plex fallback
     # when the brand ships no fonts or the TTF files are absent.
     _register_brand_fonts(pdf, branding)
+    _stamp_attribution(pdf)
     # Usable content width — a page-geometry constant used by every table. Defined
     # here (not inside the Note-Terms block) so later sections never hit an unbound
     # `usable` when Note details is toggled off.
@@ -4324,4 +4371,6 @@ def _build_pdf_report(
     # The final page never triggers add_page, so decorate its void directly
     # (no-op on a full-bleed disclaimer / cover page).
     pdf._decorate_void()
+    _stamp_attribution(pdf)
+    _stamp_provenance(pdf, terms, report_title)
     return bytes(pdf.output())

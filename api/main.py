@@ -15,7 +15,7 @@ import os
 import sys
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
@@ -567,13 +567,30 @@ def quotes(req: QuotesRequest):
 
 
 @app.post("/api/report")
-def report(req: ReportRequest):
+def report(req: ReportRequest, request: Request):
     """Build the institutional PDF report and return it as a downloadable file.
     `sections` selects which lenses to include (empty ⇒ everything available)."""
     try:
         terms = NoteTerms.from_dict(req.terms)
     except Exception as e:
         raise HTTPException(400, f"invalid note terms: {e}")
+    # Server-side generation audit line (provenance: who generated what, when,
+    # from where). Kept in the request log — visible ONLY to the service operator
+    # — and deliberately NOT embedded in the PDF: the client IP is personal data
+    # and the report is white-label / redistributable. For a commercial deploy,
+    # mind IP-log retention (GDPR/CCPA).
+    try:
+        import datetime as _dt
+        _xff = request.headers.get("x-forwarded-for", "")
+        _ip = (_xff.split(",")[0].strip() if _xff
+               else (request.client.host if request.client else "?"))
+        _tk = "/".join((req.terms.get("tickers") or {}).keys()) if isinstance(req.terms, dict) else ""
+        print(f"[report] ts={_dt.datetime.now(_dt.timezone.utc).isoformat()} ip={_ip} "
+              f"note={terms.name!r} tickers={_tk} sections={len(req.sections or [])} "
+              f"n_paths={req.n_paths} lang={req.lang} engine={req.engine} "
+              f"ua={request.headers.get('user-agent', '?')!r}", flush=True)
+    except Exception:
+        pass
     try:
         pdf = engine.build_report_pdf(
             terms, sections=req.sections, lang=req.lang, n_paths=req.n_paths,
