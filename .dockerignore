@@ -21,6 +21,7 @@ docs
 # wheel; the final image installs it). cpp/ and core/simulator_cpp.py must ship.
 scripts/verify_pdf.py
 scripts/compare_engines.py
+scripts/audit_tail.py
 # Local-only branding overrides + commercial brand fonts (the example template and
 # the bundled IBM Plex family are kept). These are gitignored too, so the
 # Cloud Build checkout never has them — this is belt-and-suspenders for local builds.

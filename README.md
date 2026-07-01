@@ -69,7 +69,8 @@ The project covers the full quantitative workflow:
 │   └── README.md             #   build / benchmark / wiring notes
 ├── scripts/
 │   ├── verify_pdf.py         # Standalone PDF-render harness (needs PyMuPDF)
-│   └── compare_engines.py    # Validate + benchmark the C++ engine vs numpy
+│   ├── compare_engines.py    # Validate + benchmark the C++ engine vs numpy
+│   └── audit_tail.py         # Pretty-print the Cloud Run generation audit trail
 │
 ├── design_lang/              # Design-system reference (Mercator tokens + page snapshots)
 ├── Dockerfile                # Single-image build: Vite bundle + C++ wheel + FastAPI runtime
@@ -473,9 +474,11 @@ trace who is *using* the tool (and, for reports, who *exports* one):
 - It lives **only in the request log** (operator-visible) and is **never embedded
   in the PDF** — an IP is personal data and reports are white-label /
   redistributable.
-- Read it on Cloud Run — **your service → Logs**, or `gcloud run services logs
-  read structured-note-sim --region southamerica-west1` — filtering for
-  `[simulate]` / `[report]`.
+- Read it on Cloud Run — **your service → Logs** (free-text search `[report]`),
+  or the bundled helper **`python scripts/audit_tail.py`**, which wraps `gcloud
+  logging read`, parses the lines and prints them with a summary (unique IPs, top
+  networks / countries). Flags: `--tag report|simulate`, `--since 1d`, `-n 50`,
+  `--json`; needs the gcloud CLI + `gcloud auth login`.
 - **`SNSIM_GEOIP=off`** disables geolocation (the line still logs the raw IP).
 
 > **Commercial / privacy note:** an IP address is personal data (GDPR/CCPA). For a
