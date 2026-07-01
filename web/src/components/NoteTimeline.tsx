@@ -130,14 +130,17 @@ export default function NoteTimeline({ terms }: { terms: NoteTerms }) {
           <clipPath id={`plot-${uid}`}><rect x={X0} y={Y_TOP} width={X1 - X0} height={Y_BOT - Y_TOP} /></clipPath>
         </defs>
 
-        {/* payoff zones: protected (≥ knock-in) green, at-risk (< knock-in) red */}
-        <rect x={X0} y={Y_TOP} width={X1 - X0} height={Math.max(0, kiY - Y_TOP)} fill="rgba(21,105,78,0.06)" />
-        <rect x={X0} y={kiY} width={X1 - X0} height={Math.max(0, Y_BOT - kiY)} fill="rgba(156,59,48,0.07)" />
+        {/* payoff zones: protected (≥ knock-in) green, at-risk (< knock-in) red.
+            Theme-aware tints (via --accent/--red) at a visible opacity so the
+            green clearly fills the whole band down to the knock-in line and the
+            at-risk band below it reads clearly reddish, in light and dark mode. */}
+        <rect x={X0} y={Y_TOP} width={X1 - X0} height={Math.max(0, kiY - Y_TOP)} fill="var(--accent)" fillOpacity={0.12} />
+        <rect x={X0} y={kiY} width={X1 - X0} height={Math.max(0, Y_BOT - kiY)} fill="var(--red)" fillOpacity={0.18} />
 
         {/* autocall window: above the autocall barrier, over the callable periods */}
         {start <= n && (
           <g clipPath={`url(#plot-${uid})`}>
-            <rect x={acX} y={Y_TOP} width={X1 - acX} height={Math.max(0, acY - Y_TOP)} fill="var(--accent-weak)" />
+            <rect x={acX} y={Y_TOP} width={X1 - acX} height={Math.max(0, acY - Y_TOP)} fill="var(--accent)" fillOpacity={0.10} />
             <line x1={acX} y1={Y_TOP} x2={acX} y2={acY} stroke="var(--accent-text)" strokeWidth="0.8" strokeDasharray="2 2" opacity="0.5" />
             <text x={(acX + X1) / 2} y={windowTextY} fontSize="9" fontWeight={600} fill="var(--accent-text)" textAnchor="middle" opacity="0.9">{t('diag_window')}</text>
           </g>
