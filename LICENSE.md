@@ -3,11 +3,11 @@ Copyright (c) 2026 Diego Sebastian Gomez Harika
 This project is source-available under the PolyForm Noncommercial License 1.0.0.
 In short: it is free to use, copy, modify, and share for NONCOMMERCIAL purposes
 (personal use, research, education, and evaluation). ANY COMMERCIAL use — by a
-company or otherwise — requires a separate license from the copyright holder;
-contact the author for commercial terms. The complete, verbatim license text
-follows.
+company or otherwise — requires a separate license from the copyright holder.
+For commercial licensing, contact Diego Sebastian Gomez Harika at
+diegogomezzx@gmail.com. The complete, verbatim license text follows.
 
-Required Notice: Copyright (c) 2026 Diego Sebastian Gomez Harika
+Required Notice: Copyright (c) 2026 Diego Sebastian Gomez Harika <diegogomezzx@gmail.com>
 
 --------------------------------------------------------------------------------
 
