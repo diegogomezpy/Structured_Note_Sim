@@ -921,9 +921,6 @@ class _NotePDF(FPDF):
         # Round-robin cursor into `filler_image_list` so successive egregious-void
         # photo bands cycle through the chosen images instead of repeating one.
         self._void_photo_idx = 0
-        # Locale-neutral numeric timestamp so the footer never shows an English
-        # month abbreviation in a Spanish report.
-        self._gen_dt       = datetime.datetime.now().strftime("%Y-%m-%d  %H:%M")
         self.set_margins(16, 16, 16)
         self.set_auto_page_break(auto=True, margin=28)
         self.alias_nb_pages()
@@ -1057,12 +1054,11 @@ class _NotePDF(FPDF):
         self.set_text_color(*self.footnote_grey)
         self.multi_cell(0, 2.9, self.footer_note or _t("footer_line", self.lang), align="L")
 
-        # ── Page number + generation datetime ────────────────────────
+        # ── Page number (no generation date — the report carries no visible
+        # date; provenance lives only in the PDF metadata) ────────────
         self.set_y(-11)
         self._sf(6.5, "light")
         self.set_text_color(*self.footnote_grey)
-        self.cell(0, 4.5, self._safe(self._gen_dt), align="L")
-        self.set_y(-11)
         _page = _t("page_of", self.lang)
         _mid  = _t("page_of_mid", self.lang)
         self.cell(0, 4.5, f"{_page} {self.page_no()} {_mid} {{nb}}", align="R")
@@ -2830,9 +2826,8 @@ def _front_cover_page(pdf: _NotePDF, terms, lang: str, report_title: str, websit
 
     # Hero block, left-aligned in the lower-middle of the page.
     eb = (report_title or _t("report_eyebrow", lang)).upper()
-    today = _fmt_long_date(datetime.date.today(), lang)
     hero_y = H * 0.40
-    pdf._eyebrow(ml, hero_y, f"{eb}  ·  {today}", pdf.section_rule_color,
+    pdf._eyebrow(ml, hero_y, eb, pdf.section_rule_color,
                  size=11.0, tracking=1.6, w=inner)
     # Big white Neulis title — wraps to as many lines as needed.
     _name = _safe(terms.name)
@@ -2857,24 +2852,41 @@ def _front_cover_page(pdf: _NotePDF, terms, lang: str, report_title: str, websit
     pdf.set_fill_color(*pdf.section_rule_color)
     pdf.rect(ml, pdf.get_y(), 22, 1.6, style="F")
 
-    # ── Bottom band: 3 key terms + website ────────────────────────────────
+    # ── Bottom band: user-selectable key terms + website ──────────────────
+    # Which figures appear here (and their order) is driven by branding
+    # `cover_metrics`: absent → the classic three; an explicit (possibly empty)
+    # list → exactly those, so the whole strip can be turned off. Capped to what
+    # the strip fits alongside the website.
     band_h = 30.0
     band_y = H - band_h
     pdf.set_fill_color(*pdf.ink)
     pdf.rect(0, band_y, W, band_h, style="F")
-    _kt = [
-        (_t("coupon_pa", lang),        f"{terms.coupon_pa * 100:.2f}%"),
-        (_t("maturity", lang),         f"{terms.maturity:g}Y"),
-        (_t("ki_barrier", lang).split(' (')[0], f"{terms.knock_in_barrier:.0%}"),
-    ]
-    kx = ml
-    for lbl, val in _kt:
-        pdf._eyebrow(kx, band_y + 9, lbl, (159, 196, 179), size=7.5,
-                     tracking=0.4, w=44)
-        pdf.set_xy(kx, band_y + 14)
-        pdf._sf(15, "bold"); pdf.set_text_color(255, 255, 255)
-        pdf.cell(44, 8, _safe(val))
-        kx += 46
+    _ki_lbl = _t("ki_barrier", lang).split(' (')[0]
+    _fcat = {
+        "maturity":         (_t("maturity", lang),         f"{terms.maturity:g}Y"),
+        "coupon_pa":        (_t("coupon_pa", lang),        f"{terms.coupon_pa * 100:.2f}%"),
+        "coupon_barrier":   (_t("coupon_barrier", lang),   f"{terms.coupon_barrier:.0%}"),
+        "autocall_barrier": (_t("autocall_barrier", lang), f"{terms.autocall_barrier:.0%}"),
+        "knock_in_barrier": (_ki_lbl,                      f"{terms.knock_in_barrier:.0%}"),
+        "issue_date":       (_t("issue_date", lang),       str(getattr(terms, "issue_date", "") or "")),
+        "issuer":           (_t("issuer", lang),           getattr(pdf, "issuer", "") or ""),
+    }
+    _sel = getattr(pdf, "cover_metrics", None)
+    _keys = list(_sel) if _sel is not None else ["coupon_pa", "maturity", "knock_in_barrier"]
+    _kt = [_fcat[k] for k in _keys if k in _fcat and _fcat[k][1] != ""][:4]
+    if _kt:
+        web_w = 54.0 if website else 0.0
+        span  = (W - 2 * ml) - web_w
+        step  = min(48.0, span / len(_kt))
+        cellw = step - 2.0
+        kx = ml
+        for lbl, val in _kt:
+            pdf._eyebrow(kx, band_y + 9, lbl, (159, 196, 179), size=7.5,
+                         tracking=0.4, w=cellw)
+            pdf.set_xy(kx, band_y + 14)
+            pdf._sf(15, "bold"); pdf.set_text_color(255, 255, 255)
+            pdf.cell(cellw, 8, _safe(val))
+            kx += step
     if website:
         pdf._eyebrow(W - ml - 70, band_y + 12.5, website, pdf.section_rule_color,
                      size=10.0, tracking=0.6, w=70, align="R")
@@ -3015,7 +3027,6 @@ def _cover_page(
 
     x0 = pdf.l_margin
     W  = pdf.w - pdf.l_margin - pdf.r_margin
-    today_long = _fmt_long_date(datetime.date.today(), lang)
     eyebrow    = (pdf.report_title or _t("report_eyebrow", lang)).upper()
     INK_SUB    = (159, 196, 179)   # muted mint for sub-text on the ink masthead
     KV_GREY    = (80, 90, 84)      # key-term label grey-green
@@ -3026,7 +3037,7 @@ def _cover_page(
                 pdf.amber_dark, _blend(pdf.teal, _BLACK, 0.30)]
         return [base[i % len(base)] for i in range(max(1, n))]
 
-    # ── Header — logo left, eyebrow + date right, 2px primary rule ──────────
+    # ── Header — logo left, eyebrow right, 2px primary rule ─────────────────
     has_logo = False
     if pdf.firm_logo_bytes:
         try:
@@ -3041,10 +3052,8 @@ def _cover_page(
         pdf._sf(14, "bold"); pdf.set_text_color(*pdf.primary_color)
         pdf.cell(120, 8, _safe(pdf.firm_name))
     rx, rw = pdf.w - pdf.r_margin - 95, 95
-    pdf._eyebrow(rx, 9.0, eyebrow, pdf.primary_color, size=8.0, tracking=0.8,
+    pdf._eyebrow(rx, 12.5, eyebrow, pdf.primary_color, size=8.0, tracking=0.8,
                  w=rw, align="R")
-    pdf.set_xy(rx, 14.6); pdf._sf(8, "light"); pdf.set_text_color(*pdf.muted)
-    pdf.cell(rw, 4.5, _safe(today_long), align="R")
     pdf.set_draw_color(*pdf.primary_color); pdf.set_line_width(0.7)
     pdf.line(x0, 23.5, pdf.w - pdf.r_margin, 23.5)
 
@@ -3060,7 +3069,7 @@ def _cover_page(
     MH = 58.0 if _show_kpis else 34.0
     _fill_chamfer(pdf, x0, y_m, W, MH, pdf.ink, c=7.5, q=2.0, r=5.0)
     _hex_cluster(pdf, x0 + W - 42, y_m - 6, 30, _WHITE, variant=0, opacity=0.12)
-    pdf._eyebrow(x0 + pad, y_m + 7, f"{eyebrow}  ·  {today_long}", pdf.lime,
+    pdf._eyebrow(x0 + pad, y_m + 7, eyebrow, pdf.lime,
                  size=8.0, tracking=0.9, w=W - 2 * pad)
     # Title (Neulis): one big line, shrinking to fit; if a very long note name
     # still overflows at the floor, wrap it onto two smaller lines.
@@ -3212,9 +3221,9 @@ def _cover_page(
         ly += ph + 5.0
 
     # ── Right rail: underlyings + key terms panel ──────────────────────────
-    # Which KEY TERMS appear in the at-a-glance rail (and their order) is
-    # user-selectable via branding `cover_metrics`; absent → the default set
-    # (issue date / issuer only when present on the note).
+    # The at-a-glance rail always shows the core terms (issue date / issuer only
+    # when present on the note). The user-selectable `cover_metrics` toggles drive
+    # the *cover* footer strip, not this rail.
     _ki_lbl = _t("ki_barrier", lang).split(' (')[0]
     _metric_catalog = {
         "maturity":         (_t("maturity", lang),         f"{terms.maturity:g}Y {_fmt_freq(terms.payment_freq, lang)}"),
@@ -3225,21 +3234,18 @@ def _cover_page(
         "issue_date":       (_t("issue_date", lang),       str(getattr(terms, "issue_date", "") or "")),
         "issuer":           (_t("issuer", lang),           pdf.issuer or ""),
     }
-    _sel_metrics = getattr(pdf, "cover_metrics", None)
-    if _sel_metrics:
-        mini = [_metric_catalog[k] for k in _sel_metrics
-                if k in _metric_catalog and _metric_catalog[k][1] != ""]
-    else:
-        mini = [_metric_catalog["maturity"], _metric_catalog["coupon_pa"],
-                _metric_catalog["autocall_barrier"], _metric_catalog["knock_in_barrier"]]
-        if getattr(terms, "issue_date", None):
-            mini.append(_metric_catalog["issue_date"])
-        if pdf.issuer:
-            mini.append(_metric_catalog["issuer"])
-    if not mini:                                   # never render an empty rail
-        mini = [_metric_catalog["maturity"], _metric_catalog["coupon_pa"]]
+    mini = [_metric_catalog["maturity"], _metric_catalog["coupon_pa"],
+            _metric_catalog["autocall_barrier"], _metric_catalog["knock_in_barrier"]]
+    if getattr(terms, "issue_date", None):
+        mini.append(_metric_catalog["issue_date"])
+    if pdf.issuer:
+        mini.append(_metric_catalog["issuer"])
     n_a = len(asset_names or [])
-    rail_h = 5.0 + 5.5 + n_a * 9.0 + 5.0 + 5.5 + len(mini) * 8.0 + 3.0
+    # Row pitch for the underlyings list. The logo box is smaller than the pitch
+    # so consecutive marks (which can be solid-colour tiles) keep a clear gap
+    # instead of melding into one another.
+    _UL_ROW, _UL_LOGO = 12.5, 8.6
+    rail_h = 5.0 + 5.5 + n_a * _UL_ROW + 5.0 + 5.5 + len(mini) * 8.0 + 3.0
     pdf.set_fill_color(*pdf.panel_color)
     try:
         pdf.rect(Rx, ry, Rw, rail_h, style="F", round_corners=True, corner_radius=3)
@@ -3256,13 +3262,16 @@ def _cover_page(
     yy += 5.5
     _cols = _ul_colors(n_a)
     for i, nm in enumerate(asset_names or []):
-        # Company logo when available; fall back to a colored ticker chip.
+        # Company logo when available; fall back to a colored ticker chip. Logo
+        # box + name are vertically centred within the row's pitch so the extra
+        # spacing sits evenly above and below each mark.
         _ld = ((logo_overrides or {}).get(nm)
                or _load_ticker_logo(nm, (logo_urls or {}).get(nm, ""),
                                     (logo_tickers or {}).get(nm)))
         # Logo drawn directly — no white backing tile — and fit to a consistent
         # square box (aspect preserved, so wide/tall marks aren't squashed).
-        _LS = 9.5
+        _LS = _UL_LOGO
+        _box_y = yy + (_UL_ROW - _LS) / 2.0
         _drew = False
         if _ld:
             try:
@@ -3272,7 +3281,7 @@ def _cover_page(
                 else:
                     _lw, _lh = _LS / _ar, _LS
                 pdf.image(io.BytesIO(_ld), x=Rx + 5 + (_LS - _lw) / 2.0,
-                          y=yy - 0.7 + (_LS - _lh) / 2.0, w=_lw, h=_lh)
+                          y=_box_y + (_LS - _lh) / 2.0, w=_lw, h=_lh)
                 _drew = True
             except Exception:
                 _drew = False
@@ -3281,20 +3290,20 @@ def _cover_page(
             # Subtle tinted chip (NOT white) behind the ticker fallback.
             pdf.set_fill_color(*_blend(_cols[i], _WHITE, 0.86))
             try:
-                pdf.rect(Rx + 5, yy - 0.7, _LS, _LS, style="F",
+                pdf.rect(Rx + 5, _box_y, _LS, _LS, style="F",
                          round_corners=True, corner_radius=1.8)
             except TypeError:
-                pdf.rect(Rx + 5, yy - 0.7, _LS, _LS, style="F")
-            pdf.set_xy(Rx + 5, yy + 1.6)
+                pdf.rect(Rx + 5, _box_y, _LS, _LS, style="F")
+            pdf.set_xy(Rx + 5, _box_y + 2.3)
             pdf._sf(6.0, "bold"); pdf.set_text_color(*_cols[i])
             pdf.cell(_LS, 4, _safe(tk[:4]), align="C")
         # Company name — larger and bolder so it reads as the primary label.
-        pdf.set_xy(Rx + 18, yy + 0.5)
+        pdf.set_xy(Rx + 18, yy + (_UL_ROW - 5.4) / 2.0)
         _nm_w = Rw - 18 - 4
         pdf._fit_font(_safe(nm), _nm_w, 9.6, "bold", min_size=6.5)
         pdf.set_text_color(*pdf.ink)
         pdf.cell(_nm_w, 5.4, _safe(nm))
-        yy += 9.0
+        yy += _UL_ROW
     yy += 1.0
     pdf.set_draw_color(*_RULE_SOFT); pdf.set_line_width(0.2)
     pdf.line(Rx + 5, yy, Rx + Rw - 5, yy)
@@ -3860,10 +3869,11 @@ def _build_pdf_report(
         pdf.cover_overlay_opacity = float(_b.get("cover_overlay_opacity", 0.55))
     except Exception:
         pdf.cover_overlay_opacity = 0.55
-    # Optional user-selected KEY TERMS for the at-a-glance cover rail (list of
-    # metric keys). None → the default set (see `_cover_page`).
+    # Optional user-selected KEY TERMS for the cover footer strip (list of metric
+    # keys). Missing/None → the default three (see `_front_cover_page`); an
+    # explicit empty list → show none (the whole strip can be turned off).
     _cm = _b.get("cover_metrics")
-    pdf.cover_metrics = list(_cm) if isinstance(_cm, (list, tuple)) and _cm else None
+    pdf.cover_metrics = list(_cm) if isinstance(_cm, (list, tuple)) else None
 
     # ── 0. Front cover (toggleable, default on) ────────────────────────────
     if _inc("cover"):

@@ -106,7 +106,7 @@ _GF = "https://www.google.com/s2/favicons?sz=64&domain={domain}"
 TICKER_LOGOS: dict[str, str] = {
     **{sym: _LOGO_BASE.format(sym=sym) for sym in [
         # US Banks & Financials
-        "GS", "JPM", "MS", "BAC", "C", "WFC", "BLK", "SCHW", "V", "MA",
+        "GS", "JPM", "BAC", "C", "WFC", "BLK", "SCHW", "V", "MA",
         # US Tech
         "AAPL", "MSFT", "NVDA", "AMZN", "META", "GOOGL", "TSLA",
         "AVGO", "PLTR", "AMD", "INTC", "CRM", "NFLX", "SPOT", "UBER",
@@ -121,6 +121,9 @@ TICKER_LOGOS: dict[str, str] = {
         # Crypto ETFs
         "IBIT", "FBTC",
     ]},
+    # Morgan Stanley: parqet's symbol logo is the black wordmark; use the blue
+    # brand favicon (deep-blue square with the white "Morgan Stanley" wordmark).
+    "MS":         _GF.format(domain="morganstanley.com"),
     # Indices — exchange / index-provider favicon via Google
     "^GSPC":      _GF.format(domain="spglobal.com"),
     "^NDX":       _GF.format(domain="nasdaq.com"),

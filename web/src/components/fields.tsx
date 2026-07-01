@@ -134,6 +134,52 @@ export function NumberField({
   )
 }
 
+/** Full-width numeric field the user types into — no slider track (those proved
+    fiddly for the note terms). Free typing (text input, not a spinner) with a
+    rolling text buffer so mid-edit values aren't clobbered; commits on change,
+    clamped and rounded to `digits` decimals. `pct` stores a fraction but
+    shows/accepts a percentage (0.1235 ↔ "12.35"). `min`/`max` are in *display*
+    units. Mirrors EditableValue's parsing, presented as a labelled row. */
+export function NumField({
+  label, value, onChange, tip, pct, digits = 3, suffix, min = 0, max, isInt, tone = 'accent',
+}: {
+  label: string; value: number; onChange: (v: number) => void; tip?: string
+  pct?: boolean; digits?: number; suffix?: string
+  min?: number; max?: number; isInt?: boolean; tone?: 'accent' | 'danger'
+}) {
+  const toDisp = (v: number) => (pct ? v * 100 : v)
+  const fromDisp = (d: number) => (pct ? d / 100 : d)
+  const round = (d: number) => (isInt ? Math.round(d) : parseFloat(d.toFixed(digits)))
+  const fmtDisp = (v: number) => String(round(toDisp(v)))
+  const [focused, setFocused] = useState(false)
+  const [text, setText] = useState(() => fmtDisp(value))
+  useEffect(() => { if (!focused) setText(fmtDisp(value)) }, [value, focused])  // eslint-disable-line react-hooks/exhaustive-deps
+
+  const commit = (raw: string) => {
+    let n = parseFloat(raw)
+    if (Number.isNaN(n)) return
+    n = round(n)                                   // cap to `digits` decimals
+    if (min != null) n = Math.max(min, n)
+    if (max != null) n = Math.min(max, n)
+    onChange(fromDisp(n))
+  }
+
+  return (
+    <div style={{ marginBottom: 14 }}>
+      <div style={{ marginBottom: 6 }}>
+        <FieldLabel label={suffix ? `${label} (${suffix})` : label} tip={tip} />
+      </div>
+      <input
+        type="text" inputMode="decimal" aria-label={label} className="mono"
+        value={text}
+        onChange={(e) => { setText(e.target.value); commit(e.target.value) }}
+        onFocus={(e) => { setFocused(true); e.currentTarget.select() }}
+        onBlur={() => { setFocused(false); setText(fmtDisp(value)) }}
+        style={tone === 'danger' ? { color: 'var(--red)' } : undefined} />
+    </div>
+  )
+}
+
 /** Custom dropdown — a button + portalled popover menu styled to the design
     language (native <option> lists can't be themed). Closes on click-outside,
     Esc, or scroll; arrow keys move the active row, Enter selects. */

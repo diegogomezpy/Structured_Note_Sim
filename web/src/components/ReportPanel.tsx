@@ -270,16 +270,21 @@ export default function ReportPanel({ terms, opts }: { terms: NoteTerms; opts: R
       return { ...b, filler_images_base64: [...cur, ...urls.slice(0, room)] }
     })).catch(() => {})
   }
-  // Cover KEY TERMS the user can choose to show on the at-a-glance rail. Order
-  // here is the order they render. Absent selection → the PDF's default set.
+  // KEY TERMS the user can show in the strip along the bottom of the COVER page.
+  // Order here is the order they render; only the first ~4 fit alongside the
+  // website. Absent selection → the PDF's default three; an explicit empty
+  // array → the strip is hidden entirely.
   const COVER_METRIC_KEYS = ['maturity', 'coupon_pa', 'coupon_barrier', 'autocall_barrier', 'knock_in_barrier', 'issue_date', 'issuer'] as const
-  const COVER_METRIC_DEFAULT = ['maturity', 'coupon_pa', 'autocall_barrier', 'knock_in_barrier', 'issue_date', 'issuer']
+  const COVER_METRIC_DEFAULT = ['coupon_pa', 'maturity', 'knock_in_barrier']
+  const COVER_METRIC_MAX = 4
   const metricLabel = (k: string) => k === 'issuer' ? t('issuer_name') : t(k)
   const coverMetricsSel = (brand.cover_metrics as string[] | undefined) ?? COVER_METRIC_DEFAULT
   const toggleCoverMetric = (k: string) => {
     const base = (brand.cover_metrics as string[] | undefined) ?? COVER_METRIC_DEFAULT
     const next = base.includes(k) ? base.filter((m) => m !== k) : [...COVER_METRIC_KEYS].filter((m) => base.includes(m) || m === k)
-    setBrandField('cover_metrics', next.length ? next : undefined)
+    // Store even when empty so the whole strip can be switched off (empty array
+    // is respected by the PDF; only a missing value falls back to the default).
+    setBrandField('cover_metrics', next)
   }
   // Embed TTF/OTF font files (base64, keyed by inferred style) into the config so
   // the fonts travel with it and render on the deploy. Style is read off the
@@ -557,17 +562,25 @@ export default function ReportPanel({ terms, opts }: { terms: NoteTerms; opts: R
                                   onChange={(urls) => setBrandField('filler_images_base64', urls)} />
               </div>
 
-              {/* Cover key terms — pick which metrics show on the at-a-glance rail. */}
+              {/* Cover key terms — pick which metrics show in the strip at the
+                  bottom of the cover page. Only the first few fit; extras beyond
+                  the cap are dimmed to show they won't render. */}
               <div style={{ marginTop: 16 }} data-tour="rep-metrics">
                 <div style={{ fontSize: 11.5, color: 'var(--text-muted)', marginBottom: 2 }}>{t('cover_metrics')}</div>
                 <div style={{ fontSize: 11, color: 'var(--text-faint)', marginBottom: 8, lineHeight: 1.5 }}>{t('cover_metrics_hint')}</div>
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7 }}>
-                  {COVER_METRIC_KEYS.map((k) => (
-                    <button key={k} type="button" className="preset-pill" data-on={coverMetricsSel.includes(k)}
-                            onClick={() => toggleCoverMetric(k)}>
-                      {metricLabel(k)}
-                    </button>
-                  ))}
+                  {COVER_METRIC_KEYS.map((k) => {
+                    const on = coverMetricsSel.includes(k)
+                    const overCap = on && coverMetricsSel.indexOf(k) >= COVER_METRIC_MAX
+                    return (
+                      <button key={k} type="button" className="preset-pill" data-on={on}
+                              title={overCap ? t('cover_metrics_over') : undefined}
+                              style={overCap ? { opacity: 0.45 } : undefined}
+                              onClick={() => toggleCoverMetric(k)}>
+                        {metricLabel(k)}
+                      </button>
+                    )
+                  })}
                 </div>
               </div>
             </div>
