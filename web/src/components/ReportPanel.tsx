@@ -151,9 +151,7 @@ export default function ReportPanel({ terms, opts }: { terms: NoteTerms; opts: R
   const [error, setError] = useState('')
   const logoRef = useRef<HTMLInputElement>(null)
   const altLogoRef = useRef<HTMLInputElement>(null)
-  const coverImgRef = useRef<HTMLInputElement>(null)
   const sigilRef = useRef<HTMLInputElement>(null)
-  const backImgRef = useRef<HTMLInputElement>(null)
   const fillerRef = useRef<HTMLInputElement>(null)
   const brandCfgRef = useRef<HTMLInputElement>(null)
   const titleFontRef = useRef<HTMLInputElement>(null)
@@ -519,22 +517,11 @@ export default function ReportPanel({ terms, opts }: { terms: NoteTerms; opts: R
                     <input ref={sigilRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={(e) => onImage('cover_sigil_base64', e.target.files?.[0])} />
                   </div>
                 </Field>
-                <Field label={t('brand_cover_image')}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <button className="btn" style={{ padding: '7px 12px' }} onClick={() => coverImgRef.current?.click()}><Icon name="upload" size={13} /> {t('brand_upload_image')}</button>
-                    <ImgPreview src={brand.cover_image_base64} style={{ height: 26, borderRadius: 5 }} />
-                    {brand.cover_image_base64 && <button className="btn btn--ghost" style={{ padding: '4px 8px', fontSize: 11.5 }} onClick={() => setBrandField('cover_image_base64', '')}>{t('det_reset_logo')}</button>}
-                    <input ref={coverImgRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={(e) => onImage('cover_image_base64', e.target.files?.[0])} />
-                  </div>
-                </Field>
-                <Field label={t('brand_back_image')}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <button className="btn" style={{ padding: '7px 12px' }} onClick={() => backImgRef.current?.click()}><Icon name="upload" size={13} /> {t('brand_upload_image')}</button>
-                    <ImgPreview src={brand.back_image_base64} style={{ height: 26, borderRadius: 5 }} />
-                    {brand.back_image_base64 && <button className="btn btn--ghost" style={{ padding: '4px 8px', fontSize: 11.5 }} onClick={() => setBrandField('back_image_base64', '')}>{t('det_reset_logo')}</button>}
-                    <input ref={backImgRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={(e) => onImage('back_image_base64', e.target.files?.[0])} />
-                  </div>
-                </Field>
+                {/* The cover (1st pick) and back-page (2nd pick) photos are chosen
+                    in the report-photo library below — no separate cover/back
+                    upload here, which used to compete with that pool for the same
+                    two slots. Overlay colour/opacity below still tint whatever the
+                    library resolves as the cover. */}
                 <Swatch label={t('brand_overlay_color')} value={brand.cover_overlay_color} fallback={brand.primary_color ?? '#1a2e4a'} onChange={(v) => setBrandField('cover_overlay_color', v)} />
                 <Field label={t('brand_overlay_opacity')}>
                   <input type="number" min={0} max={1} step={0.05} placeholder="0.55"

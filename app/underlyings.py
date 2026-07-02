@@ -9,6 +9,10 @@ logos live in one source of truth without dragging in the UI framework.
 from __future__ import annotations
 
 UNDERLYING_OPTIONS = {
+    # Curated to the major benchmark indices and big-name single stocks that
+    # actually underlie structured notes — deliberately NOT a long tail of small
+    # regional indices, commodity/sector ETFs or fixed-income/crypto ETFs. Any of
+    # those can still be added via the "custom underlying" symbol entry.
     # ── Equity indices — US ──────────────────────────────────────────────
     "SPX — S&P 500":            "^GSPC",
     "NDX — Nasdaq 100":         "^NDX",
@@ -18,19 +22,10 @@ UNDERLYING_OPTIONS = {
     "DAX — DAX 40":             "^GDAXI",
     "FTSE — FTSE 100":          "^FTSE",
     "CAC — CAC 40":             "^FCHI",
-    "SMI — Swiss Market":       "^SSMI",
     "IBEX — Spain":             "^IBEX",
-    "MIB — Italy":              "FTSEMIB.MI",
-    # ── Equity indices — Asia / EM ───────────────────────────────────────
+    # ── Equity indices — Asia ────────────────────────────────────────────
     "NKY — Nikkei 225":         "^N225",
     "HSI — Hang Seng":          "^HSI",
-    "KOSPI — Korea":            "^KS11",
-    "ASX — Australia":          "^AXJO",
-    "TWII — Taiwan":            "^TWII",
-    "NSEI — India Nifty 50":    "^NSEI",
-    "STI — Singapore":          "^STI",
-    "BVSP — Brazil Bovespa":    "^BVSP",
-    "MXX — Mexico IPC":         "^MXX",
     # ── US Banks & Financials ────────────────────────────────────────────
     "GS — Goldman Sachs":       "GS",
     "JPM — J.P. Morgan":        "JPM",
@@ -78,23 +73,6 @@ UNDERLYING_OPTIONS = {
     "MC — LVMH":                "MC.PA",
     "OR — L'Oréal":             "OR.PA",
     "SAN — Santander":          "SAN.MC",
-    # ── Commodities & Equity ETFs ────────────────────────────────────────
-    "GLD — Gold ETF":           "GLD",
-    "SLV — Silver ETF":         "SLV",
-    "GDX — Gold Miners ETF":    "GDX",
-    "USO — Oil ETF":            "USO",
-    "XLE — Energy ETF":         "XLE",
-    "XLF — Financials ETF":     "XLF",
-    "EEM — EM ETF":             "EEM",
-    "ARKK — ARK Innovation":    "ARKK",
-    # ── Fixed Income ETFs ────────────────────────────────────────────────
-    "TLT — 20Y Treasury ETF":   "TLT",
-    "IEF — 7-10Y Treasury ETF": "IEF",
-    "HYG — High Yield ETF":     "HYG",
-    "LQD — Investment Grade ETF": "LQD",
-    # ── Crypto ETFs ──────────────────────────────────────────────────────
-    "IBIT — iShares Bitcoin ETF": "IBIT",
-    "FBTC — Fidelity Bitcoin ETF": "FBTC",
 }
 UNDERLYING_LABELS  = list(UNDERLYING_OPTIONS.keys())
 
