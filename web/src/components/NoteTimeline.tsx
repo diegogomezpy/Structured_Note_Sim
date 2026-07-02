@@ -119,7 +119,11 @@ export default function NoteTimeline({ terms }: { terms: NoteTerms }) {
   // the observation dots on the par line.
   const protTextY = (parY + kiY) / 2 + 3
   const riskTextY = (kiY + Y_BOT) / 2 + 3
-  const windowTextY = Math.min((Y_TOP + acY) / 2 + 3, parY - 9)
+  // The autocall caption centres in its band but must never dip into the row of
+  // per-period coupon labels (which sit at parY-9); when no coupons are shown it
+  // only needs to clear the observation dots.
+  const windowFloor = showCoupon ? parY - 21 : parY - 9
+  const windowTextY = Math.min((Y_TOP + acY) / 2 + 3, windowFloor)
 
   return (
     <div>
@@ -176,19 +180,27 @@ export default function NoteTimeline({ terms }: { terms: NoteTerms }) {
           <path d={stepPath} fill="none" stroke="var(--accent-text)" strokeWidth="1.4" strokeDasharray="4 3" strokeLinecap="round" opacity="0.85" />
         )}
 
-        {/* gutter labels: neutral leader + anchor dot (clearly not a barrier); hover for detail */}
-        {entries.map((e, i) => (
-          <g key={i}>
-            <title>{e.desc}</title>
-            <circle cx={X1 + 3} cy={e.target} r={1.6} fill="var(--text-faint)" />
-            <path d={`M ${X1 + 3} ${e.target.toFixed(1)} L ${LABEL_X - 6} ${adjY[i].toFixed(1)}`}
-                  fill="none" stroke="var(--text-faint)" strokeWidth="0.9" />
-            <text x={LABEL_X} y={adjY[i] + 3.2} fontSize="10">
-              <tspan fill={e.color}>{e.name} </tspan>
-              <tspan fill="var(--text)" fontWeight={600}>{e.value}</tspan>
-            </text>
-          </g>
-        ))}
+        {/* gutter labels: neutral leader + anchor dot (clearly not a barrier); hover for detail.
+            A long label (e.g. the combined coupon·knock-in name in Spanish with a
+            3-decimal value) is condensed with textLength so it never spills past
+            the SVG's right edge and gets clipped. */}
+        {entries.map((e, i) => {
+          const avail = VIEW_W - LABEL_X - 3
+          const fit = (e.name.length + e.value.length + 1) * 5.2 > avail
+            ? { textLength: avail, lengthAdjust: 'spacingAndGlyphs' as const } : {}
+          return (
+            <g key={i}>
+              <title>{e.desc}</title>
+              <circle cx={X1 + 3} cy={e.target} r={1.6} fill="var(--text-faint)" />
+              <path d={`M ${X1 + 3} ${e.target.toFixed(1)} L ${LABEL_X - 6} ${adjY[i].toFixed(1)}`}
+                    fill="none" stroke="var(--text-faint)" strokeWidth="0.9" />
+              <text x={LABEL_X} y={adjY[i] + 3.2} fontSize="10" {...fit}>
+                <tspan fill={e.color}>{e.name} </tspan>
+                <tspan fill="var(--text)" fontWeight={600}>{e.value}</tspan>
+              </text>
+            </g>
+          )
+        })}
 
         {/* axes — extended past the data with arrowheads so the chart doesn't end abruptly */}
         <line x1={X0} y1={Y_BOT} x2={X0} y2={Y_TOP - 7} stroke="var(--border-strong)" strokeWidth="1.2" />
