@@ -294,6 +294,50 @@ _YAHOO_SECTOR_ALIAS = {
     "utilities": "utilities", "real estate": "real_estate",
     "communication services": "communication", "communication": "communication",
 }
+# Yahoo's coarse `sector` field only spans the ~11 GICS-style sectors above; the
+# finer photo sectors (defense, semiconductors, luxury, banking, …) live in
+# Yahoo's `industry` field. This maps an industry string (lowercased, substring
+# match) → the specific photo sector, so auto-suggestion can reach the granular
+# ones. Ordered specific → general (first hit wins). Dash-free needles sidestep
+# Yahoo's inconsistent em-dash/hyphen use ("Banks—Regional" vs "Banks - Regional").
+_INDUSTRY_SECTOR_MAP: "list[tuple[str, str]]" = [
+    ("aerospace", "aerospace"),                      # "Aerospace & Defense"
+    ("defense", "defense"),
+    ("semiconductor", "semiconductors"),             # incl. "…Equipment & Materials"
+    ("drug manufacturers", "pharmaceuticals"),
+    ("biotechnology", "pharmaceuticals"),
+    ("luxury goods", "luxury"),
+    ("banks", "banking"),
+    ("insurance", "insurance"),
+    ("railroads", "transportation"),
+    ("trucking", "transportation"),
+    ("freight", "transportation"),                   # "Integrated Freight & Logistics"
+    ("marine shipping", "transportation"),
+    ("airports", "transportation"),
+    ("airlines", "travel"),
+    ("travel services", "travel"),
+    ("resorts", "travel"),                           # "Resorts & Casinos"
+    ("lodging", "travel"),
+    ("gold", "mining"),
+    ("silver", "mining"),
+    ("copper", "mining"),
+    ("aluminum", "mining"),
+    ("coal", "mining"),
+    ("mining", "mining"),                            # "…& Mining"
+    ("engineering & construction", "infrastructure"),
+    ("infrastructure", "infrastructure"),
+    ("solar", "renewables"),
+    ("renewable", "renewables"),                     # "Utilities—Renewable"
+    ("farm products", "agriculture"),
+    ("agricultural", "agriculture"),                 # "Agricultural Inputs"
+    ("auto manufacturers", "automotive"),
+    ("auto parts", "automotive"),
+    ("auto & truck", "automotive"),                  # "Auto & Truck Dealerships"
+    ("entertainment", "media"),
+    ("broadcasting", "media"),
+    ("retail", "retail"),                            # generic retail after specifics
+    ("stores", "retail"),                            # "Grocery/Discount/Department Stores"
+]
 _COVER_CACHE: "dict[str, list]" = {}
 _COVER_IMG_CACHE: "_OD[str, tuple[bytes, str]]" = _OD()
 
@@ -309,6 +353,19 @@ def _normalize_sector(s: str | None) -> str:
     if k in _SECTOR_QUERIES:
         return k
     return _YAHOO_SECTOR_ALIAS.get(k, "markets")
+
+
+def resolve_sector_key(sector: str | None, industry: str | None) -> str:
+    """Best cover-photo sector key for an underlying: match the fine-grained Yahoo
+    `industry` first (so a defense / semiconductor / luxury / bank name lands on
+    its specific library sector), then fall back to the coarse `sector` alias,
+    then 'markets'. Powers the picker's auto-suggestion."""
+    ind = (industry or "").strip().lower()
+    if ind:
+        for needle, key in _INDUSTRY_SECTOR_MAP:
+            if needle in ind:
+                return key
+    return _normalize_sector(sector)
 
 
 def _pexels_search(query: str, per_page: int = 2, page: int = 1) -> list[dict]:
@@ -604,7 +661,13 @@ def underlying_metrics(req: MetricsRequest):
     1Y price chart). Slow (Yahoo .info + options per ticker) — the client fetches it
     lazily when the breakdown section is opened."""
     try:
-        return engine.run_underlying_metrics(req.tickers, lang=req.lang)
+        rows = engine.run_underlying_metrics(req.tickers, lang=req.lang)
+        # Resolve each underlying's fine-grained cover-photo sector (industry-first)
+        # so the picker can auto-suggest the granular sectors, not just Yahoo's
+        # coarse ~11. Cheap, string-only — done here beside the sector tables.
+        for r in rows:
+            r["sector_key"] = resolve_sector_key(r.get("sector"), r.get("industry"))
+        return rows
     except Exception as e:
         raise HTTPException(500, f"underlying metrics failed: {e}")
 

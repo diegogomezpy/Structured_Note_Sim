@@ -98,7 +98,10 @@ export default function CoverPhotoPicker({ terms, selected, onChange, max }: {
     fetchUnderlyingMetricsCached(tickers, lang).then((rows) => {
       if (cancelled || userPicked.current) return
       const counts: Record<string, number> = {}
-      for (const r of rows) { const s = (r.sector || '').trim(); if (s) counts[s] = (counts[s] ?? 0) + 1 }
+      // Prefer the backend-resolved fine-grained key (industry-first, so a
+      // defense / semiconductor / luxury / bank name reaches its own sector),
+      // falling back to the coarse Yahoo sector for older responses.
+      for (const r of rows) { const s = (r.sector_key || r.sector || '').trim(); if (s) counts[s] = (counts[s] ?? 0) + 1 }
       const dom = Object.entries(counts).sort((a, b) => b[1] - a[1])[0]?.[0]
       const sec = dom || 'markets'
       _sectorMemo.set(tickKey, sec)

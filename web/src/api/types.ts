@@ -245,6 +245,8 @@ export interface UnderlyingMetric {
   long_name: string
   type: string | null
   sector: string | null
+  industry?: string | null
+  sector_key?: string | null   // resolved cover-photo sector (industry-first)
   market_cap: number | null
   iv_3m: number | null
   iv_source: string | null

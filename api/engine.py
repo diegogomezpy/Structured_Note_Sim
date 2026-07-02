@@ -1017,6 +1017,7 @@ def run_underlying_metrics(tickers: dict, *, lang: str = "en") -> list[dict]:
             "long_name":  m.get("long_name") or name,
             "type":       m.get("type"),
             "sector":     m.get("sector"),
+            "industry":   m.get("industry"),
             "market_cap": _f(m.get("market_cap")),
             "iv_3m":      _f(m.get("iv_3m")),
             "iv_source":  m.get("iv_source"),
