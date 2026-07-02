@@ -76,11 +76,19 @@ def describe_note(terms, lang: str = "en") -> str:
             f"de Observación {freq}. "
         )
         if os_lvl is not None:
-            p += (
-                f"Adicionalmente, bajo la característica One-Star, un único Subyacente en o por encima "
-                f"del {os_lvl:.2%} de su nivel de Strike basta por sí solo para satisfacer las "
-                f"condiciones de cupón, cancelación anticipada y devolución de capital. "
-            )
+            extra = []
+            if terms.one_star_coupon:   extra.append("pagar el cupón")
+            if terms.one_star_autocall: extra.append("activar la cancelación anticipada")
+            lead = (f"Adicionalmente, bajo la característica One-Star, un único Subyacente en o por "
+                    f"encima del {os_lvl:.2%} de su nivel de Strike ")
+            if extra:
+                acts = " y ".join(extra)
+                p += (lead + f"basta por sí solo para {acts}, y para devolver el capital a la par en "
+                      f"el vencimiento aunque el peor Subyacente haya perforado la Barrera de Knock-in. ")
+            else:
+                p += (lead + "permite devolver el capital a la par en el vencimiento aunque el peor "
+                      "Subyacente haya perforado la Barrera de Knock-in (no afecta al cupón ni a la "
+                      "cancelación anticipada). ")
         p += (
             f"El Capital se encuentra en riesgo si la Nota no ha vencido anticipadamente y el Nivel "
             f"Final de {anyu} se encuentra por debajo del {ki} de su nivel de Strike inicial en la "
@@ -111,11 +119,18 @@ def describe_note(terms, lang: str = "en") -> str:
         f"{freq} Observation Date. "
     )
     if os_lvl is not None:
-        p += (
-            f"In addition, under the One-Star feature, a single Underlying at or above {os_lvl:.2%} of its "
-            f"Strike level on its own satisfies the coupon, early-redemption and capital-repayment "
-            f"conditions. "
-        )
+        extra = []
+        if terms.one_star_coupon:   extra.append("pay the coupon")
+        if terms.one_star_autocall: extra.append("trigger early redemption")
+        lead = (f"In addition, under the One-Star feature, a single Underlying at or above "
+                f"{os_lvl:.2%} of its Strike level ")
+        if extra:
+            acts = " and ".join(extra)
+            p += (lead + f"is enough on its own to {acts}, and to repay capital at par at maturity "
+                  f"even if the worst Underlying has breached the Knock-in Barrier. ")
+        else:
+            p += (lead + "repays capital at par at maturity even if the worst Underlying has breached "
+                  "the Knock-in Barrier (it does not affect the coupon or early-redemption conditions). ")
     p += (
         f"Capital is at risk if the Note has not redeemed early and the Final Level of {anyu} is below "
         f"{ki} of its initial Strike level on the Final Observation Date."

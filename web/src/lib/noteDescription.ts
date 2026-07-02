@@ -62,10 +62,15 @@ export function noteDescription(terms: NoteTerms, lang: Lang): string {
     s += `La Nota tiene también la posibilidad de vencer anticipadamente a partir de la observación ${start} y en ` +
       `cada Fecha de Observación ${freq} en adelante, siempre y cuando el precio de cierre de ${each} sea igual o ` +
       `superior al nivel de Autocall de dicha Fecha de Observación ${freq}. `
-    if (os != null)
-      s += `Adicionalmente, bajo la característica One-Star, un único Subyacente en o por encima del ${p2(os)} de su ` +
-        `nivel de Strike basta por sí solo para satisfacer las condiciones de cupón, cancelación anticipada y ` +
-        `devolución de capital. `
+    if (os != null) {
+      const extra: string[] = []
+      if (terms.one_star_coupon) extra.push('pagar el cupón')
+      if (terms.one_star_autocall) extra.push('activar la cancelación anticipada')
+      const lead = `Adicionalmente, bajo la característica One-Star, un único Subyacente en o por encima del ${p2(os)} de su nivel de Strike `
+      s += extra.length
+        ? lead + `basta por sí solo para ${extra.join(' y ')}, y para devolver el capital a la par en el vencimiento aunque el peor Subyacente haya perforado la Barrera de Knock-in. `
+        : lead + `permite devolver el capital a la par en el vencimiento aunque el peor Subyacente haya perforado la Barrera de Knock-in (no afecta al cupón ni a la cancelación anticipada). `
+    }
     s += `El Capital se encuentra en riesgo si la Nota no ha vencido anticipadamente y el Nivel Final de ${anyu} se ` +
       `encuentra por debajo del ${ki} de su nivel de Strike inicial en la Fecha de Observación Final.`
     return s
@@ -85,9 +90,15 @@ export function noteDescription(terms: NoteTerms, lang: Lang): string {
       `above the Coupon Barrier on the relevant ${freq} Observation Date (memory effect). `
   s += `The Note may also redeem early from observation ${start} and on each ${freq} Observation Date thereafter, ` +
     `provided that the closing price of ${each} is at or above the Autocall level of that ${freq} Observation Date. `
-  if (os != null)
-    s += `In addition, under the One-Star feature, a single Underlying at or above ${p2(os)} of its Strike level on ` +
-      `its own satisfies the coupon, early-redemption and capital-repayment conditions. `
+  if (os != null) {
+    const extra: string[] = []
+    if (terms.one_star_coupon) extra.push('pay the coupon')
+    if (terms.one_star_autocall) extra.push('trigger early redemption')
+    const lead = `In addition, under the One-Star feature, a single Underlying at or above ${p2(os)} of its Strike level `
+    s += extra.length
+      ? lead + `is enough on its own to ${extra.join(' and ')}, and to repay capital at par at maturity even if the worst Underlying has breached the Knock-in Barrier. `
+      : lead + `repays capital at par at maturity even if the worst Underlying has breached the Knock-in Barrier (it does not affect the coupon or early-redemption conditions). `
+  }
   s += `Capital is at risk if the Note has not redeemed early and the Final Level of ${anyu} is below ${ki} of its ` +
     `initial Strike level on the Final Observation Date.`
   return s

@@ -29,6 +29,10 @@ export interface NoteTerms {
   coupon_basket: Basket
   autocall_basket: Basket
   one_star_level: number | null
+  // One-Star scope: the best-of rescue always applies to final redemption; these
+  // extend it to the periodic coupon / autocall checks (off by default).
+  one_star_coupon?: boolean
+  one_star_autocall?: boolean
   // advanced / optional payoff fields (always present after NoteTerms.to_dict)
   autocall_step_down: number | null
   autocall_floor: number | null

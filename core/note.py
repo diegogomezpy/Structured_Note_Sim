@@ -8,9 +8,9 @@ Supports replication of:
   - HSBC XS3376563584: 24M monthly Phoenix Memory Worst-of, knock-in barrier,
                         separate coupon barrier, autocall starts at period 4
   - BBVA XS3378405743: 18M quarterly Phoenix Memory Worst-of, knock-in barrier,
-                        One Star best-of redemption condition
-  - BNP Paribas One Star: One Star best-of overlay on coupon, autocall AND
-                        final redemption (any underlying >= level triggers)
+                        One Star best-of FINAL-redemption rescue (the default)
+  - BNP Paribas One Star: One Star best-of overlay additionally on coupon AND
+                        autocall (opt-in via one_star_coupon / one_star_autocall)
 
 Key features
 ------------
@@ -250,6 +250,14 @@ class NoteTerms:
     coupon_basket:          BasketType  = "worst_of"
     autocall_basket:        BasketType  = "worst_of"
     one_star_level:         float | None = None   # 'One Star' best-of overlay level (see price_note); None = off
+    # One Star scope. The best-of rescue ALWAYS applies to FINAL REDEMPTION when
+    # one_star_level is set (a single underlying >= level redeems capital at par
+    # even if the worst-of breached the knock-in — BBVA XS3378405743). These two
+    # flags extend that same best-of overlay to the PERIODIC checks; both default
+    # OFF (final-only rescue). Set both True for a BNP-style "One Star" note where
+    # a single underlying >= level also pays the coupon and forces the autocall.
+    one_star_coupon:        bool        = False  # best-of also satisfies the coupon barrier
+    one_star_autocall:      bool        = False  # best-of also forces the autocall trigger
     call_steepness:         float | None = None   # None = hard trigger (default)
     # ── Classic / Growth Autocall extensions (default = no-op → plain Phoenix) ──
     autocall_step_down:      float       = 0.0    # per-period decrement of autocall barrier (0 = constant)
@@ -372,6 +380,8 @@ class NoteTerms:
             "coupon_basket":          self.coupon_basket,
             "autocall_basket":        self.autocall_basket,
             "one_star_level":         self.one_star_level,
+            "one_star_coupon":        self.one_star_coupon,
+            "one_star_autocall":      self.one_star_autocall,
             "call_steepness":         self.call_steepness,
             "autocall_step_down":     self.autocall_step_down,
             "autocall_floor":         self.autocall_floor,
@@ -407,9 +417,10 @@ class NoteTerms:
         # ── One Star migration ────────────────────────────────────────
         # The 'One Star' best-of overlay was previously encoded as a
         # final-redemption-only rescue via final_basket="best_of" +
-        # final_redemption_barrier. Map those legacy fields onto the unified
-        # one_star_level (which now also overlays the coupon and autocall
-        # observations). final_basket in {"worst_of","average"} → no overlay.
+        # final_redemption_barrier. Map those legacy fields onto one_star_level,
+        # which defaults to that same FINAL-REDEMPTION-ONLY behaviour (the coupon
+        # and autocall overlays are separate opt-in flags, both off here — exactly
+        # the legacy semantics). final_basket in {"worst_of","average"} → no overlay.
         if "final_basket" in d or "final_redemption_barrier" in d:
             legacy_basket = d.pop("final_basket", "worst_of")
             legacy_level  = d.pop("final_redemption_barrier", 1.0)
@@ -605,10 +616,12 @@ def price_note(
     # One Star best-of overlay (BNP-style "Nivel de One Star")
     # ------------------------------------------------------------------
     # When one_star_level is set, a single underlying at or above that level
-    # satisfies the coupon AND autocall AND final-redemption conditions on its
-    # own — i.e. a best-of OR-overlay on top of the (usually worst-of) baskets.
-    # When None, one_star_met is all-False and the note behaves as plain
-    # worst-of (the historical default for non-rescue notes).
+    # rescues FINAL REDEMPTION to par even if the worst-of breached the knock-in
+    # (see the redemption block below — this is the default, BBVA-style).
+    # Extending that best-of overlay to the PERIODIC coupon and autocall checks is
+    # opt-in via one_star_coupon / one_star_autocall (BNP-style One Star). When
+    # one_star_level is None the overlay is all-False and the note is plain
+    # worst-of throughout.
     if terms.one_star_level is not None:
         best_of_vals = np.stack(
             [_basket(perf_paths[:, s, :], "best_of") for s in obs_steps], axis=1
@@ -616,6 +629,11 @@ def price_note(
         one_star_met = best_of_vals >= terms.one_star_level   # (n_paths, n_obs) bool
     else:
         one_star_met = np.zeros((n_paths, n_obs), dtype=bool)
+    # Periodic overlays are gated by their flags; final redemption always uses the
+    # full one_star_met (via protection_cond) regardless of these.
+    _zero_overlay = np.zeros((n_paths, n_obs), dtype=bool)
+    one_star_coupon_met   = one_star_met if terms.one_star_coupon   else _zero_overlay
+    one_star_autocall_met = one_star_met if terms.one_star_autocall else _zero_overlay
 
     # ------------------------------------------------------------------
     # Autocall trigger
@@ -635,9 +653,10 @@ def price_note(
         x = np.clip(-terms.call_steepness * (autocall_basket_vals - autocall_levels[np.newaxis, :]),
                     -500.0, 500.0)
         autocall_probs = 1.0 / (1.0 + np.exp(x))
-    # One Star overlay: any underlying >= one_star_level forces a (deterministic)
-    # autocall, regardless of the worst-of/soft-trigger probability.
-    autocall_probs = np.maximum(autocall_probs, one_star_met.astype(float))
+    # One Star overlay (opt-in via one_star_autocall): any underlying >=
+    # one_star_level forces a (deterministic) autocall, regardless of the
+    # worst-of/soft-trigger probability. Off by default → no effect.
+    autocall_probs = np.maximum(autocall_probs, one_star_autocall_met.astype(float))
     autocall_probs[:, ~autocall_eligible] = 0.0
 
     autocall_triggered = call_draws < autocall_probs             # (n_paths, n_obs)
@@ -651,9 +670,10 @@ def price_note(
     # ------------------------------------------------------------------
     # Coupon calculation — dispatched via coupon_cond
     # ------------------------------------------------------------------
-    # One Star overlay: any underlying >= one_star_level pays the coupon even if
-    # the worst-of is below the coupon barrier.
-    coupon_barrier_met = (coupon_basket_vals >= coupon_cond.level) | one_star_met   # (n_paths, n_obs)
+    # One Star overlay (opt-in via one_star_coupon): any underlying >=
+    # one_star_level pays the coupon even if the worst-of is below the coupon
+    # barrier. Off by default → coupon uses the plain (worst-of) basket only.
+    coupon_barrier_met = (coupon_basket_vals >= coupon_cond.level) | one_star_coupon_met   # (n_paths, n_obs)
 
     # For each path, coupons are paid up to and including the autocall period
     # (or all periods if reaching maturity)
@@ -930,19 +950,23 @@ def replay_note(perf_obs: np.ndarray, terms: NoteTerms) -> dict:
         slice_j   = perf_obs[j:j + 1, :]
         coupon_b  = float(_basket(slice_j, terms.coupon_basket)[0])
         ac_b      = float(_basket(slice_j, terms.autocall_basket)[0])
-        # One Star overlay: any underlying >= one_star_level satisfies the
-        # coupon and autocall conditions on its own (see price_note).
+        # One Star overlay: any underlying >= one_star_level. Applies to the
+        # periodic coupon / autocall checks ONLY when the respective opt-in flag
+        # is set (see price_note); the final-redemption rescue is not evaluated
+        # here (this replay covers observations that have already happened).
         one_star  = (terms.one_star_level is not None
                      and float(_basket(slice_j, "best_of")[0]) >= terms.one_star_level)
+        one_star_ac  = one_star and terms.one_star_autocall
+        one_star_cpn = one_star and terms.one_star_coupon
         eligible  = (j + 1) >= terms.autocall_start_period
-        autocalled = bool(eligible and (ac_b >= schedule[j] or one_star))
+        autocalled = bool(eligible and (ac_b >= schedule[j] or one_star_ac))
 
         if terms.coupon_at_autocall_only:
             # No periodic coupon — accrued premium paid as a lump only at call.
             coupon_met = False
             amount = terms.coupon_rate * (j + 1) if autocalled else 0.0
         else:
-            coupon_met = (coupon_b >= terms.coupon_barrier) or one_star
+            coupon_met = (coupon_b >= terms.coupon_barrier) or one_star_cpn
             if coupon_met:
                 amount  = terms.coupon_rate * (pending + 1) if terms.memory else terms.coupon_rate
                 pending = 0

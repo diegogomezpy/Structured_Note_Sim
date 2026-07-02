@@ -90,9 +90,15 @@ Configs live in `note_configs/`. Required fields for `NoteTerms.from_dict`:
 
 ## Basket types and the One Star feature
 
-`one_star_level` (a fraction like `1.0`, or `null` = off) implements the "One Star" best-of overlay: a single underlying at or above `one_star_level` satisfies the coupon, autocall, AND final-redemption conditions on its own — capital redeems at par even when the knock-in was breached. It is an OR-overlay on top of the (usually worst-of) `coupon_basket` / `autocall_basket`. When `null`, the note is plain worst-of throughout. This models BNP-style "One Star" notes and also subsumes the BBVA XS3378405743 "Barrier and Knock-in" final-redemption rescue.
+`one_star_level` (a fraction like `1.0`, or `null` = off) implements the "One Star" best-of overlay. **By default it applies to the FINAL REDEMPTION check only**: a single underlying at or above `one_star_level` at maturity redeems capital at par even when the worst-of breached the knock-in barrier. This is the BBVA XS3378405743 "Barrier and Knock-in" rescue and the safe default — it does NOT touch the coupon or autocall observations.
 
-Legacy configs that used `final_basket="best_of"` + `final_redemption_barrier` are migrated by `NoteTerms.from_dict` to `one_star_level` (best-of → the barrier value; worst-of/average → `null`). Note this extends the old final-only rescue to the coupon and autocall observations as well.
+Two opt-in flags extend the same best-of overlay to the periodic checks, **both `False` by default**:
+- `one_star_coupon` — a single underlying ≥ `one_star_level` also pays that period's coupon (even if the worst-of is below the coupon barrier).
+- `one_star_autocall` — a single underlying ≥ `one_star_level` also forces the autocall.
+
+Set both `True` for a BNP-style "One Star" note (see `note_configs/bnp_paribas_pr00529720.json`), where the overlay lifts coupon, autocall AND final redemption. In `price_note()` the final-redemption rescue always uses `one_star_met` (via `protection_cond`); the coupon/autocall overlays use the flag-gated `one_star_coupon_met` / `one_star_autocall_met`. When `one_star_level` is `null` the note is plain worst-of throughout regardless of the flags.
+
+Legacy configs that used `final_basket="best_of"` + `final_redemption_barrier` are migrated by `NoteTerms.from_dict` to `one_star_level` (best-of → the barrier value; worst-of/average → `null`), with both overlay flags off — exactly reproducing the old final-redemption-only rescue.
 
 ## API run/session model
 

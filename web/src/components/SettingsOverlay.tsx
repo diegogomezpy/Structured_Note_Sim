@@ -126,10 +126,15 @@ export default function SettingsOverlay({
           <div>
             <ToggleField label={t('one_star')} checked={terms.one_star_level != null}
                          onChange={(v) => set('one_star_level', v ? 1.0 : null)} />
-            {terms.one_star_level != null && (
+            {terms.one_star_level != null && (<>
               <NumberField label={t('one_star_level')} value={terms.one_star_level} percent suffix="%" min={50} max={150} step={0.5}
                            onChange={(v) => set('one_star_level', v)} />
-            )}
+              <div style={{ fontSize: 11, color: 'var(--text-faint)', margin: '4px 0 8px', lineHeight: 1.5 }}>{t('one_star_scope_hint')}</div>
+              <ToggleField label={t('one_star_coupon')} checked={!!terms.one_star_coupon}
+                           onChange={(v) => set('one_star_coupon', v)} />
+              <ToggleField label={t('one_star_autocall')} checked={!!terms.one_star_autocall}
+                           onChange={(v) => set('one_star_autocall', v)} />
+            </>)}
           </div>
           {(terms.capital_guarantee ?? 0) > 0 && (
             <div>

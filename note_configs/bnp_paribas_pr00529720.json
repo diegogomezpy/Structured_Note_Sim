@@ -17,6 +17,8 @@
   "coupon_basket": "worst_of",
   "autocall_basket": "worst_of",
   "one_star_level": 1.0,
+  "one_star_coupon": true,
+  "one_star_autocall": true,
   "call_steepness": null,
   "autocall_step_down": 0.0,
   "autocall_floor": null,

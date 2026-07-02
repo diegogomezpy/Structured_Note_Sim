@@ -589,7 +589,7 @@ _GLOSSARY: dict[str, list[tuple[str, str]]] = {
         ("Capital loss", "Redemption below par: the knock-in barrier was breached AND the One Star condition was not met."),
         ("Worst-of", "The payoff references the weakest-performing underlying on each observation date, rather than an average of the basket."),
         ("Phoenix", "An autocallable paying conditional (often memory) coupons above a coupon barrier, with capital at risk below a knock-in barrier."),
-        ("One Star", "A clause whereby a single underlying at or above a set level satisfies the coupon, autocall and par-redemption conditions on its own, even when the worst performer breached its barrier."),
+        ("One Star", "A clause whereby a single underlying at or above a set level redeems capital at par even when the worst performer breached its barrier; it can optionally also satisfy the coupon and autocall conditions on its own."),
         ("Strike / initial fixing", "The reference price of each underlying at issue, set to 100%; all performance levels are measured against it."),
         ("Total return", "The note's overall return at redemption as a fraction of par: all coupons received plus principal repaid, minus 1. Measured over the realised holding period and NOT annualised."),
         ("IRR (simple, p.a.)", "Annualised return on a path, computed as total return divided by time held — the convention used to quote note coupons. Differs from total return whenever the note is held for other than exactly one year (e.g. an early autocall annualises a small total return up to a larger figure)."),
