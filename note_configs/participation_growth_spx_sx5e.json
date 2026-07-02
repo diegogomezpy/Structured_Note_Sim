@@ -1,0 +1,28 @@
+{
+  "name": "3Y Participation — Capital-Protected Growth (SPX / SX5E)",
+  "issuer": "Generic Bank",
+  "note_type": "participation",
+  "maturity": 3.0,
+  "payment_freq": "annual",
+  "coupon_pa": 0.0,
+  "coupon_barrier": 0.0,
+  "autocall_barrier": 2.0,
+  "autocall_start_period": 1,
+  "knock_in_barrier": 0.0,
+  "memory": false,
+  "coupon_basket": "worst_of",
+  "autocall_basket": "worst_of",
+  "one_star_level": null,
+  "participation_downside": "full",
+  "participation_upside": "linear",
+  "participation_basket": "worst_of",
+  "protection_level": 1.0,
+  "participation_rate": 1.3,
+  "participation_strike": 1.0,
+  "upside_cap": 0.6,
+  "tickers": {
+    "^GSPC": "S&P 500",
+    "^STOXX50E": "Euro Stoxx 50"
+  },
+  "issue_date": null
+}

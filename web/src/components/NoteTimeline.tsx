@@ -2,6 +2,8 @@ import { useId } from 'react'
 import { useI18n } from '../i18n/I18nProvider'
 import { nObs, obsFractions, autocallSchedule, hasStepDown } from '../lib/terms'
 import { pct, pctTrim } from '../lib/format'
+import { detectNoteType } from '../lib/noteType'
+import ParticipationProfile from './ParticipationProfile'
 import type { NoteTerms } from '../api/types'
 
 // Payoff-zone schematic: a proper little chart with a worst-of level axis (y) and
@@ -52,6 +54,9 @@ interface GutterEntry { target: number; color: string; name: string; value: stri
 export default function NoteTimeline({ terms }: { terms: NoteTerms }) {
   const { t } = useI18n()
   const uid = useId().replace(/:/g, '')
+  // A Participation note has no observation ladder — it's a maturity payoff, so
+  // show its redemption profile instead of the barrier timeline.
+  if (detectNoteType(terms) === 'participation') return <ParticipationProfile terms={terms} />
   const n = nObs(terms)
   const fracs = obsFractions(terms)
   const start = Math.min(Math.max(terms.autocall_start_period, 1), n)

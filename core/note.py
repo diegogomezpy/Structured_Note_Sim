@@ -263,9 +263,26 @@ class NoteTerms:
     autocall_step_down:      float       = 0.0    # per-period decrement of autocall barrier (0 = constant)
     autocall_floor:          float | None = None  # minimum autocall barrier when stepping down
     coupon_at_autocall_only: bool        = False  # True = no periodic coupon; accrued premium paid as a lump at autocall
-    # ── Capital Protected Note extension (default = None → plain Phoenix) ─────
-    capital_guarantee:       float | None = None  # guaranteed minimum redemption (e.g. 1.00 or 0.95); activates CP branch
-    upside_cap:              float | None = None  # maximum redemption above par (e.g. 0.15 = 15% above par → 1.15 max)
+    # ── Note structure type (explicit; drives the menu, payoff branch, diagram, prose) ──
+    # phoenix | reverse_conv | growth_autocall | participation | custom. Inferred on
+    # load for legacy configs that predate this field (see from_dict).
+    note_type:              str          = "phoenix"
+    # ── Participation Note (note_type == "participation") ─────────────────────
+    # A single maturity-level payoff profile: choose ONE downside style and ONE
+    # upside style; the whole Phoenix waterfall (coupons/autocall/knock-in) is
+    # skipped. See _participation_redemption() for the exact per-style formulas.
+    participation_downside: str          = "full"       # full | buffer | airbag | bear
+    participation_upside:   str          = "linear"     # linear | shark_fin | digital
+    participation_basket:   BasketType   = "worst_of"   # basket applied to the final level
+    protection_level:       float        = 1.0          # capital floor / buffer level / airbag barrier (fraction of initial)
+    participation_rate:     float        = 1.0          # upside (or downside, for bear) multiplier
+    participation_strike:   float        = 1.0          # level from which participation is measured
+    knockout_level:         float | None = None         # shark-fin: upside knocks out above this final level
+    knockout_rebate:        float        = 0.0          # shark-fin: fixed extra return if knocked out (e.g. 0.05 = +5%)
+    digital_payout:         float        = 0.0          # digital: fixed extra return if final >= strike (e.g. 0.10 = +10%)
+    # ── Capital Protected legacy fields (kept for back-compat; see from_dict) ──
+    capital_guarantee:       float | None = None  # legacy CP guarantee → migrated to protection_level + note_type=participation
+    upside_cap:              float | None = None  # maximum redemption above par; also the cap for linear/shark-fin upside
     name:                   str         = "Phoenix Memory Note"
     # Systematic, terms-driven prose blurb (core.note_description). "" = auto-generate;
     # a non-empty value is a user override, mirroring issuer/underlying descriptions.
@@ -386,6 +403,16 @@ class NoteTerms:
             "autocall_step_down":     self.autocall_step_down,
             "autocall_floor":         self.autocall_floor,
             "coupon_at_autocall_only": self.coupon_at_autocall_only,
+            "note_type":              self.note_type,
+            "participation_downside": self.participation_downside,
+            "participation_upside":   self.participation_upside,
+            "participation_basket":   self.participation_basket,
+            "protection_level":       self.protection_level,
+            "participation_rate":     self.participation_rate,
+            "participation_strike":   self.participation_strike,
+            "knockout_level":         self.knockout_level,
+            "knockout_rebate":        self.knockout_rebate,
+            "digital_payout":         self.digital_payout,
             "capital_guarantee":      self.capital_guarantee,
             "upside_cap":             self.upside_cap,
             "note_description":       self.note_description,
@@ -413,6 +440,25 @@ class NoteTerms:
         # Any other explicit value is respected as a deliberate soft trigger.
         if d.get("call_steepness") == 100.0:
             d["call_steepness"] = None
+
+        # ── note_type inference (configs predating the explicit field) ────
+        # The old 'Capital Protected' note keyed on capital_guarantee>0; map it
+        # to the generalised participation branch (full protection, 100% linear
+        # participation — the closest equivalent). Otherwise label the phoenix /
+        # reverse-convertible / growth-autocall family (menu label only; those
+        # share the one waterfall). protection_level inherits capital_guarantee.
+        if not d.get("note_type"):
+            if (d.get("capital_guarantee") or 0) > 0:
+                d["note_type"] = "participation"
+                d.setdefault("protection_level", float(d["capital_guarantee"]))
+                d.setdefault("participation_downside", "full")
+                d.setdefault("participation_upside", "linear")
+            elif d.get("coupon_at_autocall_only") or (d.get("autocall_step_down") or 0) > 0:
+                d["note_type"] = "growth_autocall"
+            elif d.get("coupon_barrier") == 0 and not d.get("memory", True):
+                d["note_type"] = "reverse_conv"
+            else:
+                d["note_type"] = "phoenix"
 
         # ── One Star migration ────────────────────────────────────────
         # The 'One Star' best-of overlay was previously encoded as a
@@ -458,6 +504,109 @@ class NoteTerms:
         return json.dumps(self.to_dict(), indent=indent)
 
 
+
+
+# ---------------------------------------------------------------------------
+# Participation Note payoff — a single maturity-level profile
+# ---------------------------------------------------------------------------
+
+def _participation_redemption(B: np.ndarray, terms: "NoteTerms") -> np.ndarray:
+    """Maturity redemption (as a fraction of notional) for a Participation Note,
+    as a PURE function of the final basket level ``B`` (n_paths,). One downside
+    style is composed with one upside style around the participation strike:
+
+        Upside  (B >= strike):
+          linear     R = 1 + rate·(B − strike)                    [capped]
+          shark_fin  R = 1 + rate·(B − strike) up to knockout_level,
+                     then a flat 1 + knockout_rebate above it       [capped]
+          digital    R = 1 + digital_payout   (fixed, if B >= strike)
+
+        Downside (B < strike), with prot = protection_level:
+          full       R = min(prot, 1)          (flat floor; prot=1 → par)
+          buffer     R = 1 down to prot, then 1:1 loss below prot
+          airbag     R = 1 down to prot, then geared  R = B / prot below it
+
+        bear (a downside style that also defines the upside): participate as B
+          falls below the strike, floored at prot above it —
+              R = clip(1 + rate·max(0, strike − B), prot, cap)
+
+    ``upside_cap`` (→ cap = 1 + upside_cap) limits the upside only; None = uncapped.
+    """
+    B = np.asarray(B, dtype=float)
+    strike = float(terms.participation_strike)
+    rate   = float(terms.participation_rate)
+    prot   = float(terms.protection_level) if terms.protection_level is not None else 0.0
+    cap    = (1.0 + terms.upside_cap) if terms.upside_cap is not None else np.inf
+    up_style, dn_style = terms.participation_upside, terms.participation_downside
+
+    # Bear: reverse note — upside style does not apply.
+    if dn_style == "bear":
+        return np.clip(1.0 + rate * np.maximum(0.0, strike - B), prot, cap)
+
+    # Upside leg (B >= strike)
+    if up_style == "digital":
+        up = np.full_like(B, float(terms.digital_payout))
+    elif up_style == "shark_fin":
+        lin = rate * (B - strike)
+        if terms.knockout_level is not None:
+            up = np.where(B >= float(terms.knockout_level), float(terms.knockout_rebate), lin)
+        else:
+            up = lin
+    else:  # linear
+        up = rate * (B - strike)
+    R_up = np.minimum(1.0 + up, cap)
+
+    # Downside leg (B < strike)
+    if dn_style == "buffer":
+        R_dn = np.where(B >= prot, 1.0, 1.0 - (prot - B))
+    elif dn_style == "airbag":
+        R_dn = np.where(B >= prot, 1.0,
+                        np.divide(B, prot, out=np.zeros_like(B), where=(prot > 0)))
+    else:  # full — flat protection floor (par when prot >= 1)
+        R_dn = np.full_like(B, min(prot, 1.0))
+
+    R = np.where(B >= strike, R_up, R_dn)
+    return np.maximum(R, 0.0)
+
+
+def _participation_payoff(perf_paths, terms, obs_steps, t_maturity, n_obs) -> dict:
+    """price_note() branch for note_type == 'participation'. A pure maturity payoff:
+    no coupons, no autocall, no periodic knock-in. Returns the same result schema as
+    the Phoenix path so everything downstream (stats, plots, path explorer) is
+    unchanged; 'knock-in' here means redeemed below par (a capital loss)."""
+    n_paths    = perf_paths.shape[0]
+    final_step = obs_steps[-1]
+    B          = _basket(perf_paths[:, final_step, :], terms.participation_basket)  # (n_paths,)
+    R          = _participation_redemption(B, terms)
+    total_return = R - 1.0
+    irr        = total_return / max(t_maturity, 1.0 / 252.0)
+    loss       = R < 1.0                                    # redeemed below par
+    zeros      = np.zeros(n_paths)
+    return {
+        "nominal_payoffs":      R,
+        "coupon_payoffs":       zeros,
+        "principal_payoffs":    R,
+        "autocall_period":      zeros.astype(int),
+        "knock_in_triggered":   loss,
+        "knock_in_mask":        loss,
+        "annualized_returns":   irr,
+        "total_returns":        total_return,
+        "coupon_amounts":       np.zeros((n_paths, n_obs)),
+        "autocall_events":      zeros.astype(int),
+        "expected_irr":             float(irr.mean()),
+        "expected_total_return":    float(total_return.mean()),
+        "expected_nominal_payout":  float(R.mean()),
+        "expected_coupon":          0.0,
+        "prob_autocall":            0.0,
+        "prob_autocall_by_period":  [0.0] * n_obs,
+        "prob_maturity":            1.0,
+        "prob_knock_in":            float(loss.mean()),
+        "prob_knock_in_total":      float(loss.mean()),
+        "prob_barrier_event":       float(loss.mean()),
+        "prob_rescued":             0.0,
+        "loss_given_knock_in":      float(irr[loss].mean()) if loss.any() else float("nan"),
+        "avg_time_to_autocall":     None,
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -540,53 +689,15 @@ def price_note(
     rng = np.random.default_rng(seed)
 
     # ------------------------------------------------------------------
-    # Capital Protected Note branch (capital_guarantee is a real guarantee)
+    # Participation Note branch — a single maturity-level payoff profile
     # ------------------------------------------------------------------
-    # Payoff: clip(worst-of at maturity, capital_guarantee, 1 + upside_cap)
-    # No autocall, no periodic coupons, no KI barrier — the entire Phoenix
-    # waterfall is skipped. This is a standalone payoff type.
-    # A guarantee of 0 (the UI's "off" state) is NOT protection — it must route
-    # through the normal autocallable waterfall, not this branch.
-    if terms.capital_guarantee is not None and terms.capital_guarantee > 0:
-        final_step      = obs_steps[-1]
-        # worst-of basket at maturity (same convention as knock_in_cond)
-        worst_final_cp  = perf_paths[:, final_step, :].min(axis=1)       # (n_paths,)
-        cap_level       = (1.0 + terms.upside_cap) if terms.upside_cap is not None else np.inf
-        cp_payoff       = np.clip(worst_final_cp, terms.capital_guarantee, cap_level)  # (n_paths,)
-        total_return_cp = cp_payoff - 1.0
-        # Guard against a degenerate near-zero holding time (QW5).
-        irr_cp          = total_return_cp / max(t_maturity, 1.0 / 252.0)
-        zeros           = np.zeros(n_paths)
-        return {
-            # Per-path arrays
-            "nominal_payoffs":      cp_payoff,
-            "coupon_payoffs":       zeros,
-            "principal_payoffs":    cp_payoff,
-            "autocall_period":      zeros.astype(int),
-            "knock_in_triggered":   np.zeros(n_paths, dtype=bool),
-            "knock_in_mask":        np.zeros(n_paths, dtype=bool),
-            "annualized_returns":   irr_cp,
-            "total_returns":        total_return_cp,
-            # Per-path × per-period coupon matrix (none on a capital-protected
-            # note — exposed so the path-explorer filter has a uniform shape).
-            "coupon_amounts":       np.zeros((n_paths, n_obs)),
-            # Legacy alias
-            "autocall_events":      zeros.astype(int),
-            # Scalars
-            "expected_irr":             float(irr_cp.mean()),
-            "expected_total_return":    float(total_return_cp.mean()),
-            "expected_nominal_payout":  float(cp_payoff.mean()),
-            "expected_coupon":          0.0,
-            "prob_autocall":            0.0,
-            "prob_autocall_by_period":  [0.0] * n_obs,
-            "prob_maturity":            1.0,
-            "prob_knock_in":            0.0,
-            "prob_knock_in_total":      0.0,
-            "prob_barrier_event":       0.0,
-            "prob_rescued":             0.0,
-            "loss_given_knock_in":      float("nan"),
-            "avg_time_to_autocall":     None,   # capital-protected note never autocalls
-        }
+    # Chosen downside × upside styles evaluated on the final basket level; the
+    # entire Phoenix waterfall (coupons / autocall / knock-in) is skipped. Routed
+    # by the explicit note_type, or (legacy) by a positive capital_guarantee —
+    # which from_dict already maps to note_type="participation" + protection_level.
+    if (getattr(terms, "note_type", "") == "participation"
+            or (terms.capital_guarantee is not None and terms.capital_guarantee > 0)):
+        return _participation_payoff(perf_paths, terms, obs_steps, t_maturity, n_obs)
 
     # ------------------------------------------------------------------
     # Build ConditionRegistry from NoteTerms (backward-compatible factory)

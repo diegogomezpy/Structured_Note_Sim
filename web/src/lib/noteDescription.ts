@@ -29,12 +29,51 @@ function joinNames(names: string[], lang: Lang): string {
   return `${names.slice(0, -1).join(', ')} ${conj} ${names[names.length - 1]}`
 }
 
-const p2 = (x: number) => `${(x * 100).toFixed(2)}%`
+const p2 = (x: number) => `${parseFloat((x * 100).toFixed(2))}%`
+
+/** Prose for a Participation Note (a maturity payoff profile, no coupons). */
+function participationDescription(terms: NoteTerms, lang: Lang, joined: string, multi: boolean): string {
+  const dur = duration(terms.maturity, lang)
+  const prot = terms.protection_level ?? 0, rate = terms.participation_rate ?? 0
+  const strike = terms.participation_strike ?? 1, cap = terms.upside_cap
+  const pd = terms.participation_downside ?? 'full', pu = terms.participation_upside ?? 'linear'
+  const es = lang === 'es'
+  const subj = es ? (multi ? 'los Subyacentes' : 'el Subyacente') : (multi ? 'the Underlyings' : 'the Underlying')
+  const bword = es
+    ? ({ worst_of: 'el peor rendimiento', best_of: 'el mejor rendimiento', average: 'el rendimiento promedio' }[terms.participation_basket ?? 'worst_of'])
+    : ({ worst_of: 'the worst-performing', best_of: 'the best-performing', average: 'the average' }[terms.participation_basket ?? 'worst_of'])
+  const head = es
+    ? `Esta Nota está vinculada a ${bword} de ${joined}, ${subj}, con una duración máxima de ${dur}. No paga cupones periódicos; la redención al vencimiento depende del nivel final. `
+    : `This Note is linked to ${bword} of ${joined}, ${subj}, over a maximum term of ${dur}. It pays no periodic coupons; redemption at maturity depends on the final level. `
+  if (pd === 'bear') {
+    const capTxt = cap != null ? (es ? ` La redención está limitada al ${p2(1 + cap)}.` : ` Redemption is capped at ${p2(1 + cap)}.`) : ''
+    return head + (es
+      ? `La Nota participa al ${p2(rate)} de la caída por debajo del strike del ${p2(strike)}, con un suelo del ${p2(prot)}; por encima del strike el capital se redime al ${p2(prot)}.${capTxt}`
+      : `The Note participates at ${p2(rate)} of the fall below the ${p2(strike)} strike, floored at ${p2(prot)}; above the strike capital is redeemed at ${p2(prot)}.${capTxt}`)
+  }
+  let up: string
+  if (pu === 'digital') up = es
+    ? `Si el nivel final está en o por encima del strike del ${p2(strike)}, la Nota paga un importe fijo del ${p2(1 + (terms.digital_payout ?? 0))}.`
+    : `If the final level is at or above the ${p2(strike)} strike, the Note pays a fixed ${p2(1 + (terms.digital_payout ?? 0))}.`
+  else if (pu === 'shark_fin') up = es
+    ? `Por encima del strike del ${p2(strike)} se participa al ${p2(rate)} de la subida hasta el knock-out del ${p2(terms.knockout_level ?? 0)}; si el nivel final supera el knock-out, se paga un reembolso fijo del ${p2(1 + (terms.knockout_rebate ?? 0))}.`
+    : `Above the ${p2(strike)} strike you participate at ${p2(rate)} of the rise up to the ${p2(terms.knockout_level ?? 0)} knock-out; if the final level is above the knock-out, a fixed ${p2(1 + (terms.knockout_rebate ?? 0))} is paid instead.`
+  else up = es
+    ? `Por encima del strike del ${p2(strike)} se participa al ${p2(rate)} de la subida${cap != null ? `, con un tope del ${p2(1 + cap)}.` : '.'}`
+    : `Above the ${p2(strike)} strike you participate at ${p2(rate)} of the rise${cap != null ? `, capped at ${p2(1 + cap)}.` : '.'}`
+  const dn = {
+    full: es ? ` Si el nivel final está por debajo del strike, el capital se redime al ${p2(Math.min(prot, 1))}.` : ` If the final level is below the strike, capital is redeemed at ${p2(Math.min(prot, 1))}.`,
+    buffer: es ? ` El capital está protegido hasta el nivel de protección del ${p2(prot)}; por debajo, las pérdidas son 1:1.` : ` Capital is protected down to the ${p2(prot)} protection level; below it, losses apply one-for-one.`,
+    airbag: es ? ` El capital está protegido hasta la barrera del ${p2(prot)}; por debajo, la redención es apalancada (nivel final dividido por la barrera).` : ` Capital is protected down to the ${p2(prot)} barrier; below it, redemption is geared (final level divided by the barrier).`,
+  }[pd] ?? ''
+  return head + up + dn
+}
 
 /** Generate the prose note description from `terms` (en/es). */
 export function noteDescription(terms: NoteTerms, lang: Lang): string {
   const names = Object.values(terms.tickers ?? {})
   const multi = names.length > 1
+  if (terms.note_type === 'participation') return participationDescription(terms, lang, joinNames(names, lang), multi)
   const freq = freqWord(terms.payment_freq, lang)
   const dur = duration(terms.maturity, lang)
   const cpn = p2(terms.coupon_pa)

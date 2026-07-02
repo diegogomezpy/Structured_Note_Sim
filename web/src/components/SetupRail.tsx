@@ -8,6 +8,7 @@ import UnderlyingPicker from './UnderlyingPicker'
 import FolderConnect from './FolderConnect'
 import { useLocalFolder } from '../lib/localFolder'
 import { useToast } from './Toast'
+import { detectNoteType } from '../lib/noteType'
 import type { ConfigMeta, NoteTerms } from '../api/types'
 
 export interface RunOpts {
@@ -88,6 +89,12 @@ export default function SetupRail({
     } finally { setSaving(false) }
   }
 
+  // The rail is deliberately simple: for a Participation note it shows only the
+  // headline knobs (protection + rate + downside style); the full option set
+  // lives in the settings overlay.
+  const isPart = detectNoteType(terms) === 'participation'
+  const downsideOpts = (['full', 'buffer', 'airbag', 'bear'] as const).map((v) => ({ value: v, label: t(`pd_${v}`) }))
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
       <div data-tour="term-sheet">
@@ -148,22 +155,36 @@ export default function SetupRail({
 
         <NumField label={t('maturity')} value={terms.maturity} suffix="y" min={0.25} tip={t('tip_maturity')}
                   onChange={(v) => set('maturity', v)} />
-        <SegmentedField label={t('frequency')} value={terms.payment_freq} tip={t('tip_frequency')}
-                        options={FREQS.map((f) => ({ value: f, label: FREQ_SHORT[f] }))}
-                        onChange={(v) => set('payment_freq', v)} />
-        <NumField label={t('coupon_pa')} value={terms.coupon_pa} pct suffix="%" tip={t('tip_coupon_pa')}
-                  onChange={(v) => set('coupon_pa', v)} />
-
-        <NumField label={t('coupon_barrier')} value={terms.coupon_barrier} pct suffix="%" tip={t('tip_coupon_barrier')}
-                  onChange={(v) => set('coupon_barrier', v)} />
-        <NumField label={t('knock_in_barrier')} value={terms.knock_in_barrier} pct suffix="%" tone="danger" tip={t('tip_knock_in')}
-                  onChange={(v) => set('knock_in_barrier', v)} />
-        <NumField label={t('autocall_barrier')} value={terms.autocall_barrier} pct suffix="%" tip={t('tip_autocall')}
-                  onChange={(v) => set('autocall_barrier', v)} />
+        {isPart ? (<>
+          <SelectField label={t('part_downside')} value={terms.participation_downside ?? 'full'}
+                       options={downsideOpts}
+                       onChange={(v) => set('participation_downside', v as NoteTerms['participation_downside'])} />
+          <NumField label={t('protection_level')} value={terms.protection_level ?? 1.0} pct suffix="%"
+                    onChange={(v) => set('protection_level', v)} />
+          <NumField label={t('participation_rate')} value={terms.participation_rate ?? 1.0} pct suffix="%"
+                    onChange={(v) => set('participation_rate', v)} />
+          <SelectField label={t('part_basket')} value={terms.participation_basket ?? 'worst_of'}
+                       options={BASKETS.map((b) => ({ value: b, label: t(`basket_${b}`) }))}
+                       onChange={(v) => set('participation_basket', v)} />
+        </>) : (<>
+          <SegmentedField label={t('frequency')} value={terms.payment_freq} tip={t('tip_frequency')}
+                          options={FREQS.map((f) => ({ value: f, label: FREQ_SHORT[f] }))}
+                          onChange={(v) => set('payment_freq', v)} />
+          <NumField label={t('coupon_pa')} value={terms.coupon_pa} pct suffix="%" tip={t('tip_coupon_pa')}
+                    onChange={(v) => set('coupon_pa', v)} />
+          <NumField label={t('coupon_barrier')} value={terms.coupon_barrier} pct suffix="%" tip={t('tip_coupon_barrier')}
+                    onChange={(v) => set('coupon_barrier', v)} />
+          <NumField label={t('knock_in_barrier')} value={terms.knock_in_barrier} pct suffix="%" tone="danger" tip={t('tip_knock_in')}
+                    onChange={(v) => set('knock_in_barrier', v)} />
+          <NumField label={t('autocall_barrier')} value={terms.autocall_barrier} pct suffix="%" tip={t('tip_autocall')}
+                    onChange={(v) => set('autocall_barrier', v)} />
+        </>)}
       </div>
 
       {/* Second group — the next-most-edited mechanics, inline so they don't
-          require the settings overlay. */}
+          require the settings overlay. Phoenix-family only; a Participation note's
+          extra options all live in the settings overlay. */}
+      {!isPart && (
       <div data-tour="mechanics" style={{ borderTop: '1px solid var(--border)', paddingTop: 14 }}>
         <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--text-muted)', marginBottom: 12 }}>{t('quick_mechanics')}</div>
 
@@ -184,6 +205,7 @@ export default function SetupRail({
                     onChange={(v) => set('one_star_level', v)} />
         )}
       </div>
+      )}
 
       <button data-tour="settings" className="btn" style={{ justifyContent: 'center', padding: '10px' }} onClick={onOpenSettings}>
         <Icon name="chart" size={15} /> {t('edit_settings')}

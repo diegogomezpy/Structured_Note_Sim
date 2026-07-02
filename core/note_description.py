@@ -36,10 +36,76 @@ def _join_names(names: list[str], lang: str) -> str:
     return f"{', '.join(names[:-1])} {conj} {names[-1]}"
 
 
+def _describe_participation(terms, lang, names, multi) -> str:
+    """Prose for a Participation Note (a maturity payoff profile, no coupons)."""
+    dur = _fmt_duration(terms.maturity, lang)
+    joined = _join_names(names, lang)
+    def _p(x):
+        return f"{x * 100:.2f}".rstrip("0").rstrip(".") + "%"
+    prot, rate = terms.protection_level or 0.0, terms.participation_rate or 0.0
+    strike, cap = terms.participation_strike or 1.0, terms.upside_cap
+    pd, pu = terms.participation_downside, terms.participation_upside
+
+    if lang == "es":
+        subj = "los Subyacentes" if multi else "el Subyacente"
+        bword = {"worst_of": "el peor rendimiento", "best_of": "el mejor rendimiento",
+                 "average": "el rendimiento promedio"}.get(terms.participation_basket, "el rendimiento")
+        head = (f"Esta Nota está vinculada a {bword} de {joined}, {subj}, con una duración máxima de {dur}. "
+                f"No paga cupones periódicos; la redención al vencimiento depende del nivel final. ")
+        if pd == "bear":
+            body = (f"La Nota participa al {_p(rate)} de la caída por debajo del strike del {_p(strike)}, "
+                    f"con un suelo del {_p(prot)}; por encima del strike el capital se redime al {_p(prot)}.")
+            if cap is not None:
+                body += f" La redención está limitada al {_p(1 + cap)}."
+            return head + body
+        if pu == "digital":
+            up = (f"Si el nivel final está en o por encima del strike del {_p(strike)}, la Nota paga un importe fijo del {_p(1 + terms.digital_payout)}.")
+        elif pu == "shark_fin":
+            up = (f"Por encima del strike del {_p(strike)} se participa al {_p(rate)} de la subida hasta el knock-out del {_p(terms.knockout_level or 0)}; "
+                  f"si el nivel final supera el knock-out, se paga un reembolso fijo del {_p(1 + terms.knockout_rebate)}.")
+        else:
+            up = f"Por encima del strike del {_p(strike)} se participa al {_p(rate)} de la subida"
+            up += f", con un tope del {_p(1 + cap)}." if cap is not None else "."
+        dn = {
+            "full": f" Si el nivel final está por debajo del strike, el capital se redime al {_p(min(prot, 1.0))}.",
+            "buffer": f" El capital está protegido hasta el nivel de protección del {_p(prot)}; por debajo, las pérdidas son 1:1.",
+            "airbag": f" El capital está protegido hasta la barrera del {_p(prot)}; por debajo, la redención es apalancada (nivel final dividido por la barrera).",
+        }.get(pd, "")
+        return head + up + dn
+
+    subj = "the Underlyings" if multi else "the Underlying"
+    bword = {"worst_of": "the worst-performing", "best_of": "the best-performing",
+             "average": "the average"}.get(terms.participation_basket, "the")
+    head = (f"This Note is linked to {bword} of {joined}, {subj}, over a maximum term of {dur}. "
+            f"It pays no periodic coupons; redemption at maturity depends on the final level. ")
+    if pd == "bear":
+        body = (f"The Note participates at {_p(rate)} of the fall below the {_p(strike)} strike, floored at {_p(prot)}; "
+                f"above the strike capital is redeemed at {_p(prot)}.")
+        if cap is not None:
+            body += f" Redemption is capped at {_p(1 + cap)}."
+        return head + body
+    if pu == "digital":
+        up = f"If the final level is at or above the {_p(strike)} strike, the Note pays a fixed {_p(1 + terms.digital_payout)}."
+    elif pu == "shark_fin":
+        up = (f"Above the {_p(strike)} strike you participate at {_p(rate)} of the rise up to the {_p(terms.knockout_level or 0)} knock-out; "
+              f"if the final level is above the knock-out, a fixed {_p(1 + terms.knockout_rebate)} is paid instead.")
+    else:
+        up = f"Above the {_p(strike)} strike you participate at {_p(rate)} of the rise"
+        up += f", capped at {_p(1 + cap)}." if cap is not None else "."
+    dn = {
+        "full": f" If the final level is below the strike, capital is redeemed at {_p(min(prot, 1.0))}.",
+        "buffer": f" Capital is protected down to the {_p(prot)} protection level; below it, losses apply one-for-one.",
+        "airbag": f" Capital is protected down to the {_p(prot)} barrier; below it, redemption is geared (final level divided by the barrier).",
+    }.get(pd, "")
+    return head + up + dn
+
+
 def describe_note(terms, lang: str = "en") -> str:
     """Generate the prose note description from `terms` (en/es)."""
     names = list((terms.tickers or {}).values())
     multi = len(names) > 1
+    if getattr(terms, "note_type", "") == "participation":
+        return _describe_participation(terms, lang, names, multi)
     freq = _freq_word(terms.payment_freq, lang)
     dur = _fmt_duration(terms.maturity, lang)
     cpn = f"{terms.coupon_pa:.2%}"

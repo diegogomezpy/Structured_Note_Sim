@@ -40,6 +40,18 @@ export interface NoteTerms {
   capital_guarantee: number
   upside_cap: number | null
   principal_protection: number
+  // structure type — drives which menu / payoff / diagram applies
+  note_type: 'phoenix' | 'reverse_conv' | 'growth_autocall' | 'participation' | 'custom'
+  // Participation Note (note_type === 'participation'): one downside + one upside style
+  participation_downside?: 'full' | 'buffer' | 'airbag' | 'bear'
+  participation_upside?: 'linear' | 'shark_fin' | 'digital'
+  participation_basket?: Basket
+  protection_level?: number
+  participation_rate?: number
+  participation_strike?: number
+  knockout_level?: number | null
+  knockout_rebate?: number
+  digital_payout?: number
   // metadata
   note_description: string
   issuer_description: string

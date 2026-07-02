@@ -100,6 +100,19 @@ Set both `True` for a BNP-style "One Star" note (see `note_configs/bnp_paribas_p
 
 Legacy configs that used `final_basket="best_of"` + `final_redemption_barrier` are migrated by `NoteTerms.from_dict` to `one_star_level` (best-of → the barrier value; worst-of/average → `null`), with both overlay flags off — exactly reproducing the old final-redemption-only rescue.
 
+## Note types (structure families)
+
+`NoteTerms.note_type` (`phoenix | reverse_conv | growth_autocall | participation | custom`) is an **explicit stored field** that drives the dedicated setup menus (`SettingsOverlay` expanded / `SetupRail` sidebar both branch on it), the payoff branch, the structure diagram (`NoteTimeline` → `ParticipationProfile` for participation) and the prose. `from_dict` **infers** it for configs that predate the field (legacy `capital_guarantee>0` → `participation`), so old JSON still loads. The phoenix / reverse-conv / growth-autocall family all share the one Phoenix waterfall in `price_note()` — for them `note_type` is a menu/label distinction only. Only `participation` has its own payoff branch. The plan is to give each family its own good payoff + menus one at a time; participation is the first.
+
+### Participation Note
+
+A single **maturity-level** payoff (no coupons/autocall/knock-in) — `price_note()` routes `note_type=="participation"` (or legacy `capital_guarantee>0`) to `_participation_payoff()`, which evaluates `_participation_redemption(B, terms)` on the final basket level `B`. It composes **one downside style** with **one upside style**:
+
+- downside `participation_downside`: `full` (flat floor at `protection_level`, par when ≥1) · `buffer` (par down to `protection_level`, then 1:1 below) · `airbag` (par down to the barrier, then geared `B/barrier` below) · `bear` (participate as `B` falls below the strike, floored above it — the upside style is ignored).
+- upside `participation_upside`: `linear` (`participation_rate`·(B−strike), optional `upside_cap`) · `shark_fin` (participate up to `knockout_level`, else a flat `knockout_rebate`; European/at-maturity KO) · `digital` (fixed `digital_payout` if `B ≥ strike`).
+
+Plus `participation_strike` and `participation_basket`. `_participation_redemption` has a TS mirror in `web/src/lib/participation.ts` that feeds the payoff-profile diagram, so the picture always matches the priced payoff — **keep the two in sync**. Airbag = `final/barrier` and shark-fin KO = at-maturity (European) are the intended conventions.
+
 ## API run/session model
 
 The React SPA is stateless on the wire: it POSTs `/api/simulate` (and `/api/backtest`, `/api/report`, …) and gets JSON back. The server keeps state in `api/engine.py`:

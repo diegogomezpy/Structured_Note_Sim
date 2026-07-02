@@ -54,6 +54,13 @@ export default function SettingsOverlay({
   ]
   const stepDown = terms.autocall_step_down ?? 0
   const activeType = detectNoteType(terms)
+  const isPart = activeType === 'participation'
+  const pd = terms.participation_downside ?? 'full'
+  const pu = terms.participation_upside ?? 'linear'
+  const downsideOpts = (['full', 'buffer', 'airbag', 'bear'] as const).map((v) => ({ value: v, label: t(`pd_${v}`) }))
+  const upsideOpts = (['linear', 'shark_fin', 'digital'] as const).map((v) => ({ value: v, label: t(`pu_${v}`) }))
+  // Label for the protection level shifts with the downside style.
+  const protLabel = pd === 'airbag' ? t('knock_in_barrier') : t('protection_level')
 
   return (
     <Modal title={t('setup_heading')} onClose={onClose}
@@ -89,6 +96,62 @@ export default function SettingsOverlay({
         <UnderlyingPicker tickers={terms.tickers} onChange={(tk) => set('tickers', tk)} />
       </Group>
 
+      {isPart && (
+      <Group n={2} title={t('sec_participation')}>
+        <Grid>
+          <Slider label={t('maturity')} value={terms.maturity} min={0.25} max={5} step={0.25}
+                  editSuffix="y" fmt={(v) => `${v.toFixed(2)} y`} onChange={(v) => set('maturity', v)} />
+          <SelectField label={t('part_basket')} value={terms.participation_basket ?? 'worst_of'} options={basketOpts}
+                       onChange={(v) => set('participation_basket', v)} />
+        </Grid>
+        <div style={{ marginTop: 8 }}>
+          <SelectField label={t('part_downside')} value={pd}
+                       options={downsideOpts} onChange={(v) => set('participation_downside', v as NoteTerms['participation_downside'])} />
+          <div style={{ fontSize: 11, color: 'var(--text-faint)', margin: '4px 0 10px', lineHeight: 1.5 }}>{t(`pd_${pd}_h`)}</div>
+        </div>
+        {pd !== 'bear' && (
+          <div>
+            <SelectField label={t('part_upside')} value={pu}
+                         options={upsideOpts} onChange={(v) => set('participation_upside', v as NoteTerms['participation_upside'])} />
+            <div style={{ fontSize: 11, color: 'var(--text-faint)', margin: '4px 0 10px', lineHeight: 1.5 }}>{t(`pu_${pu}_h`)}</div>
+          </div>
+        )}
+        <Grid>
+          <NumberField label={protLabel} value={terms.protection_level ?? 1.0} percent suffix="%" min={0} max={120} step={1}
+                       onChange={(v) => set('protection_level', v)} />
+          <NumberField label={t('participation_strike')} value={terms.participation_strike ?? 1.0} percent suffix="%" min={50} max={150} step={0.5}
+                       onChange={(v) => set('participation_strike', v)} />
+          {(pd === 'bear' || pu !== 'digital') && (
+            <NumberField label={t('participation_rate')} value={terms.participation_rate ?? 1.0} percent suffix="%" min={0} max={500} step={5}
+                         onChange={(v) => set('participation_rate', v)} />
+          )}
+          {pu === 'shark_fin' && pd !== 'bear' && (
+            <NumberField label={t('knockout_level')} value={terms.knockout_level ?? 1.3} percent suffix="%" min={100} max={400} step={1}
+                         onChange={(v) => set('knockout_level', v)} />
+          )}
+          {pu === 'shark_fin' && pd !== 'bear' && (
+            <NumberField label={t('knockout_rebate')} value={terms.knockout_rebate ?? 0} percent suffix="%" min={0} max={100} step={0.5}
+                         onChange={(v) => set('knockout_rebate', v)} />
+          )}
+          {pu === 'digital' && pd !== 'bear' && (
+            <NumberField label={t('digital_payout')} value={terms.digital_payout ?? 0} percent suffix="%" min={0} max={200} step={0.5}
+                         onChange={(v) => set('digital_payout', v)} />
+          )}
+          {(pd === 'bear' || pu === 'linear') && (
+            <div>
+              <ToggleField label={t('cap_upside')} checked={terms.upside_cap != null}
+                           onChange={(v) => set('upside_cap', v ? 0.5 : null)} />
+              {terms.upside_cap != null && (
+                <NumberField label={t('upside_cap')} value={terms.upside_cap} percent suffix="%" min={0} max={300} step={5}
+                             onChange={(v) => set('upside_cap', v)} />
+              )}
+            </div>
+          )}
+        </Grid>
+      </Group>
+      )}
+
+      {!isPart && (<>
       <Group n={2} title={t('sec_schedule_coupon')}>
         <Grid>
           {/* Own row (span all columns) so all four frequency options fit without
@@ -166,6 +229,7 @@ export default function SettingsOverlay({
         <ToggleField label={t('premium_at_call')} checked={!!terms.coupon_at_autocall_only}
                      onChange={(v) => set('coupon_at_autocall_only', v)} />
       </Group>
+      </>)}
 
       <Group n={5} title={t('sec_metadata')}>
         <Grid>
