@@ -9,6 +9,7 @@ import FolderConnect from './FolderConnect'
 import { useLocalFolder } from '../lib/localFolder'
 import { useToast } from './Toast'
 import { detectNoteType } from '../lib/noteType'
+import { withDownside } from '../lib/participation'
 import type { ConfigMeta, NoteTerms } from '../api/types'
 
 export interface RunOpts {
@@ -158,7 +159,7 @@ export default function SetupRail({
         {isPart ? (<>
           <SelectField label={t('part_downside')} value={terms.participation_downside ?? 'full'}
                        options={downsideOpts}
-                       onChange={(v) => set('participation_downside', v as NoteTerms['participation_downside'])} />
+                       onChange={(v) => onChange(withDownside(terms, v as NonNullable<NoteTerms['participation_downside']>))} />
           <NumField label={t('protection_level')} value={terms.protection_level ?? 1.0} pct suffix="%"
                     onChange={(v) => set('protection_level', v)} />
           <NumField label={t('participation_rate')} value={terms.participation_rate ?? 1.0} pct suffix="%"

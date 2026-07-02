@@ -56,8 +56,8 @@ function participationDescription(terms: NoteTerms, lang: Lang, joined: string, 
     ? `Si el nivel final está en o por encima del strike del ${p2(strike)}, la Nota paga un importe fijo del ${p2(1 + (terms.digital_payout ?? 0))}.`
     : `If the final level is at or above the ${p2(strike)} strike, the Note pays a fixed ${p2(1 + (terms.digital_payout ?? 0))}.`
   else if (pu === 'shark_fin') up = es
-    ? `Por encima del strike del ${p2(strike)} se participa al ${p2(rate)} de la subida hasta el knock-out del ${p2(terms.knockout_level ?? 0)}; si el nivel final supera el knock-out, se paga un reembolso fijo del ${p2(1 + (terms.knockout_rebate ?? 0))}.`
-    : `Above the ${p2(strike)} strike you participate at ${p2(rate)} of the rise up to the ${p2(terms.knockout_level ?? 0)} knock-out; if the final level is above the knock-out, a fixed ${p2(1 + (terms.knockout_rebate ?? 0))} is paid instead.`
+    ? `Por encima del strike del ${p2(strike)} se participa al ${p2(rate)} de la subida hasta el knock-out del ${p2(terms.knockout_level ?? 0)}; si el nivel final supera el knock-out, la Nota se redime al ${p2(terms.knockout_payout ?? 1)}.`
+    : `Above the ${p2(strike)} strike you participate at ${p2(rate)} of the rise up to the ${p2(terms.knockout_level ?? 0)} knock-out; if the final level is above the knock-out, the Note redeems at ${p2(terms.knockout_payout ?? 1)}.`
   else up = es
     ? `Por encima del strike del ${p2(strike)} se participa al ${p2(rate)} de la subida${cap != null ? `, con un tope del ${p2(1 + cap)}.` : '.'}`
     : `Above the ${p2(strike)} strike you participate at ${p2(rate)} of the rise${cap != null ? `, capped at ${p2(1 + cap)}.` : '.'}`

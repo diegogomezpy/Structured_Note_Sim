@@ -20,7 +20,15 @@ export default function ParticipationProfile({ terms }: { terms: NoteTerms }) {
   const xMin = 0.4
   const xMax = Math.max(1.8, (terms.knockout_level ?? 0) + 0.2)
   const N = 120
-  const xs = Array.from({ length: N + 1 }, (_, i) => xMin + (i / N) * (xMax - xMin))
+  // Uniform grid PLUS the exact break-points (strike, knock-out) with a sample
+  // just before each, so digital steps and the shark-fin drop render as crisp
+  // vertical edges instead of diagonal bridges between grid points.
+  const EPS = 1e-3
+  const breaks = [strike, terms.knockout_level ?? NaN].flatMap((b) => [b - EPS, b])
+  const xset = new Set<number>()
+  for (let i = 0; i <= N; i++) xset.add(xMin + (i / N) * (xMax - xMin))
+  for (const b of breaks) if (Number.isFinite(b) && b > xMin && b < xMax) xset.add(b)
+  const xs = [...xset].sort((a, b) => a - b)
   const rs = xs.map((b) => participationRedemption(b, terms))
   const yLo = Math.min(0.6, Math.floor(Math.min(...rs) * 10) / 10)
   const yHi = Math.max(1.4, Math.ceil(Math.max(...rs) * 10) / 10)

@@ -31,7 +31,7 @@ export function blankNote(): NoteTerms {
     participation_rate: 1.0,
     participation_strike: 1.0,
     knockout_level: null,
-    knockout_rebate: 0,
+    knockout_payout: 1.0,
     digital_payout: 0,
     issuer_description: '',
     issuer_rating_sp: '',

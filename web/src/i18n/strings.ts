@@ -189,7 +189,7 @@ export const S: Dict = {
   participation_rate: { en: 'Participation rate', es: 'Tasa de participación' },
   participation_strike:{ en: 'Participation strike', es: 'Strike de participación' },
   knockout_level:     { en: 'Knock-out level', es: 'Nivel de knock-out' },
-  knockout_rebate:    { en: 'Knock-out rebate', es: 'Reembolso de knock-out' },
+  knockout_payout:    { en: 'Knock-out payout (drops to)', es: 'Pago de knock-out (cae a)' },
   digital_payout:     { en: 'Digital payout', es: 'Pago digital' },
   pd_full:            { en: 'Full protection', es: 'Protección total' },
   pd_full_h:          { en: 'Capital floored at the protection level; no loss below the strike.', es: 'Capital con suelo en el nivel de protección; sin pérdida bajo el strike.' },

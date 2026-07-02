@@ -278,7 +278,7 @@ class NoteTerms:
     participation_rate:     float        = 1.0          # upside (or downside, for bear) multiplier
     participation_strike:   float        = 1.0          # level from which participation is measured
     knockout_level:         float | None = None         # shark-fin: upside knocks out above this final level
-    knockout_rebate:        float        = 0.0          # shark-fin: fixed extra return if knocked out (e.g. 0.05 = +5%)
+    knockout_payout:        float        = 1.0          # shark-fin: redemption if knocked out (1.0 = par; the level it drops to)
     digital_payout:         float        = 0.0          # digital: fixed extra return if final >= strike (e.g. 0.10 = +10%)
     # ── Capital Protected legacy fields (kept for back-compat; see from_dict) ──
     capital_guarantee:       float | None = None  # legacy CP guarantee → migrated to protection_level + note_type=participation
@@ -411,7 +411,7 @@ class NoteTerms:
             "participation_rate":     self.participation_rate,
             "participation_strike":   self.participation_strike,
             "knockout_level":         self.knockout_level,
-            "knockout_rebate":        self.knockout_rebate,
+            "knockout_payout":        self.knockout_payout,
             "digital_payout":         self.digital_payout,
             "capital_guarantee":      self.capital_guarantee,
             "upside_cap":             self.upside_cap,
@@ -459,6 +459,11 @@ class NoteTerms:
                 d["note_type"] = "reverse_conv"
             else:
                 d["note_type"] = "phoenix"
+
+        # Shark-fin drop level was briefly a rebate (extra above par); it is now an
+        # absolute knock-out payout (the level it drops to).
+        if "knockout_rebate" in d and "knockout_payout" not in d:
+            d["knockout_payout"] = 1.0 + float(d.pop("knockout_rebate") or 0.0)
 
         # ── One Star migration ────────────────────────────────────────
         # The 'One Star' best-of overlay was previously encoded as a
@@ -517,8 +522,8 @@ def _participation_redemption(B: np.ndarray, terms: "NoteTerms") -> np.ndarray:
 
         Upside  (B >= strike):
           linear     R = 1 + rate·(B − strike)                    [capped]
-          shark_fin  R = 1 + rate·(B − strike) up to knockout_level,
-                     then a flat 1 + knockout_rebate above it       [capped]
+          shark_fin  R = 1 + rate·(B − strike) up to knockout_level, then it
+                     drops to a flat knockout_payout above it        [capped]
           digital    R = 1 + digital_payout   (fixed, if B >= strike)
 
         Downside (B < strike), with prot = protection_level:
@@ -545,16 +550,14 @@ def _participation_redemption(B: np.ndarray, terms: "NoteTerms") -> np.ndarray:
 
     # Upside leg (B >= strike)
     if up_style == "digital":
-        up = np.full_like(B, float(terms.digital_payout))
-    elif up_style == "shark_fin":
-        lin = rate * (B - strike)
-        if terms.knockout_level is not None:
-            up = np.where(B >= float(terms.knockout_level), float(terms.knockout_rebate), lin)
-        else:
-            up = lin
-    else:  # linear
-        up = rate * (B - strike)
-    R_up = np.minimum(1.0 + up, cap)
+        R_up = np.full_like(B, min(1.0 + float(terms.digital_payout), cap))
+    elif up_style == "shark_fin" and terms.knockout_level is not None:
+        # Participate strike..knock-out; at/above the knock-out the note drops to a
+        # fixed redemption (knockout_payout — the level it drops to).
+        lin_R = np.minimum(1.0 + rate * (B - strike), cap)
+        R_up = np.where(B >= float(terms.knockout_level), float(terms.knockout_payout), lin_R)
+    else:  # linear (or shark_fin with no knock-out level set yet)
+        R_up = np.minimum(1.0 + rate * (B - strike), cap)
 
     # Downside leg (B < strike)
     if dn_style == "buffer":

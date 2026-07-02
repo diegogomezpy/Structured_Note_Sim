@@ -16,11 +16,11 @@ export function participationRedemption(B: number, t: NoteTerms): number {
 
   if (pd === 'bear') return clamp(1 + rate * Math.max(0, strike - B), prot, cap)
 
-  let up: number
-  if (pu === 'digital') up = t.digital_payout ?? 0
-  else if (pu === 'shark_fin') up = (t.knockout_level != null && B >= t.knockout_level) ? (t.knockout_rebate ?? 0) : rate * (B - strike)
-  else up = rate * (B - strike)
-  const Rup = Math.min(1 + up, cap)
+  const linR = Math.min(1 + rate * (B - strike), cap)
+  let Rup: number
+  if (pu === 'digital') Rup = Math.min(1 + (t.digital_payout ?? 0), cap)
+  else if (pu === 'shark_fin' && t.knockout_level != null) Rup = B >= t.knockout_level ? (t.knockout_payout ?? 1) : linR
+  else Rup = linR
 
   let Rdn: number
   if (pd === 'buffer') Rdn = B >= prot ? 1 : 1 - (prot - B)
@@ -28,4 +28,23 @@ export function participationRedemption(B: number, t: NoteTerms): number {
   else Rdn = Math.min(prot, 1)
 
   return Math.max(B >= strike ? Rup : Rdn, 0)
+}
+
+/** Switch the downside style, seeding sensible defaults so the mode actually
+    engages (a buffer/airbag at 100% protection would be a no-op). */
+export function withDownside(t: NoteTerms, v: NonNullable<NoteTerms['participation_downside']>): NoteTerms {
+  const n = { ...t, participation_downside: v }
+  if ((v === 'buffer' || v === 'airbag') && (n.protection_level == null || n.protection_level >= 1))
+    n.protection_level = v === 'airbag' ? 0.6 : 0.8
+  return n
+}
+
+/** Switch the upside style, seeding the parameters that style needs (otherwise a
+    shark-fin with no knock-out, or a digital with a 0 payout, renders as a flat
+    line and looks broken). */
+export function withUpside(t: NoteTerms, v: NonNullable<NoteTerms['participation_upside']>): NoteTerms {
+  const n = { ...t, participation_upside: v }
+  if (v === 'shark_fin' && n.knockout_level == null) { n.knockout_level = 1.3; if (n.knockout_payout == null) n.knockout_payout = 1.0 }
+  if (v === 'digital' && !n.digital_payout) n.digital_payout = 0.1
+  return n
 }

@@ -62,7 +62,7 @@ def _describe_participation(terms, lang, names, multi) -> str:
             up = (f"Si el nivel final está en o por encima del strike del {_p(strike)}, la Nota paga un importe fijo del {_p(1 + terms.digital_payout)}.")
         elif pu == "shark_fin":
             up = (f"Por encima del strike del {_p(strike)} se participa al {_p(rate)} de la subida hasta el knock-out del {_p(terms.knockout_level or 0)}; "
-                  f"si el nivel final supera el knock-out, se paga un reembolso fijo del {_p(1 + terms.knockout_rebate)}.")
+                  f"si el nivel final supera el knock-out, la Nota se redime al {_p(terms.knockout_payout)}.")
         else:
             up = f"Por encima del strike del {_p(strike)} se participa al {_p(rate)} de la subida"
             up += f", con un tope del {_p(1 + cap)}." if cap is not None else "."
@@ -88,7 +88,7 @@ def _describe_participation(terms, lang, names, multi) -> str:
         up = f"If the final level is at or above the {_p(strike)} strike, the Note pays a fixed {_p(1 + terms.digital_payout)}."
     elif pu == "shark_fin":
         up = (f"Above the {_p(strike)} strike you participate at {_p(rate)} of the rise up to the {_p(terms.knockout_level or 0)} knock-out; "
-              f"if the final level is above the knock-out, a fixed {_p(1 + terms.knockout_rebate)} is paid instead.")
+              f"if the final level is above the knock-out, the Note redeems at {_p(terms.knockout_payout)}.")
     else:
         up = f"Above the {_p(strike)} strike you participate at {_p(rate)} of the rise"
         up += f", capped at {_p(1 + cap)}." if cap is not None else "."

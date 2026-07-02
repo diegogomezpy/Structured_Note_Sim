@@ -50,7 +50,7 @@ export interface NoteTerms {
   participation_rate?: number
   participation_strike?: number
   knockout_level?: number | null
-  knockout_rebate?: number
+  knockout_payout?: number
   digital_payout?: number
   // metadata
   note_description: string

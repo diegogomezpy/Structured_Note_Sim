@@ -7,6 +7,7 @@ import UnderlyingPicker from './UnderlyingPicker'
 import UnderlyingDetails from './UnderlyingDetails'
 import { Slider, NumField, NumberField, SelectField, SegmentedField, ToggleField, TextField } from './fields'
 import { NOTE_TYPES, detectNoteType, applyPreset } from '../lib/noteType'
+import { withDownside, withUpside } from '../lib/participation'
 import type { RunOpts } from './SetupRail'
 import type { Basket, NoteTerms } from '../api/types'
 
@@ -106,13 +107,13 @@ export default function SettingsOverlay({
         </Grid>
         <div style={{ marginTop: 8 }}>
           <SelectField label={t('part_downside')} value={pd}
-                       options={downsideOpts} onChange={(v) => set('participation_downside', v as NoteTerms['participation_downside'])} />
+                       options={downsideOpts} onChange={(v) => onChange(withDownside(terms, v as NonNullable<NoteTerms['participation_downside']>))} />
           <div style={{ fontSize: 11, color: 'var(--text-faint)', margin: '4px 0 10px', lineHeight: 1.5 }}>{t(`pd_${pd}_h`)}</div>
         </div>
         {pd !== 'bear' && (
           <div>
             <SelectField label={t('part_upside')} value={pu}
-                         options={upsideOpts} onChange={(v) => set('participation_upside', v as NoteTerms['participation_upside'])} />
+                         options={upsideOpts} onChange={(v) => onChange(withUpside(terms, v as NonNullable<NoteTerms['participation_upside']>))} />
             <div style={{ fontSize: 11, color: 'var(--text-faint)', margin: '4px 0 10px', lineHeight: 1.5 }}>{t(`pu_${pu}_h`)}</div>
           </div>
         )}
@@ -130,8 +131,8 @@ export default function SettingsOverlay({
                          onChange={(v) => set('knockout_level', v)} />
           )}
           {pu === 'shark_fin' && pd !== 'bear' && (
-            <NumberField label={t('knockout_rebate')} value={terms.knockout_rebate ?? 0} percent suffix="%" min={0} max={100} step={0.5}
-                         onChange={(v) => set('knockout_rebate', v)} />
+            <NumberField label={t('knockout_payout')} value={terms.knockout_payout ?? 1.0} percent suffix="%" min={0} max={200} step={0.5}
+                         onChange={(v) => set('knockout_payout', v)} />
           )}
           {pu === 'digital' && pd !== 'bear' && (
             <NumberField label={t('digital_payout')} value={terms.digital_payout ?? 0} percent suffix="%" min={0} max={200} step={0.5}
