@@ -52,7 +52,9 @@ function Description({ text }: { text: string }) {
 function Card({ m, override, chart = true }: { m: UnderlyingMetric; override: UnderlyingOverride; chart?: boolean }) {
   const { t } = useI18n()
   const logos = useLogos()
-  const sub = [m.type, m.sector].filter(Boolean).join(' · ') || '—'
+  // Prefer the fine-grained Yahoo industry ("Aerospace & Defense") over the
+  // coarse sector ("Industrials"); fall back to sector when industry is absent.
+  const sub = [m.type, m.industry || m.sector].filter(Boolean).join(' · ') || '—'
   const ivRealized = m.iv_source === 'realized'
   const desc = override.description || m.business_summary
   const a = override.analyst

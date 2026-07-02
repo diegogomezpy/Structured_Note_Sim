@@ -3991,7 +3991,9 @@ def _build_pdf_report(
                 return v if v not in (None, "") else _m.get(k)
 
             _long = _g("long_name") or _nm
-            _sub  = " · ".join(s for s in (_g("type"), _g("sector")) if s)
+            # Prefer the fine-grained Yahoo industry ("Aerospace & Defense") over
+            # the coarse sector ("Industrials"); fall back to sector when absent.
+            _sub  = " · ".join(s for s in (_g("type"), _g("industry") or _g("sector")) if s)
             _iv_key = ("u_vol_3m_realized" if _g("iv_source") == "realized"
                        else "u_iv_3m")
             _band = [

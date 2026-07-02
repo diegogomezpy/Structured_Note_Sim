@@ -157,7 +157,7 @@ export async function renderUnderlyingCard(
   ctx.fillStyle = C.text; ctx.font = `600 17px ${FONT}`; ctx.textAlign = 'left'
   ctx.fillText(m.long_name || m.name, tx, y + 17)
   ctx.fillStyle = C.muted; ctx.font = `400 12.5px ${FONT}`
-  ctx.fillText([m.type, m.sector].filter(Boolean).join(' · ') || '—', tx, y + 35)
+  ctx.fillText([m.type, m.industry || m.sector].filter(Boolean).join(' · ') || '—', tx, y + 35)
   y += headerH + 14
 
   // ── metrics row ───────────────────────────────────────────────────────────
