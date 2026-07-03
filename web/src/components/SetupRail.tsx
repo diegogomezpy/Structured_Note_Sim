@@ -8,8 +8,8 @@ import UnderlyingPicker from './UnderlyingPicker'
 import FolderConnect from './FolderConnect'
 import { useLocalFolder } from '../lib/localFolder'
 import { useToast } from './Toast'
-import { detectNoteType } from '../lib/noteType'
-import { withDownside } from '../lib/participation'
+import { detectNoteType, applyPreset, NOTE_TYPES, type NoteType } from '../lib/noteType'
+import { withDownside, withUpside } from '../lib/participation'
 import type { ConfigMeta, NoteTerms } from '../api/types'
 
 export interface RunOpts {
@@ -93,8 +93,11 @@ export default function SetupRail({
   // The rail is deliberately simple: for a Participation note it shows only the
   // headline knobs (protection + rate + downside style); the full option set
   // lives in the settings overlay.
-  const isPart = detectNoteType(terms) === 'participation'
+  const noteType = detectNoteType(terms)
+  const isPart = noteType === 'participation'
+  const pu = terms.participation_upside ?? 'linear'
   const downsideOpts = (['full', 'buffer', 'airbag', 'bear'] as const).map((v) => ({ value: v, label: t(`pd_${v}`) }))
+  const upsideOpts = (['linear', 'shark_fin', 'digital'] as const).map((v) => ({ value: v, label: t(`pu_${v}`) }))
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
@@ -148,9 +151,15 @@ export default function SetupRail({
         <UnderlyingPicker tickers={terms.tickers} onChange={(tk) => set('tickers', tk)} />
       </div>
 
+      {/* Note-type toggle — switch structure families without opening the overlay. */}
+      <div style={{ borderTop: '1px solid var(--border)', paddingTop: 14 }}>
+        <SegmentedField label={t('sec_note_type')} value={noteType}
+                        options={NOTE_TYPES.map((nt) => ({ value: nt, label: t(`nt_${nt}`) }))}
+                        onChange={(v) => onChange(applyPreset(terms, v as NoteType))} />
+      </div>
+
       {/* Inline editor for the terms that drive the note diagram above. The full
-          settings overlay still holds the rarer fields (engine, ratings, capital
-          guarantee, upside cap, …). */}
+          settings overlay still holds the rarer fields (engine, ratings, …). */}
       <div data-tour="terms" style={{ borderTop: '1px solid var(--border)', paddingTop: 14 }}>
         <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--text-muted)', marginBottom: 12 }}>{t('quick_edit')}</div>
 
@@ -162,8 +171,33 @@ export default function SetupRail({
                        onChange={(v) => onChange(withDownside(terms, v as NonNullable<NoteTerms['participation_downside']>))} />
           <NumField label={t('protection_level')} value={terms.protection_level ?? 1.0} pct suffix="%"
                     onChange={(v) => set('protection_level', v)} />
-          <NumField label={t('participation_rate')} value={terms.participation_rate ?? 1.0} pct suffix="%"
-                    onChange={(v) => set('participation_rate', v)} />
+          {terms.participation_downside !== 'bear' && (
+            <SelectField label={t('part_upside')} value={pu}
+                         options={upsideOpts}
+                         onChange={(v) => onChange(withUpside(terms, v as NonNullable<NoteTerms['participation_upside']>))} />
+          )}
+          <NumField label={t('participation_strike')} value={terms.participation_strike ?? 1.0} pct suffix="%"
+                    onChange={(v) => set('participation_strike', v)} />
+          {(terms.participation_downside === 'bear' || pu !== 'digital') && (
+            <NumField label={t('participation_rate')} value={terms.participation_rate ?? 1.0} pct suffix="%"
+                      onChange={(v) => set('participation_rate', v)} />
+          )}
+          {pu === 'shark_fin' && terms.participation_downside !== 'bear' && (<>
+            <NumField label={t('knockout_level')} value={terms.knockout_level ?? 1.3} pct suffix="%"
+                      onChange={(v) => set('knockout_level', v)} />
+            <NumField label={t('knockout_payout')} value={terms.knockout_payout ?? 1.0} pct suffix="%"
+                      onChange={(v) => set('knockout_payout', v)} />
+          </>)}
+          {pu === 'digital' && terms.participation_downside !== 'bear' && (
+            <NumField label={t('digital_payout')} value={terms.digital_payout ?? 0} pct suffix="%"
+                      onChange={(v) => set('digital_payout', v)} />
+          )}
+          <ToggleField label={t('cap_upside')} checked={terms.upside_cap != null}
+                       onChange={(on) => set('upside_cap', on ? 0.5 : null)} />
+          {terms.upside_cap != null && (
+            <NumField label={t('upside_cap')} value={terms.upside_cap} pct suffix="%"
+                      onChange={(v) => set('upside_cap', v)} />
+          )}
           <SelectField label={t('part_basket')} value={terms.participation_basket ?? 'worst_of'}
                        options={BASKETS.map((b) => ({ value: b, label: t(`basket_${b}`) }))}
                        onChange={(v) => set('participation_basket', v)} />
