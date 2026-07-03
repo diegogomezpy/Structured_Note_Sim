@@ -579,6 +579,24 @@ def _participation_redemption(B: np.ndarray, terms: "NoteTerms") -> np.ndarray:
     return np.maximum(R, 0.0)
 
 
+def _participation_stats(R: np.ndarray, terms: "NoteTerms", B: np.ndarray | None = None) -> dict:
+    """Redemption-distribution metrics for a Participation Note (used by the hero
+    tiles + the report). R = per-path redemption; B = final basket (for the
+    shark-fin knock-out probability)."""
+    cap_lv = (1.0 + terms.upside_cap) if terms.upside_cap is not None else None
+    ko = None
+    if (B is not None and terms.participation_upside == "shark_fin"
+            and terms.knockout_level is not None):
+        ko = float((B >= float(terms.knockout_level)).mean())
+    return {
+        "prob_above_par":   float((R > 1.0 + 1e-9).mean()),
+        "prob_at_cap":      float((R >= cap_lv - 1e-6).mean()) if cap_lv is not None else None,
+        "prob_knocked_out": ko,
+        "expected_gain":    float(np.maximum(R - 1.0, 0.0).mean()),
+        "p5_redemption":    float(np.percentile(R, 5)),
+    }
+
+
 def _participation_periodic_payoff(perf_paths, terms, obs_steps, t_maturity, n_obs) -> dict:
     """Cliquet / ratchet participation: at each reset date pay
     rate·max(0, min(period return, period_cap)) as income (down periods pay 0);
@@ -624,6 +642,7 @@ def _participation_periodic_payoff(perf_paths, terms, obs_steps, t_maturity, n_o
         "prob_rescued":             0.0,
         "loss_given_knock_in":      float(irr[loss].mean()) if loss.any() else float("nan"),
         "avg_time_to_autocall":     None,
+        **_participation_stats(nominal, terms),
     }
 
 
@@ -666,6 +685,7 @@ def _participation_payoff(perf_paths, terms, obs_steps, t_maturity, n_obs) -> di
         "prob_rescued":             0.0,
         "loss_given_knock_in":      float(irr[loss].mean()) if loss.any() else float("nan"),
         "avg_time_to_autocall":     None,
+        **_participation_stats(R, terms, B),
     }
 
 

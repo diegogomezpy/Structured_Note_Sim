@@ -100,6 +100,13 @@ export interface SimSummary {
   obs_times: number[]
   t_dof: number | null
   calibration: HestonParam[]
+  // structure type + participation-only metrics (null/absent on Phoenix)
+  note_type?: 'phoenix' | 'reverse_conv' | 'growth_autocall' | 'participation' | 'custom'
+  prob_above_par?: number | null
+  prob_at_cap?: number | null
+  prob_knocked_out?: number | null
+  expected_gain?: number | null
+  p5_redemption?: number | null
 }
 
 export interface AssetFan {

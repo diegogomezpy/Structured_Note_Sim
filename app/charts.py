@@ -650,6 +650,36 @@ def build_outcome_breakdown(
     return fig
 
 
+def build_redemption_distribution(nominal_payoffs, terms, tr: Translator) -> go.Figure:
+    """Histogram of maturity redemption (% of notional) for a Participation Note,
+    with reference lines at par and (if set) the cap. Replaces the autocall outcome
+    breakdown, which is meaningless for a note that never autocalls."""
+    R = np.asarray(nominal_payoffs, dtype=float) * 100.0
+    fig = go.Figure()
+    fig.add_trace(go.Histogram(
+        x=R, nbinsx=60, marker_color="#3f8a6f", marker_line_width=0,
+        hovertemplate=tr("redemption_axis") + ": %{x:.0f}%<extra></extra>",
+    ))
+
+    def _ref(x, color, label):
+        fig.add_vline(x=x, line=dict(color=color, width=1.5, dash="dash"))
+        fig.add_annotation(x=x, yref="paper", y=1.03, text=label, showarrow=False,
+                           font=dict(size=10, color=color))
+    _ref(100.0, "#6b7280", tr("lbl_par"))
+    if terms.upside_cap is not None and not getattr(terms, "participation_periodic", False):
+        _ref((1.0 + terms.upside_cap) * 100.0, "#9ca3af", tr("lbl_cap"))
+
+    fig.update_layout(
+        title=tr("redemption_dist"),
+        xaxis=dict(title=tr("redemption_axis"), ticksuffix="%"),
+        yaxis=dict(title=tr("count"), showgrid=True),
+        bargap=0.02, showlegend=False,
+    )
+    _apply_theme(fig)
+    fig.update_layout(margin=dict(l=52, r=24, t=52, b=48))
+    return fig
+
+
 def build_backtest_outcome_bar(
     bt:         pd.DataFrame,
     color_map:  dict[str, str],

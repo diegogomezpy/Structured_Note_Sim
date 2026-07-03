@@ -389,6 +389,13 @@ _LABELS: dict[str, dict[str, str]] = {
     "issuer":                {"en": "Issuer",                            "es": "Emisor"},
     "expected_irr":          {"en": "Expected IRR p.a.",                 "es": "TIR esperada anual"},
     "expected_total_return": {"en": "Expected total return",             "es": "Retorno total esperado"},
+    "expected_redemption":   {"en": "Expected redemption",               "es": "Redención esperada"},
+    "p_below_par":           {"en": "P(below par)",                      "es": "P(bajo la par)"},
+    "p_above_par":           {"en": "P(above par)",                      "es": "P(sobre la par)"},
+    "p_at_cap":              {"en": "P(at cap)",                         "es": "P(en el tope)"},
+    "p_knocked_out":         {"en": "P(knocked out)",                    "es": "P(knock-out)"},
+    "p5_redemption":         {"en": "5th-pctile redemption",             "es": "Redención pct. 5"},
+    "fig_redemption":        {"en": "Redemption distribution",           "es": "Distribución de redención"},
     "total_return_short":    {"en": "Total return",                      "es": "Retorno total"},
     "in_this_report":        {"en": "In this report",                    "es": "En este informe"},
     "mean_hist_irr":         {"en": "Mean historical IRR",               "es": "TIR media histórica"},
@@ -2644,10 +2651,17 @@ def _exec_bullets(terms, results, bt_summary, live_data, lang: str) -> list[str]
                 f"{len(results.get('annualized_returns', [])):,} caminos) estima una TIR anual simple "
                 f"esperada de {results.get('expected_irr', 0):.1%} y un retorno total esperado de "
                 f"{results.get('expected_total_return', 0):.1%} a vencimiento ({terms.maturity:g} años).")
-            b.append(
-                f"La probabilidad de autocall anticipado es {results.get('prob_autocall', 0):.0%}; "
-                f"la probabilidad de pérdida de capital a vencimiento (knock-in sin rescate) es "
-                f"{results.get('prob_knock_in_total', 0):.1%} con barrera al {terms.knock_in_barrier:.1%}.")
+            if getattr(terms, "note_type", "") == "participation":
+                b.append(
+                    f"La redención esperada al vencimiento es {results.get('expected_nominal_payout', 1):.1%} del "
+                    f"nominal; la probabilidad de redimir por debajo de la par es "
+                    f"{results.get('prob_knock_in_total', 0):.1%} y por encima de la par "
+                    f"{results.get('prob_above_par', 0):.0%}.")
+            else:
+                b.append(
+                    f"La probabilidad de autocall anticipado es {results.get('prob_autocall', 0):.0%}; "
+                    f"la probabilidad de pérdida de capital a vencimiento (knock-in sin rescate) es "
+                    f"{results.get('prob_knock_in_total', 0):.1%} con barrera al {terms.knock_in_barrier:.1%}.")
         if bt_summary:
             b.append(
                 f"En el backtest histórico ({bt_summary.get('n_issues', 0)} fechas de emisión), la TIR media "
@@ -2666,10 +2680,16 @@ def _exec_bullets(terms, results, bt_summary, live_data, lang: str) -> list[str]
                 f"{len(results.get('annualized_returns', [])):,} paths) estimates an expected simple "
                 f"annualised IRR of {results.get('expected_irr', 0):.1%} and an expected total return of "
                 f"{results.get('expected_total_return', 0):.1%} over the {terms.maturity:g}-year tenor.")
-            b.append(
-                f"The probability of early redemption (autocall) is {results.get('prob_autocall', 0):.0%}; "
-                f"the probability of capital loss at maturity (knock-in without rescue) is "
-                f"{results.get('prob_knock_in_total', 0):.1%} against a {terms.knock_in_barrier:.1%} barrier.")
+            if getattr(terms, "note_type", "") == "participation":
+                b.append(
+                    f"Expected redemption at maturity is {results.get('expected_nominal_payout', 1):.1%} of notional; "
+                    f"the probability of redeeming below par is {results.get('prob_knock_in_total', 0):.1%} "
+                    f"and above par {results.get('prob_above_par', 0):.0%}.")
+            else:
+                b.append(
+                    f"The probability of early redemption (autocall) is {results.get('prob_autocall', 0):.0%}; "
+                    f"the probability of capital loss at maturity (knock-in without rescue) is "
+                    f"{results.get('prob_knock_in_total', 0):.1%} against a {terms.knock_in_barrier:.1%} barrier.")
         if bt_summary:
             b.append(
                 f"Across {bt_summary.get('n_issues', 0)} historical issue dates, the realised mean IRR was "
@@ -3103,7 +3123,12 @@ def _cover_page(
     # client / terms-only report (compact masthead), where these would just echo
     # the key-terms rail.
     if _show_kpis:
-        if _has_mc:
+        if _has_mc and getattr(terms, "note_type", "") == "participation":
+            kpis = [(_t("expected_redemption", lang), f"{results.get('expected_nominal_payout', 1):.2%}"),
+                    (_t("expected_irr", lang),        f"{results.get('expected_irr', 0):.2%}"),
+                    (_t("p_below_par", lang),         f"{results.get('prob_knock_in_total', 0):.2%}"),
+                    (_t("p_above_par", lang),         f"{results.get('prob_above_par', 0):.1%}")]
+        elif _has_mc:
             kpis = [(_t("expected_irr", lang),  f"{results.get('expected_irr', 0):.2%}"),
                     (_t("prob_autocall", lang), f"{results.get('prob_autocall', 0):.1%}"),
                     (_t("prob_knock_in", lang), f"{results.get('prob_knock_in_total', 0):.2%}")]
@@ -4087,19 +4112,38 @@ def _build_pdf_report(
         _lgki_str = f"{_lgki:.2%}" if _lgki is not None and _lgki == _lgki else "—"  # nan-safe
         _att = results.get("avg_time_to_autocall")
         _att_str = f"{_att:.2f} y" if _att is not None and _att == _att else "—"  # nan-safe
-        pdf.metric_band([
-            (_t("expected_irr",       lang), f"{results.get('expected_irr', 0):.2%}"),
-            (_t("total_return_short", lang), f"{results.get('expected_total_return', 0):.2%}"),
-            (_t("prob_autocall",      lang), f"{results.get('prob_autocall', 0):.1%}"),
-            (_t("avg_time_autocall",  lang), _att_str),
-            (_t("prob_knock_in",      lang), f"{_p_ki:.2%}"),
-            (_t("loss_given_ki",      lang), _lgki_str),
-            (_t("n_paths",            lang), f"{n_paths_val:,}"),
-        ])
+        if getattr(terms, "note_type", "") == "participation":
+            # Participation never autocalls / pays coupons — show redemption metrics.
+            _band = [
+                (_t("expected_redemption", lang), f"{results.get('expected_nominal_payout', 1):.2%}"),
+                (_t("expected_irr",        lang), f"{results.get('expected_irr', 0):.2%}"),
+                (_t("p_below_par",         lang), f"{_p_ki:.2%}"),
+                (_t("p_above_par",         lang), f"{results.get('prob_above_par', 0):.1%}"),
+            ]
+            if results.get("prob_at_cap") is not None:
+                _band.append((_t("p_at_cap", lang), f"{results.get('prob_at_cap', 0):.1%}"))
+            if results.get("prob_knocked_out") is not None:
+                _band.append((_t("p_knocked_out", lang), f"{results.get('prob_knocked_out', 0):.1%}"))
+            _band += [
+                (_t("p5_redemption", lang), f"{results.get('p5_redemption', 1):.2%}"),
+                (_t("n_paths",       lang), f"{n_paths_val:,}"),
+            ]
+            pdf.metric_band(_band)
+        else:
+            pdf.metric_band([
+                (_t("expected_irr",       lang), f"{results.get('expected_irr', 0):.2%}"),
+                (_t("total_return_short", lang), f"{results.get('expected_total_return', 0):.2%}"),
+                (_t("prob_autocall",      lang), f"{results.get('prob_autocall', 0):.1%}"),
+                (_t("avg_time_autocall",  lang), _att_str),
+                (_t("prob_knock_in",      lang), f"{_p_ki:.2%}"),
+                (_t("loss_given_ki",      lang), _lgki_str),
+                (_t("n_paths",            lang), f"{n_paths_val:,}"),
+            ])
     if _inc("mc_outcome") and figures.get("outcome") is not None:
         _sec()
+        _outcome_cap = "fig_redemption" if getattr(terms, "note_type", "") == "participation" else "fig_outcome"
         pdf.figure(_fig_to_png(figures.get("outcome"), width=900, height=300, **_kw),
-                   _t("fig_outcome", lang), src_mc)
+                   _t(_outcome_cap, lang), src_mc)
     if _inc("mc_irr"):
         _sec()
         pdf.figure(_fig_to_png(figures.get("irr_dist"), **_kw), _t("fig_irr", lang), src_mc)

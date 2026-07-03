@@ -495,10 +495,16 @@ def run_simulation(terms: NoteTerms, *, n_paths: int = 10000, seed: int = 42,
     t_grid, obs_steps, obs_times = sf["t_grid"], sf["obs_steps"], sf["obs_times"]
     obs_pairs, asset_names, eng_used = sf["obs_pairs"], sf["asset_names"], sf["eng_used"]
 
+    _is_part = getattr(terms, "note_type", "") == "participation"
+    # Participation never autocalls → the autocall outcome breakdown is meaningless;
+    # show the redemption distribution instead. Phoenix path unchanged.
+    _outcome_fig = (charts.build_redemption_distribution(note["nominal_payoffs"], terms, tr)
+                    if _is_part else
+                    charts.build_outcome_breakdown(
+                        note.get("prob_autocall_by_period"), note.get("prob_maturity"),
+                        note.get("prob_knock_in_total"), tr))
     figures = {
-        "outcome": _fig(charts.build_outcome_breakdown(
-            note.get("prob_autocall_by_period"), note.get("prob_maturity"),
-            note.get("prob_knock_in_total"), tr)),
+        "outcome": _fig(_outcome_fig),
         "irr_dist": _fig(charts.build_irr_distribution(
             note["annualized_returns"], note.get("total_returns"),
             note["autocall_events"], note["expected_irr"], terms.coupon_pa, tr)),
@@ -523,7 +529,10 @@ def run_simulation(terms: NoteTerms, *, n_paths: int = 10000, seed: int = 42,
         "expected_irr", "expected_total_return", "expected_coupon",
         "prob_autocall", "prob_knock_in_total", "expected_nominal_payout",
         "loss_given_knock_in", "prob_maturity", "prob_rescued",
-        "prob_barrier_event", "avg_time_to_autocall")}
+        "prob_barrier_event", "avg_time_to_autocall",
+        # participation-only (None on Phoenix → the client ignores them)
+        "prob_above_par", "prob_at_cap", "prob_knocked_out", "expected_gain", "p5_redemption")}
+    summary["note_type"] = getattr(terms, "note_type", "phoenix")
     summary["n_paths"] = int(len(note["annualized_returns"]))   # 2×n_paths (antithetic)
     summary["engine"]  = eng_used
     summary["assets"]  = asset_names
@@ -1195,10 +1204,13 @@ def build_report_pdf(terms: NoteTerms, *, sections: list[str] | None = None, lan
         t_grid, obs_pairs = sf["t_grid"], sf["obs_pairs"]
         wof_bands, asset_bands = sf["wof_bands"], sf["asset_bands"]
         results = {**note, "params": cal_result.params, "corr_SS": cal_result.corr_SS}
+        _rep_part = getattr(terms, "note_type", "") == "participation"
         figures = {
-            "outcome": charts.build_outcome_breakdown(
-                note.get("prob_autocall_by_period"), note.get("prob_maturity"),
-                note.get("prob_knock_in_total"), tr),
+            "outcome": (charts.build_redemption_distribution(note["nominal_payoffs"], terms, tr)
+                        if _rep_part else
+                        charts.build_outcome_breakdown(
+                            note.get("prob_autocall_by_period"), note.get("prob_maturity"),
+                            note.get("prob_knock_in_total"), tr)),
             "sample": charts.build_sample_paths(
                 sf["wof_paths"], t_grid, note.get("autocall_period"),
                 note.get("knock_in_mask"), terms.knock_in_barrier,

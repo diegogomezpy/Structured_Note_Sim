@@ -16,6 +16,7 @@ const CHART_H = 320
 export default function MonteCarloPanel({ result, terms }: { result: SimResult; terms: NoteTerms }) {
   const { t } = useI18n()
   const { summary, figures } = result
+  const isPart = summary.note_type === 'participation'
   const [sub, setSub] = useState('summary')
   const inspectFetcher = useCallback(
     (body: Parameters<typeof api.inspectRun>[1]) => api.inspectRun(result.run_id, body),
@@ -43,15 +44,17 @@ export default function MonteCarloPanel({ result, terms }: { result: SimResult; 
 
       {sub === 'summary' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }} className="stagger">
-          <Panel title={t('outcomes')} right={`${summary.n_paths.toLocaleString()} ${t('paths').toLowerCase()} · ${summary.engine}`} pad={14}>
-            <div style={{ height: 210 }}><Figure fig={figures.outcome} name="outcome_breakdown" /></div>
+          <Panel title={isPart ? t('redemption_distribution') : t('outcomes')} right={`${summary.n_paths.toLocaleString()} ${t('paths').toLowerCase()} · ${summary.engine}`} pad={14}>
+            <div style={{ height: isPart ? CHART_H : 210 }}><Figure fig={figures.outcome} name={isPart ? 'redemption_distribution' : 'outcome_breakdown'} /></div>
           </Panel>
           <Panel title={t('irr_distribution')} pad={14}>
             <div style={{ height: CHART_H }}><Figure fig={figures.irr_dist} name="irr_distribution" /></div>
           </Panel>
-          <Panel title={t('autocall_by_period_h')} pad={0}>
-            <AutocallByPeriodTable summary={summary} autocallStart={terms.autocall_start_period} />
-          </Panel>
+          {!isPart && (
+            <Panel title={t('autocall_by_period_h')} pad={0}>
+              <AutocallByPeriodTable summary={summary} autocallStart={terms.autocall_start_period} />
+            </Panel>
+          )}
         </div>
       )}
 
