@@ -294,11 +294,11 @@ export default function ComparePanel({ terms, opts, cppAvailable, configs, varia
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 14 }}>
                   <div>
                     <div style={{ marginBottom: 6 }}><NoteChip label={t('cmp_note_a')} name={terms.name || '—'} color="var(--cmp-a, #15694e)" /></div>
-                    <div style={{ height: 280 }}><Figure fig={bt.a.figures.irr_scatter} name="compare_bt_a" /></div>
+                    <div style={{ height: 280 }}><Figure fig={bt.a.figures?.irr_scatter} name="compare_bt_a" /></div>
                   </div>
                   <div>
                     <div style={{ marginBottom: 6 }}><NoteChip label={t('cmp_note_b')} name={variantB?.name || '—'} color="var(--cmp-b, #9a6b1a)" /></div>
-                    <div style={{ height: 280 }}><Figure fig={bt.b.figures.irr_scatter} name="compare_bt_b" /></div>
+                    <div style={{ height: 280 }}><Figure fig={bt.b.figures?.irr_scatter} name="compare_bt_b" /></div>
                   </div>
                 </div>
               </div>
