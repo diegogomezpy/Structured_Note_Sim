@@ -56,6 +56,15 @@ export default function ParticipationProfile({ terms }: { terms: NoteTerms }) {
   const gridcol = 'var(--border)'
   return (
     <div style={{ width: '100%' }}>
+      {periodic && (
+        <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 6 }}>
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 11.5, fontWeight: 600,
+                         color: 'var(--accent-text)', background: 'var(--accent-weak)', border: '1px solid var(--accent)',
+                         borderRadius: 999, padding: '3px 12px', letterSpacing: '0.02em' }}>
+            ↻ {t('grp_cliquet')} · {t('part_reset')}: {t(`freq_${terms.payment_freq}`)}
+          </span>
+        </div>
+      )}
       <svg viewBox={`0 0 ${VIEW_W} ${VIEW_H}`} width="100%" role="img"
            style={{ display: 'block', fontFamily: 'var(--font-sans)' }}>
         <title>{t('sec_participation')}</title>

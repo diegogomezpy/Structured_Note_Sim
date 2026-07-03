@@ -111,16 +111,16 @@ export function Slider({
 /** Numeric input. When `percent`, the stored value is a fraction but the field
     shows/accepts a percentage (e.g. 0.5 ↔ "50"). */
 export function NumberField({
-  label, value, onChange, min, max, step = 0.5, percent, suffix, hint, error,
+  label, value, onChange, min, max, step = 0.5, percent, suffix, hint, error, tip,
 }: {
   label: string; value: number; onChange: (v: number) => void
   min?: number; max?: number; step?: number; percent?: boolean; suffix?: string; hint?: string
-  error?: string
+  error?: string; tip?: string
 }) {
   const disp = percent ? Math.round(value * 1000) / 10 : value
   return (
     <div style={{ marginBottom: 14 }}>
-      <label style={labelStyle}>{label}{suffix ? ` (${suffix})` : ''}</label>
+      <div style={{ marginBottom: 6 }}><FieldLabel label={suffix ? `${label} (${suffix})` : label} tip={tip} /></div>
       <input type="number" value={disp} min={min} max={max} step={step}
              className={error ? 'field-invalid' : undefined}
              onChange={(e) => {
@@ -333,12 +333,12 @@ export function SegmentedField<T extends string>({
 }
 
 export function ToggleField({
-  label, checked, onChange,
-}: { label: string; checked: boolean; onChange: (v: boolean) => void }) {
+  label, checked, onChange, tip,
+}: { label: string; checked: boolean; onChange: (v: boolean) => void; tip?: string }) {
   return (
     <label style={{ display: 'flex', alignItems: 'center', gap: 9, fontSize: 13, color: 'var(--text-muted)', cursor: 'pointer', marginBottom: 12 }}>
       <input type="checkbox" checked={checked} onChange={(e) => onChange(e.target.checked)} style={{ width: 'auto' }} />
-      {label}
+      {label}{tip && <InfoDot title={label} body={tip} />}
     </label>
   )
 }
