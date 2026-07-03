@@ -53,6 +53,17 @@ class SimulateRequest(BaseModel):
     lang: str = "en"
 
 
+class CompareRequest(BaseModel):
+    terms_a: dict                                 # Note A (the primary note)
+    terms_b: dict                                 # Note B (the variant)
+    n_paths: int = Field(10000, ge=1000, le=250000)
+    seed: int = 42
+    calib_years: float = 5.0
+    history_years: float | None = None
+    engine: str = "cpp"
+    lang: str = "en"
+
+
 class BacktestRequest(BaseModel):
     terms: dict
     history_years: float | None = None
@@ -109,6 +120,7 @@ class ReportRequest(BaseModel):
     calib_years: float = 5.0
     engine: str = "cpp"   # prefer C++; the engine falls back to numpy if unbuilt
     branding: dict | None = None
+    compare_terms: dict | None = None   # Note B — adds an A/B comparison section
 
 
 # ── endpoints ─────────────────────────────────────────────────────────────────
@@ -544,6 +556,27 @@ def simulate(req: SimulateRequest, request: Request):
         raise HTTPException(500, f"simulation failed: {e}")
 
 
+@app.post("/api/compare")
+def compare(req: CompareRequest, request: Request):
+    """Price two notes (A vs B) head-to-head. Same underlyings + maturity → both
+    priced on ONE shared simulation; otherwise B is simulated independently."""
+    try:
+        terms_a = NoteTerms.from_dict(req.terms_a)
+        terms_b = NoteTerms.from_dict(req.terms_b)
+    except Exception as e:
+        raise HTTPException(400, f"invalid note terms: {e}")
+    _audit(request, "compare", note=f"{terms_a.name} vs {terms_b.name}",
+           tickers=_tickers_of(req.terms_a), n_paths=req.n_paths, seed=req.seed,
+           lang=req.lang, engine=req.engine)
+    try:
+        return engine.run_compare(
+            terms_a, terms_b, n_paths=req.n_paths, seed=req.seed,
+            calib_years=req.calib_years, history_years=req.history_years,
+            engine=req.engine, lang=req.lang)
+    except Exception as e:
+        raise HTTPException(500, f"comparison failed: {e}")
+
+
 @app.get("/api/runs/{run_id}/paths")
 def run_paths(run_id: str, sample: int = 400):
     """Sampled worst-of trajectories for the path explorer (see engine.sample_paths)."""
@@ -758,13 +791,20 @@ def report(req: ReportRequest, request: Request):
     # — and deliberately NOT embedded in the PDF: the client IP is personal data
     # and the report is white-label / redistributable. For a commercial deploy,
     # mind IP-log retention (GDPR/CCPA).
+    compare_terms = None
+    if req.compare_terms:
+        try:
+            compare_terms = NoteTerms.from_dict(req.compare_terms)
+        except Exception as e:
+            raise HTTPException(400, f"invalid comparison terms: {e}")
     _audit(request, "report", note=terms.name, tickers=_tickers_of(req.terms),
-           sections=len(req.sections or []), n_paths=req.n_paths, lang=req.lang, engine=req.engine)
+           sections=len(req.sections or []), n_paths=req.n_paths, lang=req.lang, engine=req.engine,
+           compare=bool(compare_terms))
     try:
         pdf = engine.build_report_pdf(
             terms, sections=req.sections, lang=req.lang, n_paths=req.n_paths,
             seed=req.seed, calib_years=req.calib_years, engine=req.engine,
-            branding=req.branding)
+            branding=req.branding, compare_terms=compare_terms)
     except Exception as e:
         raise HTTPException(500, f"report generation failed: {e}")
     # Content-Disposition is latin-1 only, so strip the filename to safe ASCII

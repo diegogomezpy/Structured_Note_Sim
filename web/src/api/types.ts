@@ -140,6 +140,27 @@ export interface SimulateRequest {
   lang?: 'en' | 'es'
 }
 
+// ── A/B comparison ────────────────────────────────────────────────────────────
+export interface CompareDiffRow {
+  key: string
+  a: number | null
+  b: number | null
+  delta: number | null
+}
+export interface CompareDiff {
+  rows: CompareDiffRow[]
+  both_participation: boolean
+}
+export interface CompareResult {
+  a: SimResult
+  b: SimResult
+  compare: {
+    shared_paths: boolean
+    diff: CompareDiff
+    figures: { irr: any; outcome: any }
+  }
+}
+
 /** Optional issue-date window for the backtest (ISO dates, null = unbounded). */
 export interface BtRange { start: string | null; end: string | null }
 
@@ -371,6 +392,7 @@ export interface ReportRequest {
   calib_years?: number
   engine?: 'numpy' | 'cpp'
   branding?: Branding | null
+  compare_terms?: NoteTerms | null   // Note B — adds an A/B comparison section
 }
 
 export interface Health {

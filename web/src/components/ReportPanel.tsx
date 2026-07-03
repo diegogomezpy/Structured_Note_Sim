@@ -126,10 +126,14 @@ function Check({ on, indeterminate }: { on: boolean; indeterminate?: boolean }) 
   )
 }
 
-export default function ReportPanel({ terms, opts }: { terms: NoteTerms; opts: RunOpts }) {
+export default function ReportPanel({ terms, opts, variantB }: { terms: NoteTerms; opts: RunOpts; variantB?: NoteTerms | null }) {
   const { t, lang } = useI18n()
   const toast = useToast()
   const { start: startTour } = useTour()
+  // Include the A/B comparison in the PDF (only offered once a Note B is set up
+  // in the Compare tab). Default on when B exists, so building the report after a
+  // comparison carries it through.
+  const [compareOn, setCompareOn] = useState(true)
   const hasLive = !!terms.issue_date
   const groups = useMemo(() => TREE.filter((g) => g.key !== 'live' || hasLive), [hasLive])
   const allKeys = useMemo(() => groups.flatMap((g) => g.items.map((i) => i[0])), [groups])
@@ -320,6 +324,7 @@ export default function ReportPanel({ terms, opts }: { terms: NoteTerms; opts: R
       const res = await api.report({
         terms, sections: [...sel], lang, branding,
         n_paths: opts.n_paths, seed: opts.seed, calib_years: opts.calib_years, engine: opts.engine,
+        compare_terms: compareOn && variantB ? variantB : null,
       })
       const blob = await res.blob()
       const url = URL.createObjectURL(blob)
@@ -362,6 +367,19 @@ export default function ReportPanel({ terms, opts }: { terms: NoteTerms; opts: R
           </div>
           <div style={{ fontSize: 11.5, color: 'var(--text-faint)', marginTop: 9, lineHeight: 1.5 }}>{t(`rep_preset_${preset}_desc`)}</div>
         </div>
+        {variantB && (
+          <div style={{ marginBottom: 18, padding: '12px 14px', borderRadius: 10,
+                        background: 'var(--accent-weak)', border: '1px solid var(--accent)' }}>
+            <button onClick={() => setCompareOn((v) => !v)}
+                    style={{ display: 'flex', alignItems: 'center', gap: 10, background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit', padding: 0, width: '100%' }}>
+              <Check on={compareOn} />
+              <span style={{ fontSize: 13.5, fontWeight: 700 }}>{t('rep_include_compare')}</span>
+            </button>
+            <div style={{ fontSize: 11.5, color: 'var(--text-muted)', marginTop: 6, marginLeft: 28, lineHeight: 1.5 }}>
+              {t('rep_compare_hint', { name: variantB.name || t('cmp_note_b') })}
+            </div>
+          </div>
+        )}
         <div data-tour="rep-sections" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(230px, 1fr))', gap: '4px 28px' }}>
           {groups.map((g) => {
             const ks = g.items.map((i) => i[0])
@@ -426,9 +444,13 @@ export default function ReportPanel({ terms, opts }: { terms: NoteTerms; opts: R
                   <Icon name="download" size={13} /> {t('brand_save_cfg_btn')}
                 </button>
                 {brandFolder.canSave && (
-                  <button className="btn" style={{ padding: '7px 12px' }} disabled={brandSaving} onClick={saveBrandingToFolder}
+                  <button className="btn" style={{ padding: '7px 12px', maxWidth: '100%', overflow: 'hidden' }}
+                          disabled={brandSaving} onClick={saveBrandingToFolder}
                           title={brandLocalName ? t('cfg_save_over_hint', { name: brandLocalName }) : t('cfg_save_to_folder_hint')}>
-                    <Icon name={brandSaving ? 'spinner' : 'save'} size={13} /> {brandLocalName ? t('cfg_save_changes', { name: brandLocalName }) : t('brand_save_to_folder_btn')}
+                    <Icon name={brandSaving ? 'spinner' : 'save'} size={13} />
+                    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 }}>
+                      {brandLocalName ? t('cfg_save_changes', { name: brandLocalName }) : t('brand_save_to_folder_btn')}
+                    </span>
                   </button>
                 )}
               </div>

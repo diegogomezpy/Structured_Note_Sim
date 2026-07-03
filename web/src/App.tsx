@@ -19,6 +19,7 @@ import RunProgress from './components/RunProgress'
 import MonteCarloPanel from './components/MonteCarloPanel'
 import BacktestPanel from './components/BacktestPanel'
 import LivePanel from './components/LivePanel'
+import ComparePanel from './components/ComparePanel'
 import ReportPanel from './components/ReportPanel'
 import SettingsOverlay from './components/SettingsOverlay'
 import BrandMark from './components/BrandMark'
@@ -38,6 +39,9 @@ export default function App() {
   const [configs, setConfigs] = useState<ConfigMeta[]>([])
   const [configFile, setConfigFile] = useState('')
   const [terms, setTerms] = useState<NoteTerms | null>(null)
+  // Variant B for A/B comparison — lifted here so both the Compare tab and the
+  // Report tab (which can embed the comparison in the PDF) share one source of truth.
+  const [variantB, setVariantB] = useState<NoteTerms | null>(null)
   const [opts, setOpts] = useState<RunOpts>({ n_paths: 10000, engine: 'numpy', seed: 42, calib_years: 5 })
   const [cppAvailable, setCppAvailable] = useState(false)
   const [result, setResult] = useState<SimResult | null>(null)
@@ -199,6 +203,7 @@ export default function App() {
     { id: 'mc', label: t('tab_mc') },
     { id: 'bt', label: t('tab_backtest') },
     { id: 'live', label: t('tab_live') },
+    { id: 'compare', label: t('tab_compare') },
     { id: 'report', label: <span><Icon name="chart" size={13} /> {t('tab_report')}</span> },
   ]
 
@@ -335,7 +340,12 @@ export default function App() {
             </>
           )}
 
-          {tab === 'report' && terms && <ReportPanel terms={terms} opts={opts} />}
+          {tab === 'compare' && terms && (
+            <ComparePanel terms={terms} opts={opts} cppAvailable={cppAvailable} configs={configs}
+                          variantB={variantB} onVariantBChange={setVariantB} />
+          )}
+
+          {tab === 'report' && terms && <ReportPanel terms={terms} opts={opts} variantB={variantB} />}
         </main>
       </div>
 

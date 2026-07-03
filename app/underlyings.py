@@ -102,6 +102,20 @@ TICKER_LOGOS: dict[str, str] = {
     # Morgan Stanley: parqet's symbol logo is the black wordmark; use the blue
     # brand favicon (deep-blue square with the white "Morgan Stanley" wordmark).
     "MS":         _GF.format(domain="morganstanley.com"),
+    # European single stocks whose Xetra/Euronext yfinance symbols parqet doesn't
+    # index — resolve via the corporate-domain favicon instead of the CDN 404.
+    "MBG.DE":     _GF.format(domain="mercedes-benz.com"),
+    "VOW3.DE":    _GF.format(domain="volkswagen-group.com"),
+    "BMW.DE":     _GF.format(domain="bmwgroup.com"),
+    "SIE.DE":     _GF.format(domain="siemens.com"),
+    "ALV.DE":     _GF.format(domain="allianz.com"),
+    "BAS.DE":     _GF.format(domain="basf.com"),
+    "AIR.PA":     _GF.format(domain="airbus.com"),
+    "MC.PA":      _GF.format(domain="lvmh.com"),
+    "OR.PA":      _GF.format(domain="loreal.com"),
+    "NESN.SW":    _GF.format(domain="nestle.com"),
+    "NOVN.SW":    _GF.format(domain="novartis.com"),
+    "ROG.SW":     _GF.format(domain="roche.com"),
     # Indices — exchange / index-provider favicon via Google
     "^GSPC":      _GF.format(domain="spglobal.com"),
     "^NDX":       _GF.format(domain="nasdaq.com"),

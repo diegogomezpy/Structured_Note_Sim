@@ -6,7 +6,7 @@ import { NumField, SelectField, SegmentedField, ToggleField, Select } from './fi
 import AddNoteHelp from './AddNoteHelp'
 import UnderlyingPicker from './UnderlyingPicker'
 import FolderConnect from './FolderConnect'
-import { useLocalFolder } from '../lib/localFolder'
+import { useLocalFolder, safeName } from '../lib/localFolder'
 import { useToast } from './Toast'
 import { detectNoteType, applyPreset, NOTE_TYPES, type NoteType } from '../lib/noteType'
 import { withDownside, withUpside } from '../lib/participation'
@@ -73,7 +73,19 @@ export default function SetupRail({
     if (fileRef.current) fileRef.current.value = ''
   }
 
-  const downloadConfig = () => {
+  const downloadConfig = async () => {
+    // When a writable folder is connected, "download" writes the config straight
+    // into that folder (named after the note) rather than the browser Downloads
+    // dir — so downloaded configs land where the app auto-detects them. Falls back
+    // to a browser download when no folder is connected (or the write is denied).
+    if (local.canSave) {
+      try {
+        const saved = await local.save(terms.name || 'note', terms)
+        setLocalSel(`local:${saved}`)
+        toast.push({ title: t('cfg_saved'), sub: `${saved}.json · ${local.folder}`, tone: 'accent', icon: 'check' })
+        return
+      } catch { /* fall through to a browser download */ }
+    }
     const blob = new Blob([JSON.stringify(terms, null, 2)], { type: 'application/json' })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
@@ -82,15 +94,23 @@ export default function SetupRail({
     document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url)
   }
 
-  // Save the current note straight back into the connected folder — overwriting
-  // the file it was loaded from, or creating one named after the note. No
-  // download / re-import round-trip: the website edits the config in place.
+  // Save the current note straight back into the connected folder. The file is
+  // named after the note (`terms.name`), so renaming the note renames the file:
+  // we pass the file it was loaded from as `removeOld` and the writer deletes it
+  // once the new name is written. A brand-new note (no loaded file) just creates
+  // one. No download / re-import round-trip: the website edits the config in place.
+  const targetBase = safeName(activeLocalName ? (terms.name || activeLocalName) : (terms.name || 'note'))
   const saveToFolder = async () => {
     setSaving(true)
     try {
-      const saved = await local.save(activeLocalName ?? (terms.name || 'note'), terms)
+      const saved = await local.save(terms.name || activeLocalName || 'note', terms, activeLocalName)
       setLocalSel(`local:${saved}`)
-      toast.push({ title: t('cfg_saved'), sub: `${saved}.json · ${local.folder}`, tone: 'accent', icon: 'check' })
+      const renamed = activeLocalName && saved !== activeLocalName
+      toast.push({
+        title: renamed ? t('cfg_renamed') : t('cfg_saved'),
+        sub: renamed ? `${activeLocalName}.json → ${saved}.json · ${local.folder}` : `${saved}.json · ${local.folder}`,
+        tone: 'accent', icon: 'check',
+      })
     } catch {
       toast.push({ title: t('cfg_save_failed'), sub: t('cfg_save_failed_sub'), tone: 'red', icon: 'info' })
     } finally { setSaving(false) }
@@ -114,7 +134,9 @@ export default function SetupRail({
           <div style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
             <AddNoteHelp />
             <button className="btn btn--ghost" style={{ padding: '3px 7px' }}
-                    onClick={downloadConfig} title={t('download_config_hint')} aria-label={t('download_config')}>
+                    onClick={downloadConfig}
+                    title={local.canSave ? t('download_to_folder_hint') : t('download_config_hint')}
+                    aria-label={t('download_config')}>
               <Icon name="download" size={14} />
             </button>
             <button className="btn btn--ghost" style={{ padding: '3px 7px' }}
@@ -143,10 +165,14 @@ export default function SetupRail({
             folder. Only shown once a writable folder is connected. */}
         {local.canSave && (
           <>
-            <button className="btn" style={{ marginTop: 8, width: '100%', justifyContent: 'center' }}
-                    disabled={saving} onClick={saveToFolder}>
+            <button className="btn" style={{ marginTop: 8, width: '100%', justifyContent: 'center',
+                                             maxWidth: '100%', overflow: 'hidden' }}
+                    disabled={saving} onClick={saveToFolder}
+                    title={activeLocalName ? `${targetBase}.json` : undefined}>
               <Icon name={saving ? 'spinner' : 'save'} size={14} />
-              {activeLocalName ? t('cfg_save_changes', { name: activeLocalName }) : t('cfg_save_new_file')}
+              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 }}>
+                {activeLocalName ? t('cfg_save_changes', { name: targetBase }) : t('cfg_save_new_file')}
+              </span>
             </button>
             <div style={{ fontSize: 11, color: 'var(--text-faint)', marginTop: 5 }}>{t('folder_save_hint')}</div>
           </>

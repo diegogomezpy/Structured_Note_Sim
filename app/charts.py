@@ -620,20 +620,31 @@ def build_outcome_breakdown(
 
     fig = go.Figure()
 
-    def _seg(name, frac, color):
+    def _seg(name, frac, color, *, group=None, show=True, legend_name=None) -> bool:
+        """Add one stacked segment. `legend_name` (when given) is what shows in the
+        legend, while `name` still drives the per-segment hover — so the autocall
+        ramp can share ONE legend entry yet keep its per-period hover labels."""
         if frac <= 0.002:
-            return
+            return False
         fig.add_trace(go.Bar(
-            y=["_"], x=[frac], orientation="h", name=name, marker_color=color,
-            marker_line_width=0,
+            y=["_"], x=[frac], orientation="h", name=legend_name or name, marker_color=color,
+            marker_line_width=0, legendgroup=group, showlegend=show,
             text=[f"{frac:.0%}"] if frac > 0.06 else [""],
             textposition="inside", insidetextanchor="middle",
             textfont=dict(color="#ffffff", size=12),
             hovertemplate=f"{name}: %{{x:.1%}}<extra></extra>",
         ))
+        return True
 
+    # Autocall periods share a single legend entry ("Autocalled early") so the
+    # legend can't overflow/overlap when there are many observation periods — the
+    # colour ramp + inline % + per-period hover still distinguish each period.
+    shown_ac = False
     for i, f in enumerate(abp):
-        _seg(tr("autocalled_p").format(p=i + 1), f, blues[min(i, len(blues) - 1)])
+        added = _seg(tr("autocalled_p").format(p=i + 1), f, blues[min(i, len(blues) - 1)],
+                     group="ac", show=not shown_ac, legend_name=tr("autocalled_early"))
+        if added and not shown_ac:
+            shown_ac = True
     _seg(tr("redeemed_at_par"), redeemed, "#16a34a")
     _seg(tr("knocked_in"), ki, "#dc2626")
 
@@ -677,6 +688,111 @@ def build_redemption_distribution(nominal_payoffs, terms, tr: Translator) -> go.
     )
     _apply_theme(fig)
     fig.update_layout(margin=dict(l=52, r=24, t=52, b=48))
+    return fig
+
+
+# ---------------------------------------------------------------------------
+# A/B comparison overlays (Note A vs Note B on the same underlying)
+# ---------------------------------------------------------------------------
+# A uses the blue-family literal (→ viridian in the web theme), B the amber-family
+# literal (→ ochre) so the two series stay clearly distinct in both surfaces.
+_CMP_A = "#2563eb"
+_CMP_B = "#d97706"
+
+
+def build_irr_compare(a_irrs, b_irrs, exp_a, exp_b, tr: Translator) -> go.Figure:
+    """Overlaid IRR-p.a. distributions for two notes (A vs B), each note's
+    expected IRR marked. Semi-transparent overlay so both shapes read at once."""
+    A = np.asarray(a_irrs, dtype=float) * 100.0
+    B = np.asarray(b_irrs, dtype=float) * 100.0
+    lo = float(min(A.min(), B.min())); hi = float(max(A.max(), B.max()))
+    size = max((hi - lo) / 60.0, 1e-6)
+    bins = dict(start=lo, end=hi + size, size=size)
+    fig = go.Figure()
+    for x, name, color in ((A, tr("cmp_note_a"), _CMP_A), (B, tr("cmp_note_b"), _CMP_B)):
+        fig.add_trace(go.Histogram(
+            x=x, name=name, marker_color=color, opacity=0.55, marker_line_width=0,
+            histnorm="percent", xbins=bins,
+            hovertemplate=f"{name}: %{{x:.1f}}%<extra></extra>"))
+    for x, color in ((exp_a, _CMP_A), (exp_b, _CMP_B)):
+        if x is not None:
+            fig.add_vline(x=float(x) * 100.0, line=dict(color=color, width=1.5, dash="dash"))
+    fig.update_layout(
+        title=tr("cmp_irr_dist"), barmode="overlay",
+        xaxis=dict(title=tr("cmp_irr_axis"), ticksuffix="%"),
+        yaxis=dict(title=tr("cmp_pct_paths"), ticksuffix="%"),
+        legend=dict(orientation="h", yanchor="top", y=-0.2, xanchor="center", x=0.5,
+                    bgcolor="rgba(0,0,0,0)"),
+    )
+    _apply_theme(fig)
+    fig.update_layout(margin=dict(l=52, r=24, t=52, b=64))
+    return fig
+
+
+def build_outcome_compare(note_a, note_b, terms_a, terms_b, tr: Translator) -> go.Figure:
+    """A vs B resolution. For two Participation notes → overlaid redemption
+    histograms; otherwise → two stacked outcome bars (A on top, B below), each
+    autocall ramp collapsed to a single 'Autocalled (early)' segment."""
+    both_part = (getattr(terms_a, "note_type", "") == "participation"
+                 and getattr(terms_b, "note_type", "") == "participation")
+    if both_part:
+        A = np.asarray(note_a["nominal_payoffs"], dtype=float) * 100.0
+        B = np.asarray(note_b["nominal_payoffs"], dtype=float) * 100.0
+        lo = float(min(A.min(), B.min())); hi = float(max(A.max(), B.max()))
+        size = max((hi - lo) / 60.0, 1e-6)
+        bins = dict(start=lo, end=hi + size, size=size)
+        fig = go.Figure()
+        for x, name, color in ((A, tr("cmp_note_a"), _CMP_A), (B, tr("cmp_note_b"), _CMP_B)):
+            fig.add_trace(go.Histogram(
+                x=x, name=name, marker_color=color, opacity=0.55, marker_line_width=0,
+                histnorm="percent", xbins=bins,
+                hovertemplate=f"{name}: %{{x:.0f}}%<extra></extra>"))
+        fig.add_vline(x=100.0, line=dict(color="#6b7280", width=1.5, dash="dash"))
+        fig.update_layout(
+            title=tr("cmp_redemption"), barmode="overlay",
+            xaxis=dict(title=tr("redemption_axis"), ticksuffix="%"),
+            yaxis=dict(title=tr("cmp_pct_paths"), ticksuffix="%"),
+            legend=dict(orientation="h", yanchor="top", y=-0.2, xanchor="center", x=0.5,
+                        bgcolor="rgba(0,0,0,0)"))
+        _apply_theme(fig)
+        fig.update_layout(margin=dict(l=52, r=24, t=52, b=64))
+        return fig
+
+    fig = go.Figure()
+    rows = [(tr("cmp_note_a"), note_a), (tr("cmp_note_b"), note_b)]
+    first_label = rows[0][0]
+
+    def _stack(ylabel, note):
+        abp = [float(x) for x in (note.get("prob_autocall_by_period") or [])]
+        ac = sum(abp)
+        redeemed = max(0.0, float(note.get("prob_maturity") or 0.0)
+                       - float(note.get("prob_knock_in_total") or 0.0))
+        ki = float(note.get("prob_knock_in_total") or 0.0)
+        for name, frac, color, grp in (
+            (tr("autocalled_early"), ac, "#2563eb", "ac"),
+            (tr("redeemed_at_par"), redeemed, "#16a34a", "par"),
+            (tr("knocked_in"), ki, "#dc2626", "ki"),
+        ):
+            if frac <= 0.002:
+                continue
+            fig.add_trace(go.Bar(
+                y=[ylabel], x=[frac], orientation="h", marker_color=color, name=name,
+                legendgroup=grp, showlegend=(ylabel == first_label), marker_line_width=0,
+                text=[f"{frac:.0%}"] if frac > 0.06 else [""],
+                textposition="inside", insidetextanchor="middle",
+                textfont=dict(color="#ffffff", size=11),
+                hovertemplate=f"{ylabel} · {name}: %{{x:.1%}}<extra></extra>"))
+
+    for ylabel, note in rows:
+        _stack(ylabel, note)
+    fig.update_layout(
+        title=tr("cmp_outcome"), barmode="stack", bargap=0.45,
+        xaxis=dict(title=tr("outcome_axis"), tickformat=".0%", range=[0, 1]),
+        yaxis=dict(showgrid=False, zeroline=False, autorange="reversed"),
+        legend=dict(orientation="h", yanchor="top", y=-0.25, xanchor="center", x=0.5,
+                    font=dict(size=10), bgcolor="rgba(0,0,0,0)"))
+    _apply_theme(fig)
+    fig.update_layout(margin=dict(l=64, r=24, t=52, b=56))
     return fig
 
 

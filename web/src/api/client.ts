@@ -1,5 +1,5 @@
 import type {
-  BacktestResult, BtRange, ConfigMeta, CoverPhoto, DescribeResult, ExplorerData, Health, InspectFilters,
+  BacktestResult, BtRange, CompareResult, ConfigMeta, CoverPhoto, DescribeResult, ExplorerData, Health, InspectFilters,
   InspectResult, LiveResult, LogoData, NoteTerms, Quote, ReportRequest, SimResult, SimulateRequest,
   UnderlyingMetric, UnderlyingOption,
 } from './types'
@@ -32,6 +32,9 @@ export const api = {
   parseConfig: (config: unknown) => jpost<NoteTerms>('/api/configs/parse', { config }),
   logos: () => jget<LogoData>('/api/logos'),
   simulate: (req: SimulateRequest) => jpost<SimResult>('/api/simulate', req),
+  compare: (terms_a: NoteTerms, terms_b: NoteTerms,
+            opts?: { n_paths?: number; seed?: number; calib_years?: number; engine?: string; lang?: string }) =>
+    jpost<CompareResult>('/api/compare', { terms_a, terms_b, ...opts }),
   backtest: (terms: NoteTerms, lang = 'en', range?: BtRange) =>
     jpost<BacktestResult>('/api/backtest', { terms, lang, bt_start: range?.start ?? null, bt_end: range?.end ?? null }),
   live: (terms: NoteTerms, lang = 'en') =>

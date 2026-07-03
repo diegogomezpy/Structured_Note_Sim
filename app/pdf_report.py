@@ -406,6 +406,7 @@ _LABELS: dict[str, dict[str, str]] = {
     "outcome_held":          {"en": "Held to maturity",                  "es": "Mantenido al venc."},
     "outcome_loss":          {"en": "Capital loss",                      "es": "Pérdida de capital"},
     "expected_coupon":       {"en": "Expected coupon income",            "es": "Cupón total esperado"},
+    "expected_gain":         {"en": "Expected gain",                     "es": "Ganancia esperada"},
     "prob_autocall":         {"en": "P(autocall)",                       "es": "P(autocall)"},
     "avg_time_autocall":     {"en": "Avg. time to call",                 "es": "T. medio a autocall"},
     "prob_knock_in":         {"en": "P(knock-in)",                       "es": "P(knock-in)"},
@@ -449,6 +450,24 @@ _LABELS: dict[str, dict[str, str]] = {
     "sec_mc_heading":        {"en": "Projected Outcomes",           "es": "Resultados Proyectados"},
     "sec_bt_heading":        {"en": "Realised Outcomes",            "es": "Resultados Históricos"},
     "sec_live_heading":      {"en": "Position to Date",             "es": "Posición a la Fecha"},
+    # A/B comparison lens
+    "lens_compare":          {"en": "Comparison",                   "es": "Comparación"},
+    "sec_compare_heading":   {"en": "Note A vs Note B",             "es": "Nota A vs Nota B"},
+    "cmp_terms_title":       {"en": "Terms — A vs B",               "es": "Términos — A vs B"},
+    "cmp_metrics_title":     {"en": "Projected metrics — A vs B",   "es": "Métricas proyectadas — A vs B"},
+    "cmp_col_metric":        {"en": "Metric",                       "es": "Métrica"},
+    "cmp_col_term":          {"en": "Term",                         "es": "Término"},
+    "cmp_col_a":             {"en": "Note A",                       "es": "Nota A"},
+    "cmp_col_b":             {"en": "Note B",                       "es": "Nota B"},
+    "cmp_col_delta":         {"en": "Δ (B − A)",                    "es": "Δ (B − A)"},
+    "cmp_fig_irr":           {"en": "IRR p.a. distribution — A vs B",
+                             "es": "Distribución de TIR anual — A vs B"},
+    "cmp_fig_outcome":       {"en": "Outcome / redemption — A vs B",
+                             "es": "Resultado / reembolso — A vs B"},
+    "cmp_shared_note":       {"en": "Both notes priced on one shared simulation — differences are pure term effects.",
+                             "es": "Ambas notas valoradas sobre una simulación compartida — las diferencias son efecto puro de los términos."},
+    "cmp_indep_note":        {"en": "Different underlyings or maturity — priced on independent simulations.",
+                             "es": "Subyacentes o vencimiento distintos — valoradas en simulaciones independientes."},
     # Eyebrow kickers for the reference-section secondary heads.
     "kick_note_terms":       {"en": "NOTE TERMS",                   "es": "TÉRMINOS DE LA NOTA"},
     "nt_page_title":         {"en": "Terms & Structure",            "es": "Términos y Estructura"},
@@ -3762,6 +3781,8 @@ def _build_pdf_report(
     underlying_metrics: dict | None = None,
     underlying_price_figs: dict | None = None,
     issuer_description: str | None = None,
+    compare_data: dict | None = None,
+    compare_figures: dict | None = None,
 ) -> bytes:
     """
     Build the full institutional-style PDF report.
@@ -4363,6 +4384,85 @@ def _build_pdf_report(
         if _inc("live_chart") and live_figure is not None:
             _live_div()
             pdf.figure(_fig_to_png(live_figure, **_kw), _t("fig_live", lang), _t("src_hist", lang))
+
+    # ── 6b. Comparison (A vs B) ────────────────────────────────────────────
+    # Optional lens: a side-by-side of the primary note (A) and a variant (B).
+    # Renders a differing-terms table, a projected-metrics A/B/Δ table and the
+    # overlaid IRR + outcome charts. Only present when a Note B was supplied.
+    if compare_data:
+        _cmp_figs = compare_figures or {}
+        _cmp_div = _lazy_divider("07", _t("lens_compare", lang), _t("sec_compare_heading", lang))
+
+        # 6b-i. Differing terms — one row per term that changed between A and B.
+        _terms_b = compare_data.get("terms_b")
+        if _terms_b is not None:
+            _rows_a = _term_rows(terms, lang)
+            _map_b  = dict(_term_rows(_terms_b, lang))
+            _diff_terms = [[lbl, av, _map_b.get(lbl, "—")]
+                           for lbl, av in _rows_a if _map_b.get(lbl, "—") != av]
+            if _diff_terms:
+                _cmp_div()
+                pdf.start_section(_t("cmp_terms_title", lang),
+                                  min_room=14 + _table_room(len(_diff_terms)))
+                pdf.data_table(
+                    [_t("cmp_col_term", lang), _t("cmp_col_a", lang), _t("cmp_col_b", lang)],
+                    _diff_terms,
+                    col_widths=[usable * 0.4, usable * 0.3, usable * 0.3],
+                    aligns=["L", "R", "R"])
+
+        # 6b-ii. Projected metrics — A · B · Δ.
+        _CMP_LBL = {
+            "expected_irr":            ("expected_irr",        "pct"),
+            "expected_total_return":   ("total_return_short",  "pct"),
+            "expected_coupon":         ("expected_coupon",     "pct"),
+            "expected_nominal_payout": ("expected_redemption", "pct"),
+            "prob_autocall":           ("prob_autocall",       "pct"),
+            "prob_knock_in_total":     ("prob_knock_in",       "pct"),
+            "avg_time_to_autocall":    ("avg_time_autocall",   "years"),
+            "expected_gain":           ("expected_gain",       "pct"),
+            "prob_above_par":          ("p_above_par",         "pct"),
+            "prob_at_cap":             ("p_at_cap",            "pct"),
+            "prob_knocked_out":        ("p_knocked_out",       "pct"),
+            "p5_redemption":           ("p5_redemption",       "pct"),
+        }
+
+        def _cmp_val(v, kind):
+            if v is None or v != v:                                   # nan-safe
+                return "—"
+            return f"{v:.2f} y" if kind == "years" else f"{v:.2%}"
+
+        def _cmp_dlt(d, kind):
+            if d is None or d != d:
+                return "—"
+            _sgn = "+" if d >= 0 else ""
+            return f"{_sgn}{d:.2f} y" if kind == "years" else f"{_sgn}{d:.2%}"
+
+        _cmp_rows = []
+        for _r in compare_data.get("diff", {}).get("rows", []):
+            _m = _CMP_LBL.get(_r.get("key"))
+            if not _m:
+                continue
+            _lbl, _kind = _m
+            _cmp_rows.append([_t(_lbl, lang), _cmp_val(_r.get("a"), _kind),
+                              _cmp_val(_r.get("b"), _kind), _cmp_dlt(_r.get("delta"), _kind)])
+        if _cmp_rows:
+            _cmp_div()
+            pdf.start_section(_t("cmp_metrics_title", lang),
+                              min_room=14 + _table_room(len(_cmp_rows)))
+            pdf.data_table(
+                [_t("cmp_col_metric", lang), _t("cmp_col_a", lang),
+                 _t("cmp_col_b", lang), _t("cmp_col_delta", lang)],
+                _cmp_rows,
+                col_widths=[usable * 0.4, usable * 0.2, usable * 0.2, usable * 0.2],
+                aligns=["L", "R", "R", "R"])
+
+        # 6b-iii. Overlaid distributions.
+        if _cmp_figs.get("irr") is not None:
+            _cmp_div()
+            pdf.figure(_fig_to_png(_cmp_figs["irr"], **_kw), _t("cmp_fig_irr", lang), src_mc)
+        if _cmp_figs.get("outcome") is not None:
+            _cmp_div()
+            pdf.figure(_fig_to_png(_cmp_figs["outcome"], **_kw), _t("cmp_fig_outcome", lang), src_mc)
 
     # ── 7. Glossary ────────────────────────────────────────────────────────
     # Reference list of the financial terms used throughout the report. Always

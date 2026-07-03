@@ -83,13 +83,15 @@ async function reconnectFolder(key: string): Promise<{ name: string; files: Loca
 
 // Filesystem-illegal characters only — spaces, dashes and accents are kept so an
 // edit saves back over the very file it was loaded from.
-const safeName = (s: string) => (s || 'note').replace(/[/\\:*?"<>|]/g, '_').slice(0, 80).trim() || 'note'
+export const safeName = (s: string) => (s || 'note').replace(/[/\\:*?"<>|]/g, '_').slice(0, 80).trim() || 'note'
 
 /** Write `obj` as pretty JSON into the connected folder, overwriting `<name>.json`
     (the existing file when editing one loaded from the folder, else a new file).
+    When `removeOld` is given and names a *different* file, that old file is deleted
+    after the new one is written — i.e. renaming the note renames the folder file.
     Upgrades the directory handle to read-write — the browser prompts once per
     session. Returns the saved base name (no extension), or throws if denied. */
-async function writeFile(key: string, name: string, obj: unknown): Promise<string> {
+async function writeFile(key: string, name: string, obj: unknown, removeOld?: string | null): Promise<string> {
   const dir = await idbGet<any>(key).catch(() => undefined)
   if (!dir) throw new Error('no folder connected')
   let perm = await dir.queryPermission({ mode: 'readwrite' })
@@ -100,6 +102,10 @@ async function writeFile(key: string, name: string, obj: unknown): Promise<strin
   const w = await fh.createWritable()
   await w.write(JSON.stringify(obj, null, 2))
   await w.close()
+  // Rename semantics: drop the file we loaded from once the new name is written.
+  if (removeOld && removeOld !== base) {
+    await dir.removeEntry(`${removeOld}.json`).catch(() => {})
+  }
   return base
 }
 /* eslint-enable @typescript-eslint/no-explicit-any */
@@ -233,11 +239,13 @@ export function useLocalFolder(key: string) {
     setFolder(null); setFiles([]); setNeedsGrant(false)
   }
   // Write the current config back into the folder (overwriting `<name>.json`),
-  // then re-scan so the list reflects it. Throws if the user denies write access.
-  const save = async (name: string, obj: unknown): Promise<string> => {
+  // then re-scan so the list reflects it. When `removeOld` names the file the note
+  // was loaded from and the name has since changed, that file is deleted too — so
+  // renaming a note renames its folder file. Throws if the user denies write access.
+  const save = async (name: string, obj: unknown, removeOld?: string | null): Promise<string> => {
     setBusy(true)
     try {
-      const saved = await writeFile(key, name, obj)
+      const saved = await writeFile(key, name, obj, removeOld)
       const r = await restoreFolder(key)
       if (r) { setFiles(r.files); setNeedsGrant(r.needsGrant) }
       return saved

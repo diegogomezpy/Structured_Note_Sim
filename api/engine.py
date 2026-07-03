@@ -478,22 +478,20 @@ def _simulate_full(terms: NoteTerms, *, n_paths: int, seed: int, calib_years: fl
         "wof_bands": wof_bands, "asset_bands": asset_bands, "t_grid": t_grid,
         "obs_steps": obs_steps, "obs_times": obs_times, "obs_pairs": obs_pairs,
         "asset_names": asset_names, "eng_used": eng_used,
+        # Grid internals so a second note (A/B compare) can be RE-PRICED on the very
+        # same simulated paths — recomputing only its own observation schedule.
+        "grid": grid, "anchor": anchor, "N": N, "seed": seed,
     }
 
 
-def run_simulation(terms: NoteTerms, *, n_paths: int = 10000, seed: int = 42,
-                   calib_years: float = 5.0, history_years: float | None = None,
-                   engine: str = "cpp", lang: str = "en") -> dict:
-    """Load → calibrate → simulate → price, then build the Monte Carlo figures.
-    Mirrors the old Streamlit run block; returns summary stats + Plotly-JSON
-    figures + a run_id (full paths cached server-side for the explorer)."""
-    tr = translations.Translator(lang)
-    sf = _simulate_full(terms, n_paths=n_paths, seed=seed, calib_years=calib_years,
-                        history_years=history_years, engine=engine)
-    cal_result, sim_results, note = sf["cal_result"], sf["sim_results"], sf["note"]
-    perf_paths, wof_bands, asset_bands = sf["perf_paths"], sf["wof_bands"], sf["asset_bands"]
-    t_grid, obs_steps, obs_times = sf["t_grid"], sf["obs_steps"], sf["obs_times"]
-    obs_pairs, asset_names, eng_used = sf["obs_pairs"], sf["asset_names"], sf["eng_used"]
+def _mc_figures(sf: dict, note: dict, terms: NoteTerms, tr) -> dict:
+    """Monte Carlo figures for ONE note off a simulation context `sf`. The
+    underlying figures (worst-of fan, per-asset fans, correlations) depend only on
+    the shared simulated paths; the note figures (outcome, IRR) depend on the
+    priced note — so an A/B compare that shares paths rebuilds these cheaply."""
+    cal_result, sim_results = sf["cal_result"], sf["sim_results"]
+    wof_bands, asset_bands = sf["wof_bands"], sf["asset_bands"]
+    t_grid, obs_pairs, asset_names = sf["t_grid"], sf["obs_pairs"], sf["asset_names"]
 
     _is_part = getattr(terms, "note_type", "") == "participation"
     # Participation never autocalls → the autocall outcome breakdown is meaningless;
@@ -503,7 +501,7 @@ def run_simulation(terms: NoteTerms, *, n_paths: int = 10000, seed: int = 42,
                     charts.build_outcome_breakdown(
                         note.get("prob_autocall_by_period"), note.get("prob_maturity"),
                         note.get("prob_knock_in_total"), tr))
-    figures = {
+    return {
         "outcome": _fig(_outcome_fig),
         "irr_dist": _fig(charts.build_irr_distribution(
             note["annualized_returns"], note.get("total_returns"),
@@ -525,6 +523,11 @@ def run_simulation(terms: NoteTerms, *, n_paths: int = 10000, seed: int = 42,
             asset_names, "Δ  input − realized", zmin=-0.1, zmax=0.1)),
     }
 
+
+def _mc_summary(sf: dict, note: dict, terms: NoteTerms) -> dict:
+    """Assemble the JSON summary (payoff stats + calibration) for ONE note."""
+    cal_result, obs_times = sf["cal_result"], sf["obs_times"]
+    asset_names, eng_used = sf["asset_names"], sf["eng_used"]
     summary = {k: _f(note.get(k)) for k in (
         "expected_irr", "expected_total_return", "expected_coupon",
         "prob_autocall", "prob_knock_in_total", "expected_nominal_payout",
@@ -551,20 +554,111 @@ def run_simulation(terms: NoteTerms, *, n_paths: int = 10000, seed: int = 42,
          "feller": _f(2 * p.kappa * p.theta - p.xi ** 2)}
         for p in cal_result.params
     ]
+    return summary
 
-    # Cache compact arrays for the path explorer (Phase 3).
-    run_id = _store_run({
-        "perf_paths": perf_paths.astype(np.float16),
-        "wof_bands":  wof_bands.astype(np.float32),
-        "obs_steps":  obs_steps,
-        "obs_times":  obs_times,
-        "t_grid":     t_grid,
-        "asset_names": asset_names,
+
+def _store_mc_run(sf: dict, note: dict, terms: NoteTerms) -> str:
+    """Cache the compact per-note arrays for the path explorer (Phase 3)."""
+    return _store_run({
+        "perf_paths": sf["perf_paths"].astype(np.float16),
+        "wof_bands":  sf["wof_bands"].astype(np.float32),
+        "obs_steps":  sf["obs_steps"],
+        "obs_times":  sf["obs_times"],
+        "t_grid":     sf["t_grid"],
+        "asset_names": sf["asset_names"],
         "terms":      terms.to_dict(),
         "note":       {k: np.asarray(v) for k, v in note.items()
                        if isinstance(v, np.ndarray) and v.ndim <= 2},
     })
+
+
+def run_simulation(terms: NoteTerms, *, n_paths: int = 10000, seed: int = 42,
+                   calib_years: float = 5.0, history_years: float | None = None,
+                   engine: str = "cpp", lang: str = "en") -> dict:
+    """Load → calibrate → simulate → price, then build the Monte Carlo figures.
+    Mirrors the old Streamlit run block; returns summary stats + Plotly-JSON
+    figures + a run_id (full paths cached server-side for the explorer)."""
+    tr = translations.Translator(lang)
+    sf = _simulate_full(terms, n_paths=n_paths, seed=seed, calib_years=calib_years,
+                        history_years=history_years, engine=engine)
+    note = sf["note"]
+    figures = _mc_figures(sf, note, terms, tr)
+    summary = _mc_summary(sf, note, terms)
+    run_id = _store_mc_run(sf, note, terms)
     return {"run_id": run_id, "summary": summary, "figures": figures}
+
+
+def _reprice_on_paths(sf: dict, terms: NoteTerms, *, seed: int) -> dict:
+    """Re-price a DIFFERENT note on an existing simulation context `sf` (same
+    underlying paths). Recomputes only the note's own observation schedule against
+    the shared trading-day grid, then returns a fresh `sf`-shaped dict whose `note`
+    and obs metadata are for `terms` but whose paths/bands/calibration are shared."""
+    grid, anchor, N = sf["grid"], sf["anchor"], sf["N"]
+    obs_steps = [min(int(grid.searchsorted(d)), N) for d in terms.obs_calendar_dates(anchor)]
+    obs_times = [(grid[s] - grid[0]).days / 365.0 for s in obs_steps]
+    note = price_note(sf["perf_paths"], terms, seed=seed + 1,
+                      obs_steps=obs_steps, obs_times=obs_times)
+    return {**sf, "note": note, "obs_steps": obs_steps, "obs_times": obs_times,
+            "obs_pairs": [(f"P{i+1}", t) for i, t in enumerate(obs_times)]}
+
+
+def run_compare(terms_a: NoteTerms, terms_b: NoteTerms, *, n_paths: int = 10000,
+                seed: int = 42, calib_years: float = 5.0,
+                history_years: float | None = None, engine: str = "cpp",
+                lang: str = "en") -> dict:
+    """Price two notes head-to-head. When they share the SAME underlyings and
+    maturity the underlying is simulated ONCE and both notes are priced on the
+    identical paths — so every difference is attributable to the terms, not RNG
+    noise. Otherwise B is simulated independently. Returns each side's run/summary/
+    figures plus overlay figures and a metrics diff."""
+    tr = translations.Translator(lang)
+    sf_a = _simulate_full(terms_a, n_paths=n_paths, seed=seed, calib_years=calib_years,
+                          history_years=history_years, engine=engine)
+    shared = (dict(terms_a.tickers) == dict(terms_b.tickers)
+              and abs(float(terms_a.maturity) - float(terms_b.maturity)) < 1e-9)
+    if shared:
+        sf_b = _reprice_on_paths(sf_a, terms_b, seed=seed)
+    else:
+        sf_b = _simulate_full(terms_b, n_paths=n_paths, seed=seed, calib_years=calib_years,
+                              history_years=history_years, engine=engine)
+    note_a, note_b = sf_a["note"], sf_b["note"]
+
+    side_a = {"run_id": _store_mc_run(sf_a, note_a, terms_a),
+              "summary": _mc_summary(sf_a, note_a, terms_a),
+              "figures": _mc_figures(sf_a, note_a, terms_a, tr)}
+    side_b = {"run_id": _store_mc_run(sf_b, note_b, terms_b),
+              "summary": _mc_summary(sf_b, note_b, terms_b),
+              "figures": _mc_figures(sf_b, note_b, terms_b, tr)}
+
+    compare = {
+        "shared_paths": shared,
+        "diff": _compare_diff(side_a["summary"], side_b["summary"], terms_a, terms_b),
+        "figures": {
+            "irr": _fig(charts.build_irr_compare(
+                note_a["annualized_returns"], note_b["annualized_returns"],
+                note_a["expected_irr"], note_b["expected_irr"], tr)),
+            "outcome": _fig(charts.build_outcome_compare(note_a, note_b, terms_a, terms_b, tr)),
+        },
+    }
+    return {"a": side_a, "b": side_b, "compare": compare}
+
+
+def _compare_diff(sum_a: dict, sum_b: dict, terms_a: NoteTerms, terms_b: NoteTerms) -> dict:
+    """Metric-by-metric A · B · Δ table data. Only metrics meaningful for BOTH
+    note types are surfaced; the client renders/formats per metric."""
+    both_part = sum_a.get("note_type") == "participation" and sum_b.get("note_type") == "participation"
+    keys = (["expected_irr", "expected_total_return", "expected_gain", "prob_above_par",
+             "prob_at_cap", "prob_knocked_out", "p5_redemption"] if both_part else
+            ["expected_irr", "expected_total_return", "expected_coupon", "prob_autocall",
+             "prob_knock_in_total", "expected_nominal_payout", "avg_time_to_autocall"])
+    rows = []
+    for k in keys:
+        a, b = sum_a.get(k), sum_b.get(k)
+        if a is None and b is None:
+            continue
+        d = (b - a) if (isinstance(a, (int, float)) and isinstance(b, (int, float))) else None
+        rows.append({"key": k, "a": a, "b": b, "delta": d})
+    return {"rows": rows, "both_participation": both_part}
 
 
 # ── backtest flow ───────────────────────────────────────────────────────────────
@@ -1167,14 +1261,44 @@ def _decode_data_url(s: str | None) -> bytes | None:
         return None
 
 
+def _compare_for_pdf(sf_a: dict, terms_a: NoteTerms, terms_b: NoteTerms, tr, *,
+                     n_paths: int, seed: int, calib_years: float,
+                     history_years: float | None, engine: str) -> tuple[dict, dict]:
+    """Compute the A/B comparison payload for the PDF: metrics diff + raw go.Figure
+    overlays (kaleido renders these to PNG downstream). Reuses A's simulation `sf`
+    and reprices B on the same paths when they share underlyings + maturity."""
+    shared = (dict(terms_a.tickers) == dict(terms_b.tickers)
+              and abs(float(terms_a.maturity) - float(terms_b.maturity)) < 1e-9)
+    sf_b = (_reprice_on_paths(sf_a, terms_b, seed=seed) if shared else
+            _simulate_full(terms_b, n_paths=n_paths, seed=seed, calib_years=calib_years,
+                           history_years=history_years, engine=engine))
+    note_a, note_b = sf_a["note"], sf_b["note"]
+    summary_a = _mc_summary(sf_a, note_a, terms_a)
+    summary_b = _mc_summary(sf_b, note_b, terms_b)
+    data = {
+        "shared_paths": shared,
+        "diff": _compare_diff(summary_a, summary_b, terms_a, terms_b),
+        "name_a": terms_a.name, "name_b": terms_b.name,
+        "terms_b": terms_b,   # NoteTerms object (in-process) for the side-by-side terms table
+    }
+    figs = {
+        "irr": charts.build_irr_compare(
+            note_a["annualized_returns"], note_b["annualized_returns"],
+            note_a["expected_irr"], note_b["expected_irr"], tr),
+        "outcome": charts.build_outcome_compare(note_a, note_b, terms_a, terms_b, tr),
+    }
+    return data, figs
+
+
 def build_report_pdf(terms: NoteTerms, *, sections: list[str] | None = None, lang: str = "en",
                      n_paths: int = 10000, seed: int = 42, calib_years: float = 5.0,
                      history_years: float | None = None, engine: str = "cpp",
-                     branding: dict | None = None) -> bytes:
+                     branding: dict | None = None,
+                     compare_terms: NoteTerms | None = None) -> bytes:
     """Assemble the institutional PDF report (app/pdf_report.py). `sections` is the
     set of fine-grained item keys to include (empty/None ⇒ everything available);
     only the flows those keys touch are run. `branding` is an optional firm-branding
-    dict. Returns the PDF bytes."""
+    dict. `compare_terms` (Note B) adds an A/B comparison section. Returns PDF bytes."""
     from pdf_report import generate_pdf_report                     # heavy import, lazy
 
     tr = translations.Translator(lang)
@@ -1194,12 +1318,17 @@ def build_report_pdf(terms: NoteTerms, *, sections: list[str] | None = None, lan
     want_bt   = all_on or any(k.startswith("bt_") for k in keys)
     want_live = all_on or any(k.startswith("live_") for k in keys)
     want_ul   = all_on or "underlying_breakdown" in keys
+    # Supplying a Note B is itself the opt-in — the comparison isn't a fine-grained
+    # section toggle, so it renders whenever compare_terms is provided.
+    want_compare = compare_terms is not None
 
     results: dict = {}
     figures: dict = {}
-    if want_mc or want_cal:
+    sf = None
+    if want_mc or want_cal or want_compare:
         sf = _simulate_full(terms, n_paths=n_paths, seed=seed, calib_years=calib_years,
                             history_years=history_years, engine=engine)
+    if want_mc or want_cal:
         note, cal_result = sf["note"], sf["cal_result"]
         t_grid, obs_pairs = sf["t_grid"], sf["obs_pairs"]
         wof_bands, asset_bands = sf["wof_bands"], sf["asset_bands"]
@@ -1239,6 +1368,16 @@ def build_report_pdf(terms: NoteTerms, *, sections: list[str] | None = None, lan
         live = run_live_api(terms, lang=lang, for_pdf=True)
         if live.get("available"):
             live_data, live_figure = live["live_data"], live["live_figure"]
+
+    # A/B comparison section (only when a Note B was supplied).
+    compare_data = compare_figures = None
+    if want_compare and sf is not None:
+        try:
+            compare_data, compare_figures = _compare_for_pdf(
+                sf, terms, compare_terms, tr, n_paths=n_paths, seed=seed,
+                calib_years=calib_years, history_years=history_years, engine=engine)
+        except Exception as e:                                     # comparison is best-effort
+            print(f"[report] comparison section skipped: {e}")
 
     # Underlying breakdown: per-asset metrics + a 1Y price chart (raw go.Figures).
     underlying_metrics = underlying_price_figs = None
@@ -1286,4 +1425,5 @@ def build_report_pdf(terms: NoteTerms, *, sections: list[str] | None = None, lan
         logo_urls=logo_urls, issuer_logo_url=issuer_logo, logo_tickers=logo_tickers,
         logo_overrides=logo_overrides or None, branding=branding,
         underlying_metrics=underlying_metrics, underlying_price_figs=underlying_price_figs,
-        issuer_description=issuer_desc or None, include_sections=include_sections)
+        issuer_description=issuer_desc or None, include_sections=include_sections,
+        compare_data=compare_data, compare_figures=compare_figures)
