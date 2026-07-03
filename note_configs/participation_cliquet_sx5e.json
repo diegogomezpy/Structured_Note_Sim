@@ -1,0 +1,25 @@
+{
+  "name": "3Y Cliquet — Annual Participation, 8% cap (SX5E)",
+  "issuer": "Generic Bank",
+  "note_type": "participation",
+  "maturity": 3.0,
+  "payment_freq": "annual",
+  "coupon_pa": 0.0,
+  "coupon_barrier": 0.0,
+  "autocall_barrier": 2.0,
+  "autocall_start_period": 1,
+  "knock_in_barrier": 0.0,
+  "memory": false,
+  "coupon_basket": "worst_of",
+  "autocall_basket": "worst_of",
+  "one_star_level": null,
+  "participation_periodic": true,
+  "participation_rate": 1.0,
+  "period_cap": 0.08,
+  "protection_level": 1.0,
+  "participation_basket": "worst_of",
+  "tickers": {
+    "^STOXX50E": "Euro Stoxx 50"
+  },
+  "issue_date": null
+}

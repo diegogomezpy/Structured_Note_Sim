@@ -52,6 +52,9 @@ export interface NoteTerms {
   knockout_level?: number | null
   knockout_payout?: number
   digital_payout?: number
+  // Periodic / cliquet mode — participation paid each reset period (floored at 0)
+  participation_periodic?: boolean
+  period_cap?: number | null
   // metadata
   note_description: string
   issuer_description: string

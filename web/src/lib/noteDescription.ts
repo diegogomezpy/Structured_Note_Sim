@@ -42,6 +42,14 @@ function participationDescription(terms: NoteTerms, lang: Lang, joined: string, 
   const bword = es
     ? ({ worst_of: 'el peor rendimiento', best_of: 'el mejor rendimiento', average: 'el rendimiento promedio' }[terms.participation_basket ?? 'worst_of'])
     : ({ worst_of: 'the worst-performing', best_of: 'the best-performing', average: 'the average' }[terms.participation_basket ?? 'worst_of'])
+  if (terms.participation_periodic) {
+    const freq = freqWord(terms.payment_freq, lang)
+    const pcap = terms.period_cap
+    const capph = pcap != null ? (es ? ` (limitada al ${p2(pcap)} por período)` : ` (capped at ${p2(pcap)} per period)`) : ''
+    return es
+      ? `Esta Nota está vinculada a ${bword} de ${joined}, ${subj}, con una duración de ${dur}. En cada fecha de reinicio ${freq} paga el ${p2(rate)} de la subida de ese período${capph}; los períodos a la baja no pagan nada y el strike se reinicia. El capital está protegido al ${p2(Math.min(prot, 1))} al vencimiento.`
+      : `This Note is linked to ${bword} of ${joined}, ${subj}, over ${dur}. At each ${freq} reset date it pays ${p2(rate)} of that period's rise${capph}; down periods pay nothing and the strike resets. Capital is protected at ${p2(Math.min(prot, 1))} at maturity.`
+  }
   const head = es
     ? `Esta Nota está vinculada a ${bword} de ${joined}, ${subj}, con una duración máxima de ${dur}. No paga cupones periódicos; la redención al vencimiento depende del nivel final. `
     : `This Note is linked to ${bword} of ${joined}, ${subj}, over a maximum term of ${dur}. It pays no periodic coupons; redemption at maturity depends on the final level. `

@@ -11,14 +11,20 @@ const X0 = 88, X1 = 620, Y_TOP = 26, Y_BOT = 188
 
 export default function ParticipationProfile({ terms }: { terms: NoteTerms }) {
   const { t } = useI18n()
-  const pd = terms.participation_downside ?? 'full'
-  const strike = terms.participation_strike ?? 1
-  const prot = terms.protection_level ?? 1
-  const cap = terms.upside_cap != null ? 1 + terms.upside_cap : Infinity
+  // In periodic (cliquet) mode the profile is ONE period's payoff: full protection,
+  // linear participation off a reset strike, floored at 0, with the per-period cap.
+  const periodic = terms.participation_periodic ?? false
+  const eff: NoteTerms = periodic
+    ? { ...terms, participation_downside: 'full', participation_upside: 'linear', participation_strike: 1, protection_level: 1, upside_cap: terms.period_cap ?? null, knockout_level: null }
+    : terms
+  const pd = eff.participation_downside ?? 'full'
+  const strike = eff.participation_strike ?? 1
+  const prot = eff.protection_level ?? 1
+  const cap = eff.upside_cap != null ? 1 + eff.upside_cap : Infinity
 
   // x-domain: 40%..180%, stretched to include a shark-fin knock-out if higher.
   const xMin = 0.4
-  const xMax = Math.max(1.8, (terms.knockout_level ?? 0) + 0.2)
+  const xMax = Math.max(1.8, (eff.knockout_level ?? 0) + 0.2)
   const N = 120
   // Uniform grid PLUS the exact break-points (strike, knock-out) with a sample
   // just before each, so digital steps and the shark-fin drop render as crisp
@@ -86,10 +92,11 @@ export default function ParticipationProfile({ terms }: { terms: NoteTerms }) {
         {/* axes */}
         <line x1={X0} y1={Y_TOP} x2={X0} y2={Y_BOT} stroke="var(--border-strong)" strokeWidth={1} />
         <line x1={X0} y1={Y_BOT} x2={X1} y2={Y_BOT} stroke="var(--border-strong)" strokeWidth={1} />
-        <text x={(X0 + X1) / 2} y={VIEW_H - 4} fontSize={11.5} fill="var(--text)" textAnchor="middle">{t('pp_x_axis')}</text>
+        <text x={(X0 + X1) / 2} y={VIEW_H - 4} fontSize={11.5} fill="var(--text)" textAnchor="middle">{periodic ? t('pp_x_axis_period') : t('pp_x_axis')}</text>
         <text x={16} y={(Y_TOP + Y_BOT) / 2} fontSize={11.5} fill="var(--text)" textAnchor="middle"
               transform={`rotate(-90 16 ${(Y_TOP + Y_BOT) / 2})`}>{t('pp_y_axis')}</text>
       </svg>
+      {periodic && <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4, textAlign: 'center', lineHeight: 1.5 }}>{t('pp_periodic_caption')}</div>}
     </div>
   )
 }

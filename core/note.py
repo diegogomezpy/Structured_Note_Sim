@@ -280,6 +280,11 @@ class NoteTerms:
     knockout_level:         float | None = None         # shark-fin: upside knocks out above this final level
     knockout_payout:        float        = 1.0          # shark-fin: redemption if knocked out (1.0 = par; the level it drops to)
     digital_payout:         float        = 0.0          # digital: fixed extra return if final >= strike (e.g. 0.10 = +10%)
+    # Periodic / cliquet participation (a series of back-to-back protected participation
+    # notes): reset the strike each observation date and pay rate·max(0, min(period
+    # return, period_cap)) as income at each reset; capital protected at protection_level.
+    participation_periodic: bool         = False        # turns on the cliquet mode
+    period_cap:             float | None = None         # per-period cap on the participation (None = uncapped)
     # ── Capital Protected legacy fields (kept for back-compat; see from_dict) ──
     capital_guarantee:       float | None = None  # legacy CP guarantee → migrated to protection_level + note_type=participation
     upside_cap:              float | None = None  # maximum redemption above par; also the cap for linear/shark-fin upside
@@ -413,6 +418,8 @@ class NoteTerms:
             "knockout_level":         self.knockout_level,
             "knockout_payout":        self.knockout_payout,
             "digital_payout":         self.digital_payout,
+            "participation_periodic": self.participation_periodic,
+            "period_cap":             self.period_cap,
             "capital_guarantee":      self.capital_guarantee,
             "upside_cap":             self.upside_cap,
             "note_description":       self.note_description,
@@ -572,11 +579,61 @@ def _participation_redemption(B: np.ndarray, terms: "NoteTerms") -> np.ndarray:
     return np.maximum(R, 0.0)
 
 
+def _participation_periodic_payoff(perf_paths, terms, obs_steps, t_maturity, n_obs) -> dict:
+    """Cliquet / ratchet participation: at each reset date pay
+    rate·max(0, min(period return, period_cap)) as income (down periods pay 0);
+    capital is protected at protection_level. The per-period income maps onto the
+    coupon stream so the path explorer and coupon stats work unchanged."""
+    n_paths = perf_paths.shape[0]
+    rate = float(terms.participation_rate)
+    cap  = float(terms.period_cap) if terms.period_cap is not None else np.inf
+    prot = float(terms.protection_level) if terms.protection_level is not None else 1.0
+    # Basket level at each reset date; B_0 = 1.0 at inception. Period return is the
+    # basket's move over each reset interval (strike resets each period).
+    B      = np.stack([_basket(perf_paths[:, s, :], terms.participation_basket) for s in obs_steps], axis=1)  # (n_paths, n_obs)
+    B_prev = np.concatenate([np.ones((n_paths, 1)), B[:, :-1]], axis=1)
+    r      = np.divide(B, B_prev, out=np.ones_like(B), where=(B_prev != 0)) - 1.0
+    period_income = rate * np.clip(r, 0.0, cap)          # (n_paths, n_obs), floored at 0
+    total_income  = period_income.sum(axis=1)
+    principal     = np.full(n_paths, prot)               # capital protected (floored periods never erode it)
+    nominal       = principal + total_income
+    total_return  = nominal - 1.0
+    irr           = total_return / max(t_maturity, 1.0 / 252.0)
+    loss          = principal < 1.0
+    return {
+        "nominal_payoffs":      nominal,
+        "coupon_payoffs":       total_income,
+        "principal_payoffs":    principal,
+        "autocall_period":      np.zeros(n_paths, dtype=int),
+        "knock_in_triggered":   loss,
+        "knock_in_mask":        loss,
+        "annualized_returns":   irr,
+        "total_returns":        total_return,
+        "coupon_amounts":       period_income,
+        "autocall_events":      np.zeros(n_paths, dtype=int),
+        "expected_irr":             float(irr.mean()),
+        "expected_total_return":    float(total_return.mean()),
+        "expected_nominal_payout":  float(nominal.mean()),
+        "expected_coupon":          float(total_income.mean()),
+        "prob_autocall":            0.0,
+        "prob_autocall_by_period":  [0.0] * n_obs,
+        "prob_maturity":            1.0,
+        "prob_knock_in":            float(loss.mean()),
+        "prob_knock_in_total":      float(loss.mean()),
+        "prob_barrier_event":       float(loss.mean()),
+        "prob_rescued":             0.0,
+        "loss_given_knock_in":      float(irr[loss].mean()) if loss.any() else float("nan"),
+        "avg_time_to_autocall":     None,
+    }
+
+
 def _participation_payoff(perf_paths, terms, obs_steps, t_maturity, n_obs) -> dict:
     """price_note() branch for note_type == 'participation'. A pure maturity payoff:
     no coupons, no autocall, no periodic knock-in. Returns the same result schema as
     the Phoenix path so everything downstream (stats, plots, path explorer) is
     unchanged; 'knock-in' here means redeemed below par (a capital loss)."""
+    if getattr(terms, "participation_periodic", False):
+        return _participation_periodic_payoff(perf_paths, terms, obs_steps, t_maturity, n_obs)
     n_paths    = perf_paths.shape[0]
     final_step = obs_steps[-1]
     B          = _basket(perf_paths[:, final_step, :], terms.participation_basket)  # (n_paths,)

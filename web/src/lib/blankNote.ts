@@ -33,6 +33,8 @@ export function blankNote(): NoteTerms {
     knockout_level: null,
     knockout_payout: 1.0,
     digital_payout: 0,
+    participation_periodic: false,
+    period_cap: null,
     issuer_description: '',
     issuer_rating_sp: '',
     issuer_rating_moody: '',

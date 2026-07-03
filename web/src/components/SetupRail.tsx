@@ -95,6 +95,7 @@ export default function SetupRail({
   // lives in the settings overlay.
   const noteType = detectNoteType(terms)
   const isPart = noteType === 'participation'
+  const periodic = terms.participation_periodic ?? false
   const pu = terms.participation_upside ?? 'linear'
   const downsideOpts = (['full', 'buffer', 'airbag', 'bear'] as const).map((v) => ({ value: v, label: t(`pd_${v}`) }))
   const upsideOpts = (['linear', 'shark_fin', 'digital'] as const).map((v) => ({ value: v, label: t(`pu_${v}`) }))
@@ -166,41 +167,62 @@ export default function SetupRail({
         <NumField label={t('maturity')} value={terms.maturity} suffix="y" min={0.25} tip={t('tip_maturity')}
                   onChange={(v) => set('maturity', v)} />
         {isPart ? (<>
-          <SelectField label={t('part_downside')} value={terms.participation_downside ?? 'full'}
-                       options={downsideOpts}
-                       onChange={(v) => onChange(withDownside(terms, v as NonNullable<NoteTerms['participation_downside']>))} />
-          <NumField label={t('protection_level')} value={terms.protection_level ?? 1.0} pct suffix="%"
-                    onChange={(v) => set('protection_level', v)} />
-          {terms.participation_downside !== 'bear' && (
-            <SelectField label={t('part_upside')} value={pu}
-                         options={upsideOpts}
-                         onChange={(v) => onChange(withUpside(terms, v as NonNullable<NoteTerms['participation_upside']>))} />
-          )}
-          <NumField label={t('participation_strike')} value={terms.participation_strike ?? 1.0} pct suffix="%"
-                    onChange={(v) => set('participation_strike', v)} />
-          {(terms.participation_downside === 'bear' || pu !== 'digital') && (
+          <ToggleField label={t('part_periodic')} checked={periodic}
+                       onChange={(v) => set('participation_periodic', v)} />
+          {periodic ? (<>
+            <SegmentedField label={t('part_reset')} value={terms.payment_freq}
+                            options={FREQS.map((f) => ({ value: f, label: FREQ_SHORT[f] }))}
+                            onChange={(v) => set('payment_freq', v)} />
             <NumField label={t('participation_rate')} value={terms.participation_rate ?? 1.0} pct suffix="%"
                       onChange={(v) => set('participation_rate', v)} />
-          )}
-          {pu === 'shark_fin' && terms.participation_downside !== 'bear' && (<>
-            <NumField label={t('knockout_level')} value={terms.knockout_level ?? 1.3} pct suffix="%"
-                      onChange={(v) => set('knockout_level', v)} />
-            <NumField label={t('knockout_payout')} value={terms.knockout_payout ?? 1.0} pct suffix="%"
-                      onChange={(v) => set('knockout_payout', v)} />
+            <NumField label={t('protection_level')} value={terms.protection_level ?? 1.0} pct suffix="%"
+                      onChange={(v) => set('protection_level', v)} />
+            <ToggleField label={t('cap_period')} checked={terms.period_cap != null}
+                         onChange={(on) => set('period_cap', on ? 0.08 : null)} />
+            {terms.period_cap != null && (
+              <NumField label={t('period_cap')} value={terms.period_cap} pct suffix="%"
+                        onChange={(v) => set('period_cap', v)} />
+            )}
+            <SelectField label={t('part_basket')} value={terms.participation_basket ?? 'worst_of'}
+                         options={BASKETS.map((b) => ({ value: b, label: t(`basket_${b}`) }))}
+                         onChange={(v) => set('participation_basket', v)} />
+          </>) : (<>
+            <SelectField label={t('part_downside')} value={terms.participation_downside ?? 'full'}
+                         options={downsideOpts}
+                         onChange={(v) => onChange(withDownside(terms, v as NonNullable<NoteTerms['participation_downside']>))} />
+            <NumField label={t('protection_level')} value={terms.protection_level ?? 1.0} pct suffix="%"
+                      onChange={(v) => set('protection_level', v)} />
+            {terms.participation_downside !== 'bear' && (
+              <SelectField label={t('part_upside')} value={pu}
+                           options={upsideOpts}
+                           onChange={(v) => onChange(withUpside(terms, v as NonNullable<NoteTerms['participation_upside']>))} />
+            )}
+            <NumField label={t('participation_strike')} value={terms.participation_strike ?? 1.0} pct suffix="%"
+                      onChange={(v) => set('participation_strike', v)} />
+            {(terms.participation_downside === 'bear' || pu !== 'digital') && (
+              <NumField label={t('participation_rate')} value={terms.participation_rate ?? 1.0} pct suffix="%"
+                        onChange={(v) => set('participation_rate', v)} />
+            )}
+            {pu === 'shark_fin' && terms.participation_downside !== 'bear' && (<>
+              <NumField label={t('knockout_level')} value={terms.knockout_level ?? 1.3} pct suffix="%"
+                        onChange={(v) => set('knockout_level', v)} />
+              <NumField label={t('knockout_payout')} value={terms.knockout_payout ?? 1.0} pct suffix="%"
+                        onChange={(v) => set('knockout_payout', v)} />
+            </>)}
+            {pu === 'digital' && terms.participation_downside !== 'bear' && (
+              <NumField label={t('digital_payout')} value={terms.digital_payout ?? 0} pct suffix="%"
+                        onChange={(v) => set('digital_payout', v)} />
+            )}
+            <ToggleField label={t('cap_upside')} checked={terms.upside_cap != null}
+                         onChange={(on) => set('upside_cap', on ? 0.5 : null)} />
+            {terms.upside_cap != null && (
+              <NumField label={t('upside_cap')} value={terms.upside_cap} pct suffix="%"
+                        onChange={(v) => set('upside_cap', v)} />
+            )}
+            <SelectField label={t('part_basket')} value={terms.participation_basket ?? 'worst_of'}
+                         options={BASKETS.map((b) => ({ value: b, label: t(`basket_${b}`) }))}
+                         onChange={(v) => set('participation_basket', v)} />
           </>)}
-          {pu === 'digital' && terms.participation_downside !== 'bear' && (
-            <NumField label={t('digital_payout')} value={terms.digital_payout ?? 0} pct suffix="%"
-                      onChange={(v) => set('digital_payout', v)} />
-          )}
-          <ToggleField label={t('cap_upside')} checked={terms.upside_cap != null}
-                       onChange={(on) => set('upside_cap', on ? 0.5 : null)} />
-          {terms.upside_cap != null && (
-            <NumField label={t('upside_cap')} value={terms.upside_cap} pct suffix="%"
-                      onChange={(v) => set('upside_cap', v)} />
-          )}
-          <SelectField label={t('part_basket')} value={terms.participation_basket ?? 'worst_of'}
-                       options={BASKETS.map((b) => ({ value: b, label: t(`basket_${b}`) }))}
-                       onChange={(v) => set('participation_basket', v)} />
         </>) : (<>
           <SegmentedField label={t('frequency')} value={terms.payment_freq} tip={t('tip_frequency')}
                           options={FREQS.map((f) => ({ value: f, label: FREQ_SHORT[f] }))}

@@ -56,6 +56,7 @@ export default function SettingsOverlay({
   const stepDown = terms.autocall_step_down ?? 0
   const activeType = detectNoteType(terms)
   const isPart = activeType === 'participation'
+  const periodic = terms.participation_periodic ?? false
   const pd = terms.participation_downside ?? 'full'
   const pu = terms.participation_upside ?? 'linear'
   const downsideOpts = (['full', 'buffer', 'airbag', 'bear'] as const).map((v) => ({ value: v, label: t(`pd_${v}`) }))
@@ -105,50 +106,81 @@ export default function SettingsOverlay({
           <SelectField label={t('part_basket')} value={terms.participation_basket ?? 'worst_of'} options={basketOpts}
                        onChange={(v) => set('participation_basket', v)} />
         </Grid>
+        {/* Cliquet / periodic toggle — a series of back-to-back protected
+            participation notes paying the participation each reset period. */}
         <div style={{ marginTop: 8 }}>
-          <SelectField label={t('part_downside')} value={pd}
-                       options={downsideOpts} onChange={(v) => onChange(withDownside(terms, v as NonNullable<NoteTerms['participation_downside']>))} />
-          <div style={{ fontSize: 11, color: 'var(--text-faint)', margin: '4px 0 10px', lineHeight: 1.5 }}>{t(`pd_${pd}_h`)}</div>
+          <ToggleField label={t('part_periodic')} checked={periodic}
+                       onChange={(v) => set('participation_periodic', v)} />
+          <div style={{ fontSize: 11, color: 'var(--text-faint)', margin: '4px 0 10px', lineHeight: 1.5 }}>{t('part_periodic_h')}</div>
         </div>
-        {pd !== 'bear' && (
+
+        {periodic ? (
+          <>
+            <div style={{ gridColumn: '1 / -1', maxWidth: 480, marginBottom: 12 }}>
+              <SegmentedField label={t('part_reset')} value={terms.payment_freq}
+                              options={FREQS.map((f) => ({ value: f, label: t(`freq_${f}`) }))} onChange={(v) => set('payment_freq', v)} />
+            </div>
+            <Grid>
+              <NumberField label={t('participation_rate')} value={terms.participation_rate ?? 1.0} percent suffix="%" min={0} max={500} step={5}
+                           onChange={(v) => set('participation_rate', v)} />
+              <NumberField label={t('protection_level')} value={terms.protection_level ?? 1.0} percent suffix="%" min={0} max={100} step={1}
+                           onChange={(v) => set('protection_level', v)} />
+              <div>
+                <ToggleField label={t('cap_period')} checked={terms.period_cap != null}
+                             onChange={(v) => set('period_cap', v ? 0.08 : null)} />
+                {terms.period_cap != null && (
+                  <NumberField label={t('period_cap')} value={terms.period_cap} percent suffix="%" min={0} max={50} step={0.5}
+                               onChange={(v) => set('period_cap', v)} />
+                )}
+              </div>
+            </Grid>
+          </>
+        ) : (<>
           <div>
-            <SelectField label={t('part_upside')} value={pu}
-                         options={upsideOpts} onChange={(v) => onChange(withUpside(terms, v as NonNullable<NoteTerms['participation_upside']>))} />
-            <div style={{ fontSize: 11, color: 'var(--text-faint)', margin: '4px 0 10px', lineHeight: 1.5 }}>{t(`pu_${pu}_h`)}</div>
+            <SelectField label={t('part_downside')} value={pd}
+                         options={downsideOpts} onChange={(v) => onChange(withDownside(terms, v as NonNullable<NoteTerms['participation_downside']>))} />
+            <div style={{ fontSize: 11, color: 'var(--text-faint)', margin: '4px 0 10px', lineHeight: 1.5 }}>{t(`pd_${pd}_h`)}</div>
           </div>
-        )}
-        <Grid>
-          <NumberField label={protLabel} value={terms.protection_level ?? 1.0} percent suffix="%" min={0} max={120} step={1}
-                       onChange={(v) => set('protection_level', v)} />
-          <NumberField label={t('participation_strike')} value={terms.participation_strike ?? 1.0} percent suffix="%" min={50} max={150} step={0.5}
-                       onChange={(v) => set('participation_strike', v)} />
-          {(pd === 'bear' || pu !== 'digital') && (
-            <NumberField label={t('participation_rate')} value={terms.participation_rate ?? 1.0} percent suffix="%" min={0} max={500} step={5}
-                         onChange={(v) => set('participation_rate', v)} />
-          )}
-          {pu === 'shark_fin' && pd !== 'bear' && (
-            <NumberField label={t('knockout_level')} value={terms.knockout_level ?? 1.3} percent suffix="%" min={100} max={400} step={1}
-                         onChange={(v) => set('knockout_level', v)} />
-          )}
-          {pu === 'shark_fin' && pd !== 'bear' && (
-            <NumberField label={t('knockout_payout')} value={terms.knockout_payout ?? 1.0} percent suffix="%" min={0} max={200} step={0.5}
-                         onChange={(v) => set('knockout_payout', v)} />
-          )}
-          {pu === 'digital' && pd !== 'bear' && (
-            <NumberField label={t('digital_payout')} value={terms.digital_payout ?? 0} percent suffix="%" min={0} max={200} step={0.5}
-                         onChange={(v) => set('digital_payout', v)} />
-          )}
-          {(pd === 'bear' || pu === 'linear') && (
+          {pd !== 'bear' && (
             <div>
-              <ToggleField label={t('cap_upside')} checked={terms.upside_cap != null}
-                           onChange={(v) => set('upside_cap', v ? 0.5 : null)} />
-              {terms.upside_cap != null && (
-                <NumberField label={t('upside_cap')} value={terms.upside_cap} percent suffix="%" min={0} max={300} step={5}
-                             onChange={(v) => set('upside_cap', v)} />
-              )}
+              <SelectField label={t('part_upside')} value={pu}
+                           options={upsideOpts} onChange={(v) => onChange(withUpside(terms, v as NonNullable<NoteTerms['participation_upside']>))} />
+              <div style={{ fontSize: 11, color: 'var(--text-faint)', margin: '4px 0 10px', lineHeight: 1.5 }}>{t(`pu_${pu}_h`)}</div>
             </div>
           )}
-        </Grid>
+          <Grid>
+            <NumberField label={protLabel} value={terms.protection_level ?? 1.0} percent suffix="%" min={0} max={120} step={1}
+                         onChange={(v) => set('protection_level', v)} />
+            <NumberField label={t('participation_strike')} value={terms.participation_strike ?? 1.0} percent suffix="%" min={50} max={150} step={0.5}
+                         onChange={(v) => set('participation_strike', v)} />
+            {(pd === 'bear' || pu !== 'digital') && (
+              <NumberField label={t('participation_rate')} value={terms.participation_rate ?? 1.0} percent suffix="%" min={0} max={500} step={5}
+                           onChange={(v) => set('participation_rate', v)} />
+            )}
+            {pu === 'shark_fin' && pd !== 'bear' && (
+              <NumberField label={t('knockout_level')} value={terms.knockout_level ?? 1.3} percent suffix="%" min={100} max={400} step={1}
+                           onChange={(v) => set('knockout_level', v)} />
+            )}
+            {pu === 'shark_fin' && pd !== 'bear' && (
+              <NumberField label={t('knockout_payout')} value={terms.knockout_payout ?? 1.0} percent suffix="%" min={0} max={200} step={0.5}
+                           onChange={(v) => set('knockout_payout', v)} />
+            )}
+            {pu === 'digital' && pd !== 'bear' && (
+              <NumberField label={t('digital_payout')} value={terms.digital_payout ?? 0} percent suffix="%" min={0} max={200} step={0.5}
+                           onChange={(v) => set('digital_payout', v)} />
+            )}
+            {(pd === 'bear' || pu === 'linear') && (
+              <div>
+                <ToggleField label={t('cap_upside')} checked={terms.upside_cap != null}
+                             onChange={(v) => set('upside_cap', v ? 0.5 : null)} />
+                {terms.upside_cap != null && (
+                  <NumberField label={t('upside_cap')} value={terms.upside_cap} percent suffix="%" min={0} max={300} step={5}
+                               onChange={(v) => set('upside_cap', v)} />
+                )}
+              </div>
+            )}
+          </Grid>
+        </>)}
       </Group>
       )}
 

@@ -46,6 +46,27 @@ def _describe_participation(terms, lang, names, multi) -> str:
     strike, cap = terms.participation_strike or 1.0, terms.upside_cap
     pd, pu = terms.participation_downside, terms.participation_upside
 
+    # Periodic / cliquet — a series of back-to-back protected participation notes.
+    if getattr(terms, "participation_periodic", False):
+        freq = _freq_word(terms.payment_freq, lang)
+        pcap = terms.period_cap
+        if lang == "es":
+            bw = {"worst_of": "el peor rendimiento", "best_of": "el mejor rendimiento",
+                  "average": "el rendimiento promedio"}.get(terms.participation_basket, "el rendimiento")
+            subj = "los Subyacentes" if multi else "el Subyacente"
+            capph = f" (limitada al {_p(pcap)} por período)" if pcap is not None else ""
+            return (f"Esta Nota está vinculada a {bw} de {joined}, {subj}, con una duración de {dur}. "
+                    f"En cada fecha de reinicio {freq} paga el {_p(rate)} de la subida de ese período{capph}; "
+                    f"los períodos a la baja no pagan nada y el strike se reinicia. El capital está protegido al "
+                    f"{_p(min(prot, 1.0))} al vencimiento.")
+        bw = {"worst_of": "the worst-performing", "best_of": "the best-performing",
+              "average": "the average"}.get(terms.participation_basket, "the")
+        subj = "the Underlyings" if multi else "the Underlying"
+        capph = f" (capped at {_p(pcap)} per period)" if pcap is not None else ""
+        return (f"This Note is linked to {bw} of {joined}, {subj}, over {dur}. "
+                f"At each {freq} reset date it pays {_p(rate)} of that period's rise{capph}; down periods pay "
+                f"nothing and the strike resets. Capital is protected at {_p(min(prot, 1.0))} at maturity.")
+
     if lang == "es":
         subj = "los Subyacentes" if multi else "el Subyacente"
         bword = {"worst_of": "el peor rendimiento", "best_of": "el mejor rendimiento",
