@@ -11,11 +11,11 @@ const X0 = 88, X1 = 620, Y_TOP = 26, Y_BOT = 188
 
 export default function ParticipationProfile({ terms }: { terms: NoteTerms }) {
   const { t } = useI18n()
-  // In periodic (cliquet) mode the profile is ONE period's payoff: full protection,
-  // linear participation off a reset strike, floored at 0, with the per-period cap.
+  // In periodic (cliquet) mode the profile is ONE period's payoff — the same chosen
+  // downside × upside profile, but off a reset strike (par) with the per-period cap.
   const periodic = terms.participation_periodic ?? false
   const eff: NoteTerms = periodic
-    ? { ...terms, participation_downside: 'full', participation_upside: 'linear', participation_strike: 1, protection_level: 1, upside_cap: terms.period_cap ?? null, knockout_level: null }
+    ? { ...terms, participation_strike: 1, upside_cap: terms.period_cap ?? null }
     : terms
   const pd = eff.participation_downside ?? 'full'
   const strike = eff.participation_strike ?? 1

@@ -39,7 +39,7 @@ from __future__ import annotations
 import json
 import warnings
 import numpy as np
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Callable, Literal
 
 BasketType = Literal["worst_of", "best_of", "average"]
@@ -598,26 +598,31 @@ def _participation_stats(R: np.ndarray, terms: "NoteTerms", B: np.ndarray | None
 
 
 def _participation_periodic_payoff(perf_paths, terms, obs_steps, t_maturity, n_obs) -> dict:
-    """Cliquet / ratchet participation: at each reset date pay
-    rate·max(0, min(period return, period_cap)) as income (down periods pay 0);
-    capital is protected at protection_level. The per-period income maps onto the
-    coupon stream so the path explorer and coupon stats work unchanged."""
+    """Cliquet / ratchet participation: a series of back-to-back participation notes.
+    Each reset period is a self-contained participation note on that period's move —
+    the SAME downside × upside profile as a single-maturity note (full / buffer /
+    airbag / bear × linear / shark-fin / digital), with the per-period cap standing
+    in for the note's upside cap and the strike resetting to par each period. The
+    period P&L (redemption − par, so a down period can pay negative under buffer /
+    airbag / bear) is summed; capital rolls at par. The per-period stream maps onto
+    the coupon machinery so the path explorer and coupon stats work unchanged."""
     n_paths = perf_paths.shape[0]
-    rate = float(terms.participation_rate)
-    cap  = float(terms.period_cap) if terms.period_cap is not None else np.inf
-    prot = float(terms.protection_level) if terms.protection_level is not None else 1.0
-    # Basket level at each reset date; B_0 = 1.0 at inception. Period return is the
-    # basket's move over each reset interval (strike resets each period).
+    # Basket level at each reset date; B_0 = 1.0 at inception. period_level is the
+    # basket's gross return over each reset interval (the reset strike is par).
     B      = np.stack([_basket(perf_paths[:, s, :], terms.participation_basket) for s in obs_steps], axis=1)  # (n_paths, n_obs)
     B_prev = np.concatenate([np.ones((n_paths, 1)), B[:, :-1]], axis=1)
-    r      = np.divide(B, B_prev, out=np.ones_like(B), where=(B_prev != 0)) - 1.0
-    period_income = rate * np.clip(r, 0.0, cap)          # (n_paths, n_obs), floored at 0
+    level  = np.divide(B, B_prev, out=np.ones_like(B), where=(B_prev != 0))   # (n_paths, n_obs)
+    # Evaluate each period with the full participation profile (cap = period_cap,
+    # strike reset to par). One-period notes, so no periodic flag / maturity cap.
+    eff = replace(terms, participation_periodic=False, upside_cap=terms.period_cap,
+                  participation_strike=1.0)
+    period_income = _participation_redemption(level.ravel(), eff).reshape(level.shape) - 1.0  # (n_paths, n_obs)
     total_income  = period_income.sum(axis=1)
-    principal     = np.full(n_paths, prot)               # capital protected (floored periods never erode it)
-    nominal       = principal + total_income
+    principal     = np.ones(n_paths)                     # capital rolls at par each period
+    nominal       = np.maximum(principal + total_income, 0.0)
     total_return  = nominal - 1.0
     irr           = total_return / max(t_maturity, 1.0 / 252.0)
-    loss          = principal < 1.0
+    loss          = nominal < 1.0
     return {
         "nominal_payoffs":      nominal,
         "coupon_payoffs":       total_income,
