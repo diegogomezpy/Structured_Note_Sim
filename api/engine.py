@@ -647,10 +647,14 @@ def _compare_diff(sum_a: dict, sum_b: dict, terms_a: NoteTerms, terms_b: NoteTer
     """Metric-by-metric A · B · Δ table data. Only metrics meaningful for BOTH
     note types are surfaced; the client renders/formats per metric."""
     both_part = sum_a.get("note_type") == "participation" and sum_b.get("note_type") == "participation"
+    # NB: for a Phoenix note `expected_nominal_payout` is just `expected_total_return
+    # + 100%` (it folds coupons into "redemption"), so it's deliberately omitted here
+    # — it's redundant with total return and its "redemption" label misleads. It's
+    # kept for Participation, where there are no coupons and it IS the redemption.
     keys = (["expected_irr", "expected_total_return", "expected_gain", "prob_above_par",
              "prob_at_cap", "prob_knocked_out", "p5_redemption"] if both_part else
             ["expected_irr", "expected_total_return", "expected_coupon", "prob_autocall",
-             "prob_knock_in_total", "expected_nominal_payout", "avg_time_to_autocall"])
+             "prob_knock_in_total", "avg_time_to_autocall"])
     rows = []
     for k in keys:
         a, b = sum_a.get(k), sum_b.get(k)
