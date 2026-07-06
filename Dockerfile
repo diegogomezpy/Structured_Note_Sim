@@ -42,8 +42,18 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
-# Point kaleido/choreographer at the system chromium.
-ENV BROWSER_PATH=/usr/bin/chromium
+# Point kaleido/choreographer at the system chromium — via a wrapper that forces
+# container-safe flags. Newer Debian chromium builds crash at launch (SIGTRAP)
+# under Cloud Run's sandboxed runtime when they try to set up their own sandbox,
+# which broke the PDF figure export. --no-sandbox is acceptable here: chromium
+# only rasterises the app's own trusted Plotly JSON (never untrusted web
+# content) and the process already runs as the unprivileged appuser.
+# --disable-dev-shm-usage avoids the tiny /dev/shm killing the renderer;
+# --disable-gpu skips GPU init that doesn't exist on Cloud Run.
+RUN printf '#!/bin/sh\nexec /usr/bin/chromium --no-sandbox --disable-gpu --disable-dev-shm-usage "$@"\n' \
+        > /usr/local/bin/chromium-headless \
+    && chmod +x /usr/local/bin/chromium-headless
+ENV BROWSER_PATH=/usr/local/bin/chromium-headless
 
 WORKDIR /app
 
@@ -65,8 +75,8 @@ COPY . .
 # build context, so the only copy present is this freshly-built one).
 COPY --from=web-build /web/dist ./web/dist
 
-# Run unprivileged — also lets chromium use its own sandbox (no --no-sandbox
-# hacks) when rendering the PDF.
+# Run unprivileged. (chromium runs with --no-sandbox via the wrapper above —
+# its own sandbox crashes on Cloud Run's runtime — so non-root matters more.)
 RUN useradd --create-home appuser && chown -R appuser /app
 USER appuser
 
