@@ -28,6 +28,11 @@ fpdf2>=2.8,<3
 kaleido>=1.3,<2
 Pillow>=12,<13
 
+# Optional: shared run store for a multi-instance deploy. Only used when REDIS_URL
+# is set (else the app uses the in-memory store); installed so setting REDIS_URL
+# "just works" without an image rebuild. See api/engine.py:_make_run_store.
+redis>=5,<7
+
 # PyMuPDF (fitz) is NOT a runtime dep — it's only used by scripts/verify_pdf.py
 # to rasterise PDFs for eyeballing. Install it ad hoc for verification:
 #   pip install "PyMuPDF>=1.27,<2"

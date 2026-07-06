@@ -13,6 +13,10 @@ from __future__ import annotations
 import json
 import os
 import sys
+import threading
+import time
+import uuid
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Request
@@ -53,6 +57,39 @@ app.add_middleware(
     allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
     allow_methods=["*"], allow_headers=["*"],
 )
+
+
+# ── uniform error contract ──────────────────────────────────────────────────────
+# Every API failure returns the same JSON shape — {ok: false, error: {status,
+# message}} — instead of FastAPI's mix of {detail: "..."} (HTTPException),
+# {detail: [...]} (validation) and a bare 500 (unhandled). The client's jget/jpost
+# read this one shape and raise a typed ApiError. Success payloads are unchanged
+# (no envelope) so no per-endpoint churn and no double serialization.
+from fastapi.responses import JSONResponse                       # noqa: E402
+from fastapi.exceptions import RequestValidationError            # noqa: E402
+from starlette.exceptions import HTTPException as StarletteHTTPException  # noqa: E402
+
+
+def _err_body(status: int, message: str) -> dict:
+    return {"ok": False, "error": {"status": status, "message": message}}
+
+
+@app.exception_handler(StarletteHTTPException)
+async def _handle_http_exc(request: Request, exc: StarletteHTTPException):
+    return JSONResponse(status_code=exc.status_code,
+                        content=_err_body(exc.status_code, str(exc.detail)))
+
+
+@app.exception_handler(RequestValidationError)
+async def _handle_validation_exc(request: Request, exc: RequestValidationError):
+    msg = "; ".join(f"{'.'.join(str(p) for p in e.get('loc', []))}: {e.get('msg', '')}"
+                    for e in exc.errors()) or "invalid request"
+    return JSONResponse(status_code=422, content=_err_body(422, msg))
+
+
+@app.exception_handler(Exception)
+async def _handle_unhandled_exc(request: Request, exc: Exception):
+    return JSONResponse(status_code=500, content=_err_body(500, f"{type(exc).__name__}: {exc}"))
 
 
 # ── request models ────────────────────────────────────────────────────────────
@@ -652,19 +689,17 @@ def _tickers_of(terms_dict) -> str:
     return "/".join((terms_dict.get("tickers") or {}).keys()) if isinstance(terms_dict, dict) else ""
 
 
-@app.post("/api/report")
-def report(req: ReportRequest, request: Request):
-    """Build the institutional PDF report and return it as a downloadable file.
-    `sections` selects which lenses to include (empty ⇒ everything available)."""
+def _prepare_report(req: ReportRequest, request: Request):
+    """Validate a report request → (terms, compare_terms, filename); raise on bad
+    terms and emit the generation audit line. Shared by the sync + async routes.
+
+    The audit line is provenance (who generated what, when, from where), kept in the
+    request log — operator-only — and deliberately NOT embedded in the PDF (the
+    client IP is personal data and the report is white-label / redistributable)."""
     try:
         terms = NoteTerms.from_dict(req.terms)
     except Exception as e:
         raise HTTPException(400, f"invalid note terms: {e}")
-    # Server-side generation audit line (provenance: who generated what, when,
-    # from where). Kept in the request log — visible ONLY to the service operator
-    # — and deliberately NOT embedded in the PDF: the client IP is personal data
-    # and the report is white-label / redistributable. For a commercial deploy,
-    # mind IP-log retention (GDPR/CCPA).
     compare_terms = None
     if req.compare_terms:
         try:
@@ -674,19 +709,99 @@ def report(req: ReportRequest, request: Request):
     _audit(request, "report", note=terms.name, tickers=_tickers_of(req.terms),
            sections=len(req.sections or []), n_paths=req.n_paths, lang=req.lang, engine=req.engine,
            compare=bool(compare_terms))
-    try:
-        pdf = engine.build_report_pdf(
-            terms, sections=req.sections, lang=req.lang, n_paths=req.n_paths,
-            seed=req.seed, calib_years=req.calib_years, engine=req.engine,
-            branding=req.branding, compare_terms=compare_terms)
-    except Exception as e:
-        raise HTTPException(500, f"report generation failed: {e}")
     # Content-Disposition is latin-1 only, so strip the filename to safe ASCII
     # (note names carry em-dashes / accents that would crash header encoding).
     import re
     safe = re.sub(r"[^A-Za-z0-9_.-]+", "_", terms.name or "structured_note").strip("_")[:60]
+    return terms, compare_terms, f"{safe or 'note'}_report.pdf"
+
+
+def _build_report_bytes(terms, compare_terms, req: ReportRequest) -> bytes:
+    return engine.build_report_pdf(
+        terms, sections=req.sections, lang=req.lang, n_paths=req.n_paths,
+        seed=req.seed, calib_years=req.calib_years, engine=req.engine,
+        branding=req.branding, compare_terms=compare_terms)
+
+
+@app.post("/api/report")
+def report(req: ReportRequest, request: Request):
+    """Build the PDF synchronously and return it (kept for direct/scripted use;
+    the web client uses the async /api/report/start flow below)."""
+    terms, compare_terms, filename = _prepare_report(req, request)
+    try:
+        pdf = _build_report_bytes(terms, compare_terms, req)
+    except Exception as e:
+        raise HTTPException(500, f"report generation failed: {e}")
     return Response(content=pdf, media_type="application/pdf",
-                    headers={"Content-Disposition": f'attachment; filename="{safe or "note"}_report.pdf"'})
+                    headers={"Content-Disposition": f'attachment; filename="{filename}"'})
+
+
+# ── async report jobs ─────────────────────────────────────────────────────────
+# PDF generation boots Chromium/kaleido and renders many figures (~5-40s), holding
+# a worker the whole time so the rest of the API (the live tape polls constantly)
+# stalls. /api/report/start renders in a dedicated background pool and returns a
+# job_id the client polls, then downloads the result. Jobs are in-memory with a TTL
+# (fine for single-instance); a multi-instance deploy would share them via Redis.
+_REPORT_POOL = ThreadPoolExecutor(max_workers=2)
+_REPORT_JOBS: "dict[str, dict]" = {}
+_REPORT_JOBS_LOCK = threading.Lock()
+_REPORT_JOB_TTL = 900.0
+_REPORT_JOB_MAX = 16
+
+
+def _reap_report_jobs() -> None:
+    now = time.time()
+    for k in [k for k, v in _REPORT_JOBS.items() if now - v["created"] > _REPORT_JOB_TTL]:
+        _REPORT_JOBS.pop(k, None)
+    while len(_REPORT_JOBS) > _REPORT_JOB_MAX:
+        _REPORT_JOBS.pop(min(_REPORT_JOBS, key=lambda k: _REPORT_JOBS[k]["created"]), None)
+
+
+def _run_report_job(job_id: str, terms, compare_terms, req: ReportRequest) -> None:
+    try:
+        pdf = _build_report_bytes(terms, compare_terms, req)
+        with _REPORT_JOBS_LOCK:
+            if job_id in _REPORT_JOBS:
+                _REPORT_JOBS[job_id].update(status="done", pdf=pdf)
+    except Exception as e:
+        with _REPORT_JOBS_LOCK:
+            if job_id in _REPORT_JOBS:
+                _REPORT_JOBS[job_id].update(status="error", error=f"{type(e).__name__}: {e}")
+
+
+@app.post("/api/report/start")
+def report_start(req: ReportRequest, request: Request):
+    """Kick off async PDF generation in the background; returns a job_id to poll."""
+    terms, compare_terms, filename = _prepare_report(req, request)
+    job_id = uuid.uuid4().hex[:12]
+    with _REPORT_JOBS_LOCK:
+        _reap_report_jobs()
+        _REPORT_JOBS[job_id] = {"status": "pending", "created": time.time(), "filename": filename}
+    _REPORT_POOL.submit(_run_report_job, job_id, terms, compare_terms, req)
+    return {"job_id": job_id}
+
+
+@app.get("/api/report/status/{job_id}")
+def report_status(job_id: str):
+    with _REPORT_JOBS_LOCK:
+        j = _REPORT_JOBS.get(job_id)
+    if j is None:
+        raise HTTPException(404, "report job not found or expired")
+    return {"status": j["status"], "error": j.get("error")}
+
+
+@app.get("/api/report/result/{job_id}")
+def report_result(job_id: str):
+    with _REPORT_JOBS_LOCK:
+        j = _REPORT_JOBS.get(job_id)
+    if j is None:
+        raise HTTPException(404, "report job not found or expired")
+    if j["status"] == "pending":
+        raise HTTPException(409, "report not ready yet")
+    if j["status"] == "error":
+        raise HTTPException(500, j.get("error") or "report generation failed")
+    return Response(content=j["pdf"], media_type="application/pdf",
+                    headers={"Content-Disposition": f'attachment; filename="{j["filename"]}"'})
 
 
 def _cpp_available() -> bool:

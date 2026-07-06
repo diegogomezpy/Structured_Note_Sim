@@ -12,6 +12,7 @@ explorer can fetch/filter individual paths later without re-simulating.
 from __future__ import annotations
 
 import json
+import os
 import sys
 import uuid
 import time
@@ -105,13 +106,72 @@ def _translated(text: str | None, lang: str) -> str | None:
 # Keeps the compact per-path arrays for the explorer. LRU-evicted so a long-lived
 # server can't grow without bound; a production multi-instance deploy would back
 # this with Redis instead.
-# Lock-guarded like the price/translation caches: FastAPI runs sync endpoints in a
-# threadpool, so concurrent /simulate + /backtest calls can mutate these from
-# different threads. `get_run` promotes on access so an actively-explored run isn't
-# FIFO-evicted out from under the path explorer.
-_RUNS: "OrderedDict[str, dict]" = OrderedDict()
+# ── run store (pluggable: in-memory default, Redis when REDIS_URL is set) ────────
+# The store keeps the compact per-run arrays the path explorer / inspector / report
+# re-read. In-memory it's LRU-bounded and lock-guarded (FastAPI runs sync endpoints
+# in a threadpool). A multi-instance Cloud Run deploy needs a SHARED store, or a
+# follow-up call load-balanced to a different instance 404s "run not found" — set
+# REDIS_URL to a Memorystore/Redis and runs persist across instances. Redis is
+# opt-in and best-effort: if it's unset or unreachable we fall back to in-memory.
 _MAX_RUNS = 8
-_RUNS_LOCK = threading.Lock()
+_RUN_TTL = 3600.0
+
+
+class _InMemoryRunStore:
+    """LRU + lock-guarded dict. `get` promotes so an actively-explored run isn't
+    FIFO-evicted out from under the path explorer."""
+    def __init__(self, max_runs: int = _MAX_RUNS):
+        self._runs: "OrderedDict[str, dict]" = OrderedDict()
+        self._max = max_runs
+        self._lock = threading.Lock()
+
+    def put(self, run_id: str, payload: dict) -> None:
+        with self._lock:
+            self._runs[run_id] = payload
+            while len(self._runs) > self._max:
+                self._runs.popitem(last=False)
+
+    def get(self, run_id: str) -> dict | None:
+        with self._lock:
+            run = self._runs.get(run_id)
+            if run is not None:
+                self._runs.move_to_end(run_id)
+            return run
+
+
+class _RedisRunStore:
+    """Shared cross-instance store. Payloads (numpy cubes + dicts) are pickled under
+    a per-run key with a TTL; larger over the wire than in-memory, but the only way
+    a path-explorer call that lands on a different instance can find its run."""
+    def __init__(self, url: str, ttl: float = _RUN_TTL):
+        import pickle
+        import redis
+        self._r = redis.from_url(url, socket_timeout=3, socket_connect_timeout=3)
+        self._r.ping()                                   # fail fast → caller falls back
+        self._ttl = int(ttl)
+        self._pickle = pickle
+
+    def put(self, run_id: str, payload: dict) -> None:
+        self._r.set(f"snsim:run:{run_id}", self._pickle.dumps(payload), ex=self._ttl)
+
+    def get(self, run_id: str) -> dict | None:
+        raw = self._r.get(f"snsim:run:{run_id}")
+        return self._pickle.loads(raw) if raw is not None else None
+
+
+def _make_run_store():
+    url = os.environ.get("REDIS_URL", "").strip()
+    if url:
+        try:
+            store = _RedisRunStore(url)
+            print(f"[engine] run store: Redis @ {url.rsplit('@', 1)[-1]}", flush=True)
+            return store
+        except Exception as e:                           # unreachable / redis not installed
+            print(f"[engine] REDIS_URL set but Redis unavailable ({e}); using in-memory run store", flush=True)
+    return _InMemoryRunStore()
+
+
+_run_store = _make_run_store()
 
 # Backtest results cache (keyed on tickers + terms) so the backtest inspector's
 # filter/nav clicks reuse one run instead of re-backtesting every issue each time.
@@ -123,19 +183,12 @@ _BT_LOCK = threading.Lock()
 
 def _store_run(payload: dict) -> str:
     run_id = uuid.uuid4().hex[:12]
-    with _RUNS_LOCK:
-        _RUNS[run_id] = {"created": time.time(), **payload}
-        while len(_RUNS) > _MAX_RUNS:
-            _RUNS.popitem(last=False)
+    _run_store.put(run_id, {"created": time.time(), **payload})
     return run_id
 
 
 def get_run(run_id: str) -> dict | None:
-    with _RUNS_LOCK:
-        run = _RUNS.get(run_id)
-        if run is not None:
-            _RUNS.move_to_end(run_id)      # LRU: protect the run being explored
-        return run
+    return _run_store.get(run_id)
 
 
 def sample_paths(run_id: str, *, sample: int = 400, seed: int = 7) -> dict | None:

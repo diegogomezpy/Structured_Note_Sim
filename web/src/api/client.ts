@@ -4,9 +4,29 @@ import type {
   UnderlyingMetric, UnderlyingOption,
 } from './types'
 
+/** Typed API failure. The backend returns a uniform {ok:false, error:{status,
+    message}} body (older builds returned {detail}); both are unwrapped here. */
+export class ApiError extends Error {
+  status: number
+  constructor(status: number, message: string) {
+    super(message)
+    this.name = 'ApiError'
+    this.status = status
+  }
+}
+
+async function throwApiError(r: Response): Promise<never> {
+  let message = `${r.status} ${r.statusText}`.trim()
+  try {
+    const j = JSON.parse(await r.text())
+    message = j?.error?.message ?? j?.detail ?? message
+  } catch { /* non-JSON error body — keep the status line */ }
+  throw new ApiError(r.status, message)
+}
+
 async function jget<T>(url: string): Promise<T> {
   const r = await fetch(url)
-  if (!r.ok) throw new Error(`${r.status}: ${await r.text()}`)
+  if (!r.ok) return throwApiError(r)
   return r.json()
 }
 
@@ -16,11 +36,7 @@ async function jpost<T>(url: string, body: unknown): Promise<T> {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
   })
-  if (!r.ok) {
-    let detail = await r.text()
-    try { detail = JSON.parse(detail).detail ?? detail } catch { /* keep text */ }
-    throw new Error(detail)
-  }
+  if (!r.ok) return throwApiError(r)
   return r.json()
 }
 
@@ -61,11 +77,17 @@ export const api = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
     })
-    if (!r.ok) {
-      let detail = await r.text()
-      try { detail = JSON.parse(detail).detail ?? detail } catch { /* keep text */ }
-      throw new Error(detail)
-    }
+    if (!r.ok) return throwApiError(r)
+    return r
+  },
+  // Async report: start a background render, poll status, download the result —
+  // so a 5-40s PDF build never blocks the API worker.
+  reportStart: (body: ReportRequest) => jpost<{ job_id: string }>('/api/report/start', body),
+  reportStatus: (jobId: string) =>
+    jget<{ status: 'pending' | 'done' | 'error'; error?: string | null }>(`/api/report/status/${jobId}`),
+  reportResult: async (jobId: string): Promise<Response> => {
+    const r = await fetch(`/api/report/result/${jobId}`)
+    if (!r.ok) return throwApiError(r)
     return r
   },
   runPaths: (runId: string, sample = 400) =>
