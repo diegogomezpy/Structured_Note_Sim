@@ -42,19 +42,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
-# Point kaleido/choreographer at the system chromium — via a wrapper that forces
-# container-safe flags. Newer Debian chromium builds crash at launch (SIGTRAP)
-# under Cloud Run's sandboxed runtime when they try to set up their own sandbox,
-# which broke the PDF figure export. --no-sandbox is acceptable here: chromium
-# only rasterises the app's own trusted Plotly JSON (never untrusted web
-# content) and the process already runs as the unprivileged appuser.
-# --disable-dev-shm-usage avoids the tiny /dev/shm killing the renderer;
-# --disable-gpu skips GPU init that doesn't exist on Cloud Run.
-RUN printf '#!/bin/sh\nexec /usr/bin/chromium --no-sandbox --disable-gpu --disable-dev-shm-usage "$@"\n' \
-        > /usr/local/bin/chromium-headless \
-    && chmod +x /usr/local/bin/chromium-headless
-ENV BROWSER_PATH=/usr/local/bin/chromium-headless
-
 WORKDIR /app
 
 # Install Python deps first so the layer caches across source-only changes.
@@ -62,6 +49,29 @@ WORKDIR /app
 COPY requirements.txt ./requirements.txt
 COPY api/requirements.txt ./api-requirements.txt
 RUN pip install --no-cache-dir -r requirements.txt -r api-requirements.txt
+
+# The PDF figure export (kaleido) drives a headless browser. Debian's chromium
+# package proved unusable for this: its version drifts on every image rebuild,
+# and chromium 150.0.7871 crashes at launch (SIGTRAP) on Cloud Run — on both
+# gen1 and gen2, sandbox on or off — which silently broke every PDF report
+# (149.0.7827 worked). So instead of the apt chromium we bake in the
+# Chrome-for-Testing build that kaleido/choreographer is actually tested
+# against, fetched at build time by choreographer's own CLI. The apt chromium
+# install above stays ONLY because it pulls in every shared library the
+# browser needs (fonts, nss, gbm, …).
+#
+# The wrapper forces container-safe flags: --no-sandbox is acceptable because
+# chromium only rasterises the app's own trusted Plotly JSON (never untrusted
+# web content) and runs as the unprivileged appuser; --disable-dev-shm-usage
+# avoids the tiny /dev/shm killing the renderer; --disable-gpu skips GPU init
+# that doesn't exist on Cloud Run.
+RUN choreo_get_chrome --path /opt/chrome --arch linux64 \
+    && test -x /opt/chrome/chrome-linux64/chrome \
+    && chmod -R a+rX /opt/chrome \
+    && printf '#!/bin/sh\nexec /opt/chrome/chrome-linux64/chrome --no-sandbox --disable-gpu --disable-dev-shm-usage "$@"\n' \
+        > /usr/local/bin/chromium-headless \
+    && chmod +x /usr/local/bin/chromium-headless
+ENV BROWSER_PATH=/usr/local/bin/chromium-headless
 
 # Optional fast path: install the prebuilt heston_cpp wheel so engine="cpp" runs
 # the compiled kernel. Built on the same python:3.12-slim base, so it's ABI-
