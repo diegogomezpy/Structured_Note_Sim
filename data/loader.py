@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import pathlib
 import warnings
+from concurrent.futures import ThreadPoolExecutor
 import pandas as pd
 
 _DATA_DIR = pathlib.Path(__file__).parent
@@ -292,21 +293,26 @@ def load_dividends(
     except ImportError:
         raise ImportError("yfinance is not installed. Run: pip install yfinance")
 
-    out: dict[str, pd.Series] = {}
-    for sym, name in tickers.items():
+    def _one(item: tuple[str, str]) -> tuple[str, pd.Series]:
+        sym, name = item
         try:
             divs = yf.Ticker(sym).dividends
             if divs is None or len(divs) == 0:
-                out[name] = pd.Series(dtype=float)
-                continue
+                return name, pd.Series(dtype=float)
             divs = divs.copy()
             if getattr(divs.index, "tz", None) is not None:
                 divs.index = divs.index.tz_localize(None)
-            out[name] = divs.astype(float)
+            return name, divs.astype(float)
         except Exception as e:
             print(f"[loader] WARNING: could not load dividends for {sym}: {e} — assuming none.")
-            out[name] = pd.Series(dtype=float)
-    return out
+            return name, pd.Series(dtype=float)
+
+    items = list(tickers.items())
+    if not items:
+        return {}
+    # One Yahoo round-trip per ticker — fetch concurrently.
+    with ThreadPoolExecutor(max_workers=min(8, len(items))) as ex:
+        return dict(ex.map(_one, items))
 
 
 # ---------------------------------------------------------------------------
@@ -460,8 +466,10 @@ def load_underlying_metrics(
     except ImportError:
         raise ImportError("yfinance is not installed. Run: pip install yfinance")
 
-    out: dict[str, dict] = {}
-    for sym, name in tickers.items():
+    def _one(item: tuple[str, str]) -> tuple[str, dict]:
+        """One underlying's metrics block. Each is an independent Yahoo round-trip
+        (.info + history + options), so these run concurrently below."""
+        sym, name = item
         rec = {k: None for k in (
             "long_name", "type", "sector", "industry", "market_cap", "currency",
             "last_price", "day_change", "rsi_14", "iv_3m", "iv_source", "business_summary")}
@@ -511,8 +519,13 @@ def load_underlying_metrics(
                 t, sym, rec["type"], rec["last_price"], _hist)
         except Exception as e:
             print(f"[loader] WARNING: could not load metrics for {sym}: {e}")
-        out[name] = rec
-    return out
+        return name, rec
+
+    items = list(tickers.items())
+    if not items:
+        return {}
+    with ThreadPoolExecutor(max_workers=min(8, len(items))) as ex:
+        return dict(ex.map(_one, items))
 
 
 def translate_text(text: str | None, target_lang: str,

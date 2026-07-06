@@ -1,0 +1,51 @@
+# Gate every push/PR on the same checks the deploy runs, so a build break is
+# caught here — NOT at Cloud Build (which blocks the auto-deploy to Cloud Run).
+# The web job runs the exact `npm run build` (tsc -b && vite build) the Dockerfile
+# uses; the python job syntax-checks every module.
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# A newer push to the same ref cancels the in-flight run.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  web:
+    name: web build + lint
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run build          # tsc -b && vite build — mirrors the Dockerfile
+
+  python:
+    name: python syntax check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      # py_compile catches the syntax/f-string-version breaks that would fail the
+      # image build, without installing the heavy (numpy/plotly/yfinance) stack.
+      - name: Compile all Python modules
+        run: python -m py_compile $(git ls-files '*.py')
+      # Golden-value tests for the payoff core (numpy/pandas only — no network).
+      - name: Unit tests (quant core)
+        run: |
+          pip install pytest numpy pandas
+          python -m pytest tests/ -q

@@ -4,7 +4,7 @@
    (html-to-image), which can't rasterise the nested Plotly <svg> and hangs the
    renderer. Drawing by hand is fully deterministic and lets the export match the
    report's light palette regardless of the on-screen theme. */
-import Plotly from 'plotly.js-dist-min'
+import Plotly from './plotly'
 import { themeFigure } from './plotlyTheme'
 import type { UnderlyingMetric, UnderlyingOverride } from '../api/types'
 

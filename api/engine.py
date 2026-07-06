@@ -16,6 +16,7 @@ import sys
 import uuid
 import time
 from collections import OrderedDict
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import numpy as np
@@ -104,26 +105,37 @@ def _translated(text: str | None, lang: str) -> str | None:
 # Keeps the compact per-path arrays for the explorer. LRU-evicted so a long-lived
 # server can't grow without bound; a production multi-instance deploy would back
 # this with Redis instead.
+# Lock-guarded like the price/translation caches: FastAPI runs sync endpoints in a
+# threadpool, so concurrent /simulate + /backtest calls can mutate these from
+# different threads. `get_run` promotes on access so an actively-explored run isn't
+# FIFO-evicted out from under the path explorer.
 _RUNS: "OrderedDict[str, dict]" = OrderedDict()
 _MAX_RUNS = 8
+_RUNS_LOCK = threading.Lock()
 
 # Backtest results cache (keyed on tickers + terms) so the backtest inspector's
 # filter/nav clicks reuse one run instead of re-backtesting every issue each time.
 _BT_CACHE: "OrderedDict[tuple, tuple[float, object, dict]]" = OrderedDict()
 _BT_TTL = 1800.0
 _BT_MAX = 6
+_BT_LOCK = threading.Lock()
 
 
 def _store_run(payload: dict) -> str:
     run_id = uuid.uuid4().hex[:12]
-    _RUNS[run_id] = {"created": time.time(), **payload}
-    while len(_RUNS) > _MAX_RUNS:
-        _RUNS.popitem(last=False)
+    with _RUNS_LOCK:
+        _RUNS[run_id] = {"created": time.time(), **payload}
+        while len(_RUNS) > _MAX_RUNS:
+            _RUNS.popitem(last=False)
     return run_id
 
 
 def get_run(run_id: str) -> dict | None:
-    return _RUNS.get(run_id)
+    with _RUNS_LOCK:
+        run = _RUNS.get(run_id)
+        if run is not None:
+            _RUNS.move_to_end(run_id)      # LRU: protect the run being explored
+        return run
 
 
 def sample_paths(run_id: str, *, sample: int = 400, seed: int = 7) -> dict | None:
@@ -405,6 +417,15 @@ def _f(x) -> float | None:
 
 
 # ── simulation flow ────────────────────────────────────────────────────────────
+def _snap_obs(grid, anchor, N: int, terms: NoteTerms) -> tuple[list[int], list[float]]:
+    """Snap a note's observation calendar onto the trading-day `grid` → (step index
+    per observation, capped at N; time-in-years per observation). Shared by the
+    initial simulation and the A/B reprice so the two stay identical."""
+    obs_steps = [min(int(grid.searchsorted(d)), N) for d in terms.obs_calendar_dates(anchor)]
+    obs_times = [(grid[s] - grid[0]).days / 365.0 for s in obs_steps]
+    return obs_steps, obs_times
+
+
 def _simulate_full(terms: NoteTerms, *, n_paths: int, seed: int, calib_years: float,
                    history_years: float | None, engine: str) -> dict:
     """Load → calibrate → simulate → price. The shared compute core behind both
@@ -432,8 +453,7 @@ def _simulate_full(terms: NoteTerms, *, n_paths: int, seed: int, calib_years: fl
     grid     = pd.bdate_range(anchor, mat_date)
     dt_grid  = np.diff(grid.values).astype("timedelta64[D]").astype(float) / 365.0
     N        = len(grid) - 1
-    obs_steps = [min(int(grid.searchsorted(d)), N) for d in terms.obs_calendar_dates(anchor)]
-    obs_times = [(grid[s] - grid[0]).days / 365.0 for s in obs_steps]
+    obs_steps, obs_times = _snap_obs(grid, anchor, N, terms)
 
     # Pre-programmed dividend jumps (graceful if the pull fails).
     try:
@@ -594,8 +614,7 @@ def _reprice_on_paths(sf: dict, terms: NoteTerms, *, seed: int) -> dict:
     the shared trading-day grid, then returns a fresh `sf`-shaped dict whose `note`
     and obs metadata are for `terms` but whose paths/bands/calibration are shared."""
     grid, anchor, N = sf["grid"], sf["anchor"], sf["N"]
-    obs_steps = [min(int(grid.searchsorted(d)), N) for d in terms.obs_calendar_dates(anchor)]
-    obs_times = [(grid[s] - grid[0]).days / 365.0 for s in obs_steps]
+    obs_steps, obs_times = _snap_obs(grid, anchor, N, terms)
     note = price_note(sf["perf_paths"], terms, seed=seed + 1,
                       obs_steps=obs_steps, obs_times=obs_times)
     return {**sf, "note": note, "obs_steps": obs_steps, "obs_times": obs_times,
@@ -781,13 +800,15 @@ def _cached_backtest(terms: NoteTerms, history_years: float | None,
     prices = _prices(dict(terms.tickers), years=history_years, field="close")
     key = (tuple(sorted(terms.tickers.items())), terms.to_json(), history_years, bt_start, bt_end)
     now = time.time()
-    hit = _BT_CACHE.get(key)
-    if hit is not None and now - hit[0] < _BT_TTL:
-        return prices, hit[1], hit[2]
+    with _BT_LOCK:
+        hit = _BT_CACHE.get(key)
+        if hit is not None and now - hit[0] < _BT_TTL:
+            return prices, hit[1], hit[2]
     bt, summary = run_backtest(prices, terms, bt_start=_ts(bt_start), bt_end=_ts(bt_end))
-    _BT_CACHE[key] = (now, bt, summary)
-    while len(_BT_CACHE) > _BT_MAX:
-        _BT_CACHE.popitem(last=False)
+    with _BT_LOCK:
+        _BT_CACHE[key] = (now, bt, summary)
+        while len(_BT_CACHE) > _BT_MAX:
+            _BT_CACHE.popitem(last=False)
     return prices, bt, summary
 
 
@@ -1137,58 +1158,92 @@ def run_underlying_metrics(tickers: dict, *, lang: str = "en") -> list[dict]:
     return out
 
 
-def run_quotes(symbols: list[str]) -> dict:
-    """Fast quote snapshot per symbol for the live ticker tape and its hover
-    detail card. Uses Yahoo fast_info only (no .info / options / history), so it's
-    cheap enough to poll: last price, day change, open, prev close, day range,
-    52-week range, volume, market cap and currency. Best-effort — a symbol that
-    fails (or a field Yahoo omits) returns null for that field."""
+# Per-symbol quote cache. The live ticker tape polls /api/quotes constantly, so a
+# short TTL turns a burst of identical polls into one Yahoo hit per symbol.
+_QUOTE_CACHE: "dict[str, tuple[float, dict]]" = {}
+_QUOTE_TTL = 20.0
+_QUOTE_MAX = 256
+_QUOTE_LOCK = threading.Lock()
+
+
+def _empty_quote() -> dict:
+    return {"price": None, "change": None, "open": None, "prev_close": None,
+            "day_low": None, "day_high": None, "year_low": None, "year_high": None,
+            "volume": None, "market_cap": None, "currency": None}
+
+
+def _quote_one(sym: str) -> dict:
+    """One symbol's fast_info snapshot (best-effort; nulls on any failure)."""
     import yfinance as yf
 
-    def _f(v):  # → float or None
+    def _f(v):
         try:
             return None if v is None else float(v)
         except (TypeError, ValueError):
             return None
 
+    rec = _empty_quote()
+    try:
+        fi = yf.Ticker(sym).fast_info
+
+        def g(*names):
+            """First non-None of several fast_info keys (attribute + dict styles
+            vary across yfinance versions)."""
+            for n in names:
+                v = getattr(fi, n, None)
+                if v is None and hasattr(fi, "get"):
+                    v = fi.get(n)
+                if v is not None:
+                    return v
+            return None
+
+        last = _f(g("last_price", "lastPrice"))
+        prev = _f(g("previous_close", "previousClose"))
+        rec["price"] = last
+        rec["prev_close"] = prev
+        if last is not None and prev:
+            rec["change"] = last / prev - 1.0
+        rec["open"] = _f(g("open"))
+        rec["day_low"] = _f(g("day_low", "dayLow"))
+        rec["day_high"] = _f(g("day_high", "dayHigh"))
+        rec["year_low"] = _f(g("year_low", "yearLow"))
+        rec["year_high"] = _f(g("year_high", "yearHigh"))
+        rec["volume"] = _f(g("last_volume", "lastVolume", "regularMarketVolume"))
+        rec["market_cap"] = _f(g("market_cap", "marketCap"))
+        cur = g("currency")
+        rec["currency"] = str(cur) if cur else None
+    except Exception as e:
+        print(f"[quotes] {sym} failed: {e}")
+    return rec
+
+
+def run_quotes(symbols: list[str]) -> dict:
+    """Fast quote snapshot per symbol for the live ticker tape and its hover detail
+    card (Yahoo fast_info only). Served from a short-TTL cache; cache-miss symbols
+    are fetched CONCURRENTLY (Yahoo I/O is the bottleneck, so threads parallelize
+    despite the GIL). Best-effort — a failed symbol/field returns null."""
+    now = time.time()
     out: dict[str, dict] = {}
-    for sym in symbols:
-        rec = {"price": None, "change": None, "open": None, "prev_close": None,
-               "day_low": None, "day_high": None, "year_low": None, "year_high": None,
-               "volume": None, "market_cap": None, "currency": None}
-        try:
-            fi = yf.Ticker(sym).fast_info
-
-            def g(*names):
-                """First non-None of several fast_info keys (attribute + dict styles
-                vary across yfinance versions)."""
-                for n in names:
-                    v = getattr(fi, n, None)
-                    if v is None and hasattr(fi, "get"):
-                        v = fi.get(n)
-                    if v is not None:
-                        return v
-                return None
-
-            last = _f(g("last_price", "lastPrice"))
-            prev = _f(g("previous_close", "previousClose"))
-            rec["price"] = last
-            rec["prev_close"] = prev
-            if last is not None and prev:
-                rec["change"] = last / prev - 1.0
-            rec["open"] = _f(g("open"))
-            rec["day_low"] = _f(g("day_low", "dayLow"))
-            rec["day_high"] = _f(g("day_high", "dayHigh"))
-            rec["year_low"] = _f(g("year_low", "yearLow"))
-            rec["year_high"] = _f(g("year_high", "yearHigh"))
-            rec["volume"] = _f(g("last_volume", "lastVolume", "regularMarketVolume"))
-            rec["market_cap"] = _f(g("market_cap", "marketCap"))
-            cur = g("currency")
-            rec["currency"] = str(cur) if cur else None
-        except Exception as e:
-            print(f"[quotes] {sym} failed: {e}")
-        out[sym] = rec
-    return out
+    todo: list[str] = []
+    with _QUOTE_LOCK:
+        for sym in symbols:
+            hit = _QUOTE_CACHE.get(sym)
+            if hit is not None and now - hit[0] < _QUOTE_TTL:
+                out[sym] = hit[1]
+            else:
+                todo.append(sym)
+    if todo:
+        with ThreadPoolExecutor(max_workers=min(8, len(todo))) as ex:
+            fetched = dict(zip(todo, ex.map(_quote_one, todo)))
+        with _QUOTE_LOCK:
+            for sym, rec in fetched.items():
+                _QUOTE_CACHE[sym] = (now, rec)
+            if len(_QUOTE_CACHE) > _QUOTE_MAX:
+                for k in sorted(_QUOTE_CACHE, key=lambda k: _QUOTE_CACHE[k][0])[:len(_QUOTE_CACHE) - _QUOTE_MAX]:
+                    _QUOTE_CACHE.pop(k, None)
+        out.update(fetched)
+    # Preserve the caller's symbol order.
+    return {sym: out.get(sym, _empty_quote()) for sym in symbols}
 
 
 # ── description prefill (Yahoo business summaries) ───────────────────────────────
@@ -1203,12 +1258,19 @@ def run_describe(*, issuer: str | None = None, symbols: list[str] | None = None,
             out["issuer_description"] = resolve_issuer_summary(issuer)
         except Exception as e:
             print(f"[describe] issuer summary failed: {e}")
-    for sym in (symbols or []):
+    def _safe_summary(sym: str):
         try:
-            out["underlyings"][sym] = fetch_business_summary(sym)
+            return fetch_business_summary(sym)
         except Exception as e:
             print(f"[describe] summary for {sym} failed: {e}")
-            out["underlyings"][sym] = None
+            return None
+
+    syms = list(symbols or [])
+    if syms:
+        # Fetch the per-underlying summaries concurrently (each is a Yahoo round-trip).
+        with ThreadPoolExecutor(max_workers=min(8, len(syms))) as ex:
+            for sym, summ in zip(syms, ex.map(_safe_summary, syms)):
+                out["underlyings"][sym] = summ
     if lang and lang != "en":
         try:
             out["issuer_description"] = _translated(out["issuer_description"], lang)

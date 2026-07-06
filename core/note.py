@@ -555,14 +555,18 @@ def _participation_redemption(B: np.ndarray, terms: "NoteTerms") -> np.ndarray:
     if dn_style == "bear":
         return np.clip(1.0 + rate * np.maximum(0.0, strike - B), prot, cap)
 
-    # Upside leg (B >= strike)
+    # Upside leg (B >= strike). digital_payout / knockout_payout are None-guarded to
+    # match the null-safe TS mirror (web/src/lib/participation.ts): a config that
+    # omits them falls back to +0 / par instead of crashing on float(None).
+    digital_payout  = float(terms.digital_payout) if terms.digital_payout is not None else 0.0
+    knockout_payout = float(terms.knockout_payout) if terms.knockout_payout is not None else 1.0
     if up_style == "digital":
-        R_up = np.full_like(B, min(1.0 + float(terms.digital_payout), cap))
+        R_up = np.full_like(B, min(1.0 + digital_payout, cap))
     elif up_style == "shark_fin" and terms.knockout_level is not None:
         # Participate strike..knock-out; at/above the knock-out the note drops to a
         # fixed redemption (knockout_payout — the level it drops to).
         lin_R = np.minimum(1.0 + rate * (B - strike), cap)
-        R_up = np.where(B >= float(terms.knockout_level), float(terms.knockout_payout), lin_R)
+        R_up = np.where(B >= float(terms.knockout_level), knockout_payout, lin_R)
     else:  # linear (or shark_fin with no knock-out level set yet)
         R_up = np.minimum(1.0 + rate * (B - strike), cap)
 

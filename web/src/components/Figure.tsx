@@ -1,5 +1,5 @@
 import { useMemo, useRef, useState } from 'react'
-import Plotly from 'plotly.js-dist-min'
+import Plotly from '../lib/plotly'
 import createPlotlyComponent from 'react-plotly.js/factory'
 import { useTheme } from '../theme/ThemeProvider'
 import { themeFigure } from '../lib/plotlyTheme'

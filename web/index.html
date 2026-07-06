@@ -14,6 +14,10 @@
   </head>
   <body>
     <div id="root"></div>
+    <!-- The modular plotly.js build (src/lib/plotly.ts) references Node's `global`,
+         which the prebuilt dist shimmed but the modular one doesn't. Alias it to
+         the browser global BEFORE any module loads, in both dev and prod. -->
+    <script>window.global ||= window;</script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
