@@ -321,24 +321,15 @@ export default function ReportPanel({ terms, opts, variantB }: { terms: NoteTerm
     setStatus('running'); setError('')
     try {
       const branding = Object.values(brand).some(Boolean) ? brand : null
-      // Async: kick off the render, poll status, then download — so a 5-40s PDF
-      // build never blocks the API worker (the live tape etc. stay responsive).
-      const { job_id } = await api.reportStart({
+      // Sync render on purpose: on Cloud Run, CPU is only allocated while a
+      // request is in flight, so a background job (the /api/report/start +
+      // polling flow) starves and never finishes. The async endpoints still
+      // exist for deployments with always-allocated CPU.
+      const res = await api.report({
         terms, sections: [...sel], lang, branding,
         n_paths: opts.n_paths, seed: opts.seed, calib_years: opts.calib_years, engine: opts.engine,
         compare_terms: compareOn && variantB ? variantB : null,
       })
-      const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
-      const deadline = Date.now() + 180_000     // hard cap so a stuck render can't spin forever
-      // eslint-disable-next-line no-constant-condition
-      while (true) {
-        await sleep(1500)
-        const st = await api.reportStatus(job_id)
-        if (st.status === 'done') break
-        if (st.status === 'error') throw new Error(st.error || 'report generation failed')
-        if (Date.now() > deadline) throw new Error('report timed out')
-      }
-      const res = await api.reportResult(job_id)
       const blob = await res.blob()
       const url = URL.createObjectURL(blob)
       const filename = filenameFrom(res, 'structured_note_report.pdf')

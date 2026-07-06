@@ -725,8 +725,10 @@ def _build_report_bytes(terms, compare_terms, req: ReportRequest) -> bytes:
 
 @app.post("/api/report")
 def report(req: ReportRequest, request: Request):
-    """Build the PDF synchronously and return it (kept for direct/scripted use;
-    the web client uses the async /api/report/start flow below)."""
+    """Build the PDF synchronously and return it. This is the endpoint the web
+    client uses: on Cloud Run, CPU is only allocated while a request is in
+    flight, so the async /api/report/start job flow below starves and never
+    finishes there. Keep the async flow only for always-allocated-CPU deploys."""
     terms, compare_terms, filename = _prepare_report(req, request)
     try:
         pdf = _build_report_bytes(terms, compare_terms, req)
