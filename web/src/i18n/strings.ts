@@ -357,6 +357,7 @@ export const S: Dict = {
   tab_live:         { en: 'Current performance', es: 'Rendimiento actual' },
   tab_compare:      { en: 'Compare', es: 'Comparar' },
   tab_report:       { en: 'Report', es: 'Informe' },
+  tab_batch:        { en: 'Batch', es: 'Lote' },
   // A/B comparison view
   cmp_setup_title:  { en: 'Compare with a variant (A vs B)', es: 'Comparar con una variante (A vs B)' },
   cmp_no_b:         { en: 'Pick or build Note B to compare against the current note.', es: 'Elige o crea la Nota B para comparar con la nota actual.' },

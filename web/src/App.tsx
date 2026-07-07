@@ -21,6 +21,7 @@ import BacktestPanel from './components/BacktestPanel'
 import LivePanel from './components/LivePanel'
 import ComparePanel from './components/ComparePanel'
 import ReportPanel from './components/ReportPanel'
+import BatchReportPanel from './components/BatchReportPanel'
 import SettingsOverlay from './components/SettingsOverlay'
 import BrandMark from './components/BrandMark'
 import Icon from './components/Icon'
@@ -205,6 +206,7 @@ export default function App() {
     { id: 'live', label: t('tab_live') },
     { id: 'compare', label: t('tab_compare') },
     { id: 'report', label: <span><Icon name="chart" size={13} /> {t('tab_report')}</span> },
+    { id: 'batch', label: t('tab_batch') },
   ]
 
   return (
@@ -346,6 +348,8 @@ export default function App() {
           )}
 
           {tab === 'report' && terms && <ReportPanel terms={terms} opts={opts} variantB={variantB} />}
+
+          {tab === 'batch' && <BatchReportPanel terms={terms} opts={opts} configs={configs} />}
         </main>
       </div>
 
