@@ -11,73 +11,10 @@ import { useTour, reportTour } from './Tour'
 import { useLocalFolder } from '../lib/localFolder'
 import type { Branding, NoteTerms } from '../api/types'
 import type { RunOpts } from './SetupRail'
+import { TREE, PRESET_KEYS, PRESET_ORDER, type Preset, type Group } from '../lib/reportSections'
 
 type Status = 'idle' | 'running' | 'done' | 'error'
-type Item = [key: string, en: string, es: string]
-type Group = { key: string; en: string; es: string; items: Item[] }
 
-const TREE: Group[] = [
-  { key: 'note', en: 'Note details', es: 'Detalle de la nota', items: [
-    ['cover', 'Cover page', 'Portada'],
-    ['note_description', 'Note description', 'Descripción de la nota'],
-    ['note_diagram', 'Structure diagram', 'Diagrama de la estructura'],
-    ['note_terms', 'Note terms', 'Términos'],
-    ['obs_schedule', 'Observation schedule', 'Calendario de observaciones'],
-    ['issuer_info', 'Issuer information', 'Información del emisor'],
-    ['underlying_breakdown', 'Underlying breakdown', 'Análisis de subyacentes'],
-  ] },
-  { key: 'mc', en: 'Monte Carlo', es: 'Monte Carlo', items: [
-    ['mc_metrics', 'Summary & metrics', 'Resumen y métricas'],
-    ['mc_outcome', 'Outcome breakdown', 'Distribución de resultados'],
-    ['mc_autocall', 'Autocall by period', 'Autocall por período'],
-    ['mc_irr', 'IRR distribution', 'Distribución de TIR'],
-    ['mc_wof', 'Worst-of fan chart', 'Abanico del peor de'],
-    ['mc_sample', 'Sample paths', 'Trayectorias de muestra'],
-    ['mc_fans', 'Per-underlying fans', 'Abanicos por activo'],
-    ['calib_corr', 'Correlation diagnostics', 'Diagnóstico de correlación'],
-    ['calib_table', 'Calibration table', 'Tabla de calibración'],
-  ] },
-  { key: 'bt', en: 'Historical backtest', es: 'Backtest histórico', items: [
-    ['bt_metrics', 'Outcome metrics', 'Métricas de resultados'],
-    ['bt_outcome', 'Outcome distribution', 'Distribución de resultados'],
-    ['bt_pie', 'Worst-asset pie', 'Peor activo'],
-    ['bt_irr', 'IRR scatter', 'Dispersión de TIR'],
-    ['bt_prices', 'Price history', 'Histórico de precios'],
-  ] },
-  { key: 'live', en: 'Current performance', es: 'Rendimiento actual', items: [
-    ['live_metrics', 'Live metrics', 'Métricas en vivo'],
-    ['live_asset_table', 'Per-asset table', 'Tabla por activo'],
-    ['live_obs_table', 'Observation history', 'Historial de observaciones'],
-    ['live_chart', 'Performance chart', 'Gráfico de rendimiento'],
-  ] },
-]
-
-// Report presets — one click selects a sensible set of sections for an audience.
-// Keys are intersected with what's actually available (e.g. the live group only
-// when the note has an issue date). "full" / "custom" are handled specially.
-// "Custom" is the mode any manual toggle drops into, and it is persisted.
-const PRESET_KEYS: Record<string, string[]> = {
-  // Client fact sheet — what the note is: terms, structure, underlyings. No
-  // simulation / backtest analysis.
-  client: ['cover', 'note_description', 'note_diagram', 'note_terms', 'obs_schedule', 'issuer_info', 'underlying_breakdown'],
-  // Bare term sheet — the legal essentials only.
-  term_sheet: ['cover', 'note_terms', 'note_diagram', 'obs_schedule', 'issuer_info'],
-  // Sales one-pager — the appealing bits: structure, underlyings and headline
-  // results, without the heavy diagnostics.
-  marketing: ['cover', 'note_description', 'note_diagram', 'underlying_breakdown', 'mc_metrics', 'mc_outcome', 'live_metrics', 'live_chart'],
-  // Investment-committee pack — a balanced decision view.
-  ic: ['note_terms', 'note_diagram', 'underlying_breakdown', 'mc_metrics', 'mc_outcome', 'mc_autocall', 'mc_wof', 'bt_metrics', 'bt_outcome', 'live_metrics'],
-  // Risk analyst — the full quantitative analysis plus terms for context. Skips
-  // the branded cover and the marketing description.
-  analyst: ['note_terms', 'note_diagram', 'obs_schedule', 'issuer_info', 'underlying_breakdown',
-            'mc_metrics', 'mc_outcome', 'mc_autocall', 'mc_irr', 'mc_wof', 'mc_sample', 'mc_fans', 'calib_corr', 'calib_table',
-            'bt_metrics', 'bt_outcome', 'bt_pie', 'bt_irr', 'bt_prices',
-            'live_metrics', 'live_asset_table', 'live_obs_table', 'live_chart'],
-  // Model review — Monte Carlo internals, calibration and correlation diagnostics.
-  quant: ['note_terms', 'mc_metrics', 'mc_irr', 'mc_wof', 'mc_fans', 'calib_corr', 'calib_table'],
-}
-const PRESET_ORDER = ['full', 'client', 'term_sheet', 'marketing', 'ic', 'analyst', 'quant', 'custom'] as const
-type Preset = (typeof PRESET_ORDER)[number]
 const CUSTOM_LS = 'mercator_report_custom'
 const loadCustom = (): string[] | null => {
   try { const r = localStorage.getItem(CUSTOM_LS); return r ? (JSON.parse(r) as string[]) : null } catch { return null }
