@@ -56,9 +56,9 @@ The project covers the full quantitative workflow:
 │   ├── package.json
 │   └── vite.config.ts         #   dev server proxies /api → http://localhost:8010
 │
-├── note_configs/             # 10 ready-to-use JSON term sheets (load in the app)
+├── note_configs/             # 13 ready-to-use JSON term sheets (load in the app)
 │                             #   HSBC ×2, BBVA, Citi, Santander ×3, Barclays,
-│                             #   BNP Paribas, Julius Baer
+│                             #   BNP Paribas, Julius Baer, + 3 Silex thematic
 ├── branding/                 # Firm branding JSON + bundled ticker logos
 │   ├── branding_example.json #   documented template (all keys)
 │   └── ticker_logos/         #   optional local PNG logos
@@ -228,7 +228,7 @@ The `NoteTerms` dataclass captures the full specification of an autocallable not
 
 ### Reference Term Sheets
 
-Ten real term sheets are included as ready-to-use JSON configs (load any of them on the setup page):
+Thirteen term sheets are included as ready-to-use JSON configs (load any of them on the setup page):
 
 | File | Issuer | Type | Underlyings | Tenor | Coupon | KI |
 |------|--------|------|-------------|-------|--------|-----|
@@ -242,8 +242,11 @@ Ten real term sheets are included as ready-to-use JSON configs (load any of them
 | `barclays_xs3305367727.json` | Barclays | Reverse Convertible | ORCL / ADBE | 1Y monthly | 15.25% p.a. guaranteed | 50% European |
 | `bnp_paribas_pr00529720.json` | BNP Paribas | Phoenix One Star | DELL / IBM / MSFT | 1Y quarterly | 16% p.a. | 50% European |
 | `julius_baer_pr00529635.json` | Julius Baer | Phoenix Memory | DELL / IBM / MSFT | 1Y quarterly | 28% p.a. | 50% European |
+| `silex_autocall_consumo_wmt_mo_pm.json` | Silex (indic.) | Phoenix Memory | WMT / MO / PM | 2Y quarterly | 10.6% p.a. | 60% European |
+| `silex_autocall_servicios_nee_vz_etr.json` | Silex (indic.) | Phoenix Memory | NEE / VZ / ETR | 2Y quarterly | 10.5% p.a. | 60% European |
+| `silex_autocall_onestar_nflx_googl_meta.json` | Silex (indic.) | Phoenix One Star | NFLX / GOOGL / META | 2Y quarterly | 12.05% p.a. | 60% European |
 
-The Citi note demonstrates the step-down barrier (100% declining 3%/period from obs 3, floored at 88%) with a 12% p.a. premium paid only at autocall. The Barclays note pays a guaranteed coupon every month (`coupon_barrier = 0.0`). The BNP One Star note redeems at par if any single underlying ≥ 100% at maturity even when the worst-of breached the KI.
+The Citi note demonstrates the step-down barrier (100% declining 3%/period from obs 3, floored at 88%) with a 12% p.a. premium paid only at autocall. The Barclays note pays a guaranteed coupon every month (`coupon_barrier = 0.0`). The BNP One Star note redeems at par if any single underlying ≥ 100% at maturity even when the worst-of breached the KI. The three `silex_*` notes are thematic indicative baskets (defensive consumer, utilities & telecom, and big-tech with a One Star overlay).
 
 ---
 
@@ -384,7 +387,9 @@ After confirming setup, the results view frames the note through three **analysi
 
 Across all three:
 
+- **A/B comparison** — a **Compare** tab prices two variants of a note (same underlyings, different terms) on the **same simulated paths**, with side-by-side Monte Carlo, backtest and live metrics plus a difference table and overlay charts; the comparison can be embedded in the PDF.
 - **PDF report** — a dedicated **Report** tab builds a branded, bilingual one-click export. Audience **presets** (Client, Term sheet, IC, Analyst, Quant…) and a fine-grained section tree pick exactly which sections and figures to include, and the report can be generated **without running the simulation first** (a terms-only report needs no run; analytical sections use the latest run). The PDF mirrors the three-lens structure with numbered part dividers and a grouped table of contents, and an in-app **tutorial** walks through the builder.
+- **Batch reports** — a **Batch** tab generates reports for several notes in one pass, without loading each on the dashboard. Add notes from the bundled configs or a connected folder, pick a per-note **scope** (note details / + Monte Carlo / full) and **image mode** (auto industry photos / none), and download them all as a single **ZIP** — one standalone PDF per note, with per-note status so a single failure doesn't sink the batch.
 - **Branding** — per-firm colours, fonts, logos, cover/disclaimer text and selectable cover key-terms, driven by a `branding/branding_*.json` config (see `branding_example.json` for the full key set) or edited live in the Branding panel.
 - **Report photos** — an optional [Pexels](https://www.pexels.com/)-backed photo library (suggested by sector), plus your own uploads or a connected local image folder. The chosen, drag-reorderable pool drives the cover, the back page and the filler bands. The library needs a `PEXELS_API_KEY` on the server; it degrades cleanly without one (uploads/folders still work).
 - **Bilingual** — full EN/ES interface throughout the app and the report
