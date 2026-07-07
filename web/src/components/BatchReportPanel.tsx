@@ -8,9 +8,9 @@ import Icon from './Icon'
 import { Select } from './fields'
 import FolderConnect from './FolderConnect'
 import CoverPhotoPicker from './CoverPhotoPicker'
-import { Check } from './SectionTree'
+import SectionTree from './SectionTree'
 import { useLocalFolder, safeName } from '../lib/localFolder'
-import { groupsFor, keysOf, type Group } from '../lib/reportSections'
+import { groupsFor, keysOf, keysForPreset, PRESET_ORDER, type Preset } from '../lib/reportSections'
 import { autoIndustryPhotos, resolveSector, photoCapacity, type PhotoMode } from '../lib/batchReport'
 import type { Branding, ConfigMeta, NoteTerms } from '../api/types'
 import type { RunOpts } from './SetupRail'
@@ -20,7 +20,8 @@ type Lang = 'en' | 'es'
 interface Row {
   id: number
   terms: NoteTerms
-  sel: Set<string>        // included section-item keys, toggled a whole category at a time
+  sel: Set<string>
+  preset: Preset
   lang: Lang
   photoMode: PhotoMode
   photos: string[]        // custom picks (data URLs)
@@ -32,6 +33,9 @@ interface Row {
 }
 
 let _rid = 0
+
+// Presets offered as the default for new rows (drop the special "custom").
+const DEFAULT_PRESETS = PRESET_ORDER.filter((p) => p !== 'custom') as Preset[]
 
 export default function BatchReportPanel({ terms, opts, configs }: {
   terms: NoteTerms | null
@@ -45,6 +49,7 @@ export default function BatchReportPanel({ terms, opts, configs }: {
   const folder = useLocalFolder('config')
   const [rows, setRows] = useState<Row[]>([])
   const [addSel, setAddSel] = useState('')
+  const [defPreset, setDefPreset] = useState<Preset>('client')
   const [defLang, setDefLang] = useState<Lang>(lang as Lang)
   const [defPhotos, setDefPhotos] = useState<PhotoMode>('auto')
 
@@ -59,6 +64,7 @@ export default function BatchReportPanel({ terms, opts, configs }: {
 
   useEffect(() => { api.brandingList().then(setBrandPresets).catch(() => {}) }, [])
 
+  const presetOpts = DEFAULT_PRESETS.map((p) => ({ value: p, label: t(`rep_preset_${p}`) }))
   const langOpts: { value: Lang; label: string }[] = [{ value: 'en', label: 'English' }, { value: 'es', label: 'Español' }]
   const photoOpts: { value: PhotoMode; label: string }[] = [
     { value: 'auto', label: lab('Auto photos (matched to sector)', 'Fotos auto (según sector)') },
@@ -81,12 +87,14 @@ export default function BatchReportPanel({ terms, opts, configs }: {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [terms, configs, folder.files, lang])
 
-  const makeRow = (nt: NoteTerms): Row => ({
-    // New rows start with every category included; the user unchecks what they
-    // don't want.
-    id: ++_rid, terms: nt, sel: new Set(keysOf(groupsFor(!!nt.issue_date))),
-    lang: defLang, photoMode: defPhotos, photos: [], status: 'idle', expanded: false, selected: false,
-  })
+  const makeRow = (nt: NoteTerms): Row => {
+    const keys = keysOf(groupsFor(!!nt.issue_date))
+    const p: Preset = defPreset
+    return {
+      id: ++_rid, terms: nt, sel: new Set(keysForPreset(p, keys)), preset: p,
+      lang: defLang, photoMode: defPhotos, photos: [], status: 'idle', expanded: false, selected: false,
+    }
+  }
 
   const resolveTerms = async (value: string): Promise<NoteTerms | null> => {
     if (value === 'cur') return terms
@@ -131,17 +139,27 @@ export default function BatchReportPanel({ terms, opts, configs }: {
   const removeSelected = () => setRows((r) => r.filter((x) => !x.selected))
   const toggleSelectAll = () => setRows((r) => { const all = r.every((x) => x.selected); return r.map((x) => ({ ...x, selected: !all })) })
 
-  const applyDefaultsToAll = () => setRows((r) => r.map((x) => ({ ...x, lang: defLang, photoMode: defPhotos })))
+  const applyDefaultsToAll = () => setRows((r) => r.map((x) => {
+    const keys = keysOf(groupsFor(!!x.terms.issue_date))
+    return { ...x, preset: defPreset, sel: new Set(keysForPreset(defPreset, keys)), lang: defLang, photoMode: defPhotos }
+  }))
 
-  // Per-row sections — a checklist of the major categories, toggled whole.
+  // Per-row section editing.
   const rowGroups = (r: Row) => groupsFor(!!r.terms.issue_date)
-  const catOn = (r: Row, g: Group) => g.items.every((it) => r.sel.has(it[0]))
-  const toggleCategory = (r: Row, g: Group) => patch(r.id, {
-    sel: (() => {
-      const n = new Set(r.sel); const on = g.items.every((it) => n.has(it[0]))
-      g.items.forEach((it) => (on ? n.delete(it[0]) : n.add(it[0]))); return n
-    })(),
+  const toggleKey = (r: Row, key: string) => patch(r.id, {
+    sel: (() => { const n = new Set(r.sel); n.has(key) ? n.delete(key) : n.add(key); return n })(), preset: 'custom',
   })
+  const toggleGroup = (r: Row, gkeys: string[]) => patch(r.id, {
+    sel: (() => {
+      const n = new Set(r.sel); const allOn = gkeys.every((k) => n.has(k))
+      gkeys.forEach((k) => (allOn ? n.delete(k) : n.add(k))); return n
+    })(), preset: 'custom',
+  })
+  const applyRowPreset = (r: Row, p: Preset) => {
+    if (p === 'custom') { patch(r.id, { preset: 'custom' }); return }
+    const keys = keysOf(rowGroups(r))
+    patch(r.id, { preset: p, sel: new Set(keysForPreset(p, keys)) })
+  }
 
   // Resolve the matched sector for an auto-mode row's label (lazy, once).
   useEffect(() => {
@@ -266,6 +284,7 @@ export default function BatchReportPanel({ terms, opts, configs }: {
 
         <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', marginTop: 12 }}>
           <span style={{ fontSize: 11.5, color: 'var(--text-faint)' }}>{lab('New-row defaults', 'Predeterminados')}:</span>
+          <div style={{ minWidth: 150 }}><Select value={defPreset} onChange={setDefPreset} options={presetOpts} ariaLabel={lab('Default preset', 'Preset predeterminado')} /></div>
           <div style={{ minWidth: 120 }}><Select value={defLang} onChange={setDefLang} options={langOpts} ariaLabel={lab('Default language', 'Idioma predeterminado')} /></div>
           <div style={{ minWidth: 190 }}><Select value={defPhotos} onChange={setDefPhotos} options={photoOpts} ariaLabel={lab('Default images', 'Imágenes predeterminadas')} /></div>
           {rows.length > 0 && (
@@ -351,7 +370,7 @@ export default function BatchReportPanel({ terms, opts, configs }: {
                     <span style={{ minWidth: 0 }}>
                       <span style={{ display: 'block', fontSize: 13, fontWeight: 600, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{row.terms.name}</span>
                       <span style={{ display: 'block', fontSize: 11, color: 'var(--text-faint)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                        {rowGroups(row).filter((g) => catOn(row, g)).length}/{rowGroups(row).length} {lab('sections', 'secciones')} · {row.lang.toUpperCase()} · {photoSummary(row)}
+                        {t(`rep_preset_${row.preset}`)} · {row.lang.toUpperCase()} · {photoSummary(row)}
                         {row.status === 'error' && row.error ? ` — ${row.error}` : ''}
                       </span>
                     </span>
@@ -370,19 +389,22 @@ export default function BatchReportPanel({ terms, opts, configs }: {
                       <div style={{ minWidth: 200 }}><Select value={row.photoMode} onChange={(v) => patch(row.id, { photoMode: v })} options={photoOpts} ariaLabel={lab('Images', 'Imágenes')} /></div>
                     </div>
 
-                    {/* section categories — a simple checklist of the major groups */}
+                    {/* preset pills */}
                     <div>
-                      <div style={{ fontSize: 10.5, fontWeight: 600, letterSpacing: '.06em', textTransform: 'uppercase', color: 'var(--text-muted)', marginBottom: 8 }}>{lab('Sections', 'Secciones')}</div>
-                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 26px' }}>
-                        {rowGroups(row).map((g) => (
-                          <button key={g.key} onClick={() => toggleCategory(row, g)}
-                                  style={{ display: 'flex', alignItems: 'center', gap: 9, background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit', padding: '5px 0' }}>
-                            <Check on={catOn(row, g)} />
-                            <span style={{ fontSize: 13, fontWeight: 600 }}>{lab(g.en, g.es)}</span>
+                      <div style={{ fontSize: 10.5, fontWeight: 600, letterSpacing: '.06em', textTransform: 'uppercase', color: 'var(--text-muted)', marginBottom: 8 }}>{t('rep_preset')}</div>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                        {PRESET_ORDER.map((p) => (
+                          <button key={p} type="button" className="preset-pill" data-on={row.preset === p}
+                                  title={t(`rep_preset_${p}_desc`)} onClick={() => applyRowPreset(row, p)}>
+                            {t(`rep_preset_${p}`)}
                           </button>
                         ))}
                       </div>
                     </div>
+
+                    {/* section tree */}
+                    <SectionTree groups={rowGroups(row)} sel={row.sel} lang={lang}
+                                 onToggle={(k) => toggleKey(row, k)} onToggleGroup={(g) => toggleGroup(row, g.items.map((it) => it[0]))} />
 
                     {/* images */}
                     {row.photoMode === 'custom' && (
