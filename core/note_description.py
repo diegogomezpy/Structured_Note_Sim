@@ -180,7 +180,7 @@ def describe_note(terms, lang: str = "en") -> str:
             rate_es = f"{terms.participation_rate:.0%}"
             cap_es = "sin límite" if terms.upside_cap is None else f"con un tope del +{terms.upside_cap:.0%}"
             p += (
-                f"Bajo el efecto Zenith, cuando la Nota vence anticipadamente o el Nivel Final se sitúa "
+                f"Bajo Zenith, cuando la Nota vence anticipadamente o el Nivel Final se sitúa "
                 f"en o por encima de su nivel inicial, el inversor recibe —además del cupón y el capital— "
                 f"una participación del {rate_es} en la revalorización del peor Subyacente ({cap_es}). "
             )
@@ -230,7 +230,7 @@ def describe_note(terms, lang: str = "en") -> str:
         rate_en = f"{terms.participation_rate:.0%}"
         cap_en = "uncapped" if terms.upside_cap is None else f"capped at +{terms.upside_cap:.0%}"
         p += (
-            f"Under the Zenith effect, whenever the Note redeems early or the Final Level is at or above "
+            f"Under Zenith, whenever the Note redeems early or the Final Level is at or above "
             f"its initial level, the investor receives — on top of the coupon and capital — {rate_en} "
             f"participation in the worst Underlying's upside ({cap_en}). "
         )

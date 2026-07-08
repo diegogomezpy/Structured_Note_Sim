@@ -121,7 +121,7 @@ export function noteDescription(terms: NoteTerms, lang: Lang): string {
     if (terms.zenith) {
       const rate = p2(terms.participation_rate ?? 1)
       const capTxt = terms.upside_cap == null ? 'sin límite' : `con un tope del +${p2(terms.upside_cap)}`
-      s += `Bajo el efecto Zenith, cuando la Nota vence anticipadamente o el Nivel Final se sitúa en o por encima de ` +
+      s += `Bajo Zenith, cuando la Nota vence anticipadamente o el Nivel Final se sitúa en o por encima de ` +
         `su nivel inicial, el inversor recibe —además del cupón y el capital— una participación del ${rate} en la ` +
         `revalorización del peor Subyacente (${capTxt}). `
     }
@@ -156,7 +156,7 @@ export function noteDescription(terms: NoteTerms, lang: Lang): string {
   if (terms.zenith) {
     const rate = p2(terms.participation_rate ?? 1)
     const capTxt = terms.upside_cap == null ? 'uncapped' : `capped at +${p2(terms.upside_cap)}`
-    s += `Under the Zenith effect, whenever the Note redeems early or the Final Level is at or above its initial ` +
+    s += `Under Zenith, whenever the Note redeems early or the Final Level is at or above its initial ` +
       `level, the investor receives — on top of the coupon and capital — ${rate} participation in the worst ` +
       `Underlying's upside (${capTxt}). `
   }

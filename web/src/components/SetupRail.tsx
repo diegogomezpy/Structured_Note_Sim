@@ -186,7 +186,7 @@ export default function SetupRail({
 
       {/* Note-type toggle — switch structure families without opening the overlay. */}
       <div style={{ borderTop: '1px solid var(--border)', paddingTop: 14 }}>
-        <SegmentedField label={t('sec_note_type')} value={noteType}
+        <SegmentedField label={t('sec_note_type')} tip={t('tip_note_type')} value={noteType}
                         options={NOTE_TYPES.map((nt) => ({ value: nt, label: t(`nt_${nt}`) }))}
                         onChange={(v) => onChange(applyPreset(terms, v as NoteType))} />
       </div>
@@ -289,20 +289,20 @@ export default function SetupRail({
       <div data-tour="mechanics" style={{ borderTop: '1px solid var(--border)', paddingTop: 14 }}>
         <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--text-muted)', marginBottom: 12 }}>{t('quick_mechanics')}</div>
 
-        <NumField label={t('autocall_start')} value={Math.min(terms.autocall_start_period, nObs(terms))}
+        <NumField label={t('autocall_start')} tip={t('tip_autocall_start')} value={Math.min(terms.autocall_start_period, nObs(terms))}
                   isInt min={1} max={Math.max(1, nObs(terms))}
                   onChange={(v) => set('autocall_start_period', v)} />
-        <SelectField label={t('coupon_basket')} value={terms.coupon_basket}
+        <SelectField label={t('coupon_basket')} tip={t('tip_coupon_basket')} value={terms.coupon_basket}
                      options={BASKETS.map((b) => ({ value: b, label: t(`basket_${b}`) }))}
                      onChange={(v) => set('coupon_basket', v)} />
-        <SelectField label={t('autocall_basket')} value={terms.autocall_basket}
+        <SelectField label={t('autocall_basket')} tip={t('tip_autocall_basket')} value={terms.autocall_basket}
                      options={BASKETS.map((b) => ({ value: b, label: t(`basket_${b}`) }))}
                      onChange={(v) => set('autocall_basket', v)} />
-        <ToggleField label={t('memory')} checked={terms.memory} onChange={(v) => set('memory', v)} />
-        <ToggleField label={t('one_star')} checked={terms.one_star_level != null}
+        <ToggleField label={t('memory')} tip={t('tip_memory')} checked={terms.memory} onChange={(v) => set('memory', v)} />
+        <ToggleField label={t('one_star')} tip={t('tip_one_star')} checked={terms.one_star_level != null}
                      onChange={(on) => set('one_star_level', on ? 1.0 : null)} />
         {terms.one_star_level != null && (
-          <NumField label={t('one_star_level')} value={terms.one_star_level} pct suffix="%"
+          <NumField label={t('one_star_level')} tip={t('tip_one_star_level')} value={terms.one_star_level} pct suffix="%"
                     onChange={(v) => set('one_star_level', v)} />
         )}
         <ToggleField label={t('zenith')} tip={t('zenith_h')} checked={!!terms.zenith}

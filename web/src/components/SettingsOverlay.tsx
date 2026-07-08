@@ -107,9 +107,9 @@ export default function SettingsOverlay({
       {isPart && (
       <Group n={2} title={t('sec_participation')}>
         <Grid>
-          <Slider label={t('maturity')} value={terms.maturity} min={0.25} max={5} step={0.25}
+          <Slider label={t('maturity')} tip={t('tip_maturity')} value={terms.maturity} min={0.25} max={5} step={0.25}
                   editSuffix="y" fmt={(v) => `${v.toFixed(2)} y`} onChange={(v) => set('maturity', v)} />
-          <SelectField label={t('part_basket')} value={terms.participation_basket ?? 'worst_of'} options={basketOpts}
+          <SelectField label={t('part_basket')} tip={t('tip_part_basket')} value={terms.participation_basket ?? 'worst_of'} options={basketOpts}
                        onChange={(v) => set('participation_basket', v)} />
         </Grid>
         {/* Cliquet / periodic toggle — a series of back-to-back protected
@@ -214,54 +214,54 @@ export default function SettingsOverlay({
           {/* Own row (span all columns) so all four frequency options fit without
               being clipped, but capped so it isn't stretched on wide screens. */}
           <div style={{ gridColumn: '1 / -1', maxWidth: 480 }}>
-            <SegmentedField label={t('frequency')} value={terms.payment_freq}
+            <SegmentedField label={t('frequency')} tip={t('tip_frequency')} value={terms.payment_freq}
                             options={FREQS.map((f) => ({ value: f, label: t(`freq_${f}`) }))} onChange={(v) => set('payment_freq', v)} />
           </div>
-          <Slider label={t('maturity')} value={terms.maturity} min={0.25} max={5} step={0.25}
+          <Slider label={t('maturity')} tip={t('tip_maturity')} value={terms.maturity} min={0.25} max={5} step={0.25}
                   editSuffix="y" fmt={(v) => `${v.toFixed(2)} y`} onChange={(v) => set('maturity', v)} />
-          <NumField label={t('coupon_pa')} value={terms.coupon_pa} pct suffix="%"
+          <NumField label={t('coupon_pa')} tip={t('tip_coupon_pa')} value={terms.coupon_pa} pct suffix="%"
                     onChange={(v) => set('coupon_pa', v)} />
-          <SelectField label={t('coupon_basket')} value={terms.coupon_basket} options={basketOpts} onChange={(v) => set('coupon_basket', v)} />
-          <NumberField label={t('coupon_barrier')} value={terms.coupon_barrier} percent suffix="%" min={0} max={100} step={0.5}
+          <SelectField label={t('coupon_basket')} tip={t('tip_coupon_basket')} value={terms.coupon_basket} options={basketOpts} onChange={(v) => set('coupon_basket', v)} />
+          <NumberField label={t('coupon_barrier')} tip={t('tip_coupon_barrier')} value={terms.coupon_barrier} percent suffix="%" min={0} max={100} step={0.5}
                        onChange={(v) => set('coupon_barrier', v)} />
         </Grid>
-        <ToggleField label={t('memory')} checked={terms.memory} onChange={(v) => set('memory', v)} />
+        <ToggleField label={t('memory')} tip={t('tip_memory')} checked={terms.memory} onChange={(v) => set('memory', v)} />
       </Group>
 
       <Group n={3} title={t('sec_protection')}>
         <Grid>
-          <NumberField label={t('knock_in_barrier')} value={terms.knock_in_barrier} percent suffix="%" min={0} max={100} step={0.5}
+          <NumberField label={t('knock_in_barrier')} tip={t('tip_knock_in')} value={terms.knock_in_barrier} percent suffix="%" min={0} max={100} step={0.5}
                        error={terms.knock_in_barrier > 1 ? t('barrier_max') : undefined}
                        onChange={(v) => set('knock_in_barrier', v)} />
         </Grid>
         <Grid>
           <div>
-            <ToggleField label={t('capital_protected')} checked={(terms.capital_guarantee ?? 0) > 0}
+            <ToggleField label={t('capital_protected')} tip={t('tip_capital_protected')} checked={(terms.capital_guarantee ?? 0) > 0}
                          onChange={(v) => set('capital_guarantee', v ? 1.0 : 0)} />
             {(terms.capital_guarantee ?? 0) > 0 && (
-              <NumberField label={t('capital_guarantee')} value={terms.capital_guarantee} percent suffix="%" min={0} max={100} step={1}
+              <NumberField label={t('capital_guarantee')} tip={t('tip_capital_guarantee')} value={terms.capital_guarantee} percent suffix="%" min={0} max={100} step={1}
                            onChange={(v) => set('capital_guarantee', v)} />
             )}
           </div>
           <div>
-            <ToggleField label={t('one_star')} checked={terms.one_star_level != null}
+            <ToggleField label={t('one_star')} tip={t('tip_one_star')} checked={terms.one_star_level != null}
                          onChange={(v) => set('one_star_level', v ? 1.0 : null)} />
             {terms.one_star_level != null && (<>
-              <NumberField label={t('one_star_level')} value={terms.one_star_level} percent suffix="%" min={50} max={150} step={0.5}
+              <NumberField label={t('one_star_level')} tip={t('tip_one_star_level')} value={terms.one_star_level} percent suffix="%" min={50} max={150} step={0.5}
                            onChange={(v) => set('one_star_level', v)} />
               <div style={{ fontSize: 11, color: 'var(--text-faint)', margin: '4px 0 8px', lineHeight: 1.5 }}>{t('one_star_scope_hint')}</div>
-              <ToggleField label={t('one_star_coupon')} checked={!!terms.one_star_coupon}
+              <ToggleField label={t('one_star_coupon')} tip={t('tip_one_star_coupon')} checked={!!terms.one_star_coupon}
                            onChange={(v) => set('one_star_coupon', v)} />
-              <ToggleField label={t('one_star_autocall')} checked={!!terms.one_star_autocall}
+              <ToggleField label={t('one_star_autocall')} tip={t('tip_one_star_autocall')} checked={!!terms.one_star_autocall}
                            onChange={(v) => set('one_star_autocall', v)} />
             </>)}
           </div>
           {(terms.capital_guarantee ?? 0) > 0 && (
             <div>
-              <ToggleField label={t('cap_upside')} checked={terms.upside_cap != null}
+              <ToggleField label={t('cap_upside')} tip={t('tip_cap_upside')} checked={terms.upside_cap != null}
                            onChange={(v) => set('upside_cap', v ? 1.5 : null)} />
               {terms.upside_cap != null && (
-                <NumberField label={t('upside_cap')} value={terms.upside_cap} percent suffix="%" min={100} max={300} step={5}
+                <NumberField label={t('upside_cap')} tip={t('tip_upside_cap')} value={terms.upside_cap} percent suffix="%" min={100} max={300} step={5}
                              onChange={(v) => set('upside_cap', v)} />
               )}
             </div>
@@ -271,19 +271,19 @@ export default function SettingsOverlay({
 
       <Group n={4} title={t('sec_autocall')}>
         <Grid>
-          <NumberField label={t('autocall_barrier')} value={terms.autocall_barrier} percent suffix="%" min={50} max={300} step={0.5}
+          <NumberField label={t('autocall_barrier')} tip={t('tip_autocall')} value={terms.autocall_barrier} percent suffix="%" min={50} max={300} step={0.5}
                        onChange={(v) => set('autocall_barrier', v)} />
-          <Slider label={t('autocall_start')} value={Math.min(terms.autocall_start_period, n)} min={1} max={n} step={1}
+          <Slider label={t('autocall_start')} tip={t('tip_autocall_start')} value={Math.min(terms.autocall_start_period, n)} min={1} max={n} step={1}
                   editInt editPrefix="P" editClamp={[1, n]} fmt={(v) => `P${v}`} onChange={(v) => set('autocall_start_period', v)} />
-          <SelectField label={t('autocall_basket')} value={terms.autocall_basket} options={basketOpts} onChange={(v) => set('autocall_basket', v)} />
-          <NumberField label={t('step_down')} value={stepDown} percent suffix="%" min={0} max={10} step={0.5}
+          <SelectField label={t('autocall_basket')} tip={t('tip_autocall_basket')} value={terms.autocall_basket} options={basketOpts} onChange={(v) => set('autocall_basket', v)} />
+          <NumberField label={t('step_down')} tip={t('tip_step_down')} value={stepDown} percent suffix="%" min={0} max={10} step={0.5}
                        onChange={(v) => set('autocall_step_down', v || null)} />
           {stepDown > 0 && (
-            <NumberField label={t('autocall_floor')} value={terms.autocall_floor ?? 0} percent suffix="%" min={0} max={100} step={1}
+            <NumberField label={t('autocall_floor')} tip={t('tip_autocall_floor')} value={terms.autocall_floor ?? 0} percent suffix="%" min={0} max={100} step={1}
                          onChange={(v) => set('autocall_floor', v || null)} />
           )}
         </Grid>
-        <ToggleField label={t('premium_at_call')} checked={!!terms.coupon_at_autocall_only}
+        <ToggleField label={t('premium_at_call')} tip={t('tip_premium_at_call')} checked={!!terms.coupon_at_autocall_only}
                      onChange={(v) => set('coupon_at_autocall_only', v)} />
         <ToggleField label={t('zenith')} tip={t('zenith_h')} checked={!!terms.zenith}
                      onChange={(v) => set('zenith', v)} />
@@ -310,14 +310,14 @@ export default function SettingsOverlay({
 
       <Group n={7} title={t('sec_engine')}>
         <Grid>
-          <SelectField label={t('paths')} value={String(opts.n_paths)}
+          <SelectField label={t('paths')} tip={t('tip_paths')} value={String(opts.n_paths)}
                        options={PATH_PRESETS.map((p) => ({ value: String(p), label: p.toLocaleString() }))}
                        onChange={(v) => onOptsChange({ ...opts, n_paths: parseInt(v) })} />
-          <SegmentedField label={t('engine')} value={opts.engine}
+          <SegmentedField label={t('engine')} tip={t('tip_engine')} value={opts.engine}
                           options={[{ value: 'numpy', label: 'numpy' }, { value: 'cpp', label: cppAvailable ? 'C++' : 'C++ (fallback)' }]}
                           onChange={(v) => onOptsChange({ ...opts, engine: v === 'cpp' ? 'cpp' : 'numpy' })} />
-          <NumberField label={t('seed')} value={opts.seed} step={1} min={0} onChange={(v) => onOptsChange({ ...opts, seed: Math.round(v) })} />
-          <SelectField label={t('calib_window')} value={String(opts.calib_years)}
+          <NumberField label={t('seed')} tip={t('tip_seed')} value={opts.seed} step={1} min={0} onChange={(v) => onOptsChange({ ...opts, seed: Math.round(v) })} />
+          <SelectField label={t('calib_window')} tip={t('tip_calib_window')} value={String(opts.calib_years)}
                        options={CALIB_YEARS.map((y) => ({ value: String(y), label: `${y} ${t('calib_years')}` }))}
                        onChange={(v) => onOptsChange({ ...opts, calib_years: parseInt(v) })} />
         </Grid>
