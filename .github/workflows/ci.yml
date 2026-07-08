@@ -44,8 +44,10 @@ jobs:
       # image build, without installing the heavy (numpy/plotly/yfinance) stack.
       - name: Compile all Python modules
         run: python -m py_compile $(git ls-files '*.py')
-      # Golden-value tests for the payoff core (numpy/pandas only — no network).
+      # Golden-value tests for the payoff core (no network). Importing core.note
+      # pulls core/__init__ → calibrator (scipy) → simulator, so scipy is needed
+      # even though the tests themselves only exercise the numpy payoff engine.
       - name: Unit tests (quant core)
         run: |
-          pip install pytest numpy pandas
+          pip install pytest numpy pandas scipy
           python -m pytest tests/ -q
