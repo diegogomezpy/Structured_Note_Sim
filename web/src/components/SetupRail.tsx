@@ -305,6 +305,8 @@ export default function SetupRail({
           <NumField label={t('one_star_level')} value={terms.one_star_level} pct suffix="%"
                     onChange={(v) => set('one_star_level', v)} />
         )}
+        <ToggleField label={t('zenith')} tip={t('zenith_h')} checked={!!terms.zenith}
+                     onChange={(v) => set('zenith', v)} />
       </div>
       )}
 

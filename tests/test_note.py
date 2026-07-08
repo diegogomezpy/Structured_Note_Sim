@@ -88,6 +88,22 @@ def test_price_note_all_autocall_hard_trigger():
     assert note["expected_coupon"] == pytest.approx(0.05)
 
 
+def test_price_note_zenith_upside_participation():
+    # Zenith: an in-the-money redemption pays the worst-of upside on top of
+    # par + coupon; below-par at maturity is unchanged (1:1 loss).
+    t = _phoenix(zenith=True)            # 2 obs, coupon 0.05/period, coupon barrier 0.7, KI 0.5
+    perf = np.ones((3, 5, 1))
+    perf[0, :, 0] = 1.20                                  # autocalls P1 at 1.20
+    perf[1, 2, 0] = 0.80; perf[1, 4, 0] = 0.80           # maturity 0.80 (70%..100%): par + 2 coupons
+    perf[2, 2, 0] = 0.80; perf[2, 4, 0] = 0.40           # maturity 0.40 (< KI): 1:1 loss + P1 coupon
+    note = price_note(perf, t, obs_steps=[2, 4], obs_times=[0.5, 1.0])
+    # 0: 1.20 + 0.05 · 1: 1.00 + 0.10 · 2: 0.40 + 0.05
+    assert note["nominal_payoffs"] == pytest.approx([1.25, 1.10, 0.45])
+    # Same paths, Zenith OFF: the autocall redeems at par (1.05), no upside.
+    off = price_note(perf, replace(t, zenith=False), obs_steps=[2, 4], obs_times=[0.5, 1.0])
+    assert off["nominal_payoffs"] == pytest.approx([1.05, 1.10, 0.45])
+
+
 # ── participation redemption formulas (Python side of the TS mirror) ─────────────
 def _part(**over) -> NoteTerms:
     d = {"name": "P", "note_type": "participation", "maturity": 1, "payment_freq": "annual",

@@ -176,6 +176,14 @@ def describe_note(terms, lang: str = "en") -> str:
                 p += (lead + "permite devolver el capital a la par en el vencimiento aunque el peor "
                       "Subyacente haya perforado la Barrera de Knock-in (no afecta al cupón ni a la "
                       "cancelación anticipada). ")
+        if getattr(terms, "zenith", False):
+            rate_es = f"{terms.participation_rate:.0%}"
+            cap_es = "sin límite" if terms.upside_cap is None else f"con un tope del +{terms.upside_cap:.0%}"
+            p += (
+                f"Bajo el efecto Zenith, cuando la Nota vence anticipadamente o el Nivel Final se sitúa "
+                f"en o por encima de su nivel inicial, el inversor recibe —además del cupón y el capital— "
+                f"una participación del {rate_es} en la revalorización del peor Subyacente ({cap_es}). "
+            )
         p += (
             f"El Capital se encuentra en riesgo si la Nota no ha vencido anticipadamente y el Nivel "
             f"Final de {anyu} se encuentra por debajo del {ki} de su nivel de Strike inicial en la "
@@ -218,6 +226,14 @@ def describe_note(terms, lang: str = "en") -> str:
         else:
             p += (lead + "repays capital at par at maturity even if the worst Underlying has breached "
                   "the Knock-in Barrier (it does not affect the coupon or early-redemption conditions). ")
+    if getattr(terms, "zenith", False):
+        rate_en = f"{terms.participation_rate:.0%}"
+        cap_en = "uncapped" if terms.upside_cap is None else f"capped at +{terms.upside_cap:.0%}"
+        p += (
+            f"Under the Zenith effect, whenever the Note redeems early or the Final Level is at or above "
+            f"its initial level, the investor receives — on top of the coupon and capital — {rate_en} "
+            f"participation in the worst Underlying's upside ({cap_en}). "
+        )
     p += (
         f"Capital is at risk if the Note has not redeemed early and the Final Level of {anyu} is below "
         f"{ki} of its initial Strike level on the Final Observation Date."

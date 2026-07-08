@@ -39,6 +39,7 @@ export function applyPreset(t: NoteTerms, type: NoteType): NoteTerms {
       n.coupon_pa = 0; n.coupon_barrier = 0; n.memory = false; n.knock_in_barrier = 0
       n.autocall_barrier = 2.0; n.autocall_step_down = null; n.autocall_floor = null
       n.coupon_at_autocall_only = false; n.one_star_level = null; n.capital_guarantee = 0
+      n.zenith = false
       n.participation_downside = n.participation_downside ?? 'full'
       n.participation_upside = n.participation_upside ?? 'linear'
       n.participation_basket = n.participation_basket ?? n.coupon_basket ?? 'worst_of'
@@ -50,11 +51,11 @@ export function applyPreset(t: NoteTerms, type: NoteType): NoteTerms {
     case 'reverse_conv':
       n.coupon_barrier = 0; n.memory = false
       n.autocall_step_down = null; n.autocall_floor = null; n.coupon_at_autocall_only = false
-      n.capital_guarantee = 0; n.upside_cap = null; n.one_star_level = null
+      n.capital_guarantee = 0; n.upside_cap = null; n.one_star_level = null; n.zenith = false
       break
     case 'growth_autocall':
       n.memory = false; n.coupon_at_autocall_only = true
-      n.capital_guarantee = 0; n.upside_cap = null; n.one_star_level = null
+      n.capital_guarantee = 0; n.upside_cap = null; n.one_star_level = null; n.zenith = false
       break
     case 'phoenix':
       n.autocall_step_down = null; n.autocall_floor = null; n.coupon_at_autocall_only = false

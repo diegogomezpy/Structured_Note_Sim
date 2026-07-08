@@ -285,6 +285,8 @@ export default function SettingsOverlay({
         </Grid>
         <ToggleField label={t('premium_at_call')} checked={!!terms.coupon_at_autocall_only}
                      onChange={(v) => set('coupon_at_autocall_only', v)} />
+        <ToggleField label={t('zenith')} tip={t('zenith_h')} checked={!!terms.zenith}
+                     onChange={(v) => set('zenith', v)} />
       </Group>
       </>)}
 

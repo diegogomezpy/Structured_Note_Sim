@@ -263,6 +263,16 @@ class NoteTerms:
     autocall_step_down:      float       = 0.0    # per-period decrement of autocall barrier (0 = constant)
     autocall_floor:          float | None = None  # minimum autocall barrier when stepping down
     coupon_at_autocall_only: bool        = False  # True = no periodic coupon; accrued premium paid as a lump at autocall
+    # ── Zenith effect (uncapped upside participation on an in-the-money redemption) ──
+    # When True, any redemption AT OR ABOVE the initial level pays the worst-of
+    # upside ON TOP of par + coupon: an autocall (worst-of >= autocall_barrier at
+    # any observation) or maturity with worst-of >= 100% redeems at
+    #   principal_protection + participation_rate · max(0, WoF - 1),
+    # capped by upside_cap (None = uncapped, the "no CAP" case). Below-par at
+    # maturity is the usual 1:1 knock-in loss, and coupons/memory are unchanged.
+    # Reuses participation_rate (default 1.0 = 100%) and upside_cap, so a plain
+    # "100% no cap" Zenith note only needs to set zenith=True.
+    zenith:                 bool        = False
     # ── Note structure type (explicit; drives the menu, payoff branch, diagram, prose) ──
     # phoenix | reverse_conv | growth_autocall | participation | custom. Inferred on
     # load for legacy configs that predate this field (see from_dict).
@@ -408,6 +418,7 @@ class NoteTerms:
             "autocall_step_down":     self.autocall_step_down,
             "autocall_floor":         self.autocall_floor,
             "coupon_at_autocall_only": self.coupon_at_autocall_only,
+            "zenith":                 self.zenith,
             "note_type":              self.note_type,
             "participation_downside": self.participation_downside,
             "participation_upside":   self.participation_upside,
@@ -976,9 +987,6 @@ def price_note(
     # ------------------------------------------------------------------
     # Principal redemption — dispatched via knock_in_cond + protection_cond
     # ------------------------------------------------------------------
-    # Autocalled paths: receive 100% principal back
-    autocall_principal = np.ones(n_paths)
-
     # Maturity paths: check knock-in + final redemption condition
     # (final valuation = last observation step; equals N unless obs_steps override)
     final_step = obs_steps[-1]
@@ -1007,16 +1015,38 @@ def price_note(
     rescued      = final_basket_val >= protection_cond.level
     capital_loss = barrier_event & ~rescued
 
-    # Capital loss: cash-equivalent physical delivery = worst-of final performance.
-    # Otherwise: principal_protection (100%) regardless of basket level (no upside
-    # participation in a Phoenix). When KI is breached (capital_loss), standard
-    # 1:1 downside applies regardless.
-    protected_redemption = np.full(n_paths, terms.principal_protection)
+    # Redemption principal (par by default; Zenith adds upside participation).
+    #
+    # Plain Phoenix: an autocall or a non-loss maturity redeems at par
+    # (principal_protection, 100%) — no upside participation. A capital loss
+    # (KI breached, not rescued) pays 1:1 the worst-of final level.
+    #
+    # Zenith effect: a redemption AT OR ABOVE the initial level also pays the
+    # worst-of upside on top of par — par + participation_rate·max(0, WoF-1),
+    # capped by upside_cap (None = uncapped). This applies to an autocall (using
+    # the worst-of at the call date, which is >= autocall_barrier) AND to a
+    # non-loss maturity (using the worst-of at final valuation; below 100% the
+    # upside term is zero, so it reduces to par). The loss branch is unchanged.
+    if getattr(terms, "zenith", False):
+        zen_rate = float(terms.participation_rate) if terms.participation_rate is not None else 1.0
+
+        def _zen_upside(level: np.ndarray) -> np.ndarray:
+            up = zen_rate * np.maximum(0.0, level - 1.0)
+            return np.minimum(up, float(terms.upside_cap)) if terms.upside_cap is not None else up
+
+        call_level = np.take_along_axis(
+            autocall_basket_vals, np.clip(first_call_idx, 0, n_obs - 1)[:, None], axis=1
+        )[:, 0]                                                     # worst-of at each path's call date
+        autocall_principal   = np.ones(n_paths) + _zen_upside(call_level)
+        protected_redemption = terms.principal_protection + _zen_upside(worst_final)
+    else:
+        autocall_principal   = np.ones(n_paths)                    # par back on autocall
+        protected_redemption = np.full(n_paths, terms.principal_protection)
 
     maturity_principal = np.where(
         capital_loss,
         worst_final,                       # cash equiv. of physical delivery
-        protected_redemption,              # par redemption
+        protected_redemption,              # par (+ Zenith upside when >= 100%)
     )
 
     # Combine

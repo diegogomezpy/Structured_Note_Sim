@@ -176,6 +176,8 @@ export const S: Dict = {
   step_down:        { en: 'Step-down per period', es: 'Reducción por periodo' },
   autocall_floor:   { en: 'Autocall floor', es: 'Suelo de autocancelación' },
   premium_at_call:  { en: 'Premium at call only', es: 'Prima solo al llamar' },
+  zenith:           { en: 'Zenith effect', es: 'Efecto Zenith' },
+  zenith_h:         { en: 'On an autocall or a maturity at/above 100%, pay the worst-of upside on top of par + coupon (uncapped unless a cap is set).', es: 'En un autocall o vencimiento en/por encima del 100%, paga la subida del peor de los subyacentes sobre el nominal + cupón (sin tope salvo que se fije uno).' },
   capital_protected:{ en: 'Capital protection', es: 'Protección de capital' },
   capital_guarantee:{ en: 'Capital guarantee', es: 'Garantía de capital' },
   cap_upside:       { en: 'Cap the upside', es: 'Limitar la subida' },

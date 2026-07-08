@@ -118,6 +118,13 @@ export function noteDescription(terms: NoteTerms, lang: Lang): string {
         ? lead + `basta por sí solo para ${extra.join(' y ')}, y para devolver el capital a la par en el vencimiento aunque el peor Subyacente haya perforado la Barrera de Knock-in. `
         : lead + `permite devolver el capital a la par en el vencimiento aunque el peor Subyacente haya perforado la Barrera de Knock-in (no afecta al cupón ni a la cancelación anticipada). `
     }
+    if (terms.zenith) {
+      const rate = p2(terms.participation_rate ?? 1)
+      const capTxt = terms.upside_cap == null ? 'sin límite' : `con un tope del +${p2(terms.upside_cap)}`
+      s += `Bajo el efecto Zenith, cuando la Nota vence anticipadamente o el Nivel Final se sitúa en o por encima de ` +
+        `su nivel inicial, el inversor recibe —además del cupón y el capital— una participación del ${rate} en la ` +
+        `revalorización del peor Subyacente (${capTxt}). `
+    }
     s += `El Capital se encuentra en riesgo si la Nota no ha vencido anticipadamente y el Nivel Final de ${anyu} se ` +
       `encuentra por debajo del ${ki} de su nivel de Strike inicial en la Fecha de Observación Final.`
     return s
@@ -145,6 +152,13 @@ export function noteDescription(terms: NoteTerms, lang: Lang): string {
     s += extra.length
       ? lead + `is enough on its own to ${extra.join(' and ')}, and to repay capital at par at maturity even if the worst Underlying has breached the Knock-in Barrier. `
       : lead + `repays capital at par at maturity even if the worst Underlying has breached the Knock-in Barrier (it does not affect the coupon or early-redemption conditions). `
+  }
+  if (terms.zenith) {
+    const rate = p2(terms.participation_rate ?? 1)
+    const capTxt = terms.upside_cap == null ? 'uncapped' : `capped at +${p2(terms.upside_cap)}`
+    s += `Under the Zenith effect, whenever the Note redeems early or the Final Level is at or above its initial ` +
+      `level, the investor receives — on top of the coupon and capital — ${rate} participation in the worst ` +
+      `Underlying's upside (${capTxt}). `
   }
   s += `Capital is at risk if the Note has not redeemed early and the Final Level of ${anyu} is below ${ki} of its ` +
     `initial Strike level on the Final Observation Date.`

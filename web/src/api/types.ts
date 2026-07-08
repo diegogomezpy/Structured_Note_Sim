@@ -37,6 +37,9 @@ export interface NoteTerms {
   autocall_step_down: number | null
   autocall_floor: number | null
   coupon_at_autocall_only: boolean
+  // Zenith effect: uncapped worst-of upside participation on an in-the-money
+  // redemption (autocall, or maturity >= 100%) — see core/note.py:price_note.
+  zenith?: boolean
   capital_guarantee: number
   upside_cap: number | null
   principal_protection: number

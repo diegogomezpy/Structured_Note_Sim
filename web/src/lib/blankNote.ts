@@ -20,6 +20,7 @@ export function blankNote(): NoteTerms {
     autocall_step_down: null,
     autocall_floor: null,
     coupon_at_autocall_only: false,
+    zenith: false,
     capital_guarantee: 0,
     upside_cap: null,
     principal_protection: 1.0,
