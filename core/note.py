@@ -594,21 +594,66 @@ def _participation_redemption(B: np.ndarray, terms: "NoteTerms") -> np.ndarray:
     return np.maximum(R, 0.0)
 
 
+def _participation_breakeven(terms: "NoteTerms") -> float | None:
+    """The basket level at the loss/par boundary — the note redeems below par for a
+    final basket at or below this level. Found by scanning the redemption curve for
+    the highest basket level that still redeems below par. Returns None when the
+    note never dips below par (e.g. full capital protection). The `bear` style loses
+    on the UP move, so its loss region isn't a lower interval — return None there
+    (the "loss below X" framing doesn't apply)."""
+    if terms.participation_downside == "bear":
+        return None
+    grid = np.linspace(0.0, 3.0, 3001)                     # 0.001 resolution
+    R = _participation_redemption(grid, terms)
+    idx = np.where(R < 1.0 - 1e-9)[0]
+    if not idx.size:
+        return None
+    # The loss region is a lower interval; report its upper edge (the boundary at
+    # which redemption returns to par), so "loss below X" lands on the true level.
+    return float(grid[min(int(idx.max()) + 1, len(grid) - 1)])
+
+
 def _participation_stats(R: np.ndarray, terms: "NoteTerms", B: np.ndarray | None = None) -> dict:
-    """Redemption-distribution metrics for a Participation Note (used by the hero
-    tiles + the report). R = per-path redemption; B = final basket (for the
-    shark-fin knock-out probability)."""
+    """Redemption-distribution metrics for a Participation Note (hero tiles + report
+    + the what-if table). R = per-path redemption; B = final basket (for the
+    knock-out probability and the up/down capture ratios vs the direct underlying)."""
+    R = np.asarray(R, dtype=float)
     cap_lv = (1.0 + terms.upside_cap) if terms.upside_cap is not None else None
     ko = None
     if (B is not None and terms.participation_upside == "shark_fin"
             and terms.knockout_level is not None):
         ko = float((B >= float(terms.knockout_level)).mean())
+
+    # Expected shortfall (CVaR) — mean redemption over the worst 5% of paths.
+    q5 = float(np.percentile(R, 5))
+    tail = R[R <= q5]
+    cvar5 = float(tail.mean()) if tail.size else q5
+
+    # Capture ratios vs holding the underlying directly: of the upside/downside the
+    # basket delivered, what fraction did the note pass through? (None when there's
+    # no up/down mass to divide by.)
+    up_capture = dn_capture = None
+    if B is not None:
+        Bv = np.asarray(B, dtype=float)
+        up, dn = Bv > 1.0, Bv < 1.0
+        if up.any() and float((Bv[up] - 1.0).mean()) > 1e-9:
+            up_capture = float((R[up] - 1.0).mean() / (Bv[up] - 1.0).mean())
+        if dn.any() and float((1.0 - Bv[dn]).mean()) > 1e-9:
+            dn_capture = float((1.0 - R[dn]).mean() / (1.0 - Bv[dn]).mean())
+
     return {
-        "prob_above_par":   float((R > 1.0 + 1e-9).mean()),
-        "prob_at_cap":      float((R >= cap_lv - 1e-6).mean()) if cap_lv is not None else None,
-        "prob_knocked_out": ko,
-        "expected_gain":    float(np.maximum(R - 1.0, 0.0).mean()),
-        "p5_redemption":    float(np.percentile(R, 5)),
+        "prob_above_par":      float((R > 1.0 + 1e-9).mean()),
+        "prob_below_par":      float((R < 1.0 - 1e-9).mean()),
+        "prob_at_cap":         float((R >= cap_lv - 1e-6).mean()) if cap_lv is not None else None,
+        "prob_knocked_out":    ko,
+        "expected_gain":       float(np.maximum(R - 1.0, 0.0).mean()),
+        "expected_redemption": float(R.mean()),
+        "p5_redemption":       q5,
+        "p95_redemption":      float(np.percentile(R, 95)),
+        "cvar5_redemption":    cvar5,
+        "breakeven_level":     _participation_breakeven(terms),
+        "up_capture":          up_capture,
+        "dn_capture":          dn_capture,
     }
 
 
@@ -705,6 +750,10 @@ def _participation_payoff(perf_paths, terms, obs_steps, t_maturity, n_obs) -> di
         "prob_rescued":             0.0,
         "loss_given_knock_in":      float(irr[loss].mean()) if loss.any() else float("nan"),
         "avg_time_to_autocall":     None,
+        # Final basket per path — surfaced so the API can send a downsample to the
+        # client, which recomputes redemption (via the TS mirror) for the payoff-
+        # profile distribution overlay and the what-if sensitivity table.
+        "final_basket":         B,
         **_participation_stats(R, terms, B),
     }
 

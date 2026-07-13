@@ -607,8 +607,19 @@ def _mc_summary(sf: dict, note: dict, terms: NoteTerms) -> dict:
         "loss_given_knock_in", "prob_maturity", "prob_rescued",
         "prob_barrier_event", "avg_time_to_autocall",
         # participation-only (None on Phoenix → the client ignores them)
-        "prob_above_par", "prob_at_cap", "prob_knocked_out", "expected_gain", "p5_redemption")}
+        "prob_above_par", "prob_below_par", "prob_at_cap", "prob_knocked_out",
+        "expected_gain", "expected_redemption", "p5_redemption", "p95_redemption",
+        "cvar5_redemption", "breakeven_level", "up_capture", "dn_capture")}
     summary["note_type"] = getattr(terms, "note_type", "phoenix")
+    # For a Participation run, send a downsample of the final-basket levels so the
+    # client can redraw the payoff-profile distribution overlay and recompute the
+    # what-if table (rate/cap/protection) instantly via the TS redemption mirror —
+    # no re-simulation. ~2000 points (stride subsample; paths are already unordered).
+    _fb = note.get("final_basket")
+    if _fb is not None:
+        _fb = np.asarray(_fb, dtype=float)
+        stride = max(1, len(_fb) // 4000)
+        summary["final_basket_sample"] = [round(float(x), 5) for x in _fb[::stride][:4000]]
     summary["n_paths"] = int(len(note["annualized_returns"]))   # 2×n_paths (antithetic)
     summary["engine"]  = eng_used
     summary["assets"]  = asset_names

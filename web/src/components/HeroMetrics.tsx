@@ -61,16 +61,20 @@ export default function HeroMetrics({ summary }: { summary: SimSummary }) {
     const belowPar = summary.prob_knock_in_total ?? 0
     const p5 = summary.p5_redemption ?? 1
     const ret: Card[] = [
-      { label: t('expected_redemption'), value: summary.expected_nominal_payout ?? 1, format: pctNum(1), unit: '%', tip: t('tip_expected_redemption'), tone: 'accent' },
+      { label: t('expected_redemption'), value: summary.expected_redemption ?? summary.expected_nominal_payout ?? 1, format: pctNum(1), unit: '%', tip: t('tip_expected_redemption'), tone: 'accent' },
       { label: t('expected_irr'), value: irr, format: pctNum(2), unit: '%', tip: t('tip_expected_irr'), tone: irr >= 0 ? 'accent' : 'bad' },
       { label: t('expected_gain'), value: summary.expected_gain ?? 0, format: pctNum(2), unit: '%', tip: t('tip_expected_gain'), tone: 'plain' },
+      ...(summary.up_capture != null ? [{ label: t('upside_capture'), value: summary.up_capture, format: pctNum(0), unit: '%', tip: t('tip_upside_capture'), tone: 'plain' as const }] : []),
     ]
+    const cvar = summary.cvar5_redemption ?? p5
     const rsk: Card[] = [
       { label: t('p_below_par'), value: belowPar, format: pctNum(belowPar < 0.1 ? 2 : 1), unit: '%', tip: t('tip_p_below_par'), tone: belowPar <= 0.15 ? 'good' : 'bad' },
       { label: t('p_above_par'), value: summary.prob_above_par ?? 0, format: pctNum(1), unit: '%', tip: t('tip_p_above_par'), tone: 'plain' },
       ...(summary.prob_at_cap != null ? [{ label: t('p_at_cap'), value: summary.prob_at_cap, format: pctNum(1), unit: '%', tip: t('tip_p_at_cap'), tone: 'plain' as const }] : []),
       ...(summary.prob_knocked_out != null ? [{ label: t('p_knocked_out'), value: summary.prob_knocked_out, format: pctNum(1), unit: '%', tip: t('tip_p_knocked_out'), tone: 'plain' as const }] : []),
       { label: t('p5_redemption'), value: p5, format: pctNum(1), unit: '%', tip: t('tip_p5_redemption'), tone: p5 >= 1 ? 'good' : 'bad' },
+      { label: t('expected_shortfall'), value: cvar, format: pctNum(1), unit: '%', tip: t('tip_expected_shortfall'), tone: cvar >= 1 ? 'good' : 'bad' },
+      ...(summary.dn_capture != null ? [{ label: t('downside_capture'), value: summary.dn_capture, format: pctNum(0), unit: '%', tip: t('tip_downside_capture'), tone: 'plain' as const }] : []),
     ]
     return (
       <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>

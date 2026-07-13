@@ -4,6 +4,8 @@ import { useI18n } from '../i18n/I18nProvider'
 import Panel from './Panel'
 import Figure from './Figure'
 import HeroMetrics from './HeroMetrics'
+import ParticipationProfile from './ParticipationProfile'
+import ParticipationWhatIf from './ParticipationWhatIf'
 import PathExplorer from './PathExplorer'
 import PathInspector from './PathInspector'
 import { AutocallByPeriodTable, CalibrationTable } from './MCTables'
@@ -47,6 +49,16 @@ export default function MonteCarloPanel({ result, terms }: { result: SimResult; 
           <Panel title={isPart ? t('redemption_distribution') : t('outcomes')} right={`${summary.n_paths.toLocaleString()} ${t('paths').toLowerCase()} · ${summary.engine}`} pad={14}>
             <div style={{ height: isPart ? CHART_H : 210 }}><Figure fig={figures.outcome} name={isPart ? 'redemption_distribution' : 'outcome_breakdown'} /></div>
           </Panel>
+          {isPart && (
+            <Panel title={t('sec_participation')} right={t('pp_curve_right')} pad={14}>
+              <ParticipationProfile terms={terms} summary={summary} />
+            </Panel>
+          )}
+          {isPart && summary.final_basket_sample?.length && (
+            <Panel title={t('whatif_title')} pad={14}>
+              <ParticipationWhatIf terms={terms} summary={summary} />
+            </Panel>
+          )}
           <Panel title={t('irr_distribution')} pad={14}>
             <div style={{ height: CHART_H }}><Figure fig={figures.irr_dist} name="irr_distribution" /></div>
           </Panel>

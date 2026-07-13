@@ -206,6 +206,22 @@ export const S: Dict = {
   pp_x_axis_period:   { en: 'Period-end level (% of period start)', es: 'Nivel al cierre del período (% del inicio del período)' },
   pp_y_axis:          { en: 'Redemption (% of notional)', es: 'Redención (% del nominal)' },
   pp_periodic_caption:{ en: 'Payoff of a single period — paid each reset, then the strike resets.', es: 'Pago de un solo período — se paga en cada reinicio y luego el strike se reinicia.' },
+  pp_breakeven:       { en: 'Breakeven', es: 'Punto de equilibrio' },
+  pp_curve_right:     { en: 'redemption vs final basket', es: 'redención vs cesta final' },
+  pp_dist_caption:    { en: 'Shaded strip = simulated final-basket distribution; band = p5–p95 redemption, dashed line = expected redemption.', es: 'Franja sombreada = distribución simulada de la cesta final; banda = redención p5–p95, línea punteada = redención esperada.' },
+  // What-if sensitivity
+  whatif_title:       { en: 'What-if', es: 'Simulación de escenarios' },
+  whatif_base:        { en: 'Priced', es: 'Actual' },
+  whatif_now:         { en: 'What-if', es: 'Escenario' },
+  whatif_reset:       { en: 'Reset', es: 'Restablecer' },
+  whatif_hint:        { en: 'Drag a lever to re-score the same simulated paths instantly — no re-run. These reshape the maturity payoff only.', es: 'Mueve una palanca para recalcular al instante sobre las mismas trayectorias simuladas — sin volver a ejecutar. Solo remodelan el pago al vencimiento.' },
+  // Participation analytics
+  expected_shortfall: { en: 'Expected shortfall', es: 'Pérdida esperada (CVaR)' },
+  tip_expected_shortfall: { en: 'Mean redemption over the worst 5% of scenarios (CVaR / expected shortfall).', es: 'Redención media en el peor 5% de escenarios (CVaR / pérdida esperada).' },
+  upside_capture:     { en: 'Upside capture', es: 'Captura al alza' },
+  tip_upside_capture: { en: 'Of the basket’s average gain in up scenarios, the fraction the note passes through (vs holding the underlying).', es: 'De la ganancia media de la cesta en escenarios al alza, la fracción que la nota traslada (vs mantener el subyacente).' },
+  downside_capture:   { en: 'Downside capture', es: 'Captura a la baja' },
+  tip_downside_capture: { en: 'Of the basket’s average loss in down scenarios, the fraction the note passes through (lower = better protection).', es: 'De la pérdida media de la cesta en escenarios a la baja, la fracción que la nota traslada (menor = mejor protección).' },
   // Participation hero metrics
   redemption_distribution: { en: 'Redemption distribution', es: 'Distribución de redención' },
   expected_redemption:{ en: 'Expected redemption', es: 'Redención esperada' },

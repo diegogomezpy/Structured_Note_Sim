@@ -106,10 +106,20 @@ export interface SimSummary {
   // structure type + participation-only metrics (null/absent on Phoenix)
   note_type?: 'phoenix' | 'reverse_conv' | 'growth_autocall' | 'participation' | 'custom'
   prob_above_par?: number | null
+  prob_below_par?: number | null
   prob_at_cap?: number | null
   prob_knocked_out?: number | null
   expected_gain?: number | null
+  expected_redemption?: number | null
   p5_redemption?: number | null
+  p95_redemption?: number | null
+  cvar5_redemption?: number | null
+  breakeven_level?: number | null
+  up_capture?: number | null
+  dn_capture?: number | null
+  // Downsampled final-basket levels (participation runs only) — powers the payoff
+  // diagram's distribution overlay and the client-side what-if recompute.
+  final_basket_sample?: number[]
 }
 
 export interface AssetFan {
