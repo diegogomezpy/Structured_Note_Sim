@@ -1,6 +1,6 @@
 # Multi-Asset Heston Simulator & Structured Note Engine
 
-A Python framework for calibrating, simulating, and pricing a **multi-asset Heston stochastic volatility model** against real market data, with a full structured product engine for **autocallable and structured notes** — Phoenix Memory, Reverse Convertible, Growth/Classic (step-down) autocalls, and Capital-Protected notes, with an optional One Star best-of overlay — on any basket of equity underlyings (single-asset notes supported).
+A Python framework for calibrating, simulating, and pricing a **multi-asset Heston stochastic volatility model** against real market data, with a full structured product engine for **autocallable and structured notes** — Phoenix Memory autocallables (memory coupons, a One Star best-of overlay, and an uncapped **Zenith** upside) and **Participation** notes — on any basket of equity underlyings (single-asset notes supported).
 
 Built as an internal tool and deployed as a single-page **React** web app backed by a **FastAPI** service, with a branded, bilingual PDF report.
 
@@ -14,9 +14,9 @@ The project covers the full quantitative workflow:
 
 1. **Calibration** — estimate Heston parameters and tail dependence from historical price data via method of moments
 2. **Simulation** — simulate correlated multi-asset paths under the physical measure with Milstein discretisation, antithetic variates, and a Student-t copula
-3. **Pricing** — evaluate autocallable note payoffs across all simulated scenarios with full memory coupon, guaranteed coupon, and growth-autocall premium support
-4. **Backtesting** — replay the note on every historical issue date using realized prices
-5. **Web app** — interactive bilingual (EN/ES) React single-page app (FastAPI backend) that frames the note through three lenses (simulate → backtest → live), with a setup page, live "Current Performance" tracking, and a branded one-click PDF report
+3. **Pricing** — evaluate the note payoff across every simulated scenario through one payoff engine covering two families: the **Phoenix** autocall waterfall (memory coupon, One-Star best-of overlay, uncapped **Zenith** upside on an in-the-money redemption) and the **Participation** note (composable downside × upside styles + a periodic cliquet mode)
+4. **Backtesting** — replay the note on every historical issue date using realized prices, through the same payoff engine
+5. **Web app** — interactive bilingual (EN/ES) React single-page app (FastAPI backend) that frames the note through six tabs — **Monte Carlo**, **Historical Backtest**, **Current Performance** (live), **Compare** (A/B two notes on shared paths), **Report** (branded one-click PDF), and **Batch** (many notes zipped) — with a setup page and live barrier tracking
 
 ---
 
@@ -28,7 +28,7 @@ The project covers the full quantitative workflow:
 │   ├── calibrator.py          #   Historical Heston calibration pipeline
 │   ├── simulator.py           #   Multi-asset Heston Monte Carlo engine (run(engine=...))
 │   ├── simulator_cpp.py       #   Thin wrapper over the optional compiled C++ engine
-│   ├── note.py                #   NoteTerms dataclass + vectorized payoff engine
+│   ├── note.py                #   NoteTerms dataclass + vectorized payoff engine (Phoenix + Participation)
 │   ├── note_description.py    #   Natural-language note summary generator
 │   ├── backtest.py            #   Historical backtest using realized prices
 │   └── __init__.py            #   Public API: HestonParams, NoteTerms, price_note, ...
@@ -38,27 +38,36 @@ The project covers the full quantitative workflow:
 │   └── __init__.py
 │
 ├── api/                       # FastAPI backend — serves the JSON API *and* the built React bundle
-│   ├── main.py                #   Routes (simulate, backtest, report, quotes, cover photos, ...)
-│   ├── engine.py              #   Wires core/ + data/ → JSON for the UI; reuses app/ figures + PDF
+│   ├── main.py                #   Routes (simulate, backtest, compare, report, batch, quotes, cover photos, ...)
+│   ├── engine.py              #   Wires core/ + data/ → JSON for the UI; pluggable in-memory/Redis run store
 │   ├── requirements.txt       #   fastapi + uvicorn (quant deps live in the root requirements.txt)
 │   └── __init__.py
 │
 ├── app/                       # Quant-only helpers shared by the API (no UI framework)
 │   ├── charts.py              #   All Plotly figure builders as pure functions (→ JSON)
 │   ├── pdf_report.py          #   Branded bilingual PDF generator (fpdf2 + kaleido)
+│   ├── cover_photos.py        #   Sector → Pexels cover-photo taxonomy (data only; network calls stay in api/)
 │   ├── translations.py        #   Bilingual string registry (EN/ES) — PDF + chart labels
 │   ├── underlyings.py         #   Selectable ticker universe + logo maps
 │   └── __init__.py
 │
 ├── web/                       # React + TypeScript + Vite single-page front-end
 │   ├── src/                   #   App.tsx, components/, lib/, i18n/, theme/, api/
+│   │                          #     tab panels: MonteCarloPanel, BacktestPanel, LivePanel,
+│   │                          #     ComparePanel, ReportPanel, BatchReportPanel (+ SectionTree)
+│   │                          #     lib: participation, noteDescription, reportSections,
+│   │                          #     batchReport, plotly (custom bundle), localFolder
 │   ├── public/
 │   ├── package.json
 │   └── vite.config.ts         #   dev server proxies /api → http://localhost:8010
 │
-├── note_configs/             # 13 ready-to-use JSON term sheets (load in the app)
-│                             #   HSBC ×2, BBVA, Citi, Santander ×3, Barclays,
-│                             #   BNP Paribas, Julius Baer, + 3 Silex thematic
+├── note_configs/             # 16 ready-to-use JSON term sheets (load in the app)
+│                             #   HSBC ×2, BBVA, Citi, Santander ×3, Barclays, BNP Paribas,
+│                             #   Julius Baer, 2 Participation (cliquet + growth),
+│                             #   4 Silex thematic (consumer / services / One-Star / Zenith)
+├── tests/                    # pytest quant-core suite (run by CI)
+│   ├── conftest.py
+│   └── test_note.py          #   payoff-engine coverage (Phoenix, One-Star, Zenith, Participation)
 ├── branding/                 # Firm branding JSON + bundled ticker logos
 │   ├── branding_example.json #   documented template (all keys)
 │   └── ticker_logos/         #   optional local PNG logos
@@ -73,7 +82,8 @@ The project covers the full quantitative workflow:
 │   └── audit_tail.py         # Pretty-print the Cloud Run generation audit trail
 │
 ├── design_lang/              # Design-system reference (Mercator tokens + page snapshots)
-├── Dockerfile                # Single-image build: Vite bundle + C++ wheel + FastAPI runtime
+├── .github/workflows/        # CI gate (ci.yml: web build+lint, python syntax + pytest) + wheels.yml
+├── Dockerfile                # Single-image build: Vite bundle + C++ wheel + Chrome-for-Testing + FastAPI runtime
 ├── requirements.txt          # Quant / runtime Python deps
 └── README.md
 ```
@@ -151,7 +161,7 @@ All parameters are estimated from historical daily **adjusted** close prices (to
 |------|-----------|--------|
 | 1 | Data loading | CSV / yfinance / DataFrame |
 | 2 | Return construction | 1-day $r_1$ (RV, leverage); 2-day $r_2$ (correlation) |
-| 3 | $\theta$ | Sample variance of $r_1$, annualised |
+| 3 | $\theta$ | Mean of the rolling RV series (long-run variance) |
 | 4 | $V_0$ | Most recent 21-day rolling realised variance |
 | 5 | $\kappa$ | AR(1) of RV series: $\kappa = -\log(\hat\phi)/dt$ |
 | 6 | $\xi$ | Std of RV increments normalised by $\sqrt{\theta \cdot dt}$ |
@@ -171,16 +181,30 @@ All parameters are estimated from historical daily **adjusted** close prices (to
 
 ### Supported Note Types
 
-The `NoteTerms` dataclass captures the full specification of an autocallable note. A single engine (`price_note()`) covers all variants below — the differences are entirely in the configured fields. All parameters are configurable and JSON-serialisable.
+The `NoteTerms` dataclass captures the full specification of a note. A single engine (`price_note()`) covers every variant below — the differences are entirely in the configured fields. All parameters are configurable and JSON-serialisable.
 
-- **Phoenix Memory** — periodic coupon paid when the basket clears `coupon_barrier`, missed coupons accumulate (`memory=True`).
-- **Reverse Convertible** — guaranteed coupon: set `coupon_barrier=0.0` so it pays every period regardless of level.
-- **Growth / Classic (step-down) Autocall** — no periodic coupon; an accrued premium is paid only at autocall, and the autocall barrier steps down over time (`autocall_step_down`, `autocall_floor`, `coupon_at_autocall_only`).
-- **Capital Protected** — a standalone payoff that skips the entire autocall/coupon/KI waterfall: redemption is `clip(worst-of, capital_guarantee, 1 + upside_cap)`.
-- **One Star overlay** — orthogonal to the above: a single underlying at or above `one_star_level` satisfies the coupon, autocall, **and** final-redemption conditions on its own (BNP-style; also models the BBVA "Barrier and Knock-in" rescue).
+`note_type` (`phoenix` / `reverse_conv` / `growth_autocall` / `participation` / `custom`) is an **explicit stored field** that drives the setup menu, the payoff branch, the structure diagram and the prose. **Only two families are currently selectable in the UI: `phoenix` and `participation`.** `reverse_conv`, `growth_autocall` and `custom` are **parked** — kept in the `NoteType` union and still priced (so existing configs load), but removed from the picker until each is redesigned with its own menus. `from_dict` **infers** `note_type` for configs that predate the field, so legacy JSON still loads.
+
+**Phoenix family** — all three ride the one Phoenix waterfall in `price_note()`; the type is a menu/label distinction, the behaviour is set by fields:
+
+- **Phoenix Memory** — periodic coupon paid when the basket clears `coupon_barrier`; missed coupons accumulate (`memory=True`).
+- **Reverse Convertible** *(parked in UI)* — guaranteed coupon: `coupon_barrier=0.0`, no memory, so it pays every period regardless of level.
+- **Growth / Classic (step-down) Autocall** *(parked in UI)* — no periodic coupon; an accrued premium is paid only at autocall (`coupon_at_autocall_only`), and the autocall barrier steps down over time (`autocall_step_down`, `autocall_floor`).
+
+**Participation note** (`note_type="participation"`, or legacy `capital_guarantee>0`) — a standalone **maturity-only** payoff that skips the entire coupon/autocall/knock-in waterfall (`_participation_payoff` → `_participation_redemption`). It composes **one downside style** with **one upside style** around `participation_strike`:
+
+- downside (`participation_downside`): `full` (flat floor at `protection_level`, par when ≥1) · `buffer` (par down to `protection_level`, then 1:1 loss below) · `airbag` (par down to the barrier, then geared `B/protection_level` below) · `bear` (participate as the basket falls below the strike, floored above it — the upside style is ignored).
+- upside (`participation_upside`): `linear` (`participation_rate·(B−strike)`, optional `upside_cap`) · `shark_fin` (participate up to `knockout_level`, else the flat `knockout_payout`; European/at-maturity KO) · `digital` (fixed `digital_payout` if `B ≥ strike`).
+
+`participation_periodic=True` switches to a **cliquet / ratchet** mode: each observation is a self-contained one-period participation note (strike reset to par, `period_cap` as the cap), and the per-period P&L is summed with capital rolling at par.
+
+**Zenith** (`zenith=True`) — an overlay on the Phoenix waterfall giving **worst-of upside participation on an in-the-money redemption**. Any redemption at or above the initial level (an autocall, or a non-loss maturity with worst-of ≥ 100%) pays `principal_protection + participation_rate·max(0, WoF−1)` on top of par + coupon, capped by `upside_cap` (`None` = uncapped, the "no CAP" case). The capital-loss branch and coupons/memory are unchanged.
+
+**One Star overlay** (`one_star_level`) — a best-of OR-overlay orthogonal to the above. When set, its **final-redemption rescue is always active**: a single underlying ≥ `one_star_level` at maturity redeems capital at par even if the worst-of breached the knock-in (BBVA "Barrier and Knock-in"). The `one_star_coupon` / `one_star_autocall` flags (both default `False`) extend the same best-of overlay to the periodic coupon / autocall checks (BNP-style One Star). `null` = off, plain worst-of throughout.
 
 | Parameter | Description | Default |
 |-----------|-------------|---------|
+| `note_type` | Structure family (`phoenix` / `participation` selectable; `reverse_conv` / `growth_autocall` / `custom` parked) | `phoenix` |
 | `maturity` | Note tenor in years | 1.0 |
 | `payment_freq` | Observation frequency (`monthly`/`quarterly`/`semi-annual`/`annual`) | `quarterly` |
 | `coupon_pa` | Annualised coupon rate (e.g. `0.10` = 10% p.a.) | 0.10 |
@@ -192,61 +216,85 @@ The `NoteTerms` dataclass captures the full specification of an autocallable not
 | `memory` | Accumulate missed coupons (Phoenix mechanic) | True |
 | `coupon_basket` | `worst_of` / `best_of` / `average` | `worst_of` |
 | `autocall_basket` | `worst_of` / `best_of` / `average` | `worst_of` |
-| `one_star_level` | Best-of OR-overlay level — one underlying ≥ this satisfies coupon / autocall / redemption; `null` = off | `None` |
+| `one_star_level` | Best-of OR-overlay level; one underlying ≥ this rescues final redemption; `null` = off | `None` |
+| `one_star_coupon` | One Star best-of also satisfies the coupon barrier (periodic) | False |
+| `one_star_autocall` | One Star best-of also forces the autocall trigger (periodic) | False |
 | `autocall_step_down` | Per-period decrement of the autocall barrier (0 = constant) | 0.0 |
 | `autocall_floor` | Minimum autocall barrier under step-down | `None` |
 | `coupon_at_autocall_only` | No periodic coupon; accrued premium paid as a lump at autocall | False |
-| `capital_guarantee` | Capital-Protected guaranteed redemption (e.g. `1.00`); activates the standalone CP payoff | `None` |
-| `upside_cap` | Maximum redemption above par under CP (e.g. `0.15` = 1.15 cap) | `None` |
+| `zenith` | Uncapped worst-of upside participation on an in-the-money redemption | False |
+| `upside_cap` | Cap on redemption above par; also caps Zenith and participation linear/shark-fin upside (e.g. `0.15` = 1.15 cap) | `None` |
+| `capital_guarantee` | **Legacy** CP guarantee — migrated to `protection_level` + `note_type="participation"` | `None` |
 | `issuer` | Issuing bank, display only (e.g. `"BBVA"`) — shows a logo in the app | `""` |
 | `issuer_description` / `issuer_rating_sp` / `_moody` / `_fitch` | Optional issuer profile for the PDF "Issuer Information" section | `""` |
 | `tickers` | `{yf_symbol: display_name}` — stored in JSON config | `{}` |
 | `issue_date` | `"YYYY-MM-DD"` — enables Current Performance tab when set | `None` |
 
+**Participation-specific fields** (used only when `note_type="participation"`):
+
+| Parameter | Description | Default |
+|-----------|-------------|---------|
+| `participation_downside` | `full` / `buffer` / `airbag` / `bear` | `full` |
+| `participation_upside` | `linear` / `shark_fin` / `digital` | `linear` |
+| `participation_basket` | Basket applied to the final level (`worst_of` / `best_of` / `average`) | `worst_of` |
+| `protection_level` | Capital floor / buffer level / airbag barrier (fraction of initial) | 1.0 |
+| `participation_rate` | Upside (or downside, for `bear`) multiplier; also the Zenith rate | 1.0 |
+| `participation_strike` | Level from which participation is measured | 1.0 |
+| `knockout_level` | Shark-fin: upside knocks out above this final level | `None` |
+| `knockout_payout` | Shark-fin: flat redemption above the knock-out (1.0 = par) | 1.0 |
+| `digital_payout` | Digital: fixed extra return if final ≥ strike (e.g. `0.10` = +10%) | 0.0 |
+| `participation_periodic` | Cliquet mode — reset strike each period, sum per-period P&L | False |
+| `period_cap` | Per-period cap in cliquet mode (`None` = uncapped) | `None` |
+
 > **Derived fields** (never stored, always computed): `n_obs = maturity × periods_per_year`, `coupon_rate = coupon_pa / periods_per_year`.
 >
-> **Legacy fields** `final_basket` + `final_redemption_barrier` are auto-migrated to `one_star_level` by `NoteTerms.from_dict` (best-of → the barrier level; otherwise off).
+> **Legacy fields** `final_basket` + `final_redemption_barrier` are auto-migrated to `one_star_level` by `NoteTerms.from_dict` (best-of → the barrier level; otherwise off); a positive `capital_guarantee` is migrated to `note_type="participation"` + `protection_level`.
 
 ### Payoff Logic
 
 **At each observation period $j$:**
 
-- **Coupon:** if `coupon_basket ≥ coupon_barrier`, pay `coupon_rate × (pending_periods + 1)` if memory, else `coupon_rate`. With `coupon_barrier = 0.0` this becomes a guaranteed coupon (Reverse Convertible).
-- **Autocall** (from `autocall_start_period`): if `autocall_basket ≥ autocall_barrier_schedule[j]`, redeem at par. The barrier is constant unless `autocall_step_down > 0`, in which case it declines each period (floored at `autocall_floor`).
+- **Coupon:** if `coupon_basket ≥ coupon_barrier`, pay `coupon_rate × (pending_periods + 1)` if memory, else `coupon_rate`. With `coupon_barrier = 0.0` this becomes a guaranteed coupon (Reverse Convertible). With `one_star_coupon`, a single underlying ≥ `one_star_level` also pays the coupon.
+- **Autocall** (from `autocall_start_period`): if `autocall_basket ≥ autocall_barrier_schedule[j]`, redeem at par. The barrier is constant unless `autocall_step_down > 0`, in which case it declines each period (floored at `autocall_floor`). With `one_star_autocall`, a single underlying ≥ `one_star_level` also forces the call.
 
 **Growth / Classic autocall** (`coupon_at_autocall_only = True`): no periodic coupon is paid. Instead an accrued premium of `coupon_rate × j` is paid as a lump **only** when the note autocalls at period $j$ (zero if held to maturity).
 
 **At maturity (if not autocalled):**
 
-- **One Star rescue:** if `one_star_level` is set and the best performer ≥ `one_star_level` → redeem at `principal_protection` (par) regardless of the KI
-- **Capital loss:** if `worst_of_final < knock_in_barrier` AND not rescued → cash-equivalent physical delivery: payout = worst-of final performance
-- **Par redemption:** otherwise → `principal_protection`
+- **One Star rescue:** if `one_star_level` is set and the best performer ≥ `one_star_level` → redeem at `principal_protection` (par) regardless of the KI.
+- **Capital loss:** if `worst_of_final < knock_in_barrier` AND not rescued → cash-equivalent physical delivery: payout = worst-of final performance.
+- **Par redemption:** otherwise → `principal_protection`.
 
-**Capital-Protected note** (`capital_guarantee` set): a standalone branch that bypasses the waterfall entirely — redemption is `clip(worst_of_final, capital_guarantee, 1 + upside_cap)`, no autocall, coupons, or KI.
+**Zenith redemption** (`zenith = True`): any redemption at or above the initial level pays the worst-of upside on top of par — `principal_protection + participation_rate·max(0, WoF−1)`, capped by `upside_cap` (`None` = uncapped). This applies to an autocall (worst-of at the call date, which is ≥ `autocall_barrier`) **and** to a non-loss maturity (worst-of at final valuation; below par the upside term is zero, so it reduces to par). The capital-loss (1:1) branch and coupons/memory are unchanged.
+
+**Participation note** (`note_type = "participation"`, or legacy `capital_guarantee > 0`): a standalone branch (`_participation_payoff`) that bypasses the coupon/autocall/KI waterfall entirely. The final basket level `B` (`participation_basket`) is run through `_participation_redemption`, composing one downside style (`full` / `buffer` / `airbag` / `bear`) with one upside style (`linear` / `shark_fin` / `digital`) around `participation_strike`; `upside_cap` caps the upside. `participation_periodic = True` switches to cliquet mode: each observation is a self-contained one-period participation note (strike reset to par, `period_cap` as the cap), and the per-period P&L is summed with capital rolling at par. `_participation_redemption` has a TS mirror in `web/src/lib/participation.ts` that feeds the payoff-profile diagram.
 
 **IRR:** simple annualisation — `total_return / t_held` — consistent with how structured note coupons are quoted.
 
 ### Reference Term Sheets
 
-Thirteen term sheets are included as ready-to-use JSON configs (load any of them on the setup page):
+Sixteen term sheets are included as ready-to-use JSON configs (load any of them on the setup page):
 
 | File | Issuer | Type | Underlyings | Tenor | Coupon | KI |
 |------|--------|------|-------------|-------|--------|-----|
 | `hsbc_xs3376563584.json` | HSBC | Phoenix Memory | GS / JPM / MS | 24M monthly | 10% p.a. | 55% European |
-| `bbva_xs3378405743.json` | BBVA | Phoenix (One Star rescue) | NVDA / PLTR / TSLA | 18M quarterly | 15% p.a. | 50% European |
+| `bbva_xs3378405743.json` | BBVA | Phoenix One Star | NVDA / PLTR / TSLA | 18M quarterly | 15% p.a. | 50% European |
 | `citi_xs3096699163.json` | Citi | Growth autocall (step-down) | GOOGL / AMZN / AAPL | 2Y quarterly | 12% p.a. premium | 53.7% European |
 | `santander_xs3242406752.json` | Santander | Phoenix Memory | C / GLE.PA / MS | 2Y quarterly | 10.6% p.a. | 50% European |
 | `santander_xs3242417106.json` | Santander | Phoenix Memory | C / GLE.PA / MS | 2Y quarterly | 10.6% p.a. | 50% European |
 | `santander_C_GLE.PA_MS.json` | Santander | Phoenix Memory | C / GLE.PA / MS | 2Y quarterly | 12.35% p.a. | 50% European |
-| `hsbc_xs3287776739.json` | HSBC | Phoenix (single asset) | AMD | 18M quarterly | 18% p.a. | 55.5% European |
+| `hsbc_xs3287776739.json` | HSBC | Phoenix Memory (single asset) | AMD | 18M quarterly | 18% p.a. | 55.5% European |
 | `barclays_xs3305367727.json` | Barclays | Reverse Convertible | ORCL / ADBE | 1Y monthly | 15.25% p.a. guaranteed | 50% European |
 | `bnp_paribas_pr00529720.json` | BNP Paribas | Phoenix One Star | DELL / IBM / MSFT | 1Y quarterly | 16% p.a. | 50% European |
 | `julius_baer_pr00529635.json` | Julius Baer | Phoenix Memory | DELL / IBM / MSFT | 1Y quarterly | 28% p.a. | 50% European |
 | `silex_autocall_consumo_wmt_mo_pm.json` | Silex (indic.) | Phoenix Memory | WMT / MO / PM | 2Y quarterly | 10.6% p.a. | 60% European |
 | `silex_autocall_servicios_nee_vz_etr.json` | Silex (indic.) | Phoenix Memory | NEE / VZ / ETR | 2Y quarterly | 10.5% p.a. | 60% European |
 | `silex_autocall_onestar_nflx_googl_meta.json` | Silex (indic.) | Phoenix One Star | NFLX / GOOGL / META | 2Y quarterly | 12.05% p.a. | 60% European |
+| `silex_autocall_zenith_wmt_tgt_dg.json` | Silex (indic.) | Zenith Phoenix | WMT / TGT / DG | 2Y quarterly | 11.7% p.a. | 70% European |
+| `participation_growth_spx_sx5e.json` | Generic Bank | Participation (full × linear) | SPX / SX5E | 3Y | — (130% up, +60% cap) | none |
+| `participation_cliquet_sx5e.json` | Generic Bank | Participation (cliquet) | SX5E | 3Y annual | — (annual, 8% cap) | none |
 
-The Citi note demonstrates the step-down barrier (100% declining 3%/period from obs 3, floored at 88%) with a 12% p.a. premium paid only at autocall. The Barclays note pays a guaranteed coupon every month (`coupon_barrier = 0.0`). The BNP One Star note redeems at par if any single underlying ≥ 100% at maturity even when the worst-of breached the KI. The three `silex_*` notes are thematic indicative baskets (defensive consumer, utilities & telecom, and big-tech with a One Star overlay).
+The Citi note demonstrates the step-down barrier (100% declining 3%/period from obs 3, floored at 88%) with a 12% p.a. premium paid only at autocall. The Barclays note pays a guaranteed coupon every month (`coupon_barrier = 0.0`). The BNP One Star note lifts coupon, autocall **and** final redemption when any single underlying ≥ 100% (`one_star_coupon` / `one_star_autocall` both on), whereas the BBVA and Silex One Star notes apply the overlay to the final-redemption rescue only. The four `silex_*` notes are thematic indicative baskets — defensive consumer (WMT/MO/PM), utilities & telecom (NEE/VZ/ETR), big-tech with a One Star overlay (NFLX/GOOGL/META), and a **Zenith** consumer note (WMT/TGT/DG) where an in-the-money worst-of adds uncapped upside participation on redemption. The two `participation_*` notes exercise the maturity-only Participation family: capital-protected growth (par floor × 130% linear upside capped at +60%) and an annual cliquet (100% floor, 8% per-period cap).
 
 ---
 
@@ -361,16 +409,42 @@ see [Deployment](#deployment).
 
 ### Setup Page
 
-On first load, a stepped full-page setup form collects:
-- **Underlying selection** from ~75 predefined tickers (equity indices, US large caps, European stocks, commodity ETFs) or any custom yfinance symbol — one or more underlyings (single-asset notes are supported)
-- **Note terms** — maturity, coupons, barriers, basket types, and issuer
-- **JSON config** — load a term-sheet config (upload a file, or connect a local folder of configs that are auto-detected) to populate all fields including underlyings at once. Advanced fields without a UI widget (step-down barrier, growth-autocall premium) are carried through from the loaded config.
-- **Custom logos** — optionally upload your own company logos for the underlyings, used in the app cards and the PDF when a favicon is a poor fit
-- **Save / download** — export the current configuration as a JSON file, or save it back into a connected folder
+The app opens on a **blank note** (nothing is auto-loaded) with a persistent
+left-hand **setup rail** and, on the first ever visit, a guided tour that can be
+reopened any time from "How it works". The rail holds the most-edited essentials;
+the full option set lives in a **settings overlay** modal opened from the rail
+(numbered groups: note type, underlyings, schedule/coupon, protection, autocall,
+metadata, per-underlying details, simulation engine). Every control carries an
+inline tooltip explaining what it does.
+
+- **Note-type family** — a segmented toggle switches structure family and swaps the
+  relevant fields. Two families are currently selectable: **Phoenix**
+  (coupon/autocall/knock-in) and **Participation** (a maturity-level payoff that
+  composes one downside style × one upside style, with an optional cliquet/periodic
+  reset). Other families still load and price but aren't offered in the picker.
+- **Underlying selection** — 53 predefined tickers (equity indices, US financials,
+  US large-cap tech, and European blue chips) or any custom yfinance symbol; one or
+  more underlyings, with single-asset notes supported.
+- **Note terms** — maturity, coupons, barriers, basket types, memory, One Star /
+  Zenith overlays, and issuer metadata, edited inline in the rail or in full in the
+  settings overlay.
+- **JSON config** — load a term-sheet config (upload a file, pick a bundled example,
+  or connect a local folder of configs that are auto-detected) to populate every
+  field at once, including underlyings. Advanced fields without a dedicated widget
+  (step-down barrier, growth-autocall premium, …) are carried through from the
+  loaded config.
+- **Custom logos** — optionally upload your own company logos for the underlyings,
+  used in the app cards and the PDF when a favicon is a poor fit.
+- **Save / download** — export the current configuration as a JSON file, or (with a
+  writable folder connected) save it straight back into that folder, renaming the
+  file in place when the note is renamed.
 
 ### Results
 
-After confirming setup, the results view frames the note through three **analysis lenses** — the same note seen forward, backward, and live. Each tab opens with a consistent intro band stating the question it answers:
+After confirming setup, the results view frames the note through three **analysis
+lenses** — the same note seen forward, backward, and live — plus tabs to compare
+two variants and to export branded PDFs. Each analysis tab opens with a consistent
+intro band stating the question it answers.
 
 **Monte Carlo — _"what could happen?"_**
 - Summary metrics — expected IRR, total return, expected coupon, P(autocalled), P(knock-in), and the autocall breakdown by period
@@ -385,14 +459,27 @@ After confirming setup, the results view frames the note through three **analysi
 **Current Performance — _"what is happening now?"_** (notes with a past `issue_date`)
 - Live worst-of level vs. barriers, per-asset performance with logos, coupons paid to date, and progress through the note's life
 
-Across all three:
+**Compare — _A/B, two variants on shared paths_**
+- Seed a Variant B by duplicating the current note or loading a saved config, then edit it through the same settings overlay. The backend prices Monte Carlo for A and B on **one shared simulation** whenever they share underlyings + maturity, so the differences are pure term effects — a provenance banner states whether the run used shared or independent paths.
+- A difference table (A / B / Δ, colour-signed), overlay IRR and outcome charts, and side-by-side structure diagrams. The historical backtest and current-performance comparisons are run on demand, each as side-by-side metric tables and charts.
+- The comparison can be embedded in the PDF from the Report tab.
 
-- **A/B comparison** — a **Compare** tab prices two variants of a note (same underlyings, different terms) on the **same simulated paths**, with side-by-side Monte Carlo, backtest and live metrics plus a difference table and overlay charts; the comparison can be embedded in the PDF.
-- **PDF report** — a dedicated **Report** tab builds a branded, bilingual one-click export. Audience **presets** (Client, Term sheet, IC, Analyst, Quant…) and a fine-grained section tree pick exactly which sections and figures to include, and the report can be generated **without running the simulation first** (a terms-only report needs no run; analytical sections use the latest run). The PDF mirrors the three-lens structure with numbered part dividers and a grouped table of contents, and an in-app **tutorial** walks through the builder.
-- **Batch reports** — a **Batch** tab generates reports for several notes in one pass, without loading each on the dashboard. Add notes from the bundled configs or a connected folder, pick a per-note **scope** (note details / + Monte Carlo / full) and **image mode** (auto industry photos / none), and download them all as a single **ZIP** — one standalone PDF per note, with per-note status so a single failure doesn't sink the batch.
+**Report — _branded bilingual PDF_**
+- A dedicated tab builds a branded one-click export. Audience **presets** (Full, Client, Term sheet, Marketing, IC, Analyst, Quant, plus Custom) and a fine-grained **section tree** grouped by lens (Note details / Monte Carlo / Historical backtest / Current performance) pick exactly which sections and figures to include; a custom selection persists across sessions.
+- The report can be generated **without running the simulation first** — a terms-only report needs no run, while analytical sections use the latest run. The PDF mirrors the three-lens structure with numbered part dividers and a grouped table of contents, and can carry through the A/B comparison when a Variant B exists. An in-app **tutorial** walks through the builder.
+- The in-app builder renders **synchronously** in the request (Cloud Run only allocates CPU while a request is in flight); async start/poll endpoints (`/api/report/start`, `/api/report/status`, `/api/report/result`) also exist for always-on deployments.
+
+**Batch — _many notes, one ZIP_**
+- Generate reports for several notes in one pass without loading each on the dashboard. Add notes from the current note, the bundled configs, or a connected folder; tune each row independently — audience **preset**, exact **sections**, **language**, and **image mode** (auto sector-matched photos / choose photos / none).
+- One global branding config applies across the batch (each report rendered in its own language). Rows can be duplicated to make variants of the same note, with bulk select / duplicate / remove.
+- Every note renders to its own standalone PDF, zipped client-side into a single **ZIP**, with per-row status so a single failure doesn't sink the batch.
+
+Report styling (shared by the Report and Batch tabs):
+
 - **Branding** — per-firm colours, fonts, logos, cover/disclaimer text and selectable cover key-terms, driven by a `branding/branding_*.json` config (see `branding_example.json` for the full key set) or edited live in the Branding panel.
 - **Report photos** — an optional [Pexels](https://www.pexels.com/)-backed photo library (suggested by sector), plus your own uploads or a connected local image folder. The chosen, drag-reorderable pool drives the cover, the back page and the filler bands. The library needs a `PEXELS_API_KEY` on the server; it degrades cleanly without one (uploads/folders still work).
-- **Bilingual** — full EN/ES interface throughout the app and the report
+
+**Bilingual** — full EN/ES interface throughout the app and the report.
 
 ---
 
@@ -400,13 +487,28 @@ Across all three:
 
 The app ships as a **single Docker image** to **Google Cloud Run** at
 [structured-note-sim-doemm2affa-tl.a.run.app](https://structured-note-sim-doemm2affa-tl.a.run.app/),
-auto-deploying from `main` on every push. The [`Dockerfile`](Dockerfile) is a
-multi-stage build:
+auto-deploying from `main` on every push (gated by CI — see
+[API & runtime](#api--runtime)). The [`Dockerfile`](Dockerfile) is a
+three-stage build:
 
-1. **node** — builds the React/Vite front-end (`web/` → `web/dist`)
-2. **cpp-build** — compiles the optional C++ Heston engine into a portable wheel
+1. **web-build** (`node`) — builds the React/Vite front-end (`web/` → `web/dist`)
+2. **cpp-build** (`python` + Clang) — compiles the optional C++ Heston engine
+   into a portable wheel (`HESTON_NATIVE=OFF` drops `-march=native` so the binary
+   runs on any Cloud Run CPU)
 3. **python runtime** — `uvicorn` serves the FastAPI API *and* the built bundle
-   same-origin, with **chromium** bundled so kaleido can rasterise the PDF figures
+   same-origin
+
+**PDF figure rendering (kaleido → Chromium).** kaleido rasterises the Plotly
+figures by driving a headless browser. Debian's apt `chromium` proved unusable —
+its version drifts on every rebuild and one build (150.0.7871) crashed at launch
+(SIGTRAP) on Cloud Run, silently breaking every PDF. The image instead bakes in
+the **Chrome-for-Testing** build kaleido/choreographer is tested against, fetched
+at build time by `choreo_get_chrome`, and points kaleido at it through a small
+`--no-sandbox` wrapper (`BROWSER_PATH=/usr/local/bin/chromium-headless`). The apt
+`chromium` package is still installed, but **only** to pull in the shared
+libraries (fonts, nss, gbm, …) the browser needs — it is not the browser kaleido
+launches. `--no-sandbox` is safe here because Chromium only rasterises the app's
+own trusted Plotly JSON and runs as an unprivileged user.
 
 Run the production image locally:
 
@@ -431,14 +533,79 @@ Notes on running it reliably long-term:
   are stored compactly (float16 performance + precomputed percentile fan bands;
   the worst-of is derived on demand). Size the Cloud Run instance memory for the
   path counts you intend to allow.
-- **Optional config (env vars):** `PEXELS_API_KEY` enables the report photo
-  library (degrades cleanly without it); `SNSIM_GEOIP=off` disables IP
-  geolocation in the generation audit log (see [Provenance, attribution &
-  audit](#provenance-attribution--audit)). The compiled C++ engine is built into
-  the image, so `engine="cpp"` works in production and falls back to numpy if
-  absent.
 - **Cold starts:** an idle instance is scaled to zero; the first request after
   inactivity waits a few seconds for it to start. This is expected, not a failure.
+
+### Environment variables
+
+All optional — the app runs with none set.
+
+- **`PEXELS_API_KEY`** — enables the report photo library (sector-suggested cover
+  photos); degrades cleanly without it (uploads / connected folders still work).
+- **`SNSIM_GEOIP`** — set to `off` to disable IP geolocation in the generation
+  audit log (the line still logs the raw IP). See [Provenance, attribution &
+  audit](#provenance-attribution--audit).
+- **`REDIS_URL`** — opt-in **shared run store** for a multi-instance deploy. Unset
+  (the default), each instance keeps runs in-memory; set it and runs persist in
+  Redis so the path explorer / inspector / report survive load-balancing across
+  instances. Best-effort: if it's unreachable the app falls back to in-memory (see
+  [API & runtime](#api--runtime)).
+
+The compiled C++ engine is built into the image, so `engine="cpp"` works in
+production and falls back to numpy if ever absent.
+
+---
+
+## API & runtime
+
+The React SPA is **stateless on the wire**: it POSTs JSON to `/api/simulate`,
+`/api/backtest`, `/api/compare`, `/api/report`, … and gets JSON back — there is no
+server session cookie or shared client state. Server-side state lives only in
+`api/engine.py` (the run store + caches below).
+
+- **Uniform error contract.** Every failure returns the same shape —
+  `{"ok": false, "error": {"status": <int>, "message": <str>}}` — via app-wide
+  exception handlers (`HTTPException`, request-validation, and unhandled `500`),
+  instead of FastAPI's mix of `{detail: "…"}`, `{detail: [...]}` and bare 500s.
+  Success payloads are **unenveloped** (returned as-is), so the client reads one
+  error shape and raises a typed `ApiError` without per-endpoint churn.
+- **PDF report — sync and async.** `POST /api/report` builds the PDF synchronously
+  and streams it back; this is what the web client uses, because Cloud Run only
+  allocates CPU while a request is in flight (a background job would starve). An
+  async flow exists for always-allocated-CPU deploys: `POST /api/report/start`
+  returns a `job_id`, `GET /api/report/status/{id}` polls it, and
+  `GET /api/report/result/{id}` downloads the finished PDF. Jobs render in a small
+  background pool and are in-memory with a TTL.
+- **Pluggable run store (in-memory by default; Redis optional).** A `/api/simulate`
+  stores the compact per-run arrays and returns a `run_id` the path explorer,
+  inspector and report re-read without re-simulating. The default
+  `_InMemoryRunStore` is an LRU-bounded, lock-guarded dict (cap 8 runs). When
+  **`REDIS_URL` is set** (and only then) the store is `_RedisRunStore` — a shared
+  cross-instance store keying each pickled run under a 1-hour TTL — needed so a
+  follow-up call load-balanced to a different instance can still find its run.
+  Redis is **opt-in and off by default**, and best-effort: if `REDIS_URL` is unset
+  or unreachable the app transparently falls back to in-memory.
+- **Caches.** `load_prices` results are cached (1-hour TTL, matching the live
+  tab's refresh cadence), as are backtest results (keyed on tickers + terms),
+  quotes, and translations — the API has no Streamlit `@st.cache_data` layer, so
+  these stand in for it.
+- **Generation audit log.** `/api/simulate` and `/api/report` each write one
+  server-side line with a coarse best-effort geo (never embedded in the PDF);
+  `SNSIM_GEOIP=off` disables the geolocation. See [Provenance, attribution &
+  audit](#provenance-attribution--audit).
+
+### Continuous integration
+
+A GitHub Actions workflow ([`.github/workflows/ci.yml`](.github/workflows/ci.yml))
+gates every push and PR on the same checks the deploy runs, catching a break here
+rather than at Cloud Build (which would block the auto-deploy):
+
+- **web** — `npm ci` → `npm run lint` (oxlint) → `npm run build` (`tsc -b`
+  type-check + `vite build`), mirroring the Dockerfile's front-end build.
+- **python** — `py_compile` on every module (catches the syntax / f-string-version
+  breaks that would fail the image build without installing the heavy stack), then
+  the golden-value **quant-core `pytest` suite** (`tests/`, no network; `scipy` is
+  installed because importing `core.note` pulls in the calibrator).
 
 ---
 
@@ -510,11 +677,13 @@ deep-translator >= 1.11, < 2 # optional EN→ES machine translation of Yahoo des
 fpdf2 >= 2.8, < 3            # PDF report
 kaleido >= 1.3, < 2          # Plotly figure export for the PDF
 Pillow >= 12, < 13           # image handling in the PDF
+redis >= 5, < 7              # optional shared run store; only used when REDIS_URL is set
 fastapi >= 0.137, < 1        # api/requirements.txt
 uvicorn[standard] >= 0.49, < 1
 ```
 
-**Front-end** — React 19 + TypeScript + Vite + Plotly.js (see `web/package.json`).
+**Front-end** — React 19 + TypeScript + Vite + Plotly.js, with `jszip` for the
+Batch tab's multi-report ZIP download (see `web/package.json`).
 
 `PyMuPDF` is **not** a runtime dependency — it is only used by
 `scripts/verify_pdf.py` to rasterise PDFs for eyeballing. Install it ad hoc.
