@@ -30,7 +30,9 @@ _REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(_REPO))
 sys.path.insert(0, str(_REPO / "app"))
 
-from core.note import NoteTerms, price_note, replay_note          # noqa: E402
+from core.note import (NoteTerms, price_note, replay_note,        # noqa: E402
+                       _basket, _participation_redemption,
+                       _participation_breakeven)
 from core.calibrator import HestonCalibrator                      # noqa: E402
 from core.simulator import HestonMultiSimulator                   # noqa: E402
 from core.backtest import run_backtest, snapped_obs_dates         # noqa: E402
@@ -218,26 +220,50 @@ def sample_paths(run_id: str, *, sample: int = 400, seed: int = 7) -> dict | Non
     ap  = note.get("autocall_period")
     ki  = note.get("knock_in_triggered")   # price_note's key (was wrongly "knock_in_mask")
     irr = note.get("annualized_returns")
+    red = note.get("nominal_payoffs")      # per-path redemption (participation)
 
-    wof_sel = np.asarray(perf[idx]).min(axis=2)   # (k, N+1) worst-of per asset
+    _note_type = terms.get("note_type", "phoenix")
+    _is_part = _note_type == "participation"
+    # For a Participation note the payoff references the participation BASKET, not the
+    # worst-of — reduce along assets with the note's basket type so the fan matches.
+    _sel = np.asarray(perf[idx], dtype=np.float32)
+    if _is_part and terms.get("participation_basket") == "best_of":
+        line_sel = _sel.max(axis=2)
+    elif _is_part and terms.get("participation_basket") == "average":
+        line_sel = _sel.mean(axis=2)
+    else:
+        line_sel = _sel.min(axis=2)               # (k, N+1) worst-of / worst-of basket
     paths = []
     for j, i in enumerate(idx):
-        paths.append({
-            "wof": [round(float(wof_sel[j, c]), 4) for c in tcols],
+        row = {
+            "wof": [round(float(line_sel[j, c]), 4) for c in tcols],
             "ap":  int(ap[i])  if ap  is not None else 0,
             "ki":  bool(ki[i]) if ki  is not None else False,
             "irr": _f(irr[i])  if irr is not None else None,
-        })
+        }
+        if _is_part and red is not None:
+            row["red"] = _f(red[i])               # realised redemption (fraction of par)
+        paths.append(row)
+
+    if _is_part:
+        periodic = bool(terms.get("participation_periodic"))
+        prot = terms.get("protection_level")
+        floor = (min(float(prot), 1.0) if (not periodic and prot is not None
+                 and terms.get("participation_downside") != "bear") else None)
+        cap = ((1.0 + terms["upside_cap"]) if (not periodic and terms.get("upside_cap") is not None) else None)
+        barriers = {"participation": {"strike": _f(terms.get("participation_strike")),
+                                      "floor": _f(floor), "cap": _f(cap), "periodic": periodic}}
+    else:
+        barriers = {"knock_in": _f(terms.get("knock_in_barrier")),
+                    "autocall": _f(terms.get("autocall_barrier")),
+                    "coupon":   _f(terms.get("coupon_barrier"))}
     return {
         "t":        [round(float(t_grid[c]), 4) for c in tcols],
         "paths":    paths,
         "n_total":  int(P),
+        "note_type": _note_type,
         "obs_times": run.get("obs_times", []),
-        "barriers": {
-            "knock_in": _f(terms.get("knock_in_barrier")),
-            "autocall": _f(terms.get("autocall_barrier")),
-            "coupon":   _f(terms.get("coupon_barrier")),
-        },
+        "barriers": barriers,
     }
 
 
@@ -261,6 +287,14 @@ def _path_filter_matches(autocall_events, knock_in, total_returns, coupon_amount
         mask &= ac == 0
     elif outcome == "loss":
         mask &= (ac == 0) & ki
+    # Participation outcomes (no autocall) — filter on the redemption sign, i.e. the
+    # per-path total return: gain above par, flat at par, loss below par.
+    elif outcome == "part_gain":
+        mask &= ret > 1e-9
+    elif outcome == "part_par":
+        mask &= np.abs(ret) <= 1e-9
+    elif outcome == "part_loss":
+        mask &= ret < -1e-9
 
     if ki_choice == "yes":
         mask &= ki
@@ -337,12 +371,58 @@ def _build_path_marker_info(rows, autocall_q, n_obs, wof_levels, knock_in, terms
     return info
 
 
+def _participation_line_and_markers(asset_paths, obs_steps, terms, tr):
+    """For a Participation note the payoff references the participation BASKET (not
+    the worst-of), and there are no coupons / autocall / knock-in events. Return
+    ``(basket_line, marker_info)``:
+
+    - ``basket_line`` — the participation-basket trajectory over the full path (drawn
+      as the hero line in place of the worst-of).
+    - single-shot: a muted basket dot at each intermediate observation, and a final
+      redemption marker (green when redeemed ≥ par, red on a capital loss) reading
+      the realised redemption vs the final basket.
+    - cliquet: one marker per reset period showing that period's basket move and the
+      locked-in participation P&L (which can be negative under buffer/airbag/bear).
+    """
+    from dataclasses import replace
+    basket_line = _basket(np.asarray(asset_paths, dtype=float), terms.participation_basket)  # (N+1,)
+    B = np.asarray([float(basket_line[int(s)]) for s in obs_steps])                            # basket at each obs
+    info: list[dict] = []
+    if getattr(terms, "participation_periodic", False):
+        eff = replace(terms, participation_periodic=False,
+                      upside_cap=terms.period_cap, participation_strike=1.0)
+        prev = 1.0
+        for j, b in enumerate(B):
+            level = b / prev if prev else 1.0
+            inc = float(_participation_redemption(np.array([level]), eff)[0]) - 1.0
+            prev = b
+            kind = "part_gain" if inc > 1e-9 else ("part_loss" if inc < -1e-9 else "part_flat")
+            info.append({"text": tr("leg_part_reset", k=j + 1,
+                                    move=f"{level - 1:+.1%}", inc=f"{inc:+.2%}"),
+                         "kind": kind, "n": 1})
+    else:
+        for j, b in enumerate(B):
+            if j < len(B) - 1:
+                info.append({"text": tr("leg_part_hold", k=j + 1, b=f"{b:.0%}"),
+                             "kind": "part_hold", "n": 1})
+            else:
+                R = float(_participation_redemption(np.array([b]), terms)[0])
+                kind = "part_loss" if R < 1.0 - 1e-9 else "part_redeem"
+                info.append({"text": tr("leg_part_redeem", b=f"{b:.0%}", r=f"{R:.1%}"),
+                             "kind": kind, "n": 1})
+    return basket_line, info
+
+
 def _path_payload(worst_path, asset_paths, asset_names, obs_steps, autocall_q,
-                  marker_info, terms) -> dict:
+                  marker_info, terms, note_type="phoenix") -> dict:
     """Raw single-path data for the React inspector chart — per-asset + worst-of
     trajectories (truncated at the call, time-downsampled) plus observation markers
     and barriers. The client renders it in the app's own chart aesthetic, so the
-    inspector matches the rest of the UI instead of the Streamlit chart palette."""
+    inspector matches the rest of the UI instead of the Streamlit chart palette.
+
+    For a Participation note the ``worst_path`` passed in is actually the
+    participation-basket line, and the barriers carry the payoff reference levels
+    (strike / protection floor / cap) instead of knock-in / autocall."""
     worst_path  = np.asarray(worst_path)
     asset_paths = np.asarray(asset_paths)
     N1  = len(worst_path)
@@ -366,14 +446,31 @@ def _path_payload(worst_path, asset_paths, asset_names, obs_steps, autocall_q,
                         "text": marker_info[i]["text"], "kind": marker_info[i]["kind"],
                         "n": int(marker_info[i].get("n", 1))})
 
-    ac_sched = ([[int(s), float(lv)]
-                 for s, lv in zip(obs_steps, terms.autocall_barrier_schedule())]
-                if terms.autocall_step_down else None)
+    if note_type == "participation":
+        periodic = bool(getattr(terms, "participation_periodic", False))
+        prot = terms.protection_level
+        # The floor / cap reference the whole-basket redemption of a single-maturity
+        # note; a cliquet's per-period profile resets each period, so a single floor/
+        # cap over the cumulative basket would mislead — omit them there.
+        floor = (min(float(prot), 1.0)
+                 if (not periodic and prot is not None and terms.participation_downside != "bear")
+                 else None)
+        cap = ((1.0 + terms.upside_cap)
+               if (not periodic and terms.upside_cap is not None) else None)
+        barriers = {"knock_in": None, "autocall": None, "autocall_schedule": None,
+                    "participation": {"strike": _f(terms.participation_strike),
+                                      "floor": _f(floor), "cap": _f(cap),
+                                      "periodic": periodic}}
+    else:
+        ac_sched = ([[int(s), float(lv)]
+                     for s, lv in zip(obs_steps, terms.autocall_barrier_schedule())]
+                    if terms.autocall_step_down else None)
+        barriers = {"knock_in": _f(terms.knock_in_barrier),
+                    "autocall": _f(terms.autocall_barrier),
+                    "autocall_schedule": ac_sched}
     return {
         "t": cols, "series": series, "wof": wof, "markers": markers, "x_max": cut,
-        "barriers": {"knock_in": _f(terms.knock_in_barrier),
-                     "autocall": _f(terms.autocall_barrier),
-                     "autocall_schedule": ac_sched},
+        "barriers": barriers,
     }
 
 
@@ -412,8 +509,12 @@ def inspect_run(run_id: str, *, lang: str = "en", filters: dict | None = None,
         coupon_periods=f.get("coupon_periods"))
     M = int(len(matches))
 
+    _note_type = getattr(terms, "note_type", "phoenix")
+    _is_part = _note_type == "participation"
     base = {"n_total": int(P), "n_matched": M, "ret_range": ret_range,
-            "n_obs": int(n_obs), "coupon_available": coupon_m is not None}
+            "n_obs": int(n_obs), "coupon_available": (coupon_m is not None) and not _is_part,
+            "note_type": _note_type,
+            "participation_periodic": bool(getattr(terms, "participation_periodic", False))}
     if M == 0:
         return {**base, "position": 0, "path_index": None, "figure": None}
 
@@ -427,23 +528,31 @@ def inspect_run(run_id: str, *, lang: str = "en", filters: dict | None = None,
     autocall_q  = int(ac[pn])
     ki_pn       = bool(ki_arr[pn])
 
-    perf_obs    = asset_paths[obs_steps, :]
-    rows        = replay_note(perf_obs, terms)["rows"]
-    wof_levels  = [float(worst_path[s]) for s in obs_steps]
-    marker_info = _build_path_marker_info(rows, autocall_q, n_obs, wof_levels, ki_pn, terms, tr)
+    if _is_part:
+        line_path, marker_info = _participation_line_and_markers(asset_paths, obs_steps, terms, tr)
+        B_final = float(line_path[-1])
+        R_final = float(_participation_redemption(np.array([B_final]), terms)[0])
+        outcome = {"autocall_q": 0, "call_time": None,
+                   "knock_in": R_final < 1.0 - 1e-9, "worst_final": _f(B_final),
+                   "redemption": _f(R_final), "final_basket": _f(B_final),
+                   "is_loss": R_final < 1.0 - 1e-9}
+    else:
+        line_path = worst_path
+        perf_obs    = asset_paths[obs_steps, :]
+        rows        = replay_note(perf_obs, terms)["rows"]
+        wof_levels  = [float(worst_path[s]) for s in obs_steps]
+        marker_info = _build_path_marker_info(rows, autocall_q, n_obs, wof_levels, ki_pn, terms, tr)
+        outcome = {"autocall_q": autocall_q,
+                   "call_time": _f(obs_times[autocall_q - 1]) if autocall_q > 0 else None,
+                   "knock_in": ki_pn, "worst_final": _f(float(worst_path[-1]))}
 
     return {
         **base,
         "position":   position,
         "path_index": pn,
-        "path":       _path_payload(worst_path, asset_paths, asset_names,
-                                    obs_steps, autocall_q, marker_info, terms),
-        "outcome": {
-            "autocall_q":   autocall_q,
-            "call_time":    _f(obs_times[autocall_q - 1]) if autocall_q > 0 else None,
-            "knock_in":     ki_pn,
-            "worst_final":  _f(float(worst_path[-1])),
-        },
+        "path":       _path_payload(line_path, asset_paths, asset_names,
+                                    obs_steps, autocall_q, marker_info, terms, _note_type),
+        "outcome": outcome,
         "metrics": {
             "principal":    _f(note["principal_payoffs"][pn]),
             "coupons":      _f(note["coupon_payoffs"][pn]),
@@ -620,6 +729,12 @@ def _mc_summary(sf: dict, note: dict, terms: NoteTerms) -> dict:
         _fb = np.asarray(_fb, dtype=float)
         stride = max(1, len(_fb) // 4000)
         summary["final_basket_sample"] = [round(float(x), 5) for x in _fb[::stride][:4000]]
+    # Cliquet per-period stats — power the per-reset small-multiples.
+    if getattr(terms, "participation_periodic", False):
+        for k in ("period_move_mean", "period_income_mean", "period_move_p25", "period_move_p75"):
+            v = note.get(k)
+            if v is not None:
+                summary[k] = [round(float(x), 5) for x in np.asarray(v)]
     summary["n_paths"] = int(len(note["annualized_returns"]))   # 2×n_paths (antithetic)
     summary["engine"]  = eng_used
     summary["assets"]  = asset_names
@@ -771,9 +886,59 @@ def run_backtest_api(terms: NoteTerms, *, history_years: float | None = None,
     if bt.empty:
         return {"summary": {}, "issues": [], "figures": None}
 
+    _note_type = getattr(terms, "note_type", "phoenix")
+    _is_part = _note_type == "participation"
+    _periodic = bool(getattr(terms, "participation_periodic", False))
     out_summary = {k: _f(v) for k, v in summary.items()
                    if not isinstance(v, (list, np.ndarray))}
     out_summary["n_issues"] = int(len(bt))
+    out_summary["note_type"] = _note_type
+    out_summary["participation_periodic"] = _periodic
+    bt = bt.copy()
+
+    if _is_part:
+        # Participation: realised redemption per issue is the "Payout". Summarise the
+        # redemption distribution (prob above/below par, median/best/worst, CVaR,
+        # capture ratios) and label each issue by which redemption BAND it landed in
+        # — there is no autocall period to bucket on.
+        R = bt["Payout"].to_numpy(dtype=float)
+        asset_cols = [f"{nm} Perf" for nm in terms.tickers.values() if f"{nm} Perf" in bt.columns]
+        B = (_basket(bt[asset_cols].to_numpy(dtype=float), terms.participation_basket)
+             if asset_cols else bt["Worst Final Perf"].to_numpy(dtype=float))
+        from core.note import _participation_stats
+        out_summary.update({k: _f(v) for k, v in _participation_stats(R, terms, B).items()})
+        out_summary["median_redemption"] = _f(float(np.median(R)))
+        out_summary["best_redemption"]   = _f(float(R.max()))
+        out_summary["worst_redemption"]  = _f(float(R.min()))
+
+        cap_lv = (1.0 + terms.upside_cap) if terms.upside_cap is not None else None
+        L_loss, L_par = tr("bt_band_loss"), tr("bt_band_par")
+        L_gain, L_cap = tr("bt_band_gain"), tr("bt_band_capped")
+        def _band(r):
+            if r < 1.0 - 1e-9:                              return L_loss
+            if abs(r - 1.0) <= 5e-3:                        return L_par
+            if cap_lv is not None and r >= cap_lv - 1e-6:   return L_cap
+            return L_gain
+        bt["Outcome"] = [_band(r) for r in R]
+        color_map = {L_loss: "#c9772d", L_par: "#2e7e8c", L_gain: "#3f8a6f", L_cap: "#0b3d2e"}
+
+        figures = {
+            "worst_asset_pie": _fig(charts.build_worst_asset_pie(bt, tr)),
+            "redemption_dist": _fig(charts.build_redemption_distribution(R, terms, tr)),
+            "irr_scatter":     _fig(charts.build_backtest_irr_scatter(bt, color_map, tr)),
+            "prices":          _fig(charts.build_historical_prices(
+                prices, bt["Issue Date"].min(), bt["Issue Date"].max(), tr)),
+        }
+        issues = [
+            {"issue_date": d.strftime("%Y-%m-%d"),
+             "redemption": _f(r), "income": _f(inc), "irr": _f(irr),
+             "worst_asset": str(wa), "worst_perf": _f(wp), "band": band}
+            for d, r, inc, irr, wa, wp, band in zip(
+                bt["Issue Date"], R, bt["Total Coupons"], bt["IRR"],
+                bt["Worst Asset"], bt["Worst Final Perf"], bt["Outcome"])
+        ]
+        return {"summary": out_summary, "issues": issues, "figures": figures,
+                "note_type": _note_type}
 
     # Outcome label per issue + a colour map (autocall periods on a blue ramp,
     # held-to-maturity slate, knock-in red) — the chart builders key off this.
@@ -781,7 +946,6 @@ def run_backtest_api(terms: NoteTerms, *, history_years: float | None = None,
         if int(cq) > 0:
             return f"Autocalled P{int(cq)}"
         return "Knock-in" if bool(ki) else "Held to maturity"
-    bt = bt.copy()
     bt["Outcome"] = [_label(cq, ki) for cq, ki in zip(bt["Call Quarter"], bt["Knock-in"])]
     ac_periods = sorted({int(cq) for cq in bt["Call Quarter"] if int(cq) > 0})
     # Green design language: autocall periods on a light-emerald→ink green ramp,
@@ -801,6 +965,7 @@ def run_backtest_api(terms: NoteTerms, *, history_years: float | None = None,
 
     return {
         "summary": out_summary,
+        "note_type": _note_type,
         "issues": [
             {"issue_date": d.strftime("%Y-%m-%d"),
              "call_quarter": int(cq), "knock_in": bool(ki),
@@ -823,17 +988,30 @@ def backtest_paths(terms: NoteTerms, *, history_years: float | None = None,
     and filter them exactly like the MC fan."""
     prices = _prices(dict(terms.tickers), years=history_years, field="close")
     bt, summary = run_backtest(prices, terms, bt_start=_ts(bt_start), bt_end=_ts(bt_end))
-    barriers = {"knock_in": _f(terms.knock_in_barrier),
-                "autocall": _f(terms.autocall_barrier),
-                "coupon":   _f(terms.coupon_barrier)}
+    _note_type = getattr(terms, "note_type", "phoenix")
+    _is_part = _note_type == "participation"
+    if _is_part:
+        periodic = bool(getattr(terms, "participation_periodic", False))
+        prot = terms.protection_level
+        floor = (min(float(prot), 1.0) if (not periodic and prot is not None
+                 and terms.participation_downside != "bear") else None)
+        cap = ((1.0 + terms.upside_cap) if (not periodic and terms.upside_cap is not None) else None)
+        barriers = {"participation": {"strike": _f(terms.participation_strike),
+                                      "floor": _f(floor), "cap": _f(cap), "periodic": periodic}}
+    else:
+        barriers = {"knock_in": _f(terms.knock_in_barrier),
+                    "autocall": _f(terms.autocall_barrier),
+                    "coupon":   _f(terms.coupon_barrier)}
     if bt.empty or "wof_obs" not in summary:
-        return {"t": [], "paths": [], "n_total": 0, "obs_times": [], "barriers": barriers}
+        return {"t": [], "paths": [], "n_total": 0, "obs_times": [],
+                "note_type": _note_type, "barriers": barriers}
 
     wof = np.asarray(summary["wof_obs"])            # (n_issues, n_obs+1)
     t   = [float(x) for x in summary["obs_times_rel"]]
     ap  = bt["Call Quarter"].to_numpy()
     ki  = bt["Knock-in"].to_numpy()
     irr = bt["IRR"].to_numpy()
+    payout = bt["Payout"].to_numpy()                # per-issue redemption (participation)
     dates = bt["Issue Date"]
 
     P = wof.shape[0]
@@ -841,16 +1019,22 @@ def backtest_paths(terms: NoteTerms, *, history_years: float | None = None,
     k = min(int(sample), P)
     idx = np.sort(rng.choice(P, size=k, replace=False))
 
-    paths = [{
-        "wof": [round(float(wof[i, c]), 4) for c in range(wof.shape[1])],
-        "ap":  int(ap[i]), "ki": bool(ki[i]), "irr": _f(irr[i]),
-        "issue_date": dates.iloc[i].strftime("%Y-%m-%d"),
-    } for i in idx]
+    paths = []
+    for i in idx:
+        row = {
+            "wof": [round(float(wof[i, c]), 4) for c in range(wof.shape[1])],
+            "ap":  int(ap[i]), "ki": bool(ki[i]), "irr": _f(irr[i]),
+            "issue_date": dates.iloc[i].strftime("%Y-%m-%d"),
+        }
+        if _is_part:
+            row["red"] = _f(payout[i])
+        paths.append(row)
 
     return {
         "t":         [round(x, 4) for x in t],
         "paths":     paths,
         "n_total":   int(P),
+        "note_type": _note_type,
         "obs_times": [round(x, 4) for x in t[1:]],
         "barriers":  barriers,
     }
@@ -891,8 +1075,11 @@ def backtest_inspect(terms: NoteTerms, *, lang: str = "en", filters: dict | None
     n_obs = terms.n_obs
     obs_times_rel = [0.0] + list(terms.obs_times())
 
+    _note_type = getattr(terms, "note_type", "phoenix")
+    _is_part = _note_type == "participation"
     base = {"n_total": int(len(bt)), "n_matched": 0, "ret_range": [0.0, 0.0],
-            "n_obs": int(n_obs), "coupon_available": False}
+            "n_obs": int(n_obs), "coupon_available": False, "note_type": _note_type,
+            "participation_periodic": bool(getattr(terms, "participation_periodic", False))}
     if bt.empty:
         return {**base, "position": 0, "path_index": None, "path": None}
 
@@ -901,7 +1088,7 @@ def backtest_inspect(terms: NoteTerms, *, lang: str = "en", filters: dict | None
     irr   = bt["IRR"].to_numpy()              # backtest return band uses IRR (per app.py)
     coupon_m = summary.get("coupon_amounts")  # (n_issues, n_obs), row-aligned with bt
     base["ret_range"] = [float(np.min(irr)), float(np.max(irr))]
-    base["coupon_available"] = coupon_m is not None
+    base["coupon_available"] = (coupon_m is not None) and not _is_part
 
     f = filters or {}
     matches = _path_filter_matches(
@@ -935,23 +1122,31 @@ def backtest_inspect(terms: NoteTerms, *, lang: str = "en", filters: dict | None
     obs_steps  = [int(window.index.searchsorted(d)) for d in obs_dates]
     obs_steps  = [min(s, len(window) - 1) for s in obs_steps]
 
-    perf_obs    = perf_daily[obs_steps, :]
-    rows        = replay_note(perf_obs, terms)["rows"]
-    wof_levels  = [float(worst_path[s]) for s in obs_steps]
-    marker_info = _build_path_marker_info(rows, autocall_q, n_obs, wof_levels, ki_pn, terms, tr)
+    if _is_part:
+        line_path, marker_info = _participation_line_and_markers(perf_daily, obs_steps, terms, tr)
+        B_final = float(line_path[-1])
+        R_final = float(_participation_redemption(np.array([B_final]), terms)[0])
+        outcome = {"autocall_q": 0, "call_time": None,
+                   "knock_in": R_final < 1.0 - 1e-9, "worst_final": _f(B_final),
+                   "redemption": _f(R_final), "final_basket": _f(B_final),
+                   "is_loss": R_final < 1.0 - 1e-9}
+    else:
+        line_path = worst_path
+        perf_obs    = perf_daily[obs_steps, :]
+        rows        = replay_note(perf_obs, terms)["rows"]
+        wof_levels  = [float(worst_path[s]) for s in obs_steps]
+        marker_info = _build_path_marker_info(rows, autocall_q, n_obs, wof_levels, ki_pn, terms, tr)
+        outcome = {"autocall_q": autocall_q,
+                   "call_time": _f(obs_times_rel[autocall_q]) if autocall_q > 0 else None,
+                   "knock_in": ki_pn, "worst_final": _f(float(worst_path[-1]))}
 
     return {
         **base,
         "position":   position,
         "path_index": row_i,
-        "path":       _path_payload(worst_path, perf_daily, asset_names,
-                                    obs_steps, autocall_q, marker_info, terms),
-        "outcome": {
-            "autocall_q":  autocall_q,
-            "call_time":   _f(obs_times_rel[autocall_q]) if autocall_q > 0 else None,
-            "knock_in":    ki_pn,
-            "worst_final": _f(float(worst_path[-1])),
-        },
+        "path":       _path_payload(line_path, perf_daily, asset_names,
+                                    obs_steps, autocall_q, marker_info, terms, _note_type),
+        "outcome": outcome,
         "metrics": {
             "principal":    _f(row["Principal"]),
             "coupons":      _f(row["Total Coupons"]),
@@ -964,6 +1159,127 @@ def backtest_inspect(terms: NoteTerms, *, lang: str = "en", filters: dict | None
 
 
 # ── live / current-performance flow ─────────────────────────────────────────────
+def _participation_live_result(terms, tr, asset_names, disp_to_sym, obs_labels,
+                               live_prices, full_prices, S0, perf_today, worst_asset,
+                               perf_obs, past_dates, obs_cal, obs_snapped, anchor_live,
+                               issue_ts, today_ts, mat_ts, elapsed_years, remaining_years,
+                               pct_elapsed, history_gap_days, for_pdf):
+    """Current-performance for a Participation note — see run_live_api. Reports the
+    note against its own maturity payoff (basket today → redemption if settled now,
+    distance to breakeven / floor / cap). Cliquet notes also accrue the per-period
+    locked-in P&L over the elapsed resets, mark the running period to today, and list
+    each reset in the observation table."""
+    from dataclasses import replace
+    pk = terms.participation_basket
+    periodic = bool(getattr(terms, "participation_periodic", False))
+    basket_today = float(_basket(perf_today[None, :], pk)[0])
+    proj_now = float(_participation_redemption(np.array([basket_today]), terms)[0])
+    breakeven = _participation_breakeven(terms)
+    prot = terms.protection_level
+    floor = (min(float(prot), 1.0) if (not periodic and prot is not None
+             and terms.participation_downside != "bear") else None)
+    cap = ((1.0 + terms.upside_cap) if (not periodic and terms.upside_cap is not None) else None)
+
+    n_past = len(past_dates)
+    reset_markers: list[dict] = []
+    obs_rows: list[dict] = []
+    accrued = 0.0
+    current_income = 0.0
+    if periodic:
+        eff = replace(terms, participation_periodic=False,
+                      upside_cap=terms.period_cap, participation_strike=1.0)
+        B_reset = _basket(perf_obs, pk) if n_past else np.empty(0)
+        prev = 1.0
+        running = 0.0
+        for j in range(n_past):
+            level = float(B_reset[j]) / prev if prev else 1.0
+            inc = float(_participation_redemption(np.array([level]), eff)[0]) - 1.0
+            prev = float(B_reset[j])
+            accrued += inc
+            running += inc
+            status = "part_gain" if inc > 1e-9 else ("part_loss" if inc < -1e-9 else "part_flat")
+            reset_markers.append({"date": past_dates[j], "label": obs_labels[j],
+                                  "move": level - 1.0, "income": inc})
+            obs_rows.append({"period": obs_labels[j],
+                             "date": past_dates[j].date().isoformat(),
+                             "status": status, "move": round(level - 1.0, 6),
+                             "income": round(inc, 6), "cumulative": round(running, 6),
+                             "upcoming": False})
+        # Running (unsettled) period, marked to today off the last reset basket.
+        if n_past < terms.n_obs:
+            cur_level = basket_today / prev if prev else 1.0
+            current_income = float(_participation_redemption(np.array([cur_level]), eff)[0]) - 1.0
+            obs_rows.append({"period": obs_labels[n_past],
+                             "date": (obs_cal[n_past].date().isoformat() if n_past < len(obs_cal) else None),
+                             "status": "running", "move": round(cur_level - 1.0, 6),
+                             "income": round(current_income, 6),
+                             "cumulative": round(running + current_income, 6), "upcoming": False})
+            for q in range(n_past + 1, terms.n_obs):
+                obs_rows.append({"period": obs_labels[q],
+                                 "date": (obs_cal[q].date().isoformat() if q < len(obs_cal) else None),
+                                 "status": "upcoming", "move": None, "income": None,
+                                 "cumulative": None, "upcoming": True})
+        projected_redemption = max(1.0 + accrued + current_income, 0.0)
+    else:
+        projected_redemption = proj_now
+
+    future_resets = ([(obs_labels[q], obs_cal[q]) for q in range(n_past, terms.n_obs)]
+                     if periodic else [])
+    fig = charts.build_participation_live_chart(
+        live_prices, anchor_live, today_ts, mat_ts, pk, tr,
+        floor=floor, cap=cap, breakeven=(breakeven if not periodic else None),
+        reset_markers=reset_markers or None, future_resets=future_resets or None)
+
+    if for_pdf:
+        # The PDF current-performance section is still phoenix-shaped; skip it for a
+        # participation note rather than render coupon columns that don't apply.
+        return {"available": False, "reason": "participation_pdf_unsupported"}
+
+    summary = {
+        "note_type":       "participation",
+        "participation_periodic": periodic,
+        "participation_basket": pk,
+        "issue_date":      issue_ts.date().isoformat(),
+        "anchor_date":     anchor_live.date().isoformat(),
+        "maturity_date":   mat_ts.date().isoformat(),
+        "today":           today_ts.date().isoformat(),
+        "history_gap_days": history_gap_days,
+        "elapsed_years":   _f(elapsed_years),
+        "remaining_years": _f(remaining_years),
+        "pct_elapsed":     _f(pct_elapsed),
+        "basket_today":    _f(basket_today),
+        "worst_asset":     worst_asset,
+        "worst_symbol":    disp_to_sym.get(worst_asset, ""),
+        "projected_redemption": _f(projected_redemption),
+        "projected_gain":  _f(projected_redemption - 1.0),
+        "redeem_now":      _f(proj_now),
+        "strike":          _f(terms.participation_strike),
+        "breakeven_level": _f(breakeven),
+        "dist_breakeven":  _f(basket_today - breakeven) if breakeven is not None else None,
+        "protection_level": _f(floor),
+        "dist_protection": _f(basket_today - floor) if floor is not None else None,
+        "cap_level":       _f(cap),
+        "dist_cap":        _f(cap - basket_today) if cap is not None else None,
+        # cliquet accrual
+        "accrued_income":  _f(accrued) if periodic else None,
+        "current_income":  _f(current_income) if periodic else None,
+        "n_reset_done":    n_past if periodic else None,
+        "n_reset_total":   int(terms.n_obs) if periodic else None,
+        "period_cap":      _f(terms.period_cap) if periodic else None,
+        "alive":           True,
+    }
+    return {
+        "available": True,
+        "summary": summary,
+        "assets": [
+            {"name": nm, "symbol": disp_to_sym.get(nm, ""), "perf": _f(perf_today[i])}
+            for i, nm in enumerate(asset_names)
+        ],
+        "obs_rows": obs_rows,
+        "figure": _fig(fig),
+    }
+
+
 def run_live_api(terms: NoteTerms, *, lang: str = "en", for_pdf: bool = False) -> dict:
     """Current-performance replay of a partially-elapsed note (the Streamlit
     "Current Performance" tab). Loads live prices from the issue date, replays the
@@ -1036,6 +1352,18 @@ def run_live_api(terms: NoteTerms, *, lang: str = "en", for_pdf: bool = False) -
         perf_obs = np.vstack([full_prices.loc[d].values / S0 for d in past_dates])
     else:
         perf_obs = np.empty((0, len(S0)))
+
+    # ── Participation branch — a maturity-payoff note has no coupons / autocall /
+    # knock-in, so the phoenix replay below doesn't apply. Report where the note
+    # stands against its OWN payoff: the participation basket today, the redemption
+    # it would pay if it settled now, and the distance to breakeven / floor / cap.
+    if getattr(terms, "note_type", "phoenix") == "participation":
+        return _participation_live_result(
+            terms, tr, asset_names, disp_to_sym, obs_labels, live_prices, full_prices,
+            S0, perf_today, worst_asset, perf_obs, past_dates, obs_cal, obs_snapped,
+            anchor_live, issue_ts, today_ts, mat_ts, elapsed_years, remaining_years,
+            pct_elapsed, history_gap_days, for_pdf)
+
     replay = replay_note(perf_obs, terms)
 
     obs_rows: list[dict] = []

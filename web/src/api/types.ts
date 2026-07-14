@@ -120,6 +120,11 @@ export interface SimSummary {
   // Downsampled final-basket levels (participation runs only) — powers the payoff
   // diagram's distribution overlay and the client-side what-if recompute.
   final_basket_sample?: number[]
+  // Cliquet per-reset stats — power the per-period small-multiples.
+  period_move_mean?: number[]
+  period_income_mean?: number[]
+  period_move_p25?: number[]
+  period_move_p75?: number[]
 }
 
 export interface AssetFan {
@@ -179,11 +184,15 @@ export interface BtRange { start: string | null; end: string | null }
 
 export interface BacktestIssue {
   issue_date: string
-  call_quarter: number
-  knock_in: boolean
+  call_quarter?: number
+  knock_in?: boolean
   irr: number | null
   worst_asset: string
   worst_perf: number | null
+  // participation
+  redemption?: number | null
+  income?: number | null       // cliquet participation income (can be negative)
+  band?: string                // realised-redemption band label
 }
 
 export interface BacktestSummary {
@@ -195,19 +204,40 @@ export interface BacktestSummary {
   prob_maturity: number | null
   loss_given_knock_in: number | null
   avg_time_to_autocall: number | null
-  [k: string]: number | null
+  expected_total_return?: number | null
+  expected_coupon?: number | null
+  // participation
+  expected_redemption?: number | null
+  median_redemption?: number | null
+  best_redemption?: number | null
+  worst_redemption?: number | null
+  prob_above_par?: number | null
+  prob_below_par?: number | null
+  cvar5_redemption?: number | null
+  note_type?: 'phoenix' | 'reverse_conv' | 'growth_autocall' | 'participation' | 'custom'
+  participation_periodic?: boolean
 }
 
 export interface BacktestFigures {
   worst_asset_pie: any
   irr_scatter: any
   prices: any
+  redemption_dist?: any   // participation only
 }
 
 export interface BacktestResult {
   summary: BacktestSummary
   issues: BacktestIssue[]
   figures: BacktestFigures | null
+  note_type?: 'phoenix' | 'reverse_conv' | 'growth_autocall' | 'participation' | 'custom'
+}
+
+/** Participation payoff reference levels carried on fan / inspector barriers. */
+export interface PartBarriers {
+  strike: number | null
+  floor: number | null
+  cap: number | null
+  periodic: boolean
 }
 
 export interface ExplorerPath {
@@ -215,6 +245,7 @@ export interface ExplorerPath {
   ap: number       // autocall period (0 = none)
   ki: boolean
   irr: number | null
+  red?: number | null   // participation: realised redemption (fraction of par)
   issue_date?: string   // backtest explorer only — the historical issue date
 }
 
@@ -222,11 +253,14 @@ export interface ExplorerData {
   t: number[]
   paths: ExplorerPath[]
   n_total: number
+  note_type?: 'phoenix' | 'reverse_conv' | 'growth_autocall' | 'participation' | 'custom'
   obs_times: number[]
-  barriers: { knock_in: number | null; autocall: number | null; coupon: number | null }
+  barriers: { knock_in?: number | null; autocall?: number | null; coupon?: number | null
+              participation?: PartBarriers }
 }
 
 export type LiveStatus = 'autocalled' | 'coupon_paid' | 'coupon_missed' | 'no_coupon' | 'upcoming'
+  | 'part_gain' | 'part_loss' | 'part_flat' | 'running'
 
 export interface LiveSummary {
   issue_date: string
@@ -237,24 +271,45 @@ export interface LiveSummary {
   elapsed_years: number | null
   remaining_years: number | null
   pct_elapsed: number | null
-  wof_today: number | null
+  wof_today?: number | null
   worst_asset: string
   worst_symbol: string
-  ki_buffer: number | null
-  ac_buffer: number | null
-  next_ac_barrier: number | null
-  knock_in_barrier: number | null
-  coupon_barrier: number | null
-  coupon_rate: number | null
-  coupon_pa: number | null
-  total_coupons: number | null
-  pending_coupons: number
-  pending_value: number | null
-  irr_to_date: number | null
-  autocall_period: number
+  // phoenix
+  ki_buffer?: number | null
+  ac_buffer?: number | null
+  next_ac_barrier?: number | null
+  knock_in_barrier?: number | null
+  coupon_barrier?: number | null
+  coupon_rate?: number | null
+  coupon_pa?: number | null
+  total_coupons?: number | null
+  pending_coupons?: number
+  pending_value?: number | null
+  irr_to_date?: number | null
+  autocall_period?: number
   alive: boolean
-  coupon_at_autocall_only: boolean
-  next_premium: number | null
+  coupon_at_autocall_only?: boolean
+  next_premium?: number | null
+  // participation
+  note_type?: 'phoenix' | 'reverse_conv' | 'growth_autocall' | 'participation' | 'custom'
+  participation_periodic?: boolean
+  participation_basket?: Basket
+  basket_today?: number | null
+  projected_redemption?: number | null
+  projected_gain?: number | null
+  redeem_now?: number | null
+  strike?: number | null
+  breakeven_level?: number | null
+  dist_breakeven?: number | null
+  protection_level?: number | null
+  dist_protection?: number | null
+  cap_level?: number | null
+  dist_cap?: number | null
+  accrued_income?: number | null
+  current_income?: number | null
+  n_reset_done?: number | null
+  n_reset_total?: number | null
+  period_cap?: number | null
 }
 
 export interface LiveAsset {
@@ -267,15 +322,18 @@ export interface LiveObsRow {
   period: string
   date: string | null
   status: LiveStatus
-  wof: number | null
-  coupon: number | null
-  cumulative: number | null
+  wof?: number | null
+  coupon?: number | null
+  cumulative?: number | null
   upcoming: boolean
+  // participation cliquet
+  move?: number | null
+  income?: number | null
 }
 
 export interface LiveResult {
   available: boolean
-  reason?: 'no_issue_date' | 'not_issued' | 'not_enough_data'
+  reason?: 'no_issue_date' | 'not_issued' | 'not_enough_data' | 'participation_pdf_unsupported'
   summary?: LiveSummary
   assets?: LiveAsset[]
   obs_rows?: LiveObsRow[]
@@ -334,7 +392,7 @@ export interface Quote {
 }
 
 export interface InspectFilters {
-  outcome?: 'any' | 'autocalled' | 'maturity' | 'loss'
+  outcome?: 'any' | 'autocalled' | 'maturity' | 'loss' | 'part_gain' | 'part_par' | 'part_loss'
   ac_periods?: number[]
   ki_choice?: 'any' | 'yes' | 'no'
   ret_lo?: number | null
@@ -350,7 +408,9 @@ export interface PathData {
   wof: number[]
   markers: PathMarker[]
   x_max: number
-  barriers: { knock_in: number | null; autocall: number | null; autocall_schedule: [number, number][] | null }
+  barriers: { knock_in?: number | null; autocall?: number | null
+              autocall_schedule?: [number, number][] | null
+              participation?: PartBarriers }
 }
 
 export interface InspectResult {
@@ -359,10 +419,13 @@ export interface InspectResult {
   ret_range: [number, number]
   n_obs: number
   coupon_available: boolean
+  note_type?: 'phoenix' | 'reverse_conv' | 'growth_autocall' | 'participation' | 'custom'
+  participation_periodic?: boolean
   position: number
   path_index: number | null
   path?: PathData
-  outcome?: { autocall_q: number; call_time: number | null; knock_in: boolean; worst_final: number | null }
+  outcome?: { autocall_q: number; call_time: number | null; knock_in: boolean; worst_final: number | null
+              redemption?: number | null; final_basket?: number | null; is_loss?: boolean }
   metrics?: { principal: number | null; coupons: number | null; irr: number | null; total_return: number | null }
   assets?: { name: string; final: number | null }[]
 }

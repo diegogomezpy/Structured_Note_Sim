@@ -678,6 +678,12 @@ def _participation_periodic_payoff(perf_paths, terms, obs_steps, t_maturity, n_o
                   participation_strike=1.0)
     period_income = _participation_redemption(level.ravel(), eff).reshape(level.shape) - 1.0  # (n_paths, n_obs)
     total_income  = period_income.sum(axis=1)
+    # Per-period summaries for the cliquet small-multiples: the average basket move
+    # and locked-in income each reset period, plus an inter-quartile move band.
+    period_move_mean   = level.mean(axis=0) - 1.0                    # (n_obs,)
+    period_income_mean = period_income.mean(axis=0)
+    period_move_p25    = np.percentile(level, 25, axis=0) - 1.0
+    period_move_p75    = np.percentile(level, 75, axis=0) - 1.0
     principal     = np.ones(n_paths)                     # capital rolls at par each period
     nominal       = np.maximum(principal + total_income, 0.0)
     total_return  = nominal - 1.0
@@ -707,6 +713,10 @@ def _participation_periodic_payoff(perf_paths, terms, obs_steps, t_maturity, n_o
         "prob_rescued":             0.0,
         "loss_given_knock_in":      float(irr[loss].mean()) if loss.any() else float("nan"),
         "avg_time_to_autocall":     None,
+        "period_move_mean":         period_move_mean,
+        "period_income_mean":       period_income_mean,
+        "period_move_p25":          period_move_p25,
+        "period_move_p75":          period_move_p75,
         **_participation_stats(nominal, terms),
     }
 

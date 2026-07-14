@@ -64,6 +64,15 @@ _STRINGS: dict[str, tuple[str, str]] = {
     "leg_accruing":             ("premium accruing",                "prima acumulándose"),
     "leg_one_star":             ("★ one-star rescue",               "★ rescate one-star"),
     "leg_redeemed_par":         ("redeemed at par",                 "reembolso a la par"),
+    # Participation path-explorer legend (no coupons / autocall)
+    "leg_part_reset":           ("P{k} · basket {move} · locked {inc}", "P{k} · cesta {move} · fijado {inc}"),
+    "leg_part_hold":            ("P{k} · basket {b}",               "P{k} · cesta {b}"),
+    "leg_part_redeem":          ("basket {b} → redeemed {r}",       "cesta {b} → redención {r}"),
+    # Participation backtest outcome bands
+    "bt_band_loss":             ("Capital loss",                    "Pérdida de capital"),
+    "bt_band_par":              ("Around par",                      "En torno a la par"),
+    "bt_band_gain":             ("Gain",                            "Ganancia"),
+    "bt_band_capped":           ("Capped gain",                     "Ganancia con tope"),
     "outcome_breakdown":        ("Outcome breakdown",               "Distribución de resultados"),
     "outcome_axis":             ("Share of paths",                  "Proporción de trayectorias"),
     "redemption_dist":          ("Redemption distribution",         "Distribución de redención"),
@@ -1116,6 +1125,17 @@ _STRINGS: dict[str, tuple[str, str]] = {
     "chart_coupon_barrier_lvl":  ("Coupon barrier ({lvl})",            "Barrera de cupón ({lvl})"),
     "chart_perf_vs_issue":       ("Performance vs Issue Date",         "Rendimiento vs Fecha de Emisión"),
     "chart_today":               ("Today",                             "Hoy"),
+    # Participation live chart
+    "chart_basket":              ("Basket",                            "Cesta"),
+    "chart_basket_vs_issue":     ("Basket vs Issue Date",              "Cesta vs Fecha de Emisión"),
+    "chart_protection":          ("Protection ({lvl})",                "Protección ({lvl})"),
+    "chart_breakeven":           ("Break-even ({lvl})",                "Break-even ({lvl})"),
+    "chart_cap_lvl":             ("Cap ({lvl})",                       "Tope ({lvl})"),
+    "chart_reset_gain":          ("Locked-in gain",                    "Ganancia fijada"),
+    "chart_reset_loss":          ("Locked-in loss",                    "Pérdida fijada"),
+    "chart_reset_flat":          ("Flat reset",                        "Reinicio plano"),
+    "chart_reset_tip":           ("{label} · basket {move} · locked {inc}",
+                                  "{label} · cesta {move} · fijado {inc}"),
 
     # IRR distribution (MC tab 1)
     "chart_irr_title":           ("Annualised IRR Distribution — All Simulated Paths",

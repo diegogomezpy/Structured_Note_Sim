@@ -7,7 +7,7 @@ import TickerLogo from './TickerLogo'
 import { pct, pctSigned, num } from '../lib/format'
 import type { InspectFilters, InspectResult, NoteTerms, PathData } from '../api/types'
 
-type Outcome = 'any' | 'autocalled' | 'maturity' | 'loss'
+type Outcome = 'any' | 'autocalled' | 'maturity' | 'loss' | 'part_gain' | 'part_par' | 'part_loss'
 type KiChoice = 'any' | 'yes' | 'no'
 
 /** A panel fetches its detail through this — MC hits /runs/{id}/inspect, the
@@ -26,10 +26,17 @@ const MARKER_STYLE: Record<string, { symbol: string; color: string; size: number
   missed:   { symbol: 'circle-open', color: '#d97706', size: 9 },
   redeem:   { symbol: 'star', color: '#16a34a', size: 13 },
   knock_in: { symbol: 'x', color: '#dc2626', size: 11 },
+  // Participation kinds
+  part_hold:   { symbol: 'circle', color: '#94a3b8', size: 6 },
+  part_redeem: { symbol: 'star', color: '#16a34a', size: 13 },
+  part_gain:   { symbol: 'triangle-up', color: '#16a34a', size: 11 },
+  part_loss:   { symbol: 'triangle-down', color: '#dc2626', size: 11 },
+  part_flat:   { symbol: 'circle', color: '#94a3b8', size: 8 },
 }
 // 'call_coupon' (autocall that also paid a coupon) shares the autocall marker.
 const normKind = (k: string) => (k === 'call_coupon' ? 'call' : k)
-const KIND_ORDER = ['coupon', 'missed', 'call', 'redeem', 'knock_in']
+const KIND_ORDER = ['coupon', 'missed', 'call', 'redeem', 'knock_in',
+                    'part_hold', 'part_gain', 'part_flat', 'part_loss', 'part_redeem']
 // Vertical spacing (perf units) between the dots when a memory release pays
 // several coupons at once — drawn as a small stack.
 const STACK_DY = 0.03
@@ -37,6 +44,7 @@ const STACK_DY = 0.03
 interface PathLabels {
   x: string; y: string; wof: string
   par: string; ki: string; ac: string
+  floor: string; cap: string; strike: string
   ev: Record<string, string>
 }
 
@@ -59,17 +67,26 @@ function buildPathFig(path: PathData, labels: PathLabels) {
     line: { color, width: 1, dash },
   })
   traces.push(level(1, labels.par, '#94a3b8', 'dot'))
-  if (path.barriers.knock_in != null) traces.push(level(path.barriers.knock_in, labels.ki, '#dc2626', 'dash'))
-  const sched = path.barriers.autocall_schedule
-  if (sched) {
-    const s = sched.filter(([step]) => step <= x1)
-    if (s.length) traces.push({
-      x: [0, ...s.map((p) => p[0])], y: [s[0][1], ...s.map((p) => p[1])],
-      mode: 'lines', type: 'scatter', name: labels.ac, hoverinfo: 'skip',
-      line: { color: '#94a3b8', dash: 'dash', width: 1.3, shape: 'hv' },
-    })
-  } else if (path.barriers.autocall != null && path.barriers.autocall !== 1) {
-    traces.push(level(path.barriers.autocall, labels.ac, '#94a3b8', 'dash'))
+  const part = path.barriers.participation
+  if (part) {
+    // Participation payoff reference levels — protection floor, cap, strike (par is
+    // always drawn above). Knock-in / autocall lines don't apply.
+    if (part.floor != null) traces.push(level(part.floor, labels.floor, '#dc2626', 'dash'))
+    if (part.cap != null) traces.push(level(part.cap, labels.cap, '#94a3b8', 'dash'))
+    if (part.strike != null && part.strike !== 1) traces.push(level(part.strike, labels.strike, '#94a3b8', 'dot'))
+  } else {
+    if (path.barriers.knock_in != null) traces.push(level(path.barriers.knock_in, labels.ki, '#dc2626', 'dash'))
+    const sched = path.barriers.autocall_schedule
+    if (sched) {
+      const s = sched.filter(([step]) => step <= x1)
+      if (s.length) traces.push({
+        x: [0, ...s.map((p) => p[0])], y: [s[0][1], ...s.map((p) => p[1])],
+        mode: 'lines', type: 'scatter', name: labels.ac, hoverinfo: 'skip',
+        line: { color: '#94a3b8', dash: 'dash', width: 1.3, shape: 'hv' },
+      })
+    } else if (path.barriers.autocall != null && path.barriers.autocall !== 1) {
+      traces.push(level(path.barriers.autocall, labels.ac, '#94a3b8', 'dash'))
+    }
   }
 
   // Event markers — one named trace per kind present, ordered for a tidy legend.
@@ -236,19 +253,33 @@ function InspectorPanel({ fetcher, terms, label, onRemove }: {
   }, [fetcher, filterKey, position, lang])
 
   const M = data?.n_matched ?? 0
+  const isPart = data?.note_type === 'participation'
+  const periodic = data?.participation_periodic ?? false
   const o = data?.outcome
   const outcomeLine = !o ? '' :
-    o.autocall_q > 0 ? t('insp_autocalled', { q: o.autocall_q, t: num(o.call_time, 2) })
+    isPart
+      ? (periodic
+          ? t('insp_part_cliquet', { r: pct(o.redemption, 1), inc: pctSigned((data?.metrics?.coupons) ?? 0, 2) })
+          : (o.is_loss
+              ? t('insp_part_loss', { r: pct(o.redemption, 1), b: pct(o.final_basket, 1) })
+              : t('insp_part_ok', { r: pct(o.redemption, 1), b: pct(o.final_basket, 1) })))
+    : o.autocall_q > 0 ? t('insp_autocalled', { q: o.autocall_q, t: num(o.call_time, 2) })
     : o.knock_in ? t('insp_mat_ki', { wof: pct(o.worst_final, 1) })
     : t('insp_mat_ok', { wof: pct(o.worst_final, 1) })
 
   const fig = useMemo(() => data?.path
     ? buildPathFig(data.path, {
-        x: t('insp_time_step'), y: t('chart_wof'), wof: t('insp_wof_name'),
+        x: isPart ? t('insp_time_step') : t('insp_time_step'),
+        y: isPart ? t('pp_y_axis') : t('chart_wof'),
+        wof: isPart ? t('insp_basket_name') : t('insp_wof_name'),
         par: t('insp_lvl_par'), ki: t('insp_lvl_ki'), ac: t('insp_lvl_autocall'),
-        ev: { coupon: t('insp_ev_coupon'), missed: t('insp_ev_missed'), call: t('insp_ev_call'), redeem: t('insp_ev_redeem'), knock_in: t('insp_ev_knock_in') },
+        floor: t('insp_lvl_floor'), cap: t('insp_lvl_cap'), strike: t('insp_lvl_strike'),
+        ev: { coupon: t('insp_ev_coupon'), missed: t('insp_ev_missed'), call: t('insp_ev_call'),
+              redeem: t('insp_ev_redeem'), knock_in: t('insp_ev_knock_in'),
+              part_hold: t('insp_ev_basket'), part_redeem: t('insp_ev_redeem'),
+              part_gain: t('insp_ev_lock_gain'), part_loss: t('insp_ev_lock_loss'), part_flat: t('insp_ev_flat') },
       })
-    : null, [data, t])
+    : null, [data, t, isPart])
 
   return (
     <Panel>
@@ -272,26 +303,35 @@ function InspectorPanel({ fetcher, terms, label, onRemove }: {
         </button>
         {filtersOpen && (
           <div style={{ padding: '4px 14px 16px' }}>
-            <FilterRow label={t('insp_outcome')}>
-              <Segmented value={outcome} onChange={setOutcome} options={[
-                { v: 'any', label: t('insp_oc_any') }, { v: 'autocalled', label: t('insp_oc_autocalled') },
-                { v: 'maturity', label: t('insp_oc_maturity') }, { v: 'loss', label: t('insp_oc_loss') },
-              ]} />
-              {outcome === 'autocalled' && nObs > 0 && (
-                <div style={{ marginTop: 10 }}>
-                  <div style={{ fontSize: 11, color: 'var(--text-faint)', marginBottom: 6 }}>{t('insp_ac_periods')}</div>
-                  <PeriodChips n={nObs} selected={acPeriods}
-                    onToggle={(p) => setAcPeriods((s) => s.includes(p) ? s.filter((x) => x !== p) : [...s, p])} />
-                </div>
-              )}
+            <FilterRow label={isPart ? t('insp_outcome_part') : t('insp_outcome')}>
+              {isPart ? (
+                <Segmented value={outcome} onChange={setOutcome} options={[
+                  { v: 'any', label: t('insp_oc_any') }, { v: 'part_gain', label: t('insp_oc_gain') },
+                  { v: 'part_par', label: t('insp_oc_par') }, { v: 'part_loss', label: t('insp_oc_below_par') },
+                ]} />
+              ) : (<>
+                <Segmented value={outcome} onChange={setOutcome} options={[
+                  { v: 'any', label: t('insp_oc_any') }, { v: 'autocalled', label: t('insp_oc_autocalled') },
+                  { v: 'maturity', label: t('insp_oc_maturity') }, { v: 'loss', label: t('insp_oc_loss') },
+                ]} />
+                {outcome === 'autocalled' && nObs > 0 && (
+                  <div style={{ marginTop: 10 }}>
+                    <div style={{ fontSize: 11, color: 'var(--text-faint)', marginBottom: 6 }}>{t('insp_ac_periods')}</div>
+                    <PeriodChips n={nObs} selected={acPeriods}
+                      onToggle={(p) => setAcPeriods((s) => s.includes(p) ? s.filter((x) => x !== p) : [...s, p])} />
+                  </div>
+                )}
+              </>)}
             </FilterRow>
-            <FilterRow label={t('insp_ki')}>
-              <Segmented value={ki} onChange={setKi} options={[
-                { v: 'any', label: t('insp_ki_any') }, { v: 'yes', label: t('insp_ki_yes') }, { v: 'no', label: t('insp_ki_no') },
-              ]} />
-            </FilterRow>
+            {!isPart && (
+              <FilterRow label={t('insp_ki')}>
+                <Segmented value={ki} onChange={setKi} options={[
+                  { v: 'any', label: t('insp_ki_any') }, { v: 'yes', label: t('insp_ki_yes') }, { v: 'no', label: t('insp_ki_no') },
+                ]} />
+              </FilterRow>
+            )}
             {bounds && band && (
-              <FilterRow label={t('insp_ret')}>
+              <FilterRow label={isPart ? t('insp_ret_part') : t('insp_ret')}>
                 <RangeSlider min={bounds[0]} max={bounds[1]} step={0.005} lo={band[0]} hi={band[1]}
                   onChange={(lo, hi) => setBand([lo, hi])} fmt={(v) => pctSigned(v, 1)} />
               </FilterRow>
@@ -332,9 +372,16 @@ function InspectorPanel({ fetcher, terms, label, onRemove }: {
           </div>
           {outcomeLine && <div style={{ fontSize: 13, color: 'var(--text-muted)', margin: '8px 0 12px' }}>{outcomeLine}</div>}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12, marginBottom: 12 }}>
-            <Metric label={t('insp_m_principal')} value={pct(data?.metrics?.principal, 2)} />
-            <Metric label={t('insp_m_coupons')} value={pct(data?.metrics?.coupons, 2)} />
-            <Metric label={t('insp_m_irr')} value={pct(data?.metrics?.irr, 2)} />
+            {isPart ? (<>
+              <Metric label={t('insp_m_redemption')} value={pct(data?.metrics?.principal, 2)} />
+              <Metric label={periodic ? t('insp_m_income') : t('insp_m_gain')}
+                      value={periodic ? pctSigned(data?.metrics?.coupons, 2) : pctSigned(data?.metrics?.total_return, 2)} />
+              <Metric label={t('insp_m_irr')} value={pct(data?.metrics?.irr, 2)} />
+            </>) : (<>
+              <Metric label={t('insp_m_principal')} value={pct(data?.metrics?.principal, 2)} />
+              <Metric label={t('insp_m_coupons')} value={pct(data?.metrics?.coupons, 2)} />
+              <Metric label={t('insp_m_irr')} value={pct(data?.metrics?.irr, 2)} />
+            </>)}
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 10 }}>
             {data?.assets?.map((a) => {

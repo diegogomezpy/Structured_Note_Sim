@@ -6,14 +6,24 @@ import Figure from './Figure'
 import Icon from './Icon'
 import type { ExplorerData, ExplorerPath } from '../api/types'
 
-type Kind = 'ac' | 'mat' | 'ki'
+type Kind = 'ac' | 'mat' | 'ki' | 'up' | 'par' | 'down'
 /* Mercator outcome palette (distinct shades so autocalled vs held read apart):
    autocalled viridian, held-to-maturity secondary viridian, knocked-in claret.
+   Participation: above-par viridian, at-par slate, below-par (loss) claret.
    Used for both the chart traces and the DOM legend chips; plotlyTheme lightens
    these in dark mode. */
-const KIND_COLOR: Record<Kind, string> = { ac: '#15694e', mat: '#3f8a6f', ki: '#9c3b30' }
+const KIND_COLOR: Record<Kind, string> = {
+  ac: '#15694e', mat: '#3f8a6f', ki: '#9c3b30',
+  up: '#15694e', par: '#64748b', down: '#9c3b30',
+}
 
-function classify(p: ExplorerPath): Kind {
+function classify(p: ExplorerPath, isPart: boolean): Kind {
+  if (isPart) {
+    const r = p.red ?? (p.ki ? 0.99 : 1.01)
+    if (r > 1 + 1e-9) return 'up'
+    if (r < 1 - 1e-9) return 'down'
+    return 'par'
+  }
   if (p.ap > 0) return 'ac'
   return p.ki ? 'ki' : 'mat'
 }
@@ -44,55 +54,65 @@ export function PathFan({
 }) {
   const { t } = useI18n()
   const [filter, setFilter] = useState<'all' | Kind>('all')
+  const isPart = data.note_type === 'participation'
+  const part = data.barriers.participation
 
   const counts = useMemo(() => {
-    const c = { ac: 0, mat: 0, ki: 0 }
-    data.paths.forEach((p) => { c[classify(p)] += 1 })
+    const c: Record<Kind, number> = { ac: 0, mat: 0, ki: 0, up: 0, par: 0, down: 0 }
+    data.paths.forEach((p) => { c[classify(p, isPart)] += 1 })
     return c
-  }, [data])
+  }, [data, isPart])
 
   const fig = useMemo(() => {
-    const groups: { kind: Kind; label: string }[] = [
-      { kind: 'ac', label: t('autocalled_at') },
-      { kind: 'mat', label: t('held_to_mat') },
-      { kind: 'ki', label: t('knocked_in') },
-    ]
+    const groups: { kind: Kind; label: string }[] = isPart
+      ? [{ kind: 'up', label: t('fan_above_par') },
+         { kind: 'par', label: t('fan_at_par') },
+         { kind: 'down', label: t('fan_below_par') }]
+      : [{ kind: 'ac', label: t('autocalled_at') },
+         { kind: 'mat', label: t('held_to_mat') },
+         { kind: 'ki', label: t('knocked_in') }]
     const traces = groups
       .filter((g) => filter === 'all' || filter === g.kind)
-      .map((g) => group(data.paths.filter((p) => classify(p) === g.kind), data.t, KIND_COLOR[g.kind], g.label))
+      .map((g) => group(data.paths.filter((p) => classify(p, isPart) === g.kind), data.t, KIND_COLOR[g.kind], g.label))
       .filter((tr) => tr.x.length > 0)
 
     const x0 = data.t[0], x1 = data.t[data.t.length - 1]
-    const hline = (yv: number | null, color: string, dash: string) => yv == null ? null : ({
+    const hline = (yv: number | null | undefined, color: string, dash: string) => yv == null ? null : ({
       type: 'line', x0, x1, y0: yv, y1: yv, line: { color, width: 1, dash },
     })
-    const shapes = [
-      hline(1, '#94a3b8', 'dot'),
-      hline(data.barriers.knock_in, '#ef4444', 'dash'),
-      data.barriers.autocall != null && data.barriers.autocall !== 1
-        ? hline(data.barriers.autocall, '#94a3b8', 'dash') : null,
-    ].filter(Boolean)
+    const shapes = (isPart
+      ? [hline(1, '#94a3b8', 'dot'),
+         hline(part?.floor, '#ef4444', 'dash'),
+         part?.cap != null ? hline(part.cap, '#94a3b8', 'dash') : null]
+      : [hline(1, '#94a3b8', 'dot'),
+         hline(data.barriers.knock_in, '#ef4444', 'dash'),
+         data.barriers.autocall != null && data.barriers.autocall !== 1
+           ? hline(data.barriers.autocall, '#94a3b8', 'dash') : null]
+    ).filter(Boolean)
 
     return {
       data: traces,
       layout: {
         xaxis: { title: { text: xLabel ?? t('chart_time_years') }, range: [x0, x1], zeroline: false },
-        yaxis: { title: { text: t('chart_wof') }, tickformat: '.0%', zeroline: false },
+        yaxis: { title: { text: isPart ? t('fan_basket_axis') : t('chart_wof') }, tickformat: '.0%', zeroline: false },
         shapes,
         showlegend: true,
         legend: { orientation: 'h', y: 1.06, x: 0 },
         hovermode: 'closest',
       },
     }
-  }, [data, filter, t, xLabel])
+  }, [data, filter, t, xLabel, isPart, part])
 
   const shown = filter === 'all' ? data.paths.length : counts[filter]
-  const chips: { id: 'all' | Kind; label: string; n: number; color?: string }[] = [
-    { id: 'all', label: t('filter_all'), n: data.paths.length },
-    { id: 'ac', label: t('autocalled_at'), n: counts.ac, color: KIND_COLOR.ac },
-    { id: 'mat', label: t('held_to_mat'), n: counts.mat, color: KIND_COLOR.mat },
-    { id: 'ki', label: t('knocked_in'), n: counts.ki, color: KIND_COLOR.ki },
-  ]
+  const chips: { id: 'all' | Kind; label: string; n: number; color?: string }[] = isPart
+    ? [{ id: 'all', label: t('filter_all'), n: data.paths.length },
+       { id: 'up', label: t('fan_above_par'), n: counts.up, color: KIND_COLOR.up },
+       { id: 'par', label: t('fan_at_par'), n: counts.par, color: KIND_COLOR.par },
+       { id: 'down', label: t('fan_below_par'), n: counts.down, color: KIND_COLOR.down }]
+    : [{ id: 'all', label: t('filter_all'), n: data.paths.length },
+       { id: 'ac', label: t('autocalled_at'), n: counts.ac, color: KIND_COLOR.ac },
+       { id: 'mat', label: t('held_to_mat'), n: counts.mat, color: KIND_COLOR.mat },
+       { id: 'ki', label: t('knocked_in'), n: counts.ki, color: KIND_COLOR.ki }]
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }} className="fade-up">
@@ -158,5 +178,6 @@ export default function PathExplorer({ runId, total }: { runId: string; total: n
     return <Panel pad={40}><div style={{ textAlign: 'center', color: 'var(--text-muted)', fontSize: 14 }}>{t('explorer_expired')}</div></Panel>
   }
   if (status === 'loading' || !data) return <Loader />
-  return <PathFan data={data} intro={t('explorer_intro')} onResample={() => setSeedKey((k) => k + 1)} />
+  return <PathFan data={data} intro={data.note_type === 'participation' ? t('explorer_intro_part') : t('explorer_intro')}
+                  onResample={() => setSeedKey((k) => k + 1)} />
 }

@@ -48,7 +48,7 @@ function BacktestSamplePaths({ terms, range, sig }: { terms: NoteTerms; range: B
     return <Panel pad={40}><div style={{ textAlign: 'center', color: 'var(--text-muted)', fontSize: 14 }}>{t('bt_explorer_empty')}</div></Panel>
   }
   return (
-    <PathFan data={data} intro={t('bt_explorer_intro')}
+    <PathFan data={data} intro={data.note_type === 'participation' ? t('bt_explorer_intro_part') : t('bt_explorer_intro')}
              onResample={() => setSeed((s) => s + 1)}
              xLabel={t('chart_years_since_issue')}
              sampledNoun={t('bt_explorer_issues')} />

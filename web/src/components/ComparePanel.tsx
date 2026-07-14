@@ -48,7 +48,7 @@ const BT_METRICS: [string, string, Dir, Kind][] = [
   ['avg_time_to_autocall', 'avg_time_autocall','neutral', 'years'],
 ]
 
-const fmtVal = (v: number | null, kind: Kind) =>
+const fmtVal = (v: number | null | undefined, kind: Kind) =>
   v == null ? '—' : kind === 'years' ? `${num(v, 2)} y` : pct(v, 1)
 const fmtDelta = (d: number | null, kind: Kind) =>
   d == null ? '—' : kind === 'years' ? `${d >= 0 ? '+' : ''}${num(d, 2)} y` : pctSigned(d, 1)
@@ -173,8 +173,8 @@ export default function ComparePanel({ terms, opts, cppAvailable, configs, varia
 
   const btRows: Row[] = bt
     ? BT_METRICS.map(([key, labelKey, dir, kind]) => {
-        const a = (bt.a.summary as Record<string, number | null>)[key] ?? null
-        const b = (bt.b.summary as Record<string, number | null>)[key] ?? null
+        const a = (bt.a.summary as unknown as Record<string, number | null>)[key] ?? null
+        const b = (bt.b.summary as unknown as Record<string, number | null>)[key] ?? null
         const delta = typeof a === 'number' && typeof b === 'number' ? b - a : null
         return { label: t(labelKey), a, b, delta, dir, kind }
       })

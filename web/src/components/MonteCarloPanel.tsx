@@ -6,6 +6,7 @@ import Figure from './Figure'
 import HeroMetrics from './HeroMetrics'
 import ParticipationProfile from './ParticipationProfile'
 import ParticipationWhatIf from './ParticipationWhatIf'
+import CliquetProfiles from './CliquetProfiles'
 import PathExplorer from './PathExplorer'
 import PathInspector from './PathInspector'
 import { AutocallByPeriodTable, CalibrationTable } from './MCTables'
@@ -19,6 +20,7 @@ export default function MonteCarloPanel({ result, terms }: { result: SimResult; 
   const { t } = useI18n()
   const { summary, figures } = result
   const isPart = summary.note_type === 'participation'
+  const isCliquet = isPart && !!terms.participation_periodic
   const [sub, setSub] = useState('summary')
   const inspectFetcher = useCallback(
     (body: Parameters<typeof api.inspectRun>[1]) => api.inspectRun(result.run_id, body),
@@ -49,12 +51,16 @@ export default function MonteCarloPanel({ result, terms }: { result: SimResult; 
           <Panel title={isPart ? t('redemption_distribution') : t('outcomes')} right={`${summary.n_paths.toLocaleString()} ${t('paths').toLowerCase()} · ${summary.engine}`} pad={14}>
             <div style={{ height: isPart ? CHART_H : 210 }}><Figure fig={figures.outcome} name={isPart ? 'redemption_distribution' : 'outcome_breakdown'} /></div>
           </Panel>
-          {isPart && (
+          {isCliquet ? (
+            <Panel title={t('cliquet_title')} right={t('cliquet_right')} pad={14}>
+              <CliquetProfiles terms={terms} summary={summary} />
+            </Panel>
+          ) : isPart && (
             <Panel title={t('sec_participation')} right={t('pp_curve_right')} pad={14}>
               <ParticipationProfile terms={terms} summary={summary} />
             </Panel>
           )}
-          {isPart && summary.final_basket_sample?.length && (
+          {isPart && !isCliquet && summary.final_basket_sample?.length && (
             <Panel title={t('whatif_title')} pad={14}>
               <ParticipationWhatIf terms={terms} summary={summary} />
             </Panel>

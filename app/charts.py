@@ -1267,3 +1267,101 @@ def build_live_performance_chart(
         legend=dict(x=1.01, y=1, xanchor="left"),
     )
     return _apply_theme(fig)
+
+
+def build_participation_live_chart(
+    hist_prices:    pd.DataFrame,
+    issue_date:     pd.Timestamp,
+    today:          pd.Timestamp,
+    maturity_date:  pd.Timestamp,
+    basket_kind:    str,
+    tr:             "Translator",
+    *,
+    floor:          float | None = None,
+    cap:            float | None = None,
+    breakeven:      float | None = None,
+    reset_markers:  list[dict] | None = None,   # cliquet: [{date,label,move,income}]
+    future_resets:  list[tuple] | None = None,  # cliquet: [(label, calendar_date), ...]
+) -> go.Figure:
+    """Live chart for a Participation note: the participation BASKET since issue
+    (the payoff reference), with the underlyings receding behind it, and the payoff
+    levels — par, protection floor, cap, breakeven — as reference lines instead of
+    the knock-in / autocall / coupon barriers. Cliquet notes also get a vline +
+    locked-in-P&L marker at each elapsed reset date."""
+    issue_idx = hist_prices.index.searchsorted(issue_date)
+    S0 = hist_prices.iloc[issue_idx].values.astype(float)
+    slice_ = hist_prices.iloc[issue_idx:]
+    dates  = slice_.index
+    perf   = slice_.values / S0[np.newaxis, :]
+    if basket_kind == "best_of":
+        basket = perf.max(axis=1)
+    elif basket_kind == "average":
+        basket = perf.mean(axis=1)
+    else:
+        basket = perf.min(axis=1)
+
+    asset_colors = ["#64748b", "#0d9488", "#a855f7", "#d97706", "#0891b2"]
+    asset_names  = list(hist_prices.columns)
+    fig = go.Figure()
+    for i, name in enumerate(asset_names):
+        fig.add_trace(go.Scatter(
+            x=dates, y=perf[:, i], mode="lines", name=name,
+            line=dict(color=asset_colors[i % len(asset_colors)], width=1, dash="dot"),
+            opacity=0.45))
+    fig.add_trace(go.Scatter(
+        x=dates, y=basket, mode="lines", name=tr("chart_basket"),
+        line=dict(color="#2563eb", width=2.2)))
+
+    fig.add_hline(y=1.0, line_dash="dot", line_color=_GREY,
+                  annotation_text=tr("lbl_par"), annotation_position="bottom right")
+    if floor is not None:
+        fig.add_hline(y=floor, line_dash="dash", line_color=_RED,
+                      annotation_text=tr("chart_protection", lvl=f"{floor:.0%}"),
+                      annotation_position="bottom right")
+    if breakeven is not None:
+        fig.add_hline(y=breakeven, line_dash="dot", line_color=_RED,
+                      annotation_text=tr("chart_breakeven", lvl=f"{breakeven:.0%}"),
+                      annotation_position="top right")
+    if cap is not None:
+        fig.add_hline(y=cap, line_dash="dash", line_color=_GREY,
+                      annotation_text=tr("chart_cap_lvl", lvl=f"{cap:.0%}"),
+                      annotation_position="top right")
+
+    if today >= dates[0]:
+        fig.add_vline(x=today.isoformat(), line_dash="solid", line_color="#2c3e50",
+                      line_width=2, annotation_text=tr("chart_today"), annotation_position="top left")
+
+    for m in (reset_markers or []):
+        x_iso = pd.Timestamp(m["date"]).isoformat()
+        fig.add_vline(x=x_iso, line_dash="dot", line_color="#cccccc",
+                      annotation_text=m["label"], annotation_position="top")
+    if reset_markers:
+        up = [m for m in reset_markers if m["income"] > 1e-9]
+        dn = [m for m in reset_markers if m["income"] < -1e-9]
+        fl = [m for m in reset_markers if abs(m["income"]) <= 1e-9]
+        for grp, color, sym, name in (
+                (up, "#16a34a", "triangle-up", tr("chart_reset_gain")),
+                (dn, _RED, "triangle-down", tr("chart_reset_loss")),
+                (fl, _GREY, "circle", tr("chart_reset_flat"))):
+            if not grp:
+                continue
+            fig.add_trace(go.Scatter(
+                x=[pd.Timestamp(m["date"]).isoformat() for m in grp],
+                y=[float(basket[dates.searchsorted(pd.Timestamp(m["date"]))]) if pd.Timestamp(m["date"]) <= dates[-1] else 1.0 for m in grp],
+                mode="markers", name=name, showlegend=True,
+                marker=dict(size=11, color=color, symbol=sym, line=dict(width=1.5, color="white")),
+                text=[tr("chart_reset_tip", label=m["label"], move=f"{m['move']:+.1%}", inc=f"{m['income']:+.2%}") for m in grp],
+                hovertemplate="%{text}<extra></extra>"))
+
+    for label, obs_date in (future_resets or []):
+        if pd.Timestamp(obs_date) <= maturity_date:
+            fig.add_vline(x=pd.Timestamp(obs_date).isoformat(), line_dash="dot",
+                          line_color="#dddddd", annotation_text=label, annotation_position="top")
+
+    fig.update_layout(
+        title=tr("chart_live_title", issue=issue_date.date(), mat=maturity_date.date()),
+        xaxis=dict(title=tr("date_axis")),
+        yaxis=dict(title=tr("chart_basket_vs_issue"), tickformat=".0%"),
+        hovermode="x unified",
+        legend=dict(x=1.01, y=1, xanchor="left"))
+    return _apply_theme(fig)
