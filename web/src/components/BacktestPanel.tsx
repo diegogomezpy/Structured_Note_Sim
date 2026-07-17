@@ -212,8 +212,8 @@ export default function BacktestPanel({ result, terms, range, onApplyRange, sub,
           </StatGroup>
           <StatGroup title={t('hero_risk')}>
             <MiniStat label={t('bt_called_rate')} num={summary.prob_called} dp={1} tip={t('bt_tip_called')} />
-            <MiniStat label={t('avg_time_autocall')} num={summary.avg_time_to_autocall} value="—" dp={2}
-                      unit="y" scale={1} tip={t('tip_avg_time_autocall')} />
+            <MiniStat label={t('avg_time_autocall')} num={summary.avg_time_to_autocall} value="—" dp={1}
+                      unit="mo" scale={12} tip={t('tip_avg_time_autocall')} />
             <MiniStat label={t('bt_ki_rate')} num={summary.prob_knock_in} dp={1} tip={t('bt_tip_ki')}
                       tone={(summary.prob_knock_in ?? 0) <= 0.15 ? 'var(--green)' : 'var(--red)'} />
             <MiniStat label={t('loss_given_ki')}

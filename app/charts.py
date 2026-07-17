@@ -287,6 +287,10 @@ def build_fan_chart(
     tr:         Translator,
     bands:      np.ndarray | None = None,  # precomputed (7, N+1) percentile bands
 ) -> go.Figure:
+    # Tenors are quoted in MONTHS throughout the app, so the time axis is too.
+    # The engine works in years; convert here, at the render boundary only.
+    t_grid = np.asarray(t_grid, dtype=float) * 12.0
+    obs_labels = [(lbl, tv * 12.0) for lbl, tv in obs_labels]
     # `bands` is the [1,5,25,50,75,95,99]-percentile envelope, precomputed once at
     # run-time so this doesn't rescan the full path array on every rerun (and the
     # array need not be kept in RAM just for the fan). Falls back to computing it.
@@ -331,7 +335,7 @@ def build_fan_chart(
 
     fig.update_layout(
         title=f"{asset_name} — {tr('simulated_price_dist')}",
-        xaxis=dict(title=tr("time_years"), tickformat=".2f"),
+        xaxis=dict(title=tr("time_months"), tickformat=".0f"),
         yaxis=dict(title=tr("price")),
         hovermode="x unified",
     )
@@ -360,6 +364,12 @@ def build_wof_fan(
     autocall_schedule: list[tuple[float, float]] | None = None,
     bands:            np.ndarray | None = None,  # precomputed (7, N+1) percentile bands
 ) -> go.Figure:
+    # Tenors are quoted in MONTHS throughout the app, so the time axis is too.
+    # The engine works in years; convert here, at the render boundary only.
+    t_grid = np.asarray(t_grid, dtype=float) * 12.0
+    obs_labels = [(lbl, tv * 12.0) for lbl, tv in obs_labels]
+    if autocall_schedule:
+        autocall_schedule = [(tv * 12.0, lv) for tv, lv in autocall_schedule]
     # Precomputed once at run-time (see build_fan_chart) so this doesn't rescan the
     # full worst-of array on every rerun. Falls back to computing it.
     pcts = [1, 5, 25, 50, 75, 95, 99]
@@ -401,7 +411,7 @@ def build_wof_fan(
                       annotation_text=label, annotation_position="top")
 
     fig.update_layout(
-        xaxis=dict(title=tr("time_years"), tickformat=".2f"),
+        xaxis=dict(title=tr("time_months"), tickformat=".0f"),
         yaxis=dict(title=tr("perf_vs_initial"), tickformat=".0%"),
         hovermode="x unified",
     )
@@ -552,6 +562,10 @@ def build_sample_paths(
     (autocalled blue / held-to-maturity green / knocked-in red) — the report
     version of the web sample-paths chart. Three concatenated traces (one per
     outcome) so the figure stays light even with hundreds of paths."""
+    # Tenors are quoted in MONTHS throughout the app, so the time axis is too.
+    # The engine works in years; convert here, at the render boundary only.
+    t_grid = np.asarray(t_grid, dtype=float) * 12.0
+    obs_pairs = [(lbl, tv * 12.0) for lbl, tv in obs_pairs]
     wof = np.asarray(wof_paths)
     P = wof.shape[0]
     ap = np.asarray(autocall_period)
@@ -591,7 +605,7 @@ def build_sample_paths(
         fig.add_vline(x=t_val, line_dash="dot", line_color="#bbb")
     fig.update_layout(
         title=tr("sample_paths_fig"),
-        xaxis=dict(title=tr("time_years"), tickformat=".2f"),
+        xaxis=dict(title=tr("time_months"), tickformat=".0f"),
         yaxis=dict(title=tr("perf_vs_initial"), tickformat=".0%"),
     )
     _apply_theme(fig)

@@ -424,7 +424,7 @@ _LABELS: dict[str, dict[str, str]] = {
     "fig_outcome":           {"en": "Outcome breakdown",                 "es": "Distribución de resultados"},
     "fig_sample":            {"en": "Sample worst-of paths",             "es": "Muestra de trayectorias del peor de"},
     "period":                {"en": "Period",                            "es": "Período"},
-    "time_y":                {"en": "Time (yrs)",                        "es": "Tiempo (años)"},
+    "time_y":                {"en": "Time (mo)",                         "es": "Tiempo (m)"},
     "p_autocall":            {"en": "P(autocall)",                       "es": "P(autocall)"},
     "ac_level":              {"en": "Barrier",                           "es": "Barrera"},
     "eligible":              {"en": "Eligible",                          "es": "Elegible"},
@@ -523,7 +523,7 @@ _LABELS: dict[str, dict[str, str]] = {
     "live_wof_today":        {"en": "Worst-of today",                    "es": "Worst-of hoy"},
     "live_worst_asset":      {"en": "Worst asset",                       "es": "Peor activo"},
     "live_irr_to_date":      {"en": "Coupon IRR to date (ann.)",         "es": "TIR de cupones a fecha (anual)"},
-    "live_elapsed":          {"en": "Elapsed (years)",                   "es": "Transcurrido (años)"},
+    "live_elapsed":          {"en": "Elapsed (months)",                  "es": "Transcurrido (meses)"},
     "live_asset_perf":       {"en": "Current Asset Performance",         "es": "Rendimiento Actual por Activo"},
     "live_obs_history":      {"en": "Observation History",               "es": "Historial de Observaciones"},
     "performance":           {"en": "Performance",                       "es": "Rendimiento"},
@@ -4017,7 +4017,7 @@ def _build_pdf_report(
             ac_rows = []
             for i, t_obs in enumerate(obs_times):
                 eligible = _t("yes", lang) if (i + 1) >= terms.autocall_start_period else _t("no", lang)
-                ac_rows.append([f"P{i+1}", f"{t_obs:.3g}", f"{sched[i]:.0%}", eligible])
+                ac_rows.append([f"P{i+1}", f"{t_obs * 12:.0f}", f"{sched[i]:.0%}", eligible])
             pdf.data_table(
                 [_t("period", lang), _t("time_y", lang), _t("ac_level", lang), _t("eligible", lang)],
                 ac_rows,
@@ -4164,7 +4164,8 @@ def _build_pdf_report(
         _lgki = results.get("loss_given_knock_in")
         _lgki_str = f"{_lgki:.2%}" if _lgki is not None and _lgki == _lgki else "—"  # nan-safe
         _att = results.get("avg_time_to_autocall")
-        _att_str = f"{_att:.2f} y" if _att is not None and _att == _att else "—"  # nan-safe
+        # Durations are quoted in months; the engine reports years.
+        _att_str = f"{_att * 12:.1f} mo" if _att is not None and _att == _att else "—"  # nan-safe
         if getattr(terms, "note_type", "") == "participation":
             # Participation never autocalls / pays coupons — show redemption metrics.
             _band = [
@@ -4208,7 +4209,7 @@ def _build_pdf_report(
         rows = []
         for i, (t_obs, p_ac) in enumerate(zip(obs_times, prob_by_period)):
             eligible = _t("yes", lang) if (i + 1) >= terms.autocall_start_period else _t("no", lang)
-            rows.append([f"P{i+1}", f"{t_obs:.3g}", f"{p_ac:.2%}", eligible])
+            rows.append([f"P{i+1}", f"{t_obs * 12:.0f}", f"{p_ac:.2%}", eligible])
         pdf.data_table(
             [_t("period", lang), _t("time_y", lang), _t("p_autocall", lang), _t("eligible", lang)],
             rows,
@@ -4323,7 +4324,7 @@ def _build_pdf_report(
         _bt_lgki_pdf = (f"{_bt_lgki:.2%}"
                         if _bt_lgki is not None and _bt_lgki == _bt_lgki else "—")  # nan-safe
         _bt_att = bt_summary.get("avg_time_to_autocall")
-        _bt_att_str = f"{_bt_att:.2f} y" if _bt_att is not None and _bt_att == _bt_att else "—"  # nan-safe
+        _bt_att_str = f"{_bt_att * 12:.1f} mo" if _bt_att is not None and _bt_att == _bt_att else "—"  # nan-safe
         pdf.metric_band([
             (_t("bt_mean_irr",        lang), f"{bt_summary.get('mean_irr', 0):.2%}"),
             (_t("total_return_short", lang), f"{bt_summary.get('expected_total_return', 0):.2%}"),
@@ -4376,7 +4377,7 @@ def _build_pdf_report(
                 (_t("live_wof_today",   lang), f"{live_data.get('wof_today', 0):.1%}"),
                 (_t("live_worst_asset", lang), str(live_data.get("worst_asset", ""))),
                 (_t("live_irr_to_date", lang), f"{live_data.get('irr_to_date', 0):.2%}"),
-                (_t("live_elapsed",     lang), f"{live_data.get('elapsed_years', 0):.2f}"),
+                (_t("live_elapsed",     lang), f"{live_data.get('elapsed_years', 0) * 12:.1f}"),
             ])
 
         perf_today = live_data.get("perf_today", {})
@@ -4450,7 +4451,7 @@ def _build_pdf_report(
             "expected_nominal_payout": ("expected_redemption", "pct"),
             "prob_autocall":           ("prob_autocall",       "pct"),
             "prob_knock_in_total":     ("prob_knock_in",       "pct"),
-            "avg_time_to_autocall":    ("avg_time_autocall",   "years"),
+            "avg_time_to_autocall":    ("avg_time_autocall",   "months"),
             "expected_gain":           ("expected_gain",       "pct"),
             "prob_above_par":          ("p_above_par",         "pct"),
             "prob_at_cap":             ("p_at_cap",            "pct"),
@@ -4461,13 +4462,13 @@ def _build_pdf_report(
         def _cmp_val(v, kind):
             if v is None or v != v:                                   # nan-safe
                 return "—"
-            return f"{v:.2f} y" if kind == "years" else f"{v:.2%}"
+            return f"{v * 12:.1f} mo" if kind == "months" else f"{v:.2%}"
 
         def _cmp_dlt(d, kind):
             if d is None or d != d:
                 return "—"
             _sgn = "+" if d >= 0 else ""
-            return f"{_sgn}{d:.2f} y" if kind == "years" else f"{_sgn}{d:.2%}"
+            return f"{_sgn}{d * 12:.1f} mo" if kind == "months" else f"{_sgn}{d:.2%}"
 
         _cmp_rows = []
         for _r in compare_data.get("diff", {}).get("rows", []):

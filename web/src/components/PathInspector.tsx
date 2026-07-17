@@ -263,7 +263,7 @@ function InspectorPanel({ fetcher, terms, label, onRemove }: {
           : (o.is_loss
               ? t('insp_part_loss', { r: pct(o.redemption, 1), b: pct(o.final_basket, 1) })
               : t('insp_part_ok', { r: pct(o.redemption, 1), b: pct(o.final_basket, 1) })))
-    : o.autocall_q > 0 ? t('insp_autocalled', { q: o.autocall_q, t: num(o.call_time, 2) })
+    : o.autocall_q > 0 ? t('insp_autocalled', { q: o.autocall_q, t: num((o.call_time ?? 0) * 12, 1) })
     : o.knock_in ? t('insp_mat_ki', { wof: pct(o.worst_final, 1) })
     : t('insp_mat_ok', { wof: pct(o.worst_final, 1) })
 

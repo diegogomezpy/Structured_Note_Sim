@@ -377,7 +377,7 @@ export const S: Dict = {
   tip_loss_given_ki: { en: 'Mean return on the paths that knocked in — the average outcome when capital is at risk.', es: 'Retorno medio en las trayectorias con knock-in — el resultado medio cuando el capital está en riesgo.' },
   p_autocall:       { en: 'P(autocalled)', es: 'P(autocancelación)' },
   avg_time_autocall: { en: 'Avg. time to autocall', es: 'Tiempo medio a autocancelación' },
-  tip_avg_time_autocall: { en: 'Average time until early redemption, over the paths that autocall — measured in years from issue. Blank when nothing autocalls.', es: 'Tiempo medio hasta el rescate anticipado, sobre las trayectorias que se autocancelan — en años desde la emisión. Vacío cuando nada se autocancela.' },
+  tip_avg_time_autocall: { en: 'Average time until early redemption, over the paths that autocall — measured in months from issue. Blank when nothing autocalls.', es: 'Tiempo medio hasta el rescate anticipado, sobre las trayectorias que se autocancelan — en meses desde la emisión. Vacío cuando nada se autocancela.' },
   p_knock_in:       { en: 'P(knock-in)', es: 'P(knock-in)' },
   exp_payout:       { en: 'Expected payout', es: 'Pago esperado' },
   per_100:          { en: 'per 100 nominal', es: 'por 100 nominal' },
@@ -428,7 +428,7 @@ export const S: Dict = {
   // MC tables
   autocall_by_period_h: { en: 'Autocall probability by period', es: 'Probabilidad de autocancelación por periodo' },
   col_period:       { en: 'Period', es: 'Periodo' },
-  col_time:         { en: 'Time (y)', es: 'Tiempo (a)' },
+  col_time:         { en: 'Time (mo)', es: 'Tiempo (m)' },
   col_p_autocall:   { en: 'P(autocall)', es: 'P(autocancelación)' },
   col_eligible:     { en: 'Autocall eligible', es: 'Autocancelable' },
   yes:              { en: 'Yes', es: 'Sí' },
@@ -499,7 +499,7 @@ export const S: Dict = {
   bt_explorer_intro: { en: 'Every historical issue’s worst-of trajectory, in note-relative time, coloured by outcome. Filter below; drag to zoom.', es: 'La trayectoria del peor de cada emisión histórica, en tiempo relativo a la nota, coloreada por resultado. Filtra abajo; arrastra para hacer zoom.' },
   bt_explorer_empty: { en: 'Not enough price history to backtest this note.', es: 'No hay suficiente historial para hacer backtest de esta nota.' },
   bt_explorer_issues: { en: 'historical issues', es: 'emisiones históricas' },
-  chart_years_since_issue: { en: 'Years since issue', es: 'Años desde la emisión' },
+  chart_years_since_issue: { en: 'Months since issue', es: 'Meses desde la emisión' },
   bt_worst_pie:     { en: 'Worst asset', es: 'Peor activo' },
   bt_irr_scatter:   { en: 'IRR by issue date', es: 'TIR por fecha de emisión' },
   bt_price_history: { en: 'Price history', es: 'Histórico de precios' },
@@ -512,7 +512,7 @@ export const S: Dict = {
   explorer_sampled: { en: 'sampled paths', es: 'trayectorias muestreadas' },
   explorer_resample:{ en: 'Resample', es: 'Re-muestrear' },
   explorer_expired: { en: 'This run expired from the server cache — re-run the simulation to explore paths.', es: 'Esta simulación expiró de la caché del servidor — vuelve a ejecutar para explorar trayectorias.' },
-  chart_time_years: { en: 'Time (years)', es: 'Tiempo (años)' },
+  chart_time_years: { en: 'Time (months)', es: 'Tiempo (meses)' },
   chart_wof:        { en: 'Worst-of performance', es: 'Rendimiento del peor de' },
 
   // states
@@ -564,7 +564,7 @@ export const S: Dict = {
   insp_m_principal: { en: 'Capital', es: 'Capital' },
   insp_m_coupons:   { en: 'Coupons', es: 'Cupones' },
   insp_m_irr:       { en: 'IRR p.a.', es: 'TIR anual' },
-  insp_autocalled:  { en: 'Autocalled at P{q} · t={t}y', es: 'Autocancelada en P{q} · t={t}a' },
+  insp_autocalled:  { en: 'Autocalled at P{q} · t={t} mo', es: 'Autocancelada en P{q} · t={t} m' },
   insp_mat_ki:      { en: 'Held to maturity · knocked in (worst-of {wof})', es: 'A vencimiento · knock-in (peor de {wof})' },
   insp_mat_ok:      { en: 'Held to maturity · redeemed at par (worst-of {wof})', es: 'A vencimiento · redimida a la par (peor de {wof})' },
 
@@ -831,6 +831,7 @@ export const S: Dict = {
   live_elapsed:     { en: 'elapsed', es: 'transcurrido' },
   live_remaining:   { en: 'remaining', es: 'restante' },
   live_y:           { en: 'y', es: 'a' },
+  live_mo:          { en: 'mo', es: 'm' },
   live_called_banner: { en: 'Autocalled at P{n} — capital returned with the accrued premium.', es: 'Autocancelada en P{n} — capital devuelto con la prima acumulada.' },
   live_group_today: { en: 'Today', es: 'Hoy' },
   live_group_barriers: { en: 'Barriers', es: 'Barreras' },

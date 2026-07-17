@@ -20,7 +20,7 @@ import { noteSummary } from '../lib/terms'
    and B share underlyings + maturity, so those differences are pure term effects. */
 
 type Dir = 'up' | 'down' | 'neutral'
-type Kind = 'pct' | 'years'
+type Kind = 'pct' | 'months'
 interface Row { label: string; a: number | null; b: number | null; delta: number | null; dir: Dir; kind: Kind }
 
 // Monte Carlo diff keys → label/direction/format (server returns the A/B/Δ values).
@@ -31,7 +31,7 @@ const MC_METRICS: Record<string, { labelKey: string; dir: Dir; kind: Kind }> = {
   expected_nominal_payout: { labelKey: 'expected_redemption',   dir: 'up',      kind: 'pct' },
   prob_autocall:           { labelKey: 'p_autocall',            dir: 'neutral', kind: 'pct' },
   prob_knock_in_total:     { labelKey: 'p_knock_in',            dir: 'down',    kind: 'pct' },
-  avg_time_to_autocall:    { labelKey: 'avg_time_autocall',     dir: 'neutral', kind: 'years' },
+  avg_time_to_autocall:    { labelKey: 'avg_time_autocall',     dir: 'neutral', kind: 'months' },
   expected_gain:           { labelKey: 'expected_gain',         dir: 'up',      kind: 'pct' },
   prob_above_par:          { labelKey: 'p_above_par',           dir: 'up',      kind: 'pct' },
   prob_at_cap:             { labelKey: 'p_at_cap',              dir: 'neutral', kind: 'pct' },
@@ -45,13 +45,14 @@ const BT_METRICS: [string, string, Dir, Kind][] = [
   ['prob_called',          'bt_called_rate',   'neutral', 'pct'],
   ['prob_knock_in',        'bt_ki_rate',       'down',    'pct'],
   ['loss_given_knock_in',  'loss_given_ki',    'down',    'pct'],
-  ['avg_time_to_autocall', 'avg_time_autocall','neutral', 'years'],
+  ['avg_time_to_autocall', 'avg_time_autocall','neutral', 'months'],
 ]
 
+// Durations arrive in years (the engine's unit) and are quoted in months.
 const fmtVal = (v: number | null | undefined, kind: Kind) =>
-  v == null ? '—' : kind === 'years' ? `${num(v, 2)} y` : pct(v, 1)
+  v == null ? '—' : kind === 'months' ? `${num(v * 12, 1)} mo` : pct(v, 1)
 const fmtDelta = (d: number | null, kind: Kind) =>
-  d == null ? '—' : kind === 'years' ? `${d >= 0 ? '+' : ''}${num(d, 2)} y` : pctSigned(d, 1)
+  d == null ? '—' : kind === 'months' ? `${d >= 0 ? '+' : ''}${num(d * 12, 1)} mo` : pctSigned(d, 1)
 const deltaTone = (dir: Dir, d: number | null) => {
   if (d == null || dir === 'neutral' || Math.abs(d) < 1e-9) return 'var(--text-muted)'
   return (dir === 'up' ? d > 0 : d < 0) ? 'var(--accent-text)' : 'var(--red)'

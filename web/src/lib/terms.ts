@@ -17,6 +17,9 @@ export function periodsPerYear(t: NoteTerms): number {
    months (how tenors are actually spoken), converting only at the boundary. */
 export const monthsOf = (years: number) => Math.round(years * 12)
 export const yearsOfMonths = (months: number) => months / 12
+/** Years → months, unrounded — for durations quoted with decimals (avg time to
+    autocall, elapsed/remaining, chart time axes). */
+export const monthsNum = (years: number) => years * 12
 /** Maturity for display, e.g. "36M". */
 export const maturityLabel = (years: number) => `${monthsOf(years)}M`
 

@@ -21,7 +21,7 @@ export function AutocallByPeriodTable({ summary, autocallStart }: { summary: Sim
             return (
               <tr key={i}>
                 <td>P{i + 1}</td>
-                <td className="num" style={{ color: 'var(--text-muted)' }}>{num(summary.obs_times[i], 2)}</td>
+                <td className="num" style={{ color: 'var(--text-muted)' }}>{num(summary.obs_times[i] * 12, 1)}</td>
                 <td className="num">{pct(p, 2)}</td>
                 <td className="num" style={{ color: eligible ? 'var(--text)' : 'var(--text-faint)' }}>
                   {eligible ? t('yes') : t('coupon_only')}

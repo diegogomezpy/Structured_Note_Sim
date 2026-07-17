@@ -7,6 +7,7 @@ import BarrierMonitor from './BarrierMonitor'
 import AnimatedNumber from './AnimatedNumber'
 import { InfoDot } from './Tooltip'
 import { pct, pctSigned, num } from '../lib/format'
+import { monthsNum } from '../lib/terms'
 import type { LiveObsRow, LiveResult, LiveStatus, NoteTerms } from '../api/types'
 
 const STATUS_META: Record<LiveStatus, { key: string; color: string }> = {
@@ -57,7 +58,7 @@ function Lifecycle({ s }: { s: NonNullable<LiveResult['summary']> }) {
     <Panel pad={18}>
       <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: 'var(--text-muted)', marginBottom: 9 }}>
         <span>{t('live_issued')} <span className="mono" style={{ color: 'var(--text)' }}>{s.issue_date}</span></span>
-        <span className="mono" style={{ color: 'var(--text)' }}>{num(s.elapsed_years, 2)} {t('live_y')} {t('live_elapsed')} · {num(s.remaining_years, 2)} {t('live_y')} {t('live_remaining')}</span>
+        <span className="mono" style={{ color: 'var(--text)' }}>{num(monthsNum(s.elapsed_years ?? 0), 1)} {t('live_mo')} {t('live_elapsed')} · {num(monthsNum(s.remaining_years ?? 0), 1)} {t('live_mo')} {t('live_remaining')}</span>
         <span>{t('live_matures')} <span className="mono" style={{ color: 'var(--text)' }}>{s.maturity_date}</span></span>
       </div>
       <div style={{ height: 8, borderRadius: 5, background: 'var(--surface-2)', overflow: 'hidden' }}>
@@ -217,8 +218,8 @@ export default function LivePanel({ result }: { result: LiveResult; terms: NoteT
   const s = result.summary!
   const assets = result.assets ?? []
   const rows = result.obs_rows ?? []
-  const elapsed = num(s.elapsed_years, 2)
-  const remaining = num(s.remaining_years, 2)
+  const elapsed = num(monthsNum(s.elapsed_years ?? 0), 1)
+  const remaining = num(monthsNum(s.remaining_years ?? 0), 1)
   const wofDelta = s.wof_today != null ? s.wof_today - 1 : null
   const tone = (d: number | null | undefined) => (d == null ? 'var(--text)' : d >= 0 ? 'var(--green)' : 'var(--red)')
 
@@ -230,7 +231,7 @@ export default function LivePanel({ result }: { result: LiveResult; terms: NoteT
       <Panel pad={18}>
         <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: 'var(--text-muted)', marginBottom: 9 }}>
           <span>{t('live_issued')} <span className="mono" style={{ color: 'var(--text)' }}>{s.issue_date}</span></span>
-          <span className="mono" style={{ color: 'var(--text)' }}>{elapsed} {t('live_y')} {t('live_elapsed')} · {remaining} {t('live_y')} {t('live_remaining')}</span>
+          <span className="mono" style={{ color: 'var(--text)' }}>{elapsed} {t('live_mo')} {t('live_elapsed')} · {remaining} {t('live_mo')} {t('live_remaining')}</span>
           <span>{t('live_matures')} <span className="mono" style={{ color: 'var(--text)' }}>{s.maturity_date}</span></span>
         </div>
         <div style={{ height: 8, borderRadius: 5, background: 'var(--surface-2)', overflow: 'hidden' }}>

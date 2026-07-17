@@ -34,6 +34,8 @@ _STRINGS: dict[str, tuple[str, str]] = {
     # ── Tab 2 — Fan ────────────────────────────────────────────────────────
     "simulated_price_dist":     ("Simulated Price Distribution",     "Distribución de Precios Simulados"),
     "time_years":               ("Time (years)",                     "Tiempo (años)"),
+    # Tenors/durations are quoted in months across the app; charts follow.
+    "time_months":              ("Time (months)",                    "Tiempo (meses)"),
     "price":                    ("Price",                            "Precio"),
     "median":                   ("Median",                           "Mediana"),
     "pct_1_99":                 ("1st–99th pct",                     "Pct 1–99"),

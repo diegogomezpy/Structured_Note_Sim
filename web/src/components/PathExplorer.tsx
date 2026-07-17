@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { api } from '../api/client'
+import { monthsNum } from '../lib/terms'
 import { useI18n } from '../i18n/I18nProvider'
 import Panel from './Panel'
 import Figure from './Figure'
@@ -34,7 +35,8 @@ function group(paths: ExplorerPath[], t: number[], color: string, name: string) 
   const x: (number | null)[] = []
   const y: (number | null)[] = []
   for (const p of paths) {
-    for (let i = 0; i < t.length; i++) { x.push(t[i]); y.push(p.wof[i]) }
+    // `t` is in years (the engine's unit); the axis is quoted in months.
+    for (let i = 0; i < t.length; i++) { x.push(monthsNum(t[i])); y.push(p.wof[i]) }
     x.push(null); y.push(null)
   }
   return { x, y, type: 'scattergl', mode: 'lines', name, line: { color, width: 1 }, opacity: 0.22, hoverinfo: 'skip' }
@@ -76,7 +78,7 @@ export function PathFan({
       .map((g) => group(data.paths.filter((p) => classify(p, isPart) === g.kind), data.t, KIND_COLOR[g.kind], g.label))
       .filter((tr) => tr.x.length > 0)
 
-    const x0 = data.t[0], x1 = data.t[data.t.length - 1]
+    const x0 = monthsNum(data.t[0]), x1 = monthsNum(data.t[data.t.length - 1])
     const hline = (yv: number | null | undefined, color: string, dash: string) => yv == null ? null : ({
       type: 'line', x0, x1, y0: yv, y1: yv, line: { color, width: 1, dash },
     })
