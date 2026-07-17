@@ -127,8 +127,8 @@ export default function SettingsOverlay({
       {isPart && (
       <Group n={2} title={t('sec_participation')}>
         <Grid>
-          <Slider label={t('maturity')} tip={t('tip_maturity')} value={monthsOf(terms.maturity)} min={1} max={60} step={1}
-                  editSuffix="mo" fmt={(v) => `${v} mo`} onChange={(v) => set('maturity', yearsOfMonths(v))} />
+          <NumberField label={t('maturity')} tip={t('tip_maturity')} value={monthsOf(terms.maturity)} suffix="mo" min={1} step={1}
+                       onChange={(v) => set('maturity', yearsOfMonths(Math.max(1, Math.round(v))))} />
           <SelectField label={t('part_basket')} tip={t('tip_part_basket')} value={terms.participation_basket ?? 'worst_of'} options={basketOpts}
                        onChange={(v) => set('participation_basket', v)} />
         </Grid>
@@ -237,8 +237,8 @@ export default function SettingsOverlay({
             <SegmentedField label={t('frequency')} tip={t('tip_frequency')} value={terms.payment_freq}
                             options={FREQS.map((f) => ({ value: f, label: t(`freq_${f}`) }))} onChange={(v) => set('payment_freq', v)} />
           </div>
-          <Slider label={t('maturity')} tip={t('tip_maturity')} value={monthsOf(terms.maturity)} min={1} max={60} step={1}
-                  editSuffix="mo" fmt={(v) => `${v} mo`} onChange={(v) => set('maturity', yearsOfMonths(v))} />
+          <NumberField label={t('maturity')} tip={t('tip_maturity')} value={monthsOf(terms.maturity)} suffix="mo" min={1} step={1}
+                       onChange={(v) => set('maturity', yearsOfMonths(Math.max(1, Math.round(v))))} />
           <NumField label={t('coupon_pa')} tip={t('tip_coupon_pa')} value={terms.coupon_pa} pct suffix="%"
                     onChange={(v) => set('coupon_pa', v)} />
           <SelectField label={t('coupon_basket')} tip={t('tip_coupon_basket')} value={terms.coupon_basket} options={basketOpts} onChange={(v) => set('coupon_basket', v)} />
