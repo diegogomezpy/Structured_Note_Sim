@@ -1501,6 +1501,28 @@ def run_live_api(terms: NoteTerms, *, lang: str = "en", for_pdf: bool = False) -
     }
 
 
+def history_span(tickers: dict) -> dict:
+    """How much overlapping price history these underlyings actually have — the
+    ceiling on a useful calibration window. Reads the SAME cached max-history pull
+    the backtest/live flows use, so it's usually free; the basket is only as long
+    as its shortest member (load_prices aligns to common trading days).
+
+    Returns ``{"years", "start", "end", "n_days"}``; years is floored to 0.0 when
+    nothing resolves, which the client reads as "no cap known"."""
+    if not tickers:
+        return {"years": 0.0, "start": None, "end": None, "n_days": 0}
+    df = _prices(dict(tickers), years=None, field="close")
+    if df.empty:
+        return {"years": 0.0, "start": None, "end": None, "n_days": 0}
+    start, end = df.index[0], df.index[-1]
+    return {
+        "years":   round((end - start).days / 365.25, 2),
+        "start":   start.date().isoformat(),
+        "end":     end.date().isoformat(),
+        "n_days":  int(len(df)),
+    }
+
+
 # ── underlying breakdown flow ────────────────────────────────────────────────────
 def run_underlying_metrics(tickers: dict, *, lang: str = "en") -> list[dict]:
     """Per-underlying breakdown for the note-structure cards: long name, type/sector,

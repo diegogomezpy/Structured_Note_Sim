@@ -13,6 +13,8 @@ export const S: Dict = {
   // setup rail
   setup_heading:    { en: 'Note setup', es: 'Configuración' },
   nav_heading:      { en: 'Views', es: 'Vistas' },
+  calib_avail:      { en: 'Up to {y} years of shared history available ({start} → {end}).', es: 'Hasta {y} años de histórico común disponible ({start} → {end}).' },
+  calib_avail_unknown: { en: 'Available history unknown — add underlyings to see the limit.', es: 'Histórico disponible desconocido — añade subyacentes para ver el límite.' },
   edit_terms_full:  { en: 'Edit note terms', es: 'Editar términos' },
   config_label:     { en: 'Term sheet', es: 'Ficha técnica' },
   upload_config:    { en: 'Upload', es: 'Subir' },

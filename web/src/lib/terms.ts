@@ -12,6 +12,14 @@ export function periodsPerYear(t: NoteTerms): number {
   return FREQ_TO_PERIODS[t.payment_freq] ?? 4
 }
 
+/* Maturity is STORED in years — that's the term-sheet JSON contract and what the
+   quant core computes on, so neither changes. The UI quotes and edits it in
+   months (how tenors are actually spoken), converting only at the boundary. */
+export const monthsOf = (years: number) => Math.round(years * 12)
+export const yearsOfMonths = (months: number) => months / 12
+/** Maturity for display, e.g. "36M". */
+export const maturityLabel = (years: number) => `${monthsOf(years)}M`
+
 export function nObs(t: NoteTerms): number {
   return Math.max(1, Math.round(t.maturity * periodsPerYear(t)))
 }

@@ -32,8 +32,9 @@ const mapX = (frac: number) => X0 + frac * (X1 - X0)
 
 const fmtMonthYear = (iso: string) => { const d = new Date(`${iso}T00:00:00`); return Number.isNaN(d.getTime()) ? '' : d.toLocaleDateString('en-US', { month: 'short', year: 'numeric' }) }
 const addYears = (iso: string, yrs: number) => { const d = new Date(`${iso}T00:00:00`); d.setDate(d.getDate() + Math.round(yrs * 365.25)); return d.toISOString().slice(0, 10) }
-const tenorLabel = (years: number) => { const m = Math.round(years * 12); return m % 12 === 0 ? `${m / 12}y` : `${m}m` }
-const yrTick = (y: number) => `${Number.isInteger(y) ? y : +y.toFixed(2)}y`
+const tenorLabel = (years: number) => `${Math.round(years * 12)}M`
+/* Tenor is quoted in months, so the time axis is too. */
+const yrTick = (y: number) => `${Math.round(y * 12)}M`
 
 /** Greedily separate label y-positions by at least `gap`, kept inside [minY,maxY],
     returned in the original order — so each label clears its neighbours. */

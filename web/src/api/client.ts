@@ -1,6 +1,6 @@
 import type {
-  BacktestResult, BtRange, CompareResult, ConfigMeta, CoverPhoto, DescribeResult, ExplorerData, Health, InspectFilters,
-  InspectResult, LiveResult, LogoData, NoteTerms, Quote, ReportRequest, SimResult, SimulateRequest,
+  BacktestResult, BtRange, CompareResult, ConfigMeta, CoverPhoto, DescribeResult, ExplorerData, Health, HistorySpan,
+  InspectFilters, InspectResult, LiveResult, LogoData, NoteTerms, Quote, ReportRequest, SimResult, SimulateRequest,
   UnderlyingMetric, UnderlyingOption,
 } from './types'
 
@@ -57,6 +57,8 @@ export const api = {
     jpost<LiveResult>('/api/live', { terms, lang }),
   underlyingMetrics: (tickers: Record<string, string>, lang = 'en') =>
     jpost<UnderlyingMetric[]>('/api/underlyings/metrics', { tickers, lang }),
+  history: (tickers: Record<string, string>) =>
+    jpost<HistorySpan>('/api/history', { tickers }),
   quotes: (symbols: string[]) =>
     jpost<Record<string, Quote>>('/api/quotes', { symbols }),
   describe: (issuer: string | null, symbols: string[], lang = 'en') =>

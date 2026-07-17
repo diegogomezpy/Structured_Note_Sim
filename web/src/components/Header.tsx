@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { useTheme } from '../theme/ThemeProvider'
+import { maturityLabel } from '../lib/terms'
 import { useI18n } from '../i18n/I18nProvider'
 import Icon from './Icon'
 import BrandMark from './BrandMark'
@@ -56,7 +57,7 @@ export default function Header({ terms, run }: { terms: NoteTerms | null; run: R
                     {tickers.map(([sym, name]) => <TickerLogo key={sym} symbol={sym} name={name} size={15} />)}
                   </span>
                   <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                    {terms.maturity}y · {t('worst_of')}
+                    {maturityLabel(terms.maturity)} · {t('worst_of')}
                     {tickers.length > 0 && ` · ${tickers.map(([sym]) => sym).join('/')}`}
                   </span>
                 </div>

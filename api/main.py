@@ -619,6 +619,17 @@ def underlying_metrics(req: MetricsRequest):
         raise HTTPException(500, f"underlying metrics failed: {e}")
 
 
+@app.post("/api/history")
+def history(req: MetricsRequest):
+    """Overlapping price history available for a ticker set — the ceiling the
+    calibration-window control caps itself to. Best-effort: on failure the client
+    just doesn't cap."""
+    try:
+        return engine.history_span(req.tickers)
+    except Exception as e:
+        raise HTTPException(500, f"history span failed: {e}")
+
+
 @app.post("/api/quotes")
 def quotes(req: QuotesRequest):
     """Fast last-price + day-change per symbol for the live ticker tape — Yahoo

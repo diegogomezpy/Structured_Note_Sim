@@ -6,14 +6,11 @@
 import type { NoteTerms } from '../api/types'
 import type { Lang } from '../i18n/strings'
 
+/** Tenors are quoted in months throughout the app, prose included. */
 function duration(maturity: number, lang: Lang): string {
   const months = Math.round(maturity * 12)
-  if (months % 12 === 0) {
-    const y = months / 12
-    if (lang === 'es') return y === 1 ? '1 año' : `${y} años`
-    return y === 1 ? '1 year' : `${y} years`
-  }
-  return lang === 'es' ? `${months} meses` : `${months} months`
+  if (lang === 'es') return months === 1 ? '1 mes' : `${months} meses`
+  return months === 1 ? '1 month' : `${months} months`
 }
 
 function freqWord(freq: NoteTerms['payment_freq'], lang: Lang): string {

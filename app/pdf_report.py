@@ -2605,7 +2605,7 @@ def _fmt_rsi(v) -> str:
 
 def _term_rows(terms, lang: str) -> list[tuple[str, str]]:
     rows = [
-        (_t("maturity",         lang), f"{terms.maturity:g}Y ({terms.n_obs} {_t('observations_word', lang)}, {_fmt_freq(terms.payment_freq, lang)})"),
+        (_t("maturity",         lang), f"{_mat_label(terms)} ({terms.n_obs} {_t('observations_word', lang)}, {_fmt_freq(terms.payment_freq, lang)})"),
         (_t("coupon_pa",        lang), f"{terms.coupon_pa * 100:.2f}%  ({terms.coupon_rate * 100:.4f}% {_t('per_period', lang)})"),
         (_t("coupon_barrier",   lang), f"{terms.coupon_barrier:.1%}" if terms.coupon_barrier > 0 else
                                        _t("guaranteed_zero", lang)),
@@ -2813,6 +2813,13 @@ def _cover_left_photo(pdf: "_NotePDF", x0: float, top: float, w: float,
         return False
 
 
+def _mat_label(terms) -> str:
+    """Maturity for display. The term sheet stores it in YEARS (the JSON contract
+    and what the quant core computes on); tenors are quoted in MONTHS, so convert
+    only here, at the render boundary. e.g. 1.5 -> "18M"."""
+    return f"{round(float(terms.maturity) * 12)}M"
+
+
 def _front_cover_page(pdf: _NotePDF, terms, lang: str, report_title: str, website: str,
                       report_kind: str | None = None):
     """Full-bleed branded cover (page 1, toggleable): brand-colour background, the
@@ -2922,7 +2929,7 @@ def _front_cover_page(pdf: _NotePDF, terms, lang: str, report_title: str, websit
     pdf.rect(0, band_y, W, band_h, style="F")
     _ki_lbl = _t("ki_barrier", lang).split(' (')[0]
     _fcat = {
-        "maturity":         (_t("maturity", lang),         f"{terms.maturity:g}Y"),
+        "maturity":         (_t("maturity", lang),         _mat_label(terms)),
         "coupon_pa":        (_t("coupon_pa", lang),        f"{terms.coupon_pa * 100:.2f}%"),
         "coupon_barrier":   (_t("coupon_barrier", lang),   f"{terms.coupon_barrier:.0%}"),
         "autocall_barrier": (_t("autocall_barrier", lang), f"{terms.autocall_barrier:.0%}"),
@@ -3290,7 +3297,7 @@ def _cover_page(
     # the *cover* footer strip, not this rail.
     _ki_lbl = _t("ki_barrier", lang).split(' (')[0]
     _metric_catalog = {
-        "maturity":         (_t("maturity", lang),         f"{terms.maturity:g}Y {_fmt_freq(terms.payment_freq, lang)}"),
+        "maturity":         (_t("maturity", lang),         f"{_mat_label(terms)} {_fmt_freq(terms.payment_freq, lang)}"),
         "coupon_pa":        (_t("coupon_pa", lang),        f"{terms.coupon_pa * 100:.2f}%"),
         "coupon_barrier":   (_t("coupon_barrier", lang),   f"{terms.coupon_barrier:.0%}"),
         "autocall_barrier": (_t("autocall_barrier", lang), f"{terms.autocall_barrier:.0%}"),

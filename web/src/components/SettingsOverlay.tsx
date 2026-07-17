@@ -1,6 +1,7 @@
-import type { ReactNode } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
+import { api } from '../api/client'
 import { useI18n } from '../i18n/I18nProvider'
-import { nObs } from '../lib/terms'
+import { nObs, monthsOf, yearsOfMonths } from '../lib/terms'
 import Modal from './Modal'
 import Icon from './Icon'
 import UnderlyingPicker from './UnderlyingPicker'
@@ -9,11 +10,13 @@ import { Slider, NumField, NumberField, SelectField, SegmentedField, ToggleField
 import { NOTE_TYPES, detectNoteType, applyPreset } from '../lib/noteType'
 import { withDownside, withUpside } from '../lib/participation'
 import type { RunOpts } from './SetupRail'
-import type { Basket, NoteTerms } from '../api/types'
+import type { Basket, HistorySpan, NoteTerms } from '../api/types'
 
 const FREQS: NoteTerms['payment_freq'][] = ['monthly', 'quarterly', 'semi-annual', 'annual']
 const PATH_PRESETS = [2000, 5000, 10000, 25000, 50000, 100000, 250000]
-const CALIB_YEARS = [1, 2, 3, 5, 10]
+/** Fallback ceiling for the calibration window when the real history span hasn't
+    resolved (yet, or at all) — generous enough not to block a long window. */
+const CALIB_MAX_FALLBACK = 50
 
 function Group({ n, title, children }: { n: number; title: string; children: ReactNode }) {
   return (
@@ -54,6 +57,23 @@ export default function SettingsOverlay({
   const { t } = useI18n()
   const set = <K extends keyof NoteTerms>(k: K, v: NoteTerms[K]) => onChange({ ...terms, [k]: v })
   const n = nObs(terms)
+
+  // How much overlapping history these underlyings have — the calibration window's
+  // real ceiling. Fetched once per ticker set when the overlay opens; the backend
+  // reads its cached price pull, so this is usually instant. Failure is silent:
+  // spanMax falls back and the hint says the span is unknown.
+  const [span, setSpan] = useState<HistorySpan | null>(null)
+  const tickerKey = JSON.stringify(terms.tickers ?? {})
+  useEffect(() => {
+    let alive = true
+    setSpan(null)
+    if (!Object.keys(terms.tickers ?? {}).length) return
+    api.history(terms.tickers).then((s) => { if (alive) setSpan(s) }).catch(() => {})
+    return () => { alive = false }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tickerKey])
+  const spanMax = span && span.years > 0 ? span.years : CALIB_MAX_FALLBACK
+  const clampCalib = (v: number) => Math.min(Math.max(v, 0.5), spanMax)
   const basketOpts = [
     { value: 'worst_of' as Basket, label: t('basket_worst_of') },
     { value: 'best_of' as Basket, label: t('basket_best_of') },
@@ -107,8 +127,8 @@ export default function SettingsOverlay({
       {isPart && (
       <Group n={2} title={t('sec_participation')}>
         <Grid>
-          <Slider label={t('maturity')} tip={t('tip_maturity')} value={terms.maturity} min={0.25} max={5} step={0.25}
-                  editSuffix="y" fmt={(v) => `${v.toFixed(2)} y`} onChange={(v) => set('maturity', v)} />
+          <Slider label={t('maturity')} tip={t('tip_maturity')} value={monthsOf(terms.maturity)} min={1} max={60} step={1}
+                  editSuffix="mo" fmt={(v) => `${v} mo`} onChange={(v) => set('maturity', yearsOfMonths(v))} />
           <SelectField label={t('part_basket')} tip={t('tip_part_basket')} value={terms.participation_basket ?? 'worst_of'} options={basketOpts}
                        onChange={(v) => set('participation_basket', v)} />
         </Grid>
@@ -217,8 +237,8 @@ export default function SettingsOverlay({
             <SegmentedField label={t('frequency')} tip={t('tip_frequency')} value={terms.payment_freq}
                             options={FREQS.map((f) => ({ value: f, label: t(`freq_${f}`) }))} onChange={(v) => set('payment_freq', v)} />
           </div>
-          <Slider label={t('maturity')} tip={t('tip_maturity')} value={terms.maturity} min={0.25} max={5} step={0.25}
-                  editSuffix="y" fmt={(v) => `${v.toFixed(2)} y`} onChange={(v) => set('maturity', v)} />
+          <Slider label={t('maturity')} tip={t('tip_maturity')} value={monthsOf(terms.maturity)} min={1} max={60} step={1}
+                  editSuffix="mo" fmt={(v) => `${v} mo`} onChange={(v) => set('maturity', yearsOfMonths(v))} />
           <NumField label={t('coupon_pa')} tip={t('tip_coupon_pa')} value={terms.coupon_pa} pct suffix="%"
                     onChange={(v) => set('coupon_pa', v)} />
           <SelectField label={t('coupon_basket')} tip={t('tip_coupon_basket')} value={terms.coupon_basket} options={basketOpts} onChange={(v) => set('coupon_basket', v)} />
@@ -317,10 +337,18 @@ export default function SettingsOverlay({
                           options={[{ value: 'numpy', label: 'numpy' }, { value: 'cpp', label: cppAvailable ? 'C++' : 'C++ (fallback)' }]}
                           onChange={(v) => onOptsChange({ ...opts, engine: v === 'cpp' ? 'cpp' : 'numpy' })} />
           <NumberField label={t('seed')} tip={t('tip_seed')} value={opts.seed} step={1} min={0} onChange={(v) => onOptsChange({ ...opts, seed: Math.round(v) })} />
-          <SelectField label={t('calib_window')} tip={t('tip_calib_window')} value={String(opts.calib_years)}
-                       options={CALIB_YEARS.map((y) => ({ value: String(y), label: `${y} ${t('calib_years')}` }))}
-                       onChange={(v) => onOptsChange({ ...opts, calib_years: parseInt(v) })} />
+          {/* Any window, not fixed steps — capped at the history these underlyings
+              actually share (asking for more than exists silently calibrates on
+              less, which is the sort of thing you only notice much later). */}
+          <NumberField label={t('calib_window')} tip={t('tip_calib_window')} value={opts.calib_years}
+                       step={0.5} min={0.5} max={spanMax}
+                       onChange={(v) => onOptsChange({ ...opts, calib_years: clampCalib(v) })} />
         </Grid>
+        <div style={{ fontSize: 11.5, color: 'var(--text-faint)', marginTop: 8, lineHeight: 1.5 }}>
+          {span && span.years > 0
+            ? t('calib_avail', { y: span.years.toFixed(1), start: span.start ?? '', end: span.end ?? '' })
+            : t('calib_avail_unknown')}
+        </div>
       </Group>
     </Modal>
   )

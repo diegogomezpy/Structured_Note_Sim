@@ -357,6 +357,15 @@ export interface DescribeResult {
   underlyings: Record<string, string | null>   // keyed by yfinance symbol
 }
 
+/** Overlapping price history available for a ticker set (/api/history) — the cap
+    the calibration-window control offers. `years` 0 = unknown / nothing resolved. */
+export interface HistorySpan {
+  years: number
+  start: string | null
+  end: string | null
+  n_days: number
+}
+
 export interface UnderlyingMetric {
   name: string
   symbol: string
