@@ -225,6 +225,7 @@ export default function BatchReportPanel({ terms, opts, configs }: {
             terms: row.terms, sections: [...row.sel], lang: row.lang, branding: brandingFor(photos),
             n_paths: opts.n_paths, seed: opts.seed, calib_years: opts.calib_years, engine: opts.engine,
             compare_terms: null,
+            report_kind: row.preset === 'custom' ? null : row.preset,
           })
           const blob = await res.blob()
           let fname = `${safeName(row.terms.name)}.pdf`

@@ -1,15 +1,13 @@
 import { useRef, useState } from 'react'
 import { useI18n } from '../i18n/I18nProvider'
-import { nObs } from '../lib/terms'
 import Icon from './Icon'
-import { NumField, SelectField, SegmentedField, ToggleField, Select } from './fields'
+import { SegmentedField, Select } from './fields'
 import AddNoteHelp from './AddNoteHelp'
 import UnderlyingPicker from './UnderlyingPicker'
 import FolderConnect from './FolderConnect'
 import { useLocalFolder, safeName } from '../lib/localFolder'
 import { useToast } from './Toast'
 import { detectNoteType, applyPreset, NOTE_TYPES, type NoteType } from '../lib/noteType'
-import { withDownside, withUpside } from '../lib/participation'
 import type { ConfigMeta, NoteTerms } from '../api/types'
 
 export interface RunOpts {
@@ -17,19 +15,6 @@ export interface RunOpts {
   engine: 'numpy' | 'cpp'
   seed: number
   calib_years: number
-}
-
-const FREQS: NoteTerms['payment_freq'][] = ['monthly', 'quarterly', 'semi-annual', 'annual']
-/** Compact codes for the narrow rail's segmented frequency control. */
-const FREQ_SHORT: Record<NoteTerms['payment_freq'], string> = {
-  monthly: 'M', quarterly: 'Q', 'semi-annual': 'S/A', annual: 'A',
-}
-const BASKETS: NoteTerms['coupon_basket'][] = ['worst_of', 'best_of', 'average']
-
-/** Small uppercase sub-group header, so downside / upside / cliquet fields read as
-    distinct groups in the rail. */
-function SubHead({ children }: { children: string }) {
-  return <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--text-faint)', margin: '2px 0 8px' }}>{children}</div>
 }
 
 export default function SetupRail({
@@ -49,7 +34,6 @@ export default function SetupRail({
 }) {
   const { t } = useI18n()
   const toast = useToast()
-  const set = <K extends keyof NoteTerms>(k: K, v: NoteTerms[K]) => onChange({ ...terms, [k]: v })
   const fileRef = useRef<HTMLInputElement>(null)
   const [uploadErr, setUploadErr] = useState('')
   const [saving, setSaving] = useState(false)
@@ -116,15 +100,9 @@ export default function SetupRail({
     } finally { setSaving(false) }
   }
 
-  // The rail is deliberately simple: for a Participation note it shows only the
-  // headline knobs (protection + rate + downside style); the full option set
-  // lives in the settings overlay.
+  // The rail is deliberately minimal — which note, on what, of what type. Every
+  // term/mechanic knob lives in the settings overlay.
   const noteType = detectNoteType(terms)
-  const isPart = noteType === 'participation'
-  const periodic = terms.participation_periodic ?? false
-  const pu = terms.participation_upside ?? 'linear'
-  const downsideOpts = (['full', 'buffer', 'airbag', 'bear'] as const).map((v) => ({ value: v, label: t(`pd_${v}`) }))
-  const upsideOpts = (['linear', 'shark_fin', 'digital'] as const).map((v) => ({ value: v, label: t(`pu_${v}`) }))
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
@@ -181,137 +159,22 @@ export default function SetupRail({
       </div>
 
       <div data-tour="underlyings">
-        <UnderlyingPicker tickers={terms.tickers} onChange={(tk) => set('tickers', tk)} />
+        <UnderlyingPicker tickers={terms.tickers} onChange={(tk) => onChange({ ...terms, tickers: tk })} />
       </div>
 
-      {/* Note-type toggle — switch structure families without opening the overlay. */}
+      {/* Note-type toggle — switch structure families without opening the overlay.
+          Everything below it (maturity, barriers, coupons, participation styles,
+          mechanics) lives in the settings overlay: the rail stays a short
+          identity strip — which note, on what, of what type — so the freed space
+          can carry the navigation menu instead. */}
       <div style={{ borderTop: '1px solid var(--border)', paddingTop: 14 }}>
         <SegmentedField label={t('sec_note_type')} tip={t('tip_note_type')} value={noteType}
                         options={NOTE_TYPES.map((nt) => ({ value: nt, label: t(`nt_${nt}`) }))}
                         onChange={(v) => onChange(applyPreset(terms, v as NoteType))} />
       </div>
 
-      {/* Inline editor for the terms that drive the note diagram above. The full
-          settings overlay still holds the rarer fields (engine, ratings, …). */}
-      <div data-tour="terms" style={{ borderTop: '1px solid var(--border)', paddingTop: 14 }}>
-        <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--text-muted)', marginBottom: 12 }}>{t('quick_edit')}</div>
-
-        <NumField label={t('maturity')} value={terms.maturity} suffix="y" min={0.25} tip={t('tip_maturity')}
-                  onChange={(v) => set('maturity', v)} />
-        {isPart ? (<>
-          <ToggleField label={t('part_periodic')} tip={t('part_periodic_h')} checked={periodic}
-                       onChange={(v) => set('participation_periodic', v)} />
-          {periodic && (<>
-            <SubHead>{t('grp_cliquet')}</SubHead>
-            <SegmentedField label={t('part_reset')} tip={t('tip_part_reset')} value={terms.payment_freq}
-                            options={FREQS.map((f) => ({ value: f, label: FREQ_SHORT[f] }))}
-                            onChange={(v) => set('payment_freq', v)} />
-            <ToggleField label={t('cap_period')} tip={t('tip_cap_period')} checked={terms.period_cap != null}
-                         onChange={(on) => set('period_cap', on ? 0.08 : null)} />
-            {terms.period_cap != null && (
-              <NumField label={t('period_cap')} tip={t('tip_period_cap')} value={terms.period_cap} pct suffix="%"
-                        onChange={(v) => set('period_cap', v)} />
-            )}
-          </>)}
-          <SubHead>{t('grp_downside')}</SubHead>
-          <SelectField label={t('part_downside')} tip={t('tip_part_downside')} value={terms.participation_downside ?? 'full'}
-                       options={downsideOpts}
-                       onChange={(v) => onChange(withDownside(terms, v as NonNullable<NoteTerms['participation_downside']>))} />
-          <NumField label={t('protection_level')} tip={t('tip_protection_level')} value={terms.protection_level ?? 1.0} pct suffix="%"
-                    onChange={(v) => set('protection_level', v)} />
-          {terms.participation_downside === 'bear' && (<>
-            <NumField label={t('participation_strike')} tip={t('tip_participation_strike')} value={terms.participation_strike ?? 1.0} pct suffix="%"
-                      onChange={(v) => set('participation_strike', v)} />
-            <NumField label={t('participation_rate')} tip={t('tip_participation_rate')} value={terms.participation_rate ?? 1.0} pct suffix="%"
-                      onChange={(v) => set('participation_rate', v)} />
-            {!periodic && (<>
-              <ToggleField label={t('cap_upside')} tip={t('tip_cap_upside')} checked={terms.upside_cap != null}
-                           onChange={(on) => set('upside_cap', on ? 0.5 : null)} />
-              {terms.upside_cap != null && (
-                <NumField label={t('upside_cap')} tip={t('tip_upside_cap')} value={terms.upside_cap} pct suffix="%"
-                          onChange={(v) => set('upside_cap', v)} />
-              )}
-            </>)}
-          </>)}
-          {terms.participation_downside !== 'bear' && (<>
-            <SubHead>{t('grp_upside')}</SubHead>
-            <SelectField label={t('part_upside')} tip={t('tip_part_upside')} value={pu}
-                         options={upsideOpts}
-                         onChange={(v) => onChange(withUpside(terms, v as NonNullable<NoteTerms['participation_upside']>))} />
-            <NumField label={t('participation_strike')} tip={t('tip_participation_strike')} value={terms.participation_strike ?? 1.0} pct suffix="%"
-                      onChange={(v) => set('participation_strike', v)} />
-            {pu !== 'digital' && (
-              <NumField label={t('participation_rate')} tip={t('tip_participation_rate')} value={terms.participation_rate ?? 1.0} pct suffix="%"
-                        onChange={(v) => set('participation_rate', v)} />
-            )}
-            {pu === 'shark_fin' && (<>
-              <NumField label={t('knockout_level')} tip={t('tip_knockout_level')} value={terms.knockout_level ?? 1.3} pct suffix="%"
-                        onChange={(v) => set('knockout_level', v)} />
-              <NumField label={t('knockout_payout')} tip={t('tip_knockout_payout')} value={terms.knockout_payout ?? 1.0} pct suffix="%"
-                        onChange={(v) => set('knockout_payout', v)} />
-            </>)}
-            {pu === 'digital' && (
-              <NumField label={t('digital_payout')} tip={t('tip_digital_payout')} value={terms.digital_payout ?? 0} pct suffix="%"
-                        onChange={(v) => set('digital_payout', v)} />
-            )}
-            {pu === 'linear' && !periodic && (<>
-              <ToggleField label={t('cap_upside')} tip={t('tip_cap_upside')} checked={terms.upside_cap != null}
-                           onChange={(on) => set('upside_cap', on ? 0.5 : null)} />
-              {terms.upside_cap != null && (
-                <NumField label={t('upside_cap')} tip={t('tip_upside_cap')} value={terms.upside_cap} pct suffix="%"
-                          onChange={(v) => set('upside_cap', v)} />
-              )}
-            </>)}
-          </>)}
-          <SubHead>{t('grp_basket')}</SubHead>
-          <SelectField label={t('part_basket')} tip={t('tip_part_basket')} value={terms.participation_basket ?? 'worst_of'}
-                       options={BASKETS.map((b) => ({ value: b, label: t(`basket_${b}`) }))}
-                       onChange={(v) => set('participation_basket', v)} />
-        </>) : (<>
-          <SegmentedField label={t('frequency')} value={terms.payment_freq} tip={t('tip_frequency')}
-                          options={FREQS.map((f) => ({ value: f, label: FREQ_SHORT[f] }))}
-                          onChange={(v) => set('payment_freq', v)} />
-          <NumField label={t('coupon_pa')} value={terms.coupon_pa} pct suffix="%" tip={t('tip_coupon_pa')}
-                    onChange={(v) => set('coupon_pa', v)} />
-          <NumField label={t('coupon_barrier')} value={terms.coupon_barrier} pct suffix="%" tip={t('tip_coupon_barrier')}
-                    onChange={(v) => set('coupon_barrier', v)} />
-          <NumField label={t('knock_in_barrier')} value={terms.knock_in_barrier} pct suffix="%" tone="danger" tip={t('tip_knock_in')}
-                    onChange={(v) => set('knock_in_barrier', v)} />
-          <NumField label={t('autocall_barrier')} value={terms.autocall_barrier} pct suffix="%" tip={t('tip_autocall')}
-                    onChange={(v) => set('autocall_barrier', v)} />
-        </>)}
-      </div>
-
-      {/* Second group — the next-most-edited mechanics, inline so they don't
-          require the settings overlay. Phoenix-family only; a Participation note's
-          extra options all live in the settings overlay. */}
-      {!isPart && (
-      <div data-tour="mechanics" style={{ borderTop: '1px solid var(--border)', paddingTop: 14 }}>
-        <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--text-muted)', marginBottom: 12 }}>{t('quick_mechanics')}</div>
-
-        <NumField label={t('autocall_start')} tip={t('tip_autocall_start')} value={Math.min(terms.autocall_start_period, nObs(terms))}
-                  isInt min={1} max={Math.max(1, nObs(terms))}
-                  onChange={(v) => set('autocall_start_period', v)} />
-        <SelectField label={t('coupon_basket')} tip={t('tip_coupon_basket')} value={terms.coupon_basket}
-                     options={BASKETS.map((b) => ({ value: b, label: t(`basket_${b}`) }))}
-                     onChange={(v) => set('coupon_basket', v)} />
-        <SelectField label={t('autocall_basket')} tip={t('tip_autocall_basket')} value={terms.autocall_basket}
-                     options={BASKETS.map((b) => ({ value: b, label: t(`basket_${b}`) }))}
-                     onChange={(v) => set('autocall_basket', v)} />
-        <ToggleField label={t('memory')} tip={t('tip_memory')} checked={terms.memory} onChange={(v) => set('memory', v)} />
-        <ToggleField label={t('one_star')} tip={t('tip_one_star')} checked={terms.one_star_level != null}
-                     onChange={(on) => set('one_star_level', on ? 1.0 : null)} />
-        {terms.one_star_level != null && (
-          <NumField label={t('one_star_level')} tip={t('tip_one_star_level')} value={terms.one_star_level} pct suffix="%"
-                    onChange={(v) => set('one_star_level', v)} />
-        )}
-        <ToggleField label={t('zenith')} tip={t('zenith_h')} checked={!!terms.zenith}
-                     onChange={(v) => set('zenith', v)} />
-      </div>
-      )}
-
       <button data-tour="settings" className="btn" style={{ justifyContent: 'center', padding: '10px' }} onClick={onOpenSettings}>
-        <Icon name="chart" size={15} /> {t('edit_settings')}
+        <Icon name="chart" size={15} /> {t('edit_terms_full')}
       </button>
 
       <button data-tour="run" className={`btn btn--primary${stale && !running ? ' btn--pulse' : ''}`}

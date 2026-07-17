@@ -625,7 +625,9 @@ input.slider-val-input:focus { background: var(--surface); border-color: var(--a
   max-width: 2560px;
   margin: 0 auto;
 }
-.app-rail { position: sticky; top: 18px; }
+/* Setup panel + navigation menu stack in the rail. Keep `display` here rather
+   than inline, so the phone rule below (`display: none`) can override it. */
+.app-rail { position: sticky; top: 18px; display: flex; flex-direction: column; gap: 16px; }
 @media (max-width: 1000px) {
   .app-layout { grid-template-columns: 1fr; padding: 14px; }
   .app-rail { position: static; }
@@ -667,11 +669,17 @@ input.slider-val-input:focus { background: var(--surface); border-color: var(--a
   .app-rail, .app-main { scrollbar-width: thin; scrollbar-color: var(--border-strong) transparent; }
 }
 
+/* Navigation lives in the rail (NavMenu). The horizontal tab rows are the phone
+   fallback, since the rail is hidden there — so they're suppressed everywhere the
+   rail is visible. */
+.nav-mobile-only { display: none; }
+
 /* Phone: the result reads first — the rail collapses into a sticky action bar
    (Mobile doc), which opens the editor as a bottom sheet. */
 .mobile-action-bar { display: none; }
 @media (max-width: 640px) {
   .app-rail { display: none; }
+  .nav-mobile-only { display: block; }
   .app-layout { padding-bottom: 78px; }   /* clear the fixed bar */
   .mobile-action-bar {
     display: flex; gap: 10px; position: fixed; left: 0; right: 0; bottom: 0; z-index: 50;

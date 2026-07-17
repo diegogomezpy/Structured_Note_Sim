@@ -60,11 +60,13 @@ function StatGroup({ title, children }: { title: string; children: ReactNode }) 
   )
 }
 
-export default function BacktestPanel({ result, terms, range, onApplyRange }: {
+/** `sub` is owned by App so the rail's NavMenu can drive it; the local tab row
+    below is only the phone fallback (the rail is hidden under 640px). */
+export default function BacktestPanel({ result, terms, range, onApplyRange, sub, onSubChange }: {
   result: BacktestResult; terms: NoteTerms; range: BtRange; onApplyRange: (r: BtRange) => void
+  sub: string; onSubChange: (s: string) => void
 }) {
   const { t } = useI18n()
-  const [sub, setSub] = useState('outcomes')
   const [start, setStart] = useState(range.start ?? '')
   const [end, setEnd] = useState(range.end ?? '')
   const { summary, issues, figures } = result
@@ -224,7 +226,9 @@ export default function BacktestPanel({ result, terms, range, onApplyRange }: {
 
       {rangeBar}
 
-      <Tabs tabs={[{ id: 'outcomes', label: t('bt_sub_outcomes') }, { id: 'prices', label: t('bt_sub_prices') }, { id: 'sample', label: t('bt_sub_sample') }, { id: 'explorer', label: t('bt_sub_explorer') }]} active={sub} onChange={setSub} />
+      <div className="nav-mobile-only">
+        <Tabs tabs={[{ id: 'outcomes', label: t('bt_sub_outcomes') }, { id: 'prices', label: t('bt_sub_prices') }, { id: 'sample', label: t('bt_sub_sample') }, { id: 'explorer', label: t('bt_sub_explorer') }]} active={sub} onChange={onSubChange} />
+      </div>
 
       {sub === 'outcomes' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }} className="stagger">

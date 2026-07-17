@@ -171,6 +171,9 @@ class ReportRequest(BaseModel):
     engine: str = "cpp"   # prefer C++; the engine falls back to numpy if unbuilt
     branding: dict | None = None
     compare_terms: dict | None = None   # Note B — adds an A/B comparison section
+    # Audience preset the report was built for (advisor / client / ic / risk / full).
+    # Rendered as the report-type subtitle on the cover; None = untyped.
+    report_kind: str | None = None
 
 
 # ── endpoints ─────────────────────────────────────────────────────────────────
@@ -708,7 +711,7 @@ def _prepare_report(req: ReportRequest, request: Request):
             raise HTTPException(400, f"invalid comparison terms: {e}")
     _audit(request, "report", note=terms.name, tickers=_tickers_of(req.terms),
            sections=len(req.sections or []), n_paths=req.n_paths, lang=req.lang, engine=req.engine,
-           compare=bool(compare_terms))
+           compare=bool(compare_terms), kind=req.report_kind or "-")
     # Content-Disposition is latin-1 only, so strip the filename to safe ASCII
     # (note names carry em-dashes / accents that would crash header encoding).
     import re
@@ -720,7 +723,7 @@ def _build_report_bytes(terms, compare_terms, req: ReportRequest) -> bytes:
     return engine.build_report_pdf(
         terms, sections=req.sections, lang=req.lang, n_paths=req.n_paths,
         seed=req.seed, calib_years=req.calib_years, engine=req.engine,
-        branding=req.branding, compare_terms=compare_terms)
+        branding=req.branding, compare_terms=compare_terms, report_kind=req.report_kind)
 
 
 @app.post("/api/report")

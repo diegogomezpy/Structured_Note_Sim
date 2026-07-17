@@ -26,8 +26,8 @@ export function mainTour(t: (k: string) => string): TourStep[] {
     { title: t('tour_welcome_t'), body: t('tour_welcome_b') },
     { target: '[data-tour="term-sheet"]', title: t('tour_termsheet_t'), body: t('tour_termsheet_b'), placement: 'right' },
     { target: '[data-tour="underlyings"]', title: t('tour_underlyings_t'), body: t('tour_underlyings_b'), placement: 'right' },
-    { target: '[data-tour="terms"]', title: t('tour_terms_t'), body: t('tour_terms_b'), placement: 'right' },
-    { target: '[data-tour="mechanics"]', title: t('tour_mechanics_t'), body: t('tour_mechanics_b'), placement: 'right' },
+    // The rail no longer inlines the term/mechanic fields (they live in the
+    // settings overlay), so the tour goes straight from the underlyings to it.
     { target: '[data-tour="settings"]', title: t('tour_settings_t'), body: t('tour_settings_b'), placement: 'right' },
     { target: '[data-tour="structure"]', title: t('tour_structure_t'), body: t('tour_structure_b') },
     { target: '[data-tour="run"]', title: t('tour_run_t'), body: t('tour_run_b'), placement: 'right' },

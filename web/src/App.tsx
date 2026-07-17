@@ -23,16 +23,28 @@ import ComparePanel from './components/ComparePanel'
 import ReportPanel from './components/ReportPanel'
 import BatchReportPanel from './components/BatchReportPanel'
 import SettingsOverlay from './components/SettingsOverlay'
+import NavMenu, { type NavItem } from './components/NavMenu'
 import BrandMark from './components/BrandMark'
 import Icon from './components/Icon'
 import { useTour, mainTour } from './components/Tour'
 
 type Status = 'idle' | 'running' | 'error'
 
-/** Signature of the exact inputs a run depends on, so we can flag a displayed
-    result as stale once the user edits terms or run options after running. */
-const sigOf = (terms: NoteTerms, opts: RunOpts) =>
-  JSON.stringify({ terms, n: opts.n_paths, e: opts.engine, s: opts.seed, c: opts.calib_years })
+/** Today as a LOCAL calendar day (YYYY-MM-DD) — not toISOString(), which is UTC
+    and would flip the day at the wrong moment for most of the world. */
+const todayISO = () => {
+  const d = new Date()
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
+/** Signature of the exact inputs a result depends on, so we can flag a displayed
+    one as stale. `day` is part of it because every flow is computed against
+    "today": the Monte Carlo calibrates off prices up to today, the backtest gains
+    an issue window, and Current Performance is a snapshot as of today. Without it
+    a tab left open across a day boundary keeps serving yesterday's answer, and
+    (worse) never refetches — the terms alone haven't changed. */
+const sigOf = (terms: NoteTerms, opts: RunOpts, day: string) =>
+  JSON.stringify({ terms, n: opts.n_paths, e: opts.engine, s: opts.seed, c: opts.calib_years, d: day })
 
 export default function App() {
   const { t, lang } = useI18n()
@@ -47,9 +59,17 @@ export default function App() {
   const [cppAvailable, setCppAvailable] = useState(false)
   const [result, setResult] = useState<SimResult | null>(null)
   const [runSig, setRunSig] = useState('')
+  const [runDay, setRunDay] = useState('')   // calendar day the shown run was calibrated on
   const [status, setStatus] = useState<Status>('idle')
   const [errorMsg, setErrorMsg] = useState('')
   const [tab, setTab] = useState('mc')
+  // Sub-view per view, lifted out of the panels so the rail's NavMenu can drive
+  // them (and each view remembers where you were when you come back).
+  const [subs, setSubs] = useState<Record<string, string>>({ mc: 'summary', bt: 'outcomes' })
+  const selectNav = useCallback((id: string, sub?: string) => {
+    setTab(id)
+    if (sub) setSubs((p) => ({ ...p, [id]: sub }))
+  }, [])
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [diagramOpen, setDiagramOpen] = useState(true)
   // Backtest is fetched lazily on first open of its tab (only depends on terms).
@@ -63,6 +83,23 @@ export default function App() {
   const [liveSig, setLiveSig] = useState('')
   const [liveStatus, setLiveStatus] = useState<Status>('idle')
   const [liveError, setLiveError] = useState('')
+  // The current calendar day, re-checked on focus / tab-visibility / every minute.
+  // Every result signature carries it, so a session left open overnight (or over a
+  // weekend) marks its results stale and refetches instead of silently serving a
+  // snapshot from a previous day. setDay with an equal string is a no-op re-render,
+  // so the interval costs nothing on the 1439 minutes that don't cross midnight.
+  const [day, setDay] = useState(todayISO())
+  useEffect(() => {
+    const check = () => setDay(todayISO())
+    window.addEventListener('focus', check)
+    document.addEventListener('visibilitychange', check)
+    const id = setInterval(check, 60_000)
+    return () => {
+      window.removeEventListener('focus', check)
+      document.removeEventListener('visibilitychange', check)
+      clearInterval(id)
+    }
+  }, [])
 
   // Bootstrap: engine availability + config list. Start on a blank note rather
   // than auto-loading a bundled term sheet.
@@ -119,15 +156,19 @@ export default function App() {
     }
   }, [])
 
-  const btSigOf = (r: BtRange) => JSON.stringify({ t: terms, r })
+  // Signatures stamp the day the result was fetched FOR, so a result computed
+  // yesterday reads as stale today (the backtest gains issue dates as history
+  // grows; Current Performance is a snapshot as of today).
+  const btSigOf = (r: BtRange, d: string) => JSON.stringify({ t: terms, r, d })
   const fetchBacktest = useCallback(async (range: BtRange = btRange) => {
     if (!terms) return
     setBtStatus('running')
     setBtError('')
+    const d = todayISO()
     try {
       const r = await api.backtest(terms, lang, range)
       setBtResult(r)
-      setBtSig(JSON.stringify({ t: terms, r: range }))
+      setBtSig(JSON.stringify({ t: terms, r: range, d }))
       setBtStatus('idle')
     } catch (e) {
       setBtError(String(e instanceof Error ? e.message : e))
@@ -137,16 +178,18 @@ export default function App() {
 
   const applyBtRange = useCallback((r: BtRange) => { setBtRange(r); fetchBacktest(r) }, [fetchBacktest])
 
-  const btStale = !!btResult && !!terms && btSigOf(btRange) !== btSig
+  const btStale = !!btResult && !!terms && btSigOf(btRange, day) !== btSig
 
+  const liveSigOf = (d: string) => JSON.stringify({ t: terms, d })
   const fetchLive = useCallback(async () => {
     if (!terms) return
     setLiveStatus('running')
     setLiveError('')
+    const d = todayISO()
     try {
       const r = await api.live(terms, lang)
       setLiveResult(r)
-      setLiveSig(JSON.stringify(terms))
+      setLiveSig(JSON.stringify({ t: terms, d }))
       setLiveStatus('idle')
     } catch (e) {
       setLiveError(String(e instanceof Error ? e.message : e))
@@ -154,20 +197,22 @@ export default function App() {
     }
   }, [terms, lang])
 
-  const liveStale = !!liveResult && !!terms && JSON.stringify(terms) !== liveSig
+  const liveStale = !!liveResult && !!terms && liveSigOf(day) !== liveSig
 
   // Auto-load the backtest / live tabs when opened and the cached result (if any)
-  // no longer matches the current terms. Term edits while already on the tab show
-  // a stale affordance instead of refetching on every keystroke.
+  // no longer matches the current terms OR was fetched on an earlier day. Term
+  // edits while already on the tab show a stale affordance instead of refetching
+  // on every keystroke; a day rollover refetches outright, since a stale "as of
+  // today" snapshot is wrong rather than merely out of date.
   useEffect(() => {
-    if (tab === 'bt' && terms && btStatus !== 'running' && btSigOf(btRange) !== btSig) {
+    if (tab === 'bt' && terms && btStatus !== 'running' && btSigOf(btRange, day) !== btSig) {
       fetchBacktest()
     }
-    if (tab === 'live' && terms && liveStatus !== 'running' && JSON.stringify(terms) !== liveSig) {
+    if (tab === 'live' && terms && liveStatus !== 'running' && liveSigOf(day) !== liveSig) {
       fetchLive()
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tab])
+  }, [tab, day])
 
   const run = useCallback(async () => {
     if (!terms) return
@@ -183,7 +228,9 @@ export default function App() {
         seed: opts.seed, calib_years: opts.calib_years, lang,
       })
       setResult(res)
-      setRunSig(sigOf(terms, opts))
+      const d = todayISO()
+      setRunSig(sigOf(terms, opts, d))
+      setRunDay(d)
       setStatus('idle')
     } catch (e) {
       setErrorMsg(String(e instanceof Error ? e.message : e))
@@ -191,23 +238,45 @@ export default function App() {
     }
   }, [terms, opts, lang, btResult, fetchBacktest, liveResult, fetchLive])
 
-  const stale = useMemo(
-    () => !!result && !!runSig && !!terms && sigOf(terms, opts) !== runSig,
-    [result, runSig, terms, opts],
+  // Unlike the backtest/live tabs, the Monte Carlo is never refetched behind the
+  // user's back — a run is theirs to trigger. A day rollover just flags it, so the
+  // amber re-run banner appears the next morning as well as after a terms edit.
+  // The two reasons are told apart (against the run's OWN day as the baseline) so
+  // the banner can say which it is: "inputs changed" vs "calibrated on an earlier
+  // day" are different problems and prompt differently.
+  const staleInputs = useMemo(
+    () => !!result && !!runSig && !!terms && sigOf(terms, opts, runDay) !== runSig,
+    [result, runSig, terms, opts, runDay],
   )
+  const staleDay = !!result && !!runDay && runDay !== day
+  const stale = staleInputs || staleDay
 
   const runMeta = result
     ? { engine: result.summary.engine, nPaths: result.summary.n_paths, stale }
     : null
 
-  const tabs = [
-    { id: 'mc', label: t('tab_mc') },
-    { id: 'bt', label: t('tab_backtest') },
+  // One navigation model drives both the rail's NavMenu (desktop) and the
+  // horizontal tab rows (the phone fallback, where the rail is hidden).
+  const navItems: NavItem[] = [
+    { id: 'mc', label: t('tab_mc'), subs: [
+      { id: 'summary', label: t('sub_summary') },
+      { id: 'fans', label: t('sub_fans') },
+      { id: 'sample', label: t('sub_sample') },
+      { id: 'explorer', label: t('sub_explorer') },
+      { id: 'correlation', label: t('sub_correlation') },
+    ] },
+    { id: 'bt', label: t('tab_backtest'), subs: [
+      { id: 'outcomes', label: t('bt_sub_outcomes') },
+      { id: 'prices', label: t('bt_sub_prices') },
+      { id: 'sample', label: t('bt_sub_sample') },
+      { id: 'explorer', label: t('bt_sub_explorer') },
+    ] },
     { id: 'live', label: t('tab_live') },
     { id: 'compare', label: t('tab_compare') },
-    { id: 'report', label: <span><Icon name="chart" size={13} /> {t('tab_report')}</span> },
+    { id: 'report', label: t('tab_report'), icon: 'chart' },
     { id: 'batch', label: t('tab_batch') },
   ]
+  const tabs = navItems.map((n) => ({ id: n.id, label: n.label }))
 
   return (
     <div className="ground">
@@ -215,6 +284,8 @@ export default function App() {
       {terms && <div data-tour="ticker"><TickerTape terms={terms} /></div>}
 
       <div className="app-layout">
+        {/* Layout lives in .app-rail (not inline) so the phone media query's
+            `display:none` can still win. */}
         <aside className="app-rail">
           <Panel title={t('setup_heading')}>
             {terms ? (
@@ -232,6 +303,11 @@ export default function App() {
               </div>
             )}
           </Panel>
+          <div data-tour="tabs">
+            <Panel title={t('nav_heading')}>
+              <NavMenu items={navItems} tab={tab} subs={subs} onSelect={selectNav} />
+            </Panel>
+          </div>
         </aside>
 
         <main className="app-main" style={{ display: 'flex', flexDirection: 'column', gap: 18, minWidth: 0 }}>
@@ -255,7 +331,8 @@ export default function App() {
             </div>
           )}
 
-          <div data-tour="tabs"><Tabs tabs={tabs} active={tab} onChange={setTab} /></div>
+          {/* Phone fallback — the rail (and its NavMenu) is hidden below 640px. */}
+          <div className="nav-mobile-only"><Tabs tabs={tabs} active={tab} onChange={setTab} /></div>
 
           {tab === 'mc' && (
             <>
@@ -266,13 +343,16 @@ export default function App() {
                   borderRadius: 11, fontSize: 13, color: 'var(--text)',
                 }}>
                   <Icon name="refresh" size={16} />
-                  <span style={{ flex: 1 }}>{t('stale_banner')}</span>
+                  <span style={{ flex: 1 }}>{staleInputs ? t('stale_banner') : t('stale_banner_day')}</span>
                   <button className="btn" onClick={run} style={{ padding: '6px 12px' }}>{t('rerun')}</button>
                 </div>
               )}
               {status === 'running' && <Panel><RunProgress /></Panel>}
               {status === 'error' && <ErrorState message={errorMsg} onRetry={run} />}
-              {status !== 'running' && result && terms && <MonteCarloPanel result={result} terms={terms} />}
+              {status !== 'running' && result && terms && (
+                <MonteCarloPanel result={result} terms={terms} sub={subs.mc ?? 'summary'}
+                                 onSubChange={(s) => setSubs((p) => ({ ...p, mc: s }))} />
+              )}
               {status === 'idle' && !result && (
                 <Panel pad={48}>
                   <div style={{ textAlign: 'center', maxWidth: 440, margin: '0 auto', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
@@ -312,7 +392,8 @@ export default function App() {
               )}
               {btStatus === 'error' && <ErrorState message={btError} onRetry={() => fetchBacktest()} />}
               {btStatus !== 'running' && btStatus !== 'error' && btResult && terms && (
-                <BacktestPanel result={btResult} terms={terms} range={btRange} onApplyRange={applyBtRange} />
+                <BacktestPanel result={btResult} terms={terms} range={btRange} onApplyRange={applyBtRange}
+                               sub={subs.bt ?? 'outcomes'} onSubChange={(s) => setSubs((p) => ({ ...p, bt: s }))} />
               )}
             </>
           )}

@@ -319,6 +319,14 @@ def _hex_cluster(pdf, x: float, y: float, scale: float,
 _LABELS: dict[str, dict[str, str]] = {
     "series_title":          {"en": "Structured Note Analytics",         "es": "Análisis de Nota Estructurada"},
     "report_eyebrow":        {"en": "STRUCTURED NOTE",                   "es": "NOTA ESTRUCTURADA"},
+    # Report-type subtitle on the cover — keyed by the audience preset the report
+    # was built for (see ReportRequest.report_kind). An unknown/absent kind draws
+    # no subtitle at all.
+    "kind_full":             {"en": "Full report",                       "es": "Informe completo"},
+    "kind_advisor":          {"en": "Advisory report",                   "es": "Informe comercial"},
+    "kind_client":           {"en": "Client report",                     "es": "Informe para el cliente"},
+    "kind_ic":               {"en": "Investment committee report",       "es": "Informe para el comité de inversiones"},
+    "kind_risk":             {"en": "Risk report",                       "es": "Informe de riesgos"},
     "generated":             {"en": "Publication date",                  "es": "Fecha de publicación"},
     "underlyings":           {"en": "UNDERLYINGS",                       "es": "SUBYACENTES"},
     "key_terms":             {"en": "KEY TERMS",                         "es": "TÉRMINOS CLAVE"},
@@ -2805,11 +2813,16 @@ def _cover_left_photo(pdf: "_NotePDF", x0: float, top: float, w: float,
         return False
 
 
-def _front_cover_page(pdf: _NotePDF, terms, lang: str, report_title: str, website: str):
+def _front_cover_page(pdf: _NotePDF, terms, lang: str, report_title: str, website: str,
+                      report_kind: str | None = None):
     """Full-bleed branded cover (page 1, toggleable): brand-colour background, the
     centred firm logo, a 'Nota Estructurada' eyebrow, the note name and the report
     month — modelled on the CADIEM cover. Uses the brand palette + logo; a brand
-    may also supply `cover_image_base64` for a full-bleed background photo."""
+    may also supply `cover_image_base64` for a full-bleed background photo.
+
+    `report_kind` (the audience preset the report was built for) is stamped under
+    the note as a report-type subtitle — "Risk report", "Client report", … — so a
+    printed PDF says what kind of report it is. Unknown/None ⇒ no subtitle."""
     import re
     pdf.set_auto_page_break(auto=False)
     pdf._is_cover = True
@@ -2890,6 +2903,13 @@ def _front_cover_page(pdf: _NotePDF, terms, lang: str, report_title: str, websit
     pdf.ln(8)
     pdf.set_fill_color(*pdf.section_rule_color)
     pdf.rect(ml, pdf.get_y(), 22, 1.6, style="F")
+
+    # Report-type subtitle under the rule ("Risk report", "Client report", …).
+    _kind_lbl = _LABELS.get(f"kind_{report_kind}") if report_kind else None
+    if _kind_lbl:
+        pdf.ln(6)
+        pdf._eyebrow(ml, pdf.get_y(), _t(f"kind_{report_kind}", lang).upper(),
+                     pdf.section_rule_color, size=9.0, tracking=1.4, w=inner)
 
     # ── Bottom band: user-selectable key terms + website ──────────────────
     # Which figures appear here (and their order) is driven by branding
@@ -3783,9 +3803,14 @@ def _build_pdf_report(
     issuer_description: str | None = None,
     compare_data: dict | None = None,
     compare_figures: dict | None = None,
+    report_kind: str | None = None,
 ) -> bytes:
     """
     Build the full institutional-style PDF report.
+
+    report_kind     — the audience preset the report was built for ("advisor",
+                      "client", "ic", "risk", "full"). Stamped on the cover as a
+                      report-type subtitle; None / unknown ⇒ no subtitle.
 
     logo_urls       — {display_name: url} for underlying ticker logos.
     logo_overrides  — {display_name: raw image bytes} for user-uploaded custom
@@ -3931,7 +3956,7 @@ def _build_pdf_report(
 
     # ── 0. Front cover (toggleable, default on) ────────────────────────────
     if _inc("cover"):
-        _front_cover_page(pdf, terms, lang, report_title, website)
+        _front_cover_page(pdf, terms, lang, report_title, website, report_kind)
 
     # ── 1. Summary / contents page ─────────────────────────────────────────
     _cover_page(pdf, terms, results, asset_names, bt_summary, live_data, lang,

@@ -1752,11 +1752,14 @@ def build_report_pdf(terms: NoteTerms, *, sections: list[str] | None = None, lan
                      n_paths: int = 10000, seed: int = 42, calib_years: float = 5.0,
                      history_years: float | None = None, engine: str = "cpp",
                      branding: dict | None = None,
-                     compare_terms: NoteTerms | None = None) -> bytes:
+                     compare_terms: NoteTerms | None = None,
+                     report_kind: str | None = None) -> bytes:
     """Assemble the institutional PDF report (app/pdf_report.py). `sections` is the
     set of fine-grained item keys to include (empty/None ⇒ everything available);
     only the flows those keys touch are run. `branding` is an optional firm-branding
-    dict. `compare_terms` (Note B) adds an A/B comparison section. Returns PDF bytes."""
+    dict. `compare_terms` (Note B) adds an A/B comparison section. `report_kind` is
+    the audience preset it was built for — stamped on the cover as the report-type
+    subtitle. Returns PDF bytes."""
     from pdf_report import generate_pdf_report                     # heavy import, lazy
 
     tr = translations.Translator(lang)
@@ -1884,4 +1887,5 @@ def build_report_pdf(terms: NoteTerms, *, sections: list[str] | None = None, lan
         logo_overrides=logo_overrides or None, branding=branding,
         underlying_metrics=underlying_metrics, underlying_price_figs=underlying_price_figs,
         issuer_description=issuer_desc or None, include_sections=include_sections,
-        compare_data=compare_data, compare_figures=compare_figures)
+        compare_data=compare_data, compare_figures=compare_figures,
+        report_kind=report_kind)

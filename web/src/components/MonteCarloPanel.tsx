@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react'
+import { useCallback } from 'react'
 import { api } from '../api/client'
 import { useI18n } from '../i18n/I18nProvider'
 import Panel from './Panel'
@@ -16,12 +16,15 @@ import type { NoteTerms, SimResult } from '../api/types'
 
 const CHART_H = 320
 
-export default function MonteCarloPanel({ result, terms }: { result: SimResult; terms: NoteTerms }) {
+/** `sub` is owned by App so the rail's NavMenu can drive it; the local tab row
+    below is only the phone fallback (the rail is hidden under 640px). */
+export default function MonteCarloPanel({ result, terms, sub, onSubChange }: {
+  result: SimResult; terms: NoteTerms; sub: string; onSubChange: (s: string) => void
+}) {
   const { t } = useI18n()
   const { summary, figures } = result
   const isPart = summary.note_type === 'participation'
   const isCliquet = isPart && !!terms.participation_periodic
-  const [sub, setSub] = useState('summary')
   const inspectFetcher = useCallback(
     (body: Parameters<typeof api.inspectRun>[1]) => api.inspectRun(result.run_id, body),
     [result.run_id])
@@ -42,8 +45,8 @@ export default function MonteCarloPanel({ result, terms }: { result: SimResult; 
     <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }} className="fade-up">
       <HeroMetrics summary={summary} />
 
-      <div style={{ marginTop: 2 }}>
-        <Tabs tabs={subTabs} active={sub} onChange={setSub} />
+      <div className="nav-mobile-only" style={{ marginTop: 2 }}>
+        <Tabs tabs={subTabs} active={sub} onChange={onSubChange} />
       </div>
 
       {sub === 'summary' && (

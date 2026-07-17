@@ -469,6 +469,7 @@ export interface ReportRequest {
   engine?: 'numpy' | 'cpp'
   branding?: Branding | null
   compare_terms?: NoteTerms | null   // Note B — adds an A/B comparison section
+  report_kind?: string | null        // audience preset key — stamped on the cover
 }
 
 export interface Health {

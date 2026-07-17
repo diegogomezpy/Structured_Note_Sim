@@ -41,22 +41,61 @@ export const TREE: Group[] = [
   ] },
 ]
 
-// Report presets — one click selects a sensible set of sections for an audience.
-// Keys are intersected with what's actually available (e.g. the live group only
-// when the note has an issue date). "full" / "custom" are handled specially.
-export const PRESET_KEYS: Record<string, string[]> = {
+// Report presets — one click selects a set of sections for an audience. Keys are
+// intersected with what's actually available (e.g. the live group only when the
+// note has an issue date). "full" (everything) and "custom" (free-form) are
+// special and not editable as definitions.
+//
+// These are DEFAULTS: the user can redefine what each audience preset includes
+// (see loadPresetOverrides / savePresetOverride). Every consumer reads the
+// definitions through presetKeys() / keysForPreset(), so an edit applies to the
+// Report panel and the Batch panel alike.
+export const DEFAULT_PRESET_KEYS: Record<string, string[]> = {
+  advisor: ['cover', 'note_description', 'note_diagram', 'note_terms', 'obs_schedule',
+            'underlying_breakdown', 'mc_metrics', 'mc_outcome', 'live_metrics', 'live_chart'],
   client: ['cover', 'note_description', 'note_diagram', 'note_terms', 'obs_schedule', 'issuer_info', 'underlying_breakdown'],
-  term_sheet: ['cover', 'note_terms', 'note_diagram', 'obs_schedule', 'issuer_info'],
-  marketing: ['cover', 'note_description', 'note_diagram', 'underlying_breakdown', 'mc_metrics', 'mc_outcome', 'live_metrics', 'live_chart'],
-  ic: ['note_terms', 'note_diagram', 'underlying_breakdown', 'mc_metrics', 'mc_outcome', 'mc_autocall', 'mc_wof', 'bt_metrics', 'bt_outcome', 'live_metrics'],
-  analyst: ['note_terms', 'note_diagram', 'obs_schedule', 'issuer_info', 'underlying_breakdown',
-            'mc_metrics', 'mc_outcome', 'mc_autocall', 'mc_irr', 'mc_wof', 'mc_sample', 'mc_fans', 'calib_corr', 'calib_table',
-            'bt_metrics', 'bt_outcome', 'bt_pie', 'bt_irr', 'bt_prices',
-            'live_metrics', 'live_asset_table', 'live_obs_table', 'live_chart'],
-  quant: ['note_terms', 'mc_metrics', 'mc_irr', 'mc_wof', 'mc_fans', 'calib_corr', 'calib_table'],
+  ic: ['note_terms', 'note_diagram', 'underlying_breakdown', 'mc_metrics', 'mc_outcome', 'mc_autocall',
+       'mc_wof', 'bt_metrics', 'bt_outcome', 'live_metrics'],
+  risk: ['note_terms', 'note_diagram', 'issuer_info',
+         'mc_metrics', 'mc_outcome', 'mc_autocall', 'mc_irr', 'mc_wof', 'mc_fans', 'calib_corr', 'calib_table',
+         'bt_metrics', 'bt_outcome', 'bt_pie', 'bt_irr',
+         'live_metrics', 'live_obs_table'],
 }
-export const PRESET_ORDER = ['full', 'client', 'term_sheet', 'marketing', 'ic', 'analyst', 'quant', 'custom'] as const
+export const PRESET_ORDER = ['full', 'advisor', 'client', 'ic', 'risk', 'custom'] as const
 export type Preset = (typeof PRESET_ORDER)[number]
+/** Presets whose section list the user can redefine (full/custom are special). */
+export const EDITABLE_PRESETS = PRESET_ORDER.filter(
+  (p) => p !== 'full' && p !== 'custom') as Exclude<Preset, 'full' | 'custom'>[]
+
+// ── user-defined preset contents (persisted) ─────────────────────────────────
+const PRESETS_LS = 'mercator_report_presets'
+
+export function loadPresetOverrides(): Record<string, string[]> {
+  try { const r = localStorage.getItem(PRESETS_LS); return r ? JSON.parse(r) as Record<string, string[]> : {} }
+  catch { return {} }
+}
+/** The section keys a preset is defined as — the user's override, else the default. */
+export function presetKeys(p: string): string[] {
+  return loadPresetOverrides()[p] ?? DEFAULT_PRESET_KEYS[p] ?? []
+}
+/** Redefine a preset. Only the keys the user chose are stored, so a later change
+    to a DEFAULT never silently overwrites their definition. */
+export function savePresetOverride(p: string, keys: string[]): void {
+  try {
+    const all = loadPresetOverrides()
+    all[p] = [...keys]
+    localStorage.setItem(PRESETS_LS, JSON.stringify(all))
+  } catch { /* ignore */ }
+}
+/** Drop the user's definition for a preset, restoring the built-in default. */
+export function resetPresetOverride(p: string): void {
+  try {
+    const all = loadPresetOverrides()
+    delete all[p]
+    localStorage.setItem(PRESETS_LS, JSON.stringify(all))
+  } catch { /* ignore */ }
+}
+export const isPresetCustomised = (p: string): boolean => p in loadPresetOverrides()
 
 /** Groups available for a note — the live group only when it has an issue date. */
 export function groupsFor(hasLive: boolean): Group[] {
@@ -69,8 +108,9 @@ export function keysOf(groups: Group[]): string[] {
 }
 
 /** Section keys a preset selects, intersected with what's available. `full`
-    selects everything; `custom` is caller-managed (returns the current keys). */
+    selects everything; `custom` is caller-managed (returns the current keys).
+    Reads the user's definition when they've redefined the preset. */
 export function keysForPreset(preset: Preset, allKeys: string[]): string[] {
   if (preset === 'full' || preset === 'custom') return allKeys
-  return (PRESET_KEYS[preset] ?? []).filter((k) => allKeys.includes(k))
+  return presetKeys(preset).filter((k) => allKeys.includes(k))
 }

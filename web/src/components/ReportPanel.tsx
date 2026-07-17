@@ -11,7 +11,8 @@ import { useTour, reportTour } from './Tour'
 import { useLocalFolder } from '../lib/localFolder'
 import type { Branding, NoteTerms } from '../api/types'
 import type { RunOpts } from './SetupRail'
-import { TREE, PRESET_KEYS, PRESET_ORDER, type Preset, type Group } from '../lib/reportSections'
+import { TREE, PRESET_ORDER, presetKeys, savePresetOverride, resetPresetOverride,
+         isPresetCustomised, type Preset, type Group } from '../lib/reportSections'
 
 type Status = 'idle' | 'running' | 'done' | 'error'
 
@@ -81,6 +82,9 @@ export default function ReportPanel({ terms, opts, variantB }: { terms: NoteTerm
   const [sel, setSel] = useState<Set<string>>(() =>
     new Set(savedCustom ? savedCustom.filter((k) => allKeys.includes(k)) : allKeys))
   const [preset, setPreset] = useState<Preset>(savedCustom ? 'custom' : 'full')
+  // Bumped when a preset definition is saved/reset — preset definitions live in
+  // localStorage, so this is what tells the memo below to re-read them.
+  const [presetRev, setPresetRev] = useState(0)
   const [brandOpen, setBrandOpen] = useState(false)
   const [brand, setBrand] = useState<Branding>({})
   const [presets, setPresets] = useState<{ file: string; firm_name: string }[]>([])
@@ -160,13 +164,19 @@ export default function ReportPanel({ terms, opts, variantB }: { terms: NoteTerm
   }
 
   const lab = (en: string, es: string) => (lang === 'es' ? es : en)
-  const toggle = (k: string) => { setSel((p) => { const n = new Set(p); n.has(k) ? n.delete(k) : n.add(k); return n }); setPreset('custom'); setStatus('idle') }
+  // Editing sections under an audience preset REDEFINES that preset (once saved)
+  // rather than silently dropping to "custom" — the preset is the user's own
+  // template. `full` has nothing to redefine, so editing it means going custom.
+  const afterEdit = () => { if (preset === 'full') setPreset('custom'); setStatus('idle') }
+  const toggle = (k: string) => {
+    setSel((p) => { const n = new Set(p); n.has(k) ? n.delete(k) : n.add(k); return n })
+    afterEdit()
+  }
   const toggleGroup = (g: Group) => {
     const ks = g.items.map((i) => i[0])
     const allOn = ks.every((k) => sel.has(k))
     setSel((p) => { const n = new Set(p); ks.forEach((k) => allOn ? n.delete(k) : n.add(k)); return n })
-    setPreset('custom')
-    setStatus('idle')
+    afterEdit()
   }
   // Apply a named preset: select its sections (intersected with what's available).
   // "Custom" restores the saved custom selection (or, if none, keeps the current
@@ -179,8 +189,34 @@ export default function ReportPanel({ terms, opts, variantB }: { terms: NoteTerm
       if (saved) setSel(new Set(saved.filter((k) => allKeys.includes(k))))
       return
     }
-    const keys = p === 'full' ? allKeys : (PRESET_KEYS[p] ?? []).filter((k) => allKeys.includes(k))
-    setSel(new Set(keys))
+    setSel(new Set(p === 'full' ? allKeys : presetKeys(p).filter((k) => allKeys.includes(k))))
+  }
+
+  // Is the current selection different from what the active preset is defined as?
+  // Only sections actually available for this note are compared, so a note with
+  // no live data doesn't read as "modified" just for lacking that group.
+  const presetDef = useMemo(
+    () => (preset === 'full' || preset === 'custom')
+      ? null : new Set(presetKeys(preset).filter((k) => allKeys.includes(k))),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [preset, allKeys, presetRev])
+  const presetDirty = !!presetDef
+    && (presetDef.size !== sel.size || [...sel].some((k) => !presetDef.has(k)))
+  const savePreset = () => {
+    if (preset === 'full' || preset === 'custom') return
+    // Merge: keep any keys the definition had that this note can't offer (e.g.
+    // live sections on a note with no issue date), so saving from a note without
+    // them doesn't quietly strip them from the preset for every other note.
+    const unavailable = presetKeys(preset).filter((k) => !allKeys.includes(k))
+    savePresetOverride(preset, [...unavailable, ...allKeys.filter((k) => sel.has(k))])
+    setPresetRev((r) => r + 1)
+    toast.push({ title: t('rep_preset_saved', { name: t(`rep_preset_${preset}`) }), tone: 'accent', icon: 'check' })
+  }
+  const resetPreset = () => {
+    if (preset === 'full' || preset === 'custom') return
+    resetPresetOverride(preset)
+    setPresetRev((r) => r + 1)
+    setSel(new Set(presetKeys(preset).filter((k) => allKeys.includes(k))))
   }
 
   // Persist the custom selection whenever it changes, so it's there next session.
@@ -266,6 +302,9 @@ export default function ReportPanel({ terms, opts, variantB }: { terms: NoteTerm
         terms, sections: [...sel], lang, branding,
         n_paths: opts.n_paths, seed: opts.seed, calib_years: opts.calib_years, engine: opts.engine,
         compare_terms: compareOn && variantB ? variantB : null,
+        // Stamps the report type on the cover. "custom" has no audience to name,
+        // so it goes out untyped rather than labelled "Custom report".
+        report_kind: preset === 'custom' ? null : preset,
       })
       const blob = await res.blob()
       const url = URL.createObjectURL(blob)
@@ -307,6 +346,25 @@ export default function ReportPanel({ terms, opts, variantB }: { terms: NoteTerm
             ))}
           </div>
           <div style={{ fontSize: 11.5, color: 'var(--text-faint)', marginTop: 9, lineHeight: 1.5 }}>{t(`rep_preset_${preset}_desc`)}</div>
+          {/* Audience presets are the user's own templates: tick the sections you
+              want below, then save them INTO the preset. */}
+          {presetDef && (presetDirty || isPresetCustomised(preset)) && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 10, flexWrap: 'wrap' }}>
+              {presetDirty && (
+                <button type="button" className="btn" style={{ padding: '5px 11px', fontSize: 12 }} onClick={savePreset}>
+                  <Icon name="save" size={13} /> {t('rep_preset_save', { name: t(`rep_preset_${preset}`) })}
+                </button>
+              )}
+              {isPresetCustomised(preset) && (
+                <button type="button" className="btn btn--ghost" style={{ padding: '5px 11px', fontSize: 12 }} onClick={resetPreset}>
+                  <Icon name="refresh" size={13} /> {t('rep_preset_reset')}
+                </button>
+              )}
+              <span style={{ fontSize: 11, color: 'var(--text-faint)' }}>
+                {presetDirty ? t('rep_preset_dirty') : t('rep_preset_customised')}
+              </span>
+            </div>
+          )}
         </div>
         {variantB && (
           <div style={{ marginBottom: 18, padding: '12px 14px', borderRadius: 10,
