@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { api } from './api/client'
 import { blankNote } from './lib/blankNote'
 import type { BacktestResult, BtRange, ConfigMeta, LiveResult, NoteTerms, SimResult } from './api/types'
@@ -66,9 +66,20 @@ export default function App() {
   // Sub-view per view, lifted out of the panels so the rail's NavMenu can drive
   // them (and each view remembers where you were when you come back).
   const [subs, setSubs] = useState<Record<string, string>>({ mc: 'summary', bt: 'outcomes' })
+  // Picking a view should TAKE you there, not just swap what's rendered further
+  // down the page — the main column is its own scroll pane, so without this you
+  // keep whatever scroll position you had and may not see that anything changed.
+  const resultsRef = useRef<HTMLDivElement>(null)
   const selectNav = useCallback((id: string, sub?: string) => {
     setTab(id)
     if (sub) setSubs((p) => ({ ...p, [id]: sub }))
+    // Two frames: one for React to commit the new view, one for layout to settle
+    // before we measure it. Re-picking the current view still scrolls (the state
+    // doesn't change, so an effect-based approach would silently do nothing).
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      const reduced = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
+      resultsRef.current?.scrollIntoView({ behavior: reduced ? 'auto' : 'smooth', block: 'start' })
+    }))
   }, [])
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [diagramOpen, setDiagramOpen] = useState(true)
@@ -332,7 +343,12 @@ export default function App() {
           )}
 
           {/* Phone fallback — the rail (and its NavMenu) is hidden below 640px. */}
-          <div className="nav-mobile-only"><Tabs tabs={tabs} active={tab} onChange={setTab} /></div>
+          <div className="nav-mobile-only"><Tabs tabs={tabs} active={tab} onChange={selectNav} /></div>
+
+          {/* Anchor the nav scrolls to, so picking a view actually takes you to it
+              rather than swapping content somewhere off-screen. scroll-margin-top
+              keeps it clear of the sticky chrome on the phone layout. */}
+          <div ref={resultsRef} aria-hidden style={{ scrollMarginTop: 12 }} />
 
           {tab === 'mc' && (
             <>
