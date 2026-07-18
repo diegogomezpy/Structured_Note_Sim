@@ -241,9 +241,6 @@ export default function NoteTimeline({ terms }: { terms: NoteTerms }) {
             </g>
           )
         })}
-
-        {/* issue marker on the par line */}
-        <Dot x={X0} r={4.5} fill="var(--accent)" stroke="var(--accent)" />
       </svg>
     </div>
   )
