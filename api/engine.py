@@ -426,6 +426,14 @@ def _path_payload(worst_path, asset_paths, asset_names, obs_steps, autocall_q,
     cols = list(range(0, cut + 1, step))
     if cols[-1] != cut:
         cols.append(cut)
+    # Force every observation step onto the sampled grid so each event marker lands
+    # exactly on a plotted vertex. This matters for the cliquet per-period view: the
+    # front-end renormalises each period by the basket level *at its reset*, and if a
+    # reset falls between sampled columns it would pick a stale/ahead neighbour and
+    # smear a level offset across the whole next period.
+    obs_cols = [int(s) for s in obs_steps if 0 <= int(s) <= cut]
+    if obs_cols:
+        cols = sorted(set(cols) | set(obs_cols))
 
     series = [{"name": nm, "perf": [round(float(asset_paths[c, i]), 4) for c in cols]}
               for i, nm in enumerate(asset_names)]
