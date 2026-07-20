@@ -351,6 +351,12 @@ _LABELS: dict[str, dict[str, str]] = {
     "diag_zone_protected":   {"en": "Capital protected",                 "es": "Capital protegido"},
     "diag_zone_atrisk":      {"en": "Capital at risk",                   "es": "Capital en riesgo"},
     "diag_axis_level":       {"en": "Worst-of level",                    "es": "Nivel del peor de"},
+    "pp_x_axis":             {"en": "Final basket level (% of initial)", "es": "Nivel final de la cesta (% del inicial)"},
+    "pp_x_axis_period":      {"en": "Period-end level (% of period start)", "es": "Nivel al cierre del período (% del inicio del período)"},
+    "pp_y_axis":             {"en": "Redemption (% of notional)",        "es": "Redención (% del nominal)"},
+    "pp_cliquet_badge":      {"en": "Cliquet · resets each period",      "es": "Cliquet · reinicia cada período"},
+    "pp_periodic_caption":   {"en": "Payoff of a single period — paid each reset, then the strike resets.",
+                              "es": "Pago de un solo período — se paga en cada reinicio y luego el strike se reinicia."},
     "sim_summary":           {"en": "Monte Carlo Simulation",            "es": "Simulación Monte Carlo"},
     "model_box_title":       {"en": "Model & Methodology",               "es": "Modelo y Metodología"},
     "model_box_body":        {
@@ -3530,11 +3536,167 @@ def _table_room(n_rows: int, row_h: float = 8.0, head_h: float = 9.0) -> float:
     return min(head_h + n_rows * row_h + 6.0, 130.0)
 
 
+def _draw_participation_profile(pdf, terms, lang: str) -> None:
+    """Payoff-profile diagram for a Participation Note — redemption (y) versus the
+    final basket level (x), a server-side mirror of the web ParticipationProfile in
+    its curve-only (setup) form. The curve is sampled from the SAME redemption formula
+    the engine prices (core.note._participation_redemption), so the picture matches the
+    payoff. Pure fpdf primitives, wrapped so a drawing glitch can't abort the report."""
+    try:
+        import math
+        import dataclasses
+        from core.note import _participation_redemption
+
+        # Cliquet (periodic): the profile is ONE period's payoff — same downside ×
+        # upside, but off a par strike with the per-period cap (mirrors the web `eff`).
+        periodic = bool(getattr(terms, "participation_periodic", False))
+        eff = (dataclasses.replace(terms, participation_strike=1.0,
+                                   upside_cap=getattr(terms, "period_cap", None))
+               if periodic else terms)
+        pd_style = getattr(eff, "participation_downside", "full") or "full"
+        strike = float(getattr(eff, "participation_strike", 1.0) or 1.0)
+        prot   = float(getattr(eff, "protection_level", 1.0) or 0.0)
+        _capf  = getattr(eff, "upside_cap", None)
+        cap    = (1.0 + _capf) if _capf is not None else float("inf")
+        ko     = getattr(eff, "knockout_level", None)
+
+        # x-domain 40%..180%, stretched to include a shark-fin knock-out if higher.
+        x_min = 0.4
+        x_max = max(1.8, (ko + 0.2) if ko is not None else 0.0)
+        N, EPS = 160, 1e-3
+        xset = {x_min + (i / N) * (x_max - x_min) for i in range(N + 1)}
+        for b in (strike - EPS, strike, (ko - EPS) if ko is not None else None, ko):
+            if b is not None and x_min < b < x_max:
+                xset.add(b)
+        xs = sorted(xset)
+        rs = [float(v) for v in _participation_redemption(np.asarray(xs, dtype=float), eff)]
+        y_lo = min(0.6, math.floor(min(rs) * 10) / 10)
+        y_hi = max(1.4, math.ceil(max(rs) * 10) / 10)
+
+        # Centre a plot box on the page: left gutter for the rotated y-title + ticks.
+        x0 = pdf.l_margin + 22.0
+        x1 = pdf.w - pdf.r_margin - 8.0
+        top = pdf.get_y() + 6.0
+        plot_h = 58.0
+        bottom = top + plot_h
+
+        def mapX(b: float) -> float:
+            return x0 + (b - x_min) / (x_max - x_min) * (x1 - x0)
+
+        def mapY(r: float) -> float:
+            return bottom - (min(max(r, y_lo), y_hi) - y_lo) / (y_hi - y_lo) * plot_h
+
+        in_y = lambda r: y_lo <= r <= y_hi
+
+        # periodic badge (centred, above the plot)
+        if periodic:
+            pdf._sf(7.5, "bold")
+            pdf.set_text_color(*pdf.accent_color)
+            _bl = pdf._safe(f"↻ {_t('pp_cliquet_badge', lang)}")
+            pdf.text((x0 + x1) / 2 - pdf.get_string_width(_bl) / 2, top - 1.0, _bl)
+            top += 4.0
+            bottom = top + plot_h
+
+        # y grid + tick labels (par line at 100% emphasised)
+        r = math.ceil(y_lo * 5) / 5
+        while r <= y_hi + 1e-9:
+            gy = mapY(r)
+            is_par = abs(r - 1.0) < 1e-9
+            pdf.set_draw_color(*( (150, 162, 180) if is_par else (223, 229, 237)))
+            pdf.set_line_width(0.4 if is_par else 0.2)
+            pdf.line(x0, gy, x1, gy)
+            pdf._sf(6.8, "regular")
+            pdf.set_text_color(150, 162, 180)
+            _tl = f"{r:.0%}"
+            pdf.text(x0 - 2 - pdf.get_string_width(_tl), gy + 1.0, _tl)
+            r += 0.2
+
+        # x tick labels (basket level %)
+        pdf._sf(6.8, "regular")
+        pdf.set_text_color(150, 162, 180)
+        for b in (0.5, 1.0, 1.5, 2.0):
+            if x_min <= b <= x_max:
+                _xt = f"{b:.0%}"
+                pdf.text(mapX(b) - pdf.get_string_width(_xt) / 2, bottom + 5.0, _xt)
+
+        # reference lines (dashed, bare — matching the web setup diagram)
+        pdf.set_line_width(0.3)
+        # strike marker (vertical)
+        if x_min < strike < x_max:
+            pdf.set_draw_color(200, 208, 220)
+            pdf.set_dash_pattern(dash=1.0, gap=1.0)
+            pdf.line(mapX(strike), top, mapX(strike), bottom)
+        # protection floor (non-bear) → amber (brand has no red)
+        if pd_style != "bear" and in_y(min(prot, 1.0)):
+            pdf.set_draw_color(*pdf.amber)
+            pdf.set_dash_pattern(dash=1.6, gap=1.2)
+            pdf.line(x0, mapY(min(prot, 1.0)), x1, mapY(min(prot, 1.0)))
+        # cap ceiling
+        if math.isfinite(cap) and in_y(cap):
+            pdf.set_draw_color(150, 162, 180)
+            pdf.set_dash_pattern(dash=1.6, gap=1.2)
+            pdf.line(x0, mapY(cap), x1, mapY(cap))
+        # direct-underlying 1:1 reference (diagonal)
+        d_lo, d_hi = max(x_min, y_lo), min(x_max, y_hi)
+        if d_hi > d_lo:
+            pdf.set_draw_color(170, 180, 195)
+            pdf.set_dash_pattern(dash=0.8, gap=1.6)
+            pdf.line(mapX(d_lo), mapY(d_lo), mapX(d_hi), mapY(d_hi))
+        pdf.set_dash_pattern()
+
+        # payoff curve (thick brand line)
+        pdf.set_draw_color(*pdf.primary_color)
+        pdf.set_line_width(1.1)
+        for i in range(1, len(xs)):
+            pdf.line(mapX(xs[i - 1]), mapY(rs[i - 1]), mapX(xs[i]), mapY(rs[i]))
+
+        # axes
+        pdf.set_draw_color(120, 132, 150)
+        pdf.set_line_width(0.4)
+        pdf.line(x0, top, x0, bottom)
+        pdf.line(x0, bottom, x1, bottom)
+
+        # axis titles (x centred below, y rotated on the left)
+        pdf._sf(7.5, "regular")
+        pdf.set_text_color(90, 100, 120)
+        _xa = pdf._safe(_t("pp_x_axis_period" if periodic else "pp_x_axis", lang))
+        pdf.text((x0 + x1) / 2 - pdf.get_string_width(_xa) / 2, bottom + 10.5, _xa)
+        _ya = pdf._safe(_t("pp_y_axis", lang))
+        with pdf.rotation(90, pdf.l_margin + 4.0, (top + bottom) / 2 + pdf.get_string_width(_ya) / 2):
+            pdf.text(pdf.l_margin + 4.0, (top + bottom) / 2 + pdf.get_string_width(_ya) / 2, _ya)
+
+        pdf.set_dash_pattern()
+        pdf.set_line_width(0.2)
+        pdf.set_y(bottom + 13)
+
+        # periodic caption below the plot
+        if periodic:
+            pdf._sf(7, "regular")
+            pdf.set_text_color(150, 162, 180)
+            _cap = pdf._safe(_t("pp_periodic_caption", lang))
+            usable = pdf.w - pdf.l_margin - pdf.r_margin
+            pdf.set_x(pdf.l_margin)
+            pdf.multi_cell(usable, 4.2, _cap, align="C")
+            pdf.ln(1)
+    except Exception as e:                                  # never break the report
+        print(f"[report] participation profile skipped: {e}")
+        try:
+            pdf.set_dash_pattern()
+        except Exception:
+            pass
+
+
 def _draw_note_diagram(pdf, terms, lang: str) -> None:
     """Draw the note-structure schematic (the React NoteTimeline, server-side):
     an observation timeline at the autocall level, the coupon / knock-in / One-Star
     barriers as dashed reference lines, and a floating value label for each. Pure
     fpdf primitives — wrapped so a drawing glitch can never abort the report."""
+    # A Participation note has no observation ladder — it's a maturity payoff, so
+    # show its redemption profile instead of the barrier timeline (mirrors the web
+    # NoteTimeline, which routes participation → ParticipationProfile).
+    if getattr(terms, "note_type", "") == "participation" or (getattr(terms, "capital_guarantee", 0) or 0) > 0:
+        _draw_participation_profile(pdf, terms, lang)
+        return
     try:
         from datetime import date, timedelta
         # Green design language: autocall / One-Star in green, coupon / knock-in
@@ -3592,10 +3754,10 @@ def _draw_note_diagram(pdf, terms, lang: str) -> None:
                     ac_sched[j - 1] = lvl
         min_ac = min(ac_sched) if ac_sched else ac
 
-        # x-axis time: real dates when the note has an issue date, else the tenor
+        # x-axis time: real dates when the note has an issue date, else the tenor.
+        # Quoted in months to match the web NoteTimeline (tenorLabel → "30M").
         _mat_yrs = terms.maturity
-        _tenor = (f"{int(round(_mat_yrs * 12)) // 12}y" if round(_mat_yrs * 12) % 12 == 0
-                  else f"{int(round(_mat_yrs * 12))}m")
+        _tenor = f"{int(round(_mat_yrs * 12))}M"
         issue_iso = getattr(terms, "issue_date", None)
         issue_lbl, mat_lbl = None, _tenor
         if issue_iso:
@@ -3702,7 +3864,7 @@ def _draw_note_diagram(pdf, terms, lang: str) -> None:
                 _ct = f"+{coupon_per:.2%}"
                 pdf.text(mapX(f) - pdf.get_string_width(_ct) / 2, par_y - 3.5, _ct)
             if show_yr_ticks and not is_mat:
-                _yt = (f"{f * _mat_yrs:g}").rstrip(".") + "y"
+                _yt = f"{round(f * _mat_yrs * 12)}M"   # months, matching the web yrTick
                 pdf._sf(6, "regular")
                 pdf.set_text_color(170, 180, 195)
                 pdf.text(mapX(f) - pdf.get_string_width(_yt) / 2, bottom + 4.6, _yt)
