@@ -109,24 +109,49 @@ export function Slider({
 }
 
 /** Numeric input. When `percent`, the stored value is a fraction but the field
-    shows/accepts a percentage (e.g. 0.5 ↔ "50"). */
+    shows/accepts a percentage (e.g. 0.5 ↔ "50").
+
+    Uses a rolling text buffer (like NumField/EditableValue) rather than a raw
+    controlled `type="number"`: that lets the user clear the field and retype from
+    empty (or edit the first digit) instead of the old value snapping back the
+    instant the box is empty. An empty/partial buffer just isn't committed; the
+    field re-syncs from the outside only while unfocused, so mid-edit typing is
+    never clobbered, and it reformats on blur. `type="text" inputMode="decimal"`
+    so intermediate strings like "12." survive (a number input reports those as
+    "", losing the digits). */
 export function NumberField({
-  label, value, onChange, min, max, step = 0.5, percent, suffix, hint, error, tip,
+  label, value, onChange, min, max, percent, suffix, hint, error, tip,
 }: {
   label: string; value: number; onChange: (v: number) => void
   min?: number; max?: number; step?: number; percent?: boolean; suffix?: string; hint?: string
   error?: string; tip?: string
 }) {
-  const disp = percent ? Math.round(value * 1000) / 10 : value
+  const toDisp = (v: number) => (percent ? Math.round((v ?? 0) * 1000) / 10 : (v ?? 0))
+  const fromDisp = (d: number) => (percent ? d / 100 : d)
+  const fmtDisp = (v: number) => String(toDisp(v))
+  const [focused, setFocused] = useState(false)
+  const [text, setText] = useState(() => fmtDisp(value))
+  useEffect(() => { if (!focused) setText(fmtDisp(value)) }, [value, focused])  // eslint-disable-line react-hooks/exhaustive-deps
+
+  const commit = (raw: string) => {
+    if (raw.trim() === '') return                 // allow an empty field mid-edit
+    let n = parseFloat(raw)
+    if (Number.isNaN(n)) return
+    if (min != null) n = Math.max(min, n)
+    if (max != null) n = Math.min(max, n)
+    onChange(fromDisp(n))
+  }
+
   return (
     <div style={{ marginBottom: 14 }}>
       <div style={{ marginBottom: 6 }}><FieldLabel label={suffix ? `${label} (${suffix})` : label} tip={tip} /></div>
-      <input type="number" value={disp} min={min} max={max} step={step}
-             className={error ? 'field-invalid' : undefined}
-             onChange={(e) => {
-               const v = parseFloat(e.target.value)
-               if (!Number.isNaN(v)) onChange(percent ? v / 100 : v)
-             }} />
+      <input
+        type="text" inputMode="decimal" aria-label={label}
+        value={text}
+        className={error ? 'field-invalid' : undefined}
+        onChange={(e) => { setText(e.target.value); commit(e.target.value) }}
+        onFocus={(e) => { setFocused(true); e.currentTarget.select() }}
+        onBlur={() => { setFocused(false); setText(fmtDisp(value)) }} />
       {error
         ? <div className="field-msg">{error}</div>
         : hint && <div style={{ fontSize: 11, color: 'var(--text-faint)', marginTop: 5, lineHeight: 1.45 }}>{hint}</div>}
