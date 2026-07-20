@@ -1700,8 +1700,20 @@ def _backtest_for_pdf(terms: NoteTerms, tr, history_years: float | None) -> tupl
     ki_rows = bt[bt["Knock-in"]]
     if not ki_rows.empty:
         bt_summary["loss_given_ki"] = float(ki_rows["IRR"].mean())
+
+    _is_part = getattr(terms, "note_type", "") == "participation"
+    if _is_part:
+        # Participation: the realised outcome is the redemption (bt["Payout"]), not
+        # an autocall/knock-in classification. Derive above/below-par probabilities
+        # for the metric band and swap the outcome bar for a redemption distribution.
+        _payout = bt["Payout"].to_numpy(dtype=float)
+        bt_summary["prob_above_par"] = float((_payout > 1.0 + 1e-9).mean())
+        bt_summary["prob_below_par"] = float((_payout < 1.0 - 1e-9).mean())
+        _outcome_fig = charts.build_redemption_distribution(_payout, terms, tr)
+    else:
+        _outcome_fig = charts.build_backtest_outcome_bar(bt, color_map, tr)
     bt_figures = {
-        "outcome":     charts.build_backtest_outcome_bar(bt, color_map, tr),
+        "outcome":     _outcome_fig,
         "pie":         charts.build_worst_asset_pie(bt, tr),
         "irr_scatter": charts.build_backtest_irr_scatter(bt, color_map, tr),
         "prices":      charts.build_historical_prices(

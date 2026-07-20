@@ -419,6 +419,31 @@ _LABELS: dict[str, dict[str, str]] = {
     "outcome_autocalled":    {"en": "Autocalled",                        "es": "Autocancelado"},
     "outcome_held":          {"en": "Held to maturity",                  "es": "Mantenido al venc."},
     "outcome_loss":          {"en": "Capital loss",                      "es": "Pérdida de capital"},
+    # ── Participation notes (payoff = redemption profile, no coupons/autocall) ──
+    "redemption_outcomes":   {"en": "Redemption outcomes",               "es": "Resultados de redención"},
+    "outcome_above_par":     {"en": "Redeemed above par",                "es": "Redime sobre la par"},
+    "outcome_at_par":        {"en": "Capital returned (par)",            "es": "Capital devuelto (par)"},
+    "outcome_below_par":     {"en": "Capital loss (below par)",          "es": "Pérdida de capital (bajo par)"},
+    "protection_level":      {"en": "Protection level",                  "es": "Nivel de protección"},
+    "participation_rate":    {"en": "Participation rate",                "es": "Tasa de participación"},
+    "participation_strike":  {"en": "Strike",                            "es": "Strike"},
+    "upside_cap":            {"en": "Upside cap",                        "es": "Tope al alza"},
+    "period_cap":            {"en": "Per-period cap",                    "es": "Tope por período"},
+    "participation_profile": {"en": "Payoff profile",                    "es": "Perfil de pago"},
+    "participation_basket_lbl": {"en": "Basket",                         "es": "Cesta"},
+    "downside_style":        {"en": "Downside",                          "es": "A la baja"},
+    "upside_style":          {"en": "Upside",                            "es": "Al alza"},
+    "digital_payout":        {"en": "Digital payout",                    "es": "Pago digital"},
+    "knockout_level":        {"en": "Knock-out level",                   "es": "Nivel de knock-out"},
+    "knockout_rebate":       {"en": "Knock-out redemption",              "es": "Redención de knock-out"},
+    "grp_cliquet":           {"en": "Cliquet",                           "es": "Cliquet"},
+    "pd_full":               {"en": "Full protection",                   "es": "Protección total"},
+    "pd_buffer":             {"en": "Buffer",                            "es": "Colchón (buffer)"},
+    "pd_airbag":             {"en": "Airbag",                            "es": "Airbag"},
+    "pd_bear":               {"en": "Bear participation",                "es": "Participación bajista"},
+    "pu_linear":             {"en": "Linear",                            "es": "Lineal"},
+    "pu_digital":            {"en": "Digital",                           "es": "Digital"},
+    "pu_shark_fin":          {"en": "Shark fin",                         "es": "Aleta de tiburón"},
     "expected_coupon":       {"en": "Expected coupon income",            "es": "Cupón total esperado"},
     "expected_gain":         {"en": "Expected gain",                     "es": "Ganancia esperada"},
     "prob_autocall":         {"en": "P(autocall)",                       "es": "P(autocall)"},
@@ -642,6 +667,13 @@ _GLOSSARY: dict[str, list[tuple[str, str]]] = {
         ("RSI (14)", "The 14-day Relative Strength Index — a momentum oscillator ranging from 0 to 100 that gauges the speed and magnitude of recent price moves. Readings above 70 are conventionally read as 'overbought' and below 30 as 'oversold'; around 50 is neutral. Shown per underlying as a snapshot of recent momentum, not a forecast."),
         ("Monte Carlo simulation", "Estimating the note's outcomes by generating many random price paths under the model, pricing the payoff on each, and summarising across all paths."),
         ("Backtest", "Re-running the note's payoff over historical price windows — one per past issue date — to see how it would have performed in realised market history, as opposed to simulated paths."),
+        ("Participation note", "A note whose redemption is a direct function of the final basket level — a downside profile combined with an upside profile — with no periodic coupons or autocall. Capital is repaid according to where the basket finishes."),
+        ("Protection level", "The basket level down to which capital is returned at par. Full protection returns par whenever the basket is at or above this level; below it, losses accrue according to the downside style."),
+        ("Participation rate", "The multiplier applied to the basket's move (above the strike for upside, or below it for a bear note) when computing the note's return."),
+        ("Upside cap", "A ceiling on redemption above par: once the basket gain reaches the cap, the payoff plateaus and does not rise further. On a cliquet the cap applies to each period's participation."),
+        ("Downside style", "How losses accrue below protection. Buffer: par down to the protection level, then 1:1 below. Airbag: par down to a barrier, then a geared loss of final/barrier. Bear: the note gains as the basket falls."),
+        ("Upside style", "How gains accrue above the strike. Linear: the participation rate times the basket gain, optionally capped. Digital: a fixed payout if the basket ends at or above the strike. Shark fin: participation up to a knock-out level, else a flat rebate."),
+        ("Cliquet", "A participation that resets its reference level each period, locking in that period's (capped) participation as income and measuring the next period from the new level."),
     ],
     "es": [
         ("Nota autocancelable", "Nota estructurada que se rescata anticipadamente ('autocancela') si los subyacentes están en o sobre la barrera de autocall en una fecha de observación."),
@@ -668,6 +700,13 @@ _GLOSSARY: dict[str, list[tuple[str, str]]] = {
         ("RSI (14)", "Índice de Fuerza Relativa de 14 días — un oscilador de momento de 0 a 100 que mide la velocidad y magnitud de los movimientos de precio recientes. Lecturas por encima de 70 se leen convencionalmente como 'sobrecompra' y por debajo de 30 como 'sobreventa'; alrededor de 50 es neutral. Se muestra por subyacente como una instantánea del momento reciente, no un pronóstico."),
         ("Simulación de Monte Carlo", "Estimación de los resultados de la nota generando muchas trayectorias de precio aleatorias bajo el modelo, valorando el pago en cada una y resumiendo sobre todas las trayectorias."),
         ("Backtest", "Re-ejecución del pago de la nota sobre ventanas históricas de precios — una por cada fecha de emisión pasada — para ver cómo habría rendido en el mercado real, frente a las trayectorias simuladas."),
+        ("Nota de participación", "Nota cuya redención es función directa del nivel final de la cesta — un perfil a la baja combinado con un perfil al alza — sin cupones periódicos ni autocall. El capital se devuelve según dónde termine la cesta."),
+        ("Nivel de protección", "Nivel de la cesta hasta el cual el capital se devuelve a la par. La protección total devuelve la par cuando la cesta está en o sobre este nivel; por debajo, las pérdidas se acumulan según el estilo a la baja."),
+        ("Tasa de participación", "Multiplicador aplicado al movimiento de la cesta (sobre el strike al alza, o bajo él en una nota bajista) al calcular el retorno de la nota."),
+        ("Tope al alza", "Techo a la redención sobre la par: una vez que la ganancia de la cesta alcanza el tope, el pago se estabiliza y no sube más. En un cliquet el tope se aplica a la participación de cada período."),
+        ("Estilo a la baja", "Cómo se acumulan las pérdidas bajo la protección. Buffer: par hasta el nivel de protección, luego 1:1 por debajo. Airbag: par hasta una barrera, luego pérdida apalancada de final/barrera. Bajista: la nota gana cuando la cesta cae."),
+        ("Estilo al alza", "Cómo se acumulan las ganancias sobre el strike. Lineal: la tasa de participación por la ganancia de la cesta, con tope opcional. Digital: pago fijo si la cesta termina en o sobre el strike. Aleta de tiburón: participación hasta un nivel de knock-out, si no un reembolso fijo."),
+        ("Cliquet", "Participación que reinicia su nivel de referencia cada período, fijando la participación (con tope) de ese período como renta y midiendo el siguiente período desde el nuevo nivel."),
     ],
 }
 
@@ -676,18 +715,21 @@ _GLOSSARY: dict[str, list[tuple[str, str]]] = {
 # One-Star / best-of-redemption clause in either language). A term only prints
 # when the content that needs it is in the report. "core" = always relevant when
 # there is a note at all.
+# "phx" = Phoenix-family mechanics (coupon/autocall/knock-in) — irrelevant to a
+# Participation note; "part" = Participation payoff terms — irrelevant to Phoenix.
+# "core" = shared by both families (worst-of, strike, total return, IRR).
 _GLOSSARY_TAGS: list[set[str]] = [
-    {"core"},        # 0  Autocallable note
-    {"core"},        # 1  Autocall barrier
-    {"core"},        # 2  Autocall observation
-    {"core"},        # 3  Coupon (p.a.)
-    {"core"},        # 4  Coupon barrier
+    {"phx"},         # 0  Autocallable note
+    {"phx"},         # 1  Autocall barrier
+    {"phx"},         # 2  Autocall observation
+    {"phx"},         # 3  Coupon (p.a.)
+    {"phx"},         # 4  Coupon barrier
     {"mem"},         # 5  Memory coupon
-    {"core"},        # 6  Knock-in barrier
-    {"core"},        # 7  Knock-in
-    {"core"},        # 8  Capital loss
+    {"phx"},         # 6  Knock-in barrier
+    {"phx"},         # 7  Knock-in
+    {"phx"},         # 8  Capital loss
     {"core"},        # 9  Worst-of
-    {"core"},        # 10 Phoenix
+    {"phx"},         # 10 Phoenix
     {"os"},          # 11 One Star / Redención final
     {"core"},        # 12 Strike / initial fixing
     {"mc", "bt"},    # 13 Total return
@@ -701,6 +743,13 @@ _GLOSSARY_TAGS: list[set[str]] = [
     {"ul"},          # 21 RSI (14)
     {"mc"},          # 22 Monte Carlo simulation
     {"bt"},          # 23 Backtest
+    {"part"},        # 24 Participation note
+    {"part"},        # 25 Protection level
+    {"part"},        # 26 Participation rate
+    {"part"},        # 27 Upside cap
+    {"part"},        # 28 Downside styles (buffer / airbag / bear)
+    {"part"},        # 29 Upside styles (linear / digital / shark fin)
+    {"part"},        # 30 Cliquet
 ]
 
 
@@ -2609,7 +2658,109 @@ def _fmt_rsi(v) -> str:
         return "—"
 
 
+def _is_participation(terms) -> bool:
+    """A Participation note (payoff = a redemption profile, not a coupon/autocall
+    ladder). Legacy capital-guarantee configs migrate to this family too."""
+    return (getattr(terms, "note_type", "") == "participation"
+            or (getattr(terms, "capital_guarantee", 0) or 0) > 0)
+
+
+def _part_cap_value(terms):
+    """Active upside cap as a redemption level (e.g. 1.08), or None. A cliquet caps
+    each period via `period_cap`; a single-shot note caps the whole payoff via
+    `upside_cap`."""
+    periodic = bool(getattr(terms, "participation_periodic", False))
+    cap = getattr(terms, "period_cap", None) if periodic else getattr(terms, "upside_cap", None)
+    return (1.0 + float(cap)) if cap is not None else None
+
+
+def _part_profile_str(terms, lang: str) -> str:
+    """One-line downside×upside payoff profile — the PDF mirror of the web's
+    `participationSummary` (web/src/lib/terms.ts). Keep the two in sync. E.g.
+    'Full protection · Linear 100% · upside cap 108%', with a 'Cliquet · quarterly'
+    prefix for a periodic note."""
+    dn = getattr(terms, "participation_downside", "full") or "full"
+    up = getattr(terms, "participation_upside", "linear") or "linear"
+    prot = float(getattr(terms, "protection_level", 1.0) or 1.0)
+    rate = float(getattr(terms, "participation_rate", 1.0) or 1.0)
+    strike = float(getattr(terms, "participation_strike", 1.0) or 1.0)
+    periodic = bool(getattr(terms, "participation_periodic", False))
+    cap = _part_cap_value(terms)
+    segs: list[str] = []
+    if periodic:
+        segs.append(f"{_t('grp_cliquet', lang)} · {_fmt_freq(terms.payment_freq, lang)}")
+    if dn == "bear":
+        segs.append(f"{_t('pd_bear', lang)} {rate:.0%}")
+    elif dn == "full":
+        segs.append(_t("pd_full", lang) if prot >= 0.999 else f"{_t('pd_full', lang)} {prot:.0%}")
+    else:
+        segs.append(f"{_t('pd_' + dn, lang)} {prot:.0%}")
+    if dn != "bear":   # a bear note defines its own payoff — no separate upside leg
+        if up == "digital":
+            segs.append(f"{_t('pu_digital', lang)} +{float(getattr(terms, 'digital_payout', 0) or 0):.0%}")
+        elif up == "shark_fin":
+            ko = getattr(terms, "knockout_level", None)
+            segs.append(f"{_t('pu_shark_fin', lang)} {float(ko):.0%}" if ko is not None
+                        else _t("pu_shark_fin", lang))
+        else:
+            _c = f" · {_t('upside_cap', lang).lower()} {cap:.0%}" if cap is not None else ""
+            segs.append(f"{_t('pu_linear', lang)} {rate:.0%}{_c}")
+    if abs(strike - 1.0) > 1e-6:
+        segs.append(f"{_t('participation_strike', lang).lower()} {strike:.0%}")
+    return " · ".join(segs)
+
+
+def _participation_term_rows(terms, lang: str) -> list[tuple[str, str]]:
+    """Note-terms table rows for a Participation note — its downside × upside payoff
+    profile, protection, cap and strike — instead of the (irrelevant) coupon /
+    autocall / knock-in ladder used by the Phoenix family."""
+    periodic = bool(getattr(terms, "participation_periodic", False))
+    prot = float(getattr(terms, "protection_level", 1.0) or 1.0)
+    rate = float(getattr(terms, "participation_rate", 1.0) or 1.0)
+    strike = float(getattr(terms, "participation_strike", 1.0) or 1.0)
+    dn = getattr(terms, "participation_downside", "full") or "full"
+    up = getattr(terms, "participation_upside", "linear") or "linear"
+    cap = _part_cap_value(terms)
+    if periodic:
+        mat = (f"{_mat_label(terms)} ({_t('grp_cliquet', lang)}, "
+               f"{_fmt_freq(terms.payment_freq, lang)}, {terms.n_obs} {_t('observations_word', lang)})")
+    else:
+        mat = _mat_label(terms)
+    rows: list[tuple[str, str]] = [
+        (_t("maturity", lang), mat),
+        (_t("participation_profile", lang), _part_profile_str(terms, lang)),
+        (_t("participation_basket_lbl", lang),
+         str(getattr(terms, "participation_basket", "worst_of") or "worst_of").replace("_", "-")),
+        (_t("downside_style", lang), _t("pd_" + dn, lang)),
+        (_t("protection_level", lang), f"{prot:.1%}"),
+    ]
+    if dn != "bear":
+        rows.append((_t("upside_style", lang), _t("pu_" + up, lang)))
+        if up == "digital":
+            rows.append((_t("digital_payout", lang),
+                         f"{float(getattr(terms, 'digital_payout', 0) or 0):+.1%}"))
+        elif up == "shark_fin":
+            ko = getattr(terms, "knockout_level", None)
+            if ko is not None:
+                rows.append((_t("knockout_level", lang), f"{float(ko):.1%}"))
+            rows.append((_t("knockout_rebate", lang),
+                         f"{float(getattr(terms, 'knockout_payout', 1.0) or 1.0):.1%}"))
+        else:  # linear
+            rows.append((_t("participation_rate", lang), f"{rate:.1%}"))
+        if cap is not None:
+            rows.append((_t("period_cap" if periodic else "upside_cap", lang), f"{cap:.1%}"))
+    else:
+        rows.append((_t("participation_rate", lang), f"{rate:.1%}"))
+    if abs(strike - 1.0) > 1e-6:
+        rows.append((_t("participation_strike", lang), f"{strike:.1%}"))
+    if getattr(terms, "issue_date", None):
+        rows.append((_t("issue_date", lang), terms.issue_date))
+    return rows
+
+
 def _term_rows(terms, lang: str) -> list[tuple[str, str]]:
+    if _is_participation(terms):
+        return _participation_term_rows(terms, lang)
     rows = [
         (_t("maturity",         lang), f"{_mat_label(terms)} ({terms.n_obs} {_t('observations_word', lang)}, {_fmt_freq(terms.payment_freq, lang)})"),
         (_t("coupon_pa",        lang), f"{terms.coupon_pa * 100:.2f}%  ({terms.coupon_rate * 100:.4f}% {_t('per_period', lang)})"),
@@ -2695,7 +2846,14 @@ def _exec_bullets(terms, results, bt_summary, live_data, lang: str) -> list[str]
                     f"La probabilidad de autocall anticipado es {results.get('prob_autocall', 0):.0%}; "
                     f"la probabilidad de pérdida de capital a vencimiento (knock-in sin rescate) es "
                     f"{results.get('prob_knock_in_total', 0):.1%} con barrera al {terms.knock_in_barrier:.1%}.")
-        if bt_summary:
+        if bt_summary and getattr(terms, "note_type", "") == "participation":
+            b.append(
+                f"En el backtest histórico ({bt_summary.get('n_issues', 0)} fechas de emisión), la redención "
+                f"media realizada fue {bt_summary.get('expected_nominal_payout', 1):.1%} del nominal "
+                f"(TIR media {bt_summary.get('mean_irr', 0):.1%}); redimió por encima de la par en el "
+                f"{bt_summary.get('prob_above_par', 0):.0%} de los casos y por debajo en el "
+                f"{bt_summary.get('prob_knock_in_total', bt_summary.get('prob_below_par', 0)):.1%}.")
+        elif bt_summary:
             b.append(
                 f"En el backtest histórico ({bt_summary.get('n_issues', 0)} fechas de emisión), la TIR media "
                 f"realizada fue {bt_summary.get('mean_irr', 0):.1%} (mediana {bt_summary.get('median_irr', 0):.1%}), "
@@ -2723,7 +2881,14 @@ def _exec_bullets(terms, results, bt_summary, live_data, lang: str) -> list[str]
                     f"The probability of early redemption (autocall) is {results.get('prob_autocall', 0):.0%}; "
                     f"the probability of capital loss at maturity (knock-in without rescue) is "
                     f"{results.get('prob_knock_in_total', 0):.1%} against a {terms.knock_in_barrier:.1%} barrier.")
-        if bt_summary:
+        if bt_summary and getattr(terms, "note_type", "") == "participation":
+            b.append(
+                f"Across {bt_summary.get('n_issues', 0)} historical issue dates, the realised mean redemption "
+                f"was {bt_summary.get('expected_nominal_payout', 1):.1%} of notional "
+                f"(mean IRR {bt_summary.get('mean_irr', 0):.1%}); it redeemed above par in "
+                f"{bt_summary.get('prob_above_par', 0):.0%} of cases and below par in "
+                f"{bt_summary.get('prob_knock_in_total', bt_summary.get('prob_below_par', 0)):.1%}.")
+        elif bt_summary:
             b.append(
                 f"Across {bt_summary.get('n_issues', 0)} historical issue dates, the realised mean IRR was "
                 f"{bt_summary.get('mean_irr', 0):.1%} (median {bt_summary.get('median_irr', 0):.1%}); the note "
@@ -2934,17 +3099,32 @@ def _front_cover_page(pdf: _NotePDF, terms, lang: str, report_title: str, websit
     pdf.set_fill_color(*pdf.ink)
     pdf.rect(0, band_y, W, band_h, style="F")
     _ki_lbl = _t("ki_barrier", lang).split(' (')[0]
+    _part = _is_participation(terms)
+    _cap_v = _part_cap_value(terms)
     _fcat = {
         "maturity":         (_t("maturity", lang),         _mat_label(terms)),
         "coupon_pa":        (_t("coupon_pa", lang),        f"{terms.coupon_pa * 100:.2f}%"),
         "coupon_barrier":   (_t("coupon_barrier", lang),   f"{terms.coupon_barrier:.0%}"),
         "autocall_barrier": (_t("autocall_barrier", lang), f"{terms.autocall_barrier:.0%}"),
         "knock_in_barrier": (_ki_lbl,                      f"{terms.knock_in_barrier:.0%}"),
+        # Participation payoff metrics (shown in place of coupon/knock-in on a
+        # participation note, where those are 0 and meaningless).
+        "protection_level": (_t("protection_level", lang), f"{float(getattr(terms, 'protection_level', 1.0) or 1.0):.0%}"),
+        "participation_rate": (_t("participation_rate", lang), f"{float(getattr(terms, 'participation_rate', 1.0) or 1.0):.0%}"),
+        "upside_cap":       (_t("period_cap" if getattr(terms, "participation_periodic", False) else "upside_cap", lang),
+                             f"{_cap_v:.0%}" if _cap_v is not None else ""),
         "issue_date":       (_t("issue_date", lang),       str(getattr(terms, "issue_date", "") or "")),
         "issuer":           (_t("issuer", lang),           getattr(pdf, "issuer", "") or ""),
     }
     _sel = getattr(pdf, "cover_metrics", None)
-    _keys = list(_sel) if _sel is not None else ["coupon_pa", "maturity", "knock_in_barrier"]
+    if _sel is not None:
+        _keys = list(_sel)
+    elif _part:
+        # Participation default: protection + participation + (cap or maturity).
+        _keys = (["protection_level", "participation_rate", "upside_cap"]
+                 if _cap_v is not None else ["protection_level", "participation_rate", "maturity"])
+    else:
+        _keys = ["coupon_pa", "maturity", "knock_in_barrier"]
     _kt = [_fcat[k] for k in _keys if k in _fcat and _fcat[k][1] != ""][:4]
     if _kt:
         web_w = 54.0 if website else 0.0
@@ -3242,8 +3422,56 @@ def _cover_page(
         lang, inc, results, bt_summary, live_data, len(asset_names or []))))
     ly = pdf.get_y() + 5.0
 
-    # 3) Payoff scenarios panel (only when the sim ran).
-    if _has_mc:
+    # 3) Payoff scenarios panel (only when the sim ran). A participation note has no
+    #    autocall/coupon ladder, so it shows redemption outcomes (above / at / below
+    #    par) with an expected-redemption footer instead of per-scenario IRRs.
+    if _has_mc and _is_participation(terms):
+        p_below = float(results.get("prob_knock_in_total", 0.0))   # below par = capital loss
+        p_above = float(results.get("prob_above_par", 0.0))
+        p_at    = max(0.0, 1.0 - p_below - p_above)
+        prows = [
+            (_t("outcome_above_par", lang), f"{p_above:.1%}", pdf.primary_color),
+            (_t("outcome_at_par", lang),    f"{p_at:.1%}",    pdf.teal),
+            (_t("outcome_below_par", lang), f"{p_below:.1%}", pdf.amber),
+        ]
+        _foot = (f"{_t('expected_redemption', lang)} {results.get('expected_nominal_payout', 1):.1%}"
+                 f"  ·  {_t('expected_irr', lang)} {results.get('expected_irr', 0):+.1%}")
+        ph = 10.5 + len(prows) * 8.0 + 8.0
+        pdf.set_fill_color(*pdf.panel_color)
+        try:
+            pdf.rect(x0, ly, Lw, ph, style="F", round_corners=True, corner_radius=2)
+            pdf.set_fill_color(*pdf.primary_color)
+            pdf.rect(x0, ly, Lw, 1.1, style="F",
+                     round_corners=("TOP_LEFT", "TOP_RIGHT"), corner_radius=2)
+        except TypeError:
+            pdf.rect(x0, ly, Lw, ph, style="F")
+            pdf.set_fill_color(*pdf.primary_color)
+            pdf.rect(x0, ly, Lw, 1.1, style="F")
+        pdf._eyebrow(x0 + 4, ly + 4, _t("redemption_outcomes", lang), pdf.muted,
+                     size=7.0, tracking=0.4, w=70)
+        pdf._eyebrow(x0 + Lw - 30, ly + 4.2, _t("payoff_prob", lang),
+                     _FOOTNOTE_GREY, size=5.6, tracking=0.2, w=26, align="R")
+        yy = ly + 10.5
+        for lab, p, col in prows:
+            pdf.set_draw_color(*_RULE_SOFT); pdf.set_line_width(0.2)
+            pdf.line(x0 + 4, yy, x0 + Lw - 4, yy)
+            pdf.set_fill_color(*col)
+            pdf.rect(x0 + 4, yy + 2.7, 2.4, 2.4, style="F")
+            pdf.set_xy(x0 + 9, yy + 1.5)
+            pdf._sf(8.2, "regular"); pdf.set_text_color(*pdf.body_ink)
+            pdf.cell(Lw - 9 - 30, 5, _safe(lab))
+            pdf.set_xy(x0 + Lw - 32, yy + 1.4)
+            pdf._sf(10.0, "bold"); pdf.set_text_color(*col)
+            pdf.cell(28, 5, _safe(p), align="R")
+            yy += 8.0
+        # Footer: expected redemption / IRR (whole-note aggregate).
+        pdf.set_draw_color(*_RULE_SOFT); pdf.set_line_width(0.2)
+        pdf.line(x0 + 4, yy, x0 + Lw - 4, yy)
+        pdf.set_xy(x0 + 9, yy + 1.6)
+        pdf._sf(7.4, "regular"); pdf.set_text_color(*KV_GREY)
+        pdf.cell(Lw - 13, 5, _safe(_foot))
+        ly += ph + 5.0
+    elif _has_mc:
         ar = np.asarray(results.get("annualized_returns", []), dtype=float)
         _ap = results.get("autocall_period")
         ap = np.asarray(_ap, dtype=int) if _ap is not None else np.array([], dtype=int)
@@ -3311,8 +3539,19 @@ def _cover_page(
         "issue_date":       (_t("issue_date", lang),       str(getattr(terms, "issue_date", "") or "")),
         "issuer":           (_t("issuer", lang),           pdf.issuer or ""),
     }
-    mini = [_metric_catalog["maturity"], _metric_catalog["coupon_pa"],
-            _metric_catalog["autocall_barrier"], _metric_catalog["knock_in_barrier"]]
+    if _is_participation(terms):
+        # Participation notes carry no coupon/autocall/knock-in — show the payoff
+        # profile (protection, participation, cap) instead.
+        _cap_v = _part_cap_value(terms)
+        mini = [_metric_catalog["maturity"],
+                (_t("protection_level", lang), f"{float(getattr(terms, 'protection_level', 1.0) or 1.0):.0%}"),
+                (_t("participation_rate", lang), f"{float(getattr(terms, 'participation_rate', 1.0) or 1.0):.0%}")]
+        if _cap_v is not None:
+            mini.append((_t("period_cap" if getattr(terms, "participation_periodic", False) else "upside_cap", lang),
+                         f"{_cap_v:.0%}"))
+    else:
+        mini = [_metric_catalog["maturity"], _metric_catalog["coupon_pa"],
+                _metric_catalog["autocall_barrier"], _metric_catalog["knock_in_barrier"]]
     if getattr(terms, "issue_date", None):
         mini.append(_metric_catalog["issue_date"])
     if pdf.issuer:
@@ -4516,19 +4755,32 @@ def _build_pdf_report(
                         if _bt_lgki is not None and _bt_lgki == _bt_lgki else "—")  # nan-safe
         _bt_att = bt_summary.get("avg_time_to_autocall")
         _bt_att_str = f"{_bt_att * 12:.1f} mo" if _bt_att is not None and _bt_att == _bt_att else "—"  # nan-safe
-        pdf.metric_band([
-            (_t("bt_mean_irr",        lang), f"{bt_summary.get('mean_irr', 0):.2%}"),
-            (_t("total_return_short", lang), f"{bt_summary.get('expected_total_return', 0):.2%}"),
-            (_t("bt_autocalled_pct",  lang), f"{bt_summary.get('prob_called', 0):.1%}"),
-            (_t("avg_time_autocall",  lang), _bt_att_str),
-            (_t("bt_knock_in_pct",    lang), f"{bt_summary.get('prob_knock_in', 0):.1%}"),
-            (_t("bt_loss_given_ki",   lang), _bt_lgki_pdf),
-            (_t("bt_n_issues",        lang), str(bt_summary.get("n_issues", 0))),
-        ])
+        if _is_participation(terms):
+            # Participation: realised redemption outcomes, mirroring the MC band —
+            # no autocall / knock-in ladder.
+            pdf.metric_band([
+                (_t("expected_redemption", lang), f"{bt_summary.get('expected_nominal_payout', 1):.2%}"),
+                (_t("bt_mean_irr",         lang), f"{bt_summary.get('mean_irr', 0):.2%}"),
+                (_t("total_return_short",  lang), f"{bt_summary.get('expected_total_return', 0):.2%}"),
+                (_t("p_above_par",         lang), f"{bt_summary.get('prob_above_par', 0):.1%}"),
+                (_t("p_below_par",         lang), f"{bt_summary.get('prob_knock_in_total', bt_summary.get('prob_below_par', 0)):.2%}"),
+                (_t("bt_n_issues",         lang), str(bt_summary.get("n_issues", 0))),
+            ])
+        else:
+            pdf.metric_band([
+                (_t("bt_mean_irr",        lang), f"{bt_summary.get('mean_irr', 0):.2%}"),
+                (_t("total_return_short", lang), f"{bt_summary.get('expected_total_return', 0):.2%}"),
+                (_t("bt_autocalled_pct",  lang), f"{bt_summary.get('prob_called', 0):.1%}"),
+                (_t("avg_time_autocall",  lang), _bt_att_str),
+                (_t("bt_knock_in_pct",    lang), f"{bt_summary.get('prob_knock_in', 0):.1%}"),
+                (_t("bt_loss_given_ki",   lang), _bt_lgki_pdf),
+                (_t("bt_n_issues",        lang), str(bt_summary.get("n_issues", 0))),
+            ])
     if bt_summary and _inc("bt_outcome") and bt_figures.get("outcome") is not None:
         _sec()
+        _bt_out_cap = "fig_redemption" if _is_participation(terms) else "fig_bt_outcome"
         pdf.figure(_fig_to_png(bt_figures.get("outcome"), **_kw),
-                   _t("fig_bt_outcome", lang), _t("src_hist", lang))
+                   _t(_bt_out_cap, lang), _t("src_hist", lang))
     if bt_summary and _inc("bt_pie") and bt_figures.get("pie") is not None:
         _sec()
         pdf.figure(_fig_to_png(bt_figures.get("pie"), **_kw),
@@ -4699,8 +4951,13 @@ def _build_pdf_report(
     # only when the note uses them; MC/backtest/underlying/vol terms only when
     # those sections are present); "core" note mechanics always print.
     _g_active = {"core"}
-    if getattr(terms, "memory", False):                 _g_active.add("mem")
-    if getattr(terms, "one_star_level", None) is not None: _g_active.add("os")
+    # Phoenix mechanics vs participation payoff terms are mutually exclusive families.
+    if _is_participation(terms):
+        _g_active.add("part")
+    else:
+        _g_active.add("phx")
+        if getattr(terms, "memory", False):             _g_active.add("mem")
+        if getattr(terms, "one_star_level", None) is not None: _g_active.add("os")
     if results:                                         _g_active.add("mc")
     if bt_summary:                                      _g_active.add("bt")
     if underlying_metrics:                              _g_active.add("ul")
