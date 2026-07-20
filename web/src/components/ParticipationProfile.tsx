@@ -106,12 +106,15 @@ export default function ParticipationProfile({ terms, summary }: { terms: NoteTe
   }
   return (
     <div style={{ width: '100%' }}>
-      {/* Zoom the visible basket-level range: − widens (zoom out), + narrows back. */}
+      {/* Zoom the visible basket-level range: − widens (zoom out), + narrows back,
+          ⤢ resets to the default range (only shown once zoomed). */}
       <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 4, marginBottom: 2 }}>
         <button className="btn btn--ghost" style={zoomBtn} aria-label={t('pp_zoom_out')} title={t('pp_zoom_out')}
                 disabled={zoom >= 4} onClick={() => setZoom((z) => Math.min(4, +(z * 1.4).toFixed(3)))}>−</button>
         <button className="btn btn--ghost" style={zoomBtn} aria-label={t('pp_zoom_in')} title={t('pp_zoom_in')}
                 disabled={zoom <= 1} onClick={() => setZoom((z) => Math.max(1, +(z / 1.4).toFixed(3)))}>+</button>
+        <button className="btn btn--ghost" style={{ ...zoomBtn, fontSize: 12 }} aria-label={t('pp_zoom_reset')} title={t('pp_zoom_reset')}
+                disabled={zoom === 1} onClick={() => setZoom(1)}>⤢</button>
       </div>
       {periodic && (
         <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 6 }}>

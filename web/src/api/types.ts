@@ -121,6 +121,7 @@ export interface SimSummary {
   // diagram's distribution overlay and the client-side what-if recompute.
   final_basket_sample?: number[]
   // Cliquet per-reset stats — power the per-period small-multiples.
+  participation_periodic?: boolean
   period_move_mean?: number[]
   period_income_mean?: number[]
   period_move_p25?: number[]

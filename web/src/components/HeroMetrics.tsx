@@ -61,8 +61,18 @@ export default function HeroMetrics({ summary }: { summary: SimSummary }) {
   if (summary.note_type === 'participation') {
     const belowPar = summary.prob_knock_in_total ?? 0
     const p5 = summary.p5_redemption ?? 1
+    // A cliquet's "redemption" accrues over many resets, so the whole-note figure
+    // (1 + summed income) misreads as a single payoff. Show the mean per-period
+    // redemption instead — capital rolls at par, so it's 1 + mean period income.
+    // period_income_mean is only present for cliquets, so it's the periodic signal
+    // (the MC summary doesn't carry the participation_periodic flag itself).
+    const periodic = (summary.participation_periodic ?? false) || (summary.period_income_mean?.length ?? 0) > 0
+    const perPeriodRedemption = 1 + (summary.expected_coupon ?? 0) / Math.max(1, summary.n_obs ?? 1)
+    const redemptionCard: Card = periodic
+      ? { label: t('expected_redemption_period'), value: perPeriodRedemption, format: pctNum(2), unit: '%', tip: t('tip_expected_redemption_period'), tone: 'accent' }
+      : { label: t('expected_redemption'), value: summary.expected_redemption ?? summary.expected_nominal_payout ?? 1, format: pctNum(1), unit: '%', tip: t('tip_expected_redemption'), tone: 'accent' }
     const ret: Card[] = [
-      { label: t('expected_redemption'), value: summary.expected_redemption ?? summary.expected_nominal_payout ?? 1, format: pctNum(1), unit: '%', tip: t('tip_expected_redemption'), tone: 'accent' },
+      redemptionCard,
       { label: t('expected_irr'), value: irr, format: pctNum(2), unit: '%', tip: t('tip_expected_irr'), tone: irr >= 0 ? 'accent' : 'bad' },
       { label: t('expected_gain'), value: summary.expected_gain ?? 0, format: pctNum(2), unit: '%', tip: t('tip_expected_gain'), tone: 'plain' },
       ...(summary.up_capture != null ? [{ label: t('upside_capture'), value: summary.up_capture, format: pctNum(0), unit: '%', tip: t('tip_upside_capture'), tone: 'plain' as const }] : []),

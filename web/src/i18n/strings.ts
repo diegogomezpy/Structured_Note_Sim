@@ -213,6 +213,7 @@ export const S: Dict = {
   pp_breakeven:       { en: 'Breakeven', es: 'Punto de equilibrio' },
   pp_zoom_out:        { en: 'Zoom out (wider range)', es: 'Alejar (rango más amplio)' },
   pp_zoom_in:         { en: 'Zoom in', es: 'Acercar' },
+  pp_zoom_reset:      { en: 'Reset zoom', es: 'Restablecer zoom' },
   pp_curve_right:     { en: 'redemption vs final basket', es: 'redención vs cesta final' },
   pp_dist_caption:    { en: 'Shaded strip = simulated final-basket distribution; band = p5–p95 redemption, dashed line = expected redemption.', es: 'Franja sombreada = distribución simulada de la cesta final; banda = redención p5–p95, línea punteada = redención esperada.' },
   // What-if sensitivity
@@ -232,6 +233,8 @@ export const S: Dict = {
   redemption_distribution: { en: 'Redemption distribution', es: 'Distribución de redención' },
   expected_redemption:{ en: 'Expected redemption', es: 'Redención esperada' },
   tip_expected_redemption: { en: 'Mean redemption at maturity, as a % of notional.', es: 'Redención media al vencimiento, como % del nominal.' },
+  expected_redemption_period: { en: 'Expected redemption / period', es: 'Redención esperada / período' },
+  tip_expected_redemption_period: { en: 'Mean redemption of a single reset period (capital rolls at par, plus that period’s participation income).', es: 'Redención media de un solo período de reinicio (el capital se renueva a la par, más el ingreso de participación de ese período).' },
   expected_gain:      { en: 'Expected gain', es: 'Ganancia esperada' },
   tip_expected_gain:  { en: 'Mean payoff above par (the participation upside), as a % of notional.', es: 'Pago medio por encima de la par (la subida de participación), como % del nominal.' },
   p_below_par:        { en: 'P(below par)', es: 'P(bajo la par)' },
