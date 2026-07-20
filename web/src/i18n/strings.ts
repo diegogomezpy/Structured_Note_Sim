@@ -211,6 +211,8 @@ export const S: Dict = {
   pp_y_axis:          { en: 'Redemption (% of notional)', es: 'Redención (% del nominal)' },
   pp_periodic_caption:{ en: 'Payoff of a single period — paid each reset, then the strike resets.', es: 'Pago de un solo período — se paga en cada reinicio y luego el strike se reinicia.' },
   pp_breakeven:       { en: 'Breakeven', es: 'Punto de equilibrio' },
+  pp_zoom_out:        { en: 'Zoom out (wider range)', es: 'Alejar (rango más amplio)' },
+  pp_zoom_in:         { en: 'Zoom in', es: 'Acercar' },
   pp_curve_right:     { en: 'redemption vs final basket', es: 'redención vs cesta final' },
   pp_dist_caption:    { en: 'Shaded strip = simulated final-basket distribution; band = p5–p95 redemption, dashed line = expected redemption.', es: 'Franja sombreada = distribución simulada de la cesta final; banda = redención p5–p95, línea punteada = redención esperada.' },
   // What-if sensitivity

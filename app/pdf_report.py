@@ -4161,7 +4161,10 @@ def _build_pdf_report(
     # panel's "Note details" category; with include_sections=None (programmatic
     # callers) every one renders, so existing callers are unaffected.
     _show_terms = _inc("note_terms")
-    _show_obs   = _inc("obs_schedule")
+    # The observation schedule (coupon / autocall ladder) is a Phoenix concept — a
+    # Participation note is a single maturity payoff, so it doesn't apply there.
+    _is_part_note = getattr(terms, "note_type", "") == "participation" or (getattr(terms, "capital_guarantee", 0) or 0) > 0
+    _show_obs   = _inc("obs_schedule") and not _is_part_note
     _show_diag  = _inc("note_diagram")
     _show_desc  = _inc("note_description")
     if _show_terms or _show_obs or _show_diag or _show_desc:

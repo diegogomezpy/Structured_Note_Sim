@@ -40,8 +40,14 @@ export default function ParticipationProfile({ terms, summary }: { terms: NoteTe
   const p95 = !periodic ? summary?.p95_redemption ?? null : null
 
   // x-domain: 40%..180%, stretched to include a shark-fin knock-out if higher.
-  const xMin = 0.4
-  const xMax = Math.max(1.8, (eff.knockout_level ?? 0) + 0.2)
+  // `zoom` (>1) widens the visible basket range around par so the user can zoom
+  // out to see redemption at more extreme final levels (the deep-loss floor, an
+  // uncapped upside, a far knock-out).
+  const [zoom, setZoom] = useState(1)
+  const baseMin = 0.4
+  const baseMax = Math.max(1.8, (eff.knockout_level ?? 0) + 0.2)
+  const xMin = Math.max(0, 1 - (1 - baseMin) * zoom)
+  const xMax = 1 + (baseMax - 1) * zoom
   const N = 120
   const EPS = 1e-3
   const breaks = [strike, terms.knockout_level ?? NaN].flatMap((b) => [b - EPS, b])
@@ -94,8 +100,19 @@ export default function ParticipationProfile({ terms, summary }: { terms: NoteTe
   const gridcol = 'var(--border)'
   const hoverR = hoverB != null ? participationRedemption(hoverB, terms) : null
 
+  const zoomBtn: React.CSSProperties = {
+    width: 24, height: 24, display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+    padding: 0, fontSize: 15, lineHeight: 1, borderRadius: 6,
+  }
   return (
     <div style={{ width: '100%' }}>
+      {/* Zoom the visible basket-level range: − widens (zoom out), + narrows back. */}
+      <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 4, marginBottom: 2 }}>
+        <button className="btn btn--ghost" style={zoomBtn} aria-label={t('pp_zoom_out')} title={t('pp_zoom_out')}
+                disabled={zoom >= 4} onClick={() => setZoom((z) => Math.min(4, +(z * 1.4).toFixed(3)))}>−</button>
+        <button className="btn btn--ghost" style={zoomBtn} aria-label={t('pp_zoom_in')} title={t('pp_zoom_in')}
+                disabled={zoom <= 1} onClick={() => setZoom((z) => Math.max(1, +(z / 1.4).toFixed(3)))}>+</button>
+      </div>
       {periodic && (
         <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 6 }}>
           <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 11.5, fontWeight: 600,

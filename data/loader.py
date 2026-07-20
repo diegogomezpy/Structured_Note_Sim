@@ -707,6 +707,16 @@ def resolve_issuer_summary(name: str, ssl_verify: bool = True) -> str | None:
     import re
 
     raw = name.strip()
+    # If the input looks like a ticker symbol (short, no spaces — e.g. "SAN" for
+    # Banco Santander, "GLE.PA", "8306.T"), try it directly as a symbol first: that
+    # resolves the issuer straight away without the fuzzy name search below.
+    if raw and " " not in raw and len(raw) <= 7 and raw.upper() == raw:
+        try:
+            info = yf.Ticker(raw).info or {}
+            if info.get("quoteType") in (None, "EQUITY") and info.get("longBusinessSummary"):
+                return info["longBusinessSummary"]
+        except Exception:
+            pass
     # Build query candidates from most specific to least. Note issuers are very
     # often financing subsidiaries ("Morgan Stanley B.V.", "Morgan Stanley
     # Finance LLC", "BNP Paribas Issuance B.V.", "Goldman Sachs Finance Corp")
