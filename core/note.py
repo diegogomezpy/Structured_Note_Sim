@@ -594,6 +594,34 @@ def _participation_redemption(B: np.ndarray, terms: "NoteTerms") -> np.ndarray:
     return np.maximum(R, 0.0)
 
 
+def participation_barrier_levels(terms) -> dict:
+    """Whole-basket floor / cap of a Participation Note's redemption profile, for the
+    diagram overlays. Both are None for a cliquet (per-period resets make a single
+    cumulative floor/cap misleading) and the floor is None for a `bear` downside (its
+    loss is on the UP move, so there's no lower floor). The single source of this
+    subtle guard — accepts either a NoteTerms object or a raw config dict.
+    Returns {"floor": float|None, "cap": float|None}."""
+    g = terms.get if isinstance(terms, dict) else (lambda k, d=None: getattr(terms, k, d))
+    periodic = bool(g("participation_periodic", False))
+    prot = g("protection_level")
+    up_cap = g("upside_cap")
+    floor = (min(float(prot), 1.0)
+             if (not periodic and prot is not None and g("participation_downside") != "bear")
+             else None)
+    cap = (1.0 + up_cap) if (not periodic and up_cap is not None) else None
+    return {"floor": floor, "cap": cap}
+
+
+def participation_period_income(levels, terms) -> np.ndarray:
+    """Per-period participation income for a cliquet reset: the one-period
+    participation redemption (par strike, per-period cap) minus par, for each
+    period-end level. Shape-preserving and vectorised — the single source used by
+    the cliquet payoff (this module) and the engine's per-period markers / live rows."""
+    eff = replace(terms, participation_periodic=False,
+                  upside_cap=terms.period_cap, participation_strike=1.0)
+    return _participation_redemption(np.asarray(levels, dtype=float), eff) - 1.0
+
+
 def _participation_breakeven(terms: "NoteTerms") -> float | None:
     """The basket level at the loss/par boundary — the note redeems below par for a
     final basket at or below this level. Found by scanning the redemption curve for
@@ -674,9 +702,7 @@ def _participation_periodic_payoff(perf_paths, terms, obs_steps, t_maturity, n_o
     level  = np.divide(B, B_prev, out=np.ones_like(B), where=(B_prev != 0))   # (n_paths, n_obs)
     # Evaluate each period with the full participation profile (cap = period_cap,
     # strike reset to par). One-period notes, so no periodic flag / maturity cap.
-    eff = replace(terms, participation_periodic=False, upside_cap=terms.period_cap,
-                  participation_strike=1.0)
-    period_income = _participation_redemption(level.ravel(), eff).reshape(level.shape) - 1.0  # (n_paths, n_obs)
+    period_income = participation_period_income(level, terms)                # (n_paths, n_obs)
     total_income  = period_income.sum(axis=1)
     # Per-period summaries for the cliquet small-multiples: the average basket move
     # and locked-in income each reset period, plus an inter-quartile move band.

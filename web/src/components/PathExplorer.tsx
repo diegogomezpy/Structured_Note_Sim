@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { api } from '../api/client'
 import { monthsNum } from '../lib/terms'
 import { useI18n } from '../i18n/I18nProvider'
-import Panel from './Panel'
+import Panel, { LoadingPanel } from './Panel'
 import Figure from './Figure'
 import Icon from './Icon'
 import type { ExplorerData, ExplorerPath } from '../api/types'
@@ -150,10 +150,6 @@ export function PathFan({
   )
 }
 
-function Loader() {
-  const { t } = useI18n()
-  return <Panel pad={40}><div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 10, color: 'var(--text-muted)', fontSize: 14 }}><Icon name="spinner" size={18} /> {t('loading')}</div></Panel>
-}
 
 /** A representative fraction of the calculated paths (not a flat 400), clamped
     for render performance. */
@@ -179,7 +175,7 @@ export default function PathExplorer({ runId, total }: { runId: string; total: n
   if (status === 'error') {
     return <Panel pad={40}><div style={{ textAlign: 'center', color: 'var(--text-muted)', fontSize: 14 }}>{t('explorer_expired')}</div></Panel>
   }
-  if (status === 'loading' || !data) return <Loader />
+  if (status === 'loading' || !data) return <LoadingPanel />
   return <PathFan data={data} intro={data.note_type === 'participation' ? t('explorer_intro_part') : t('explorer_intro')}
                   onResample={() => setSeedKey((k) => k + 1)} />
 }

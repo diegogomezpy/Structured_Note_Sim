@@ -1,6 +1,6 @@
 import { useId } from 'react'
 import { useI18n } from '../i18n/I18nProvider'
-import { nObs, obsFractions, autocallSchedule, hasStepDown } from '../lib/terms'
+import { nObs, obsFractions, autocallSchedule, hasStepDown, couponRate, maturityLabel } from '../lib/terms'
 import { pct, pctTrim } from '../lib/format'
 import { detectNoteType } from '../lib/noteType'
 import ParticipationProfile from './ParticipationProfile'
@@ -25,16 +25,12 @@ const C_KNOCKIN = 'var(--red)'      /* claret */
 const C_ONESTAR = 'var(--amber)'    /* ochre — the best-of rescue overlay */
 const C_AUTOCALL = 'var(--accent-text)'
 
-const PPY: Record<string, number> = { monthly: 12, quarterly: 4, 'semi-annual': 2, annual: 1 }
 
 const mapY = (level: number) => Y_BOT - (Math.min(Math.max(level, 0), DOMAIN) / DOMAIN) * (Y_BOT - Y_TOP)
 const mapX = (frac: number) => X0 + frac * (X1 - X0)
 
 const fmtMonthYear = (iso: string) => { const d = new Date(`${iso}T00:00:00`); return Number.isNaN(d.getTime()) ? '' : d.toLocaleDateString('en-US', { month: 'short', year: 'numeric' }) }
 const addYears = (iso: string, yrs: number) => { const d = new Date(`${iso}T00:00:00`); d.setDate(d.getDate() + Math.round(yrs * 365.25)); return d.toISOString().slice(0, 10) }
-const tenorLabel = (years: number) => `${Math.round(years * 12)}M`
-/* Tenor is quoted in months, so the time axis is too. */
-const yrTick = (y: number) => `${Math.round(y * 12)}M`
 
 /** Greedily separate label y-positions by at least `gap`, kept inside [minY,maxY],
     returned in the original order — so each label clears its neighbours. */
@@ -70,7 +66,7 @@ export default function NoteTimeline({ terms }: { terms: NoteTerms }) {
   const acY = mapY(acLevel)
   const kiY = mapY(kiLevel)
   const acX = mapX((start - 1) / n)
-  const couponPer = terms.coupon_pa / (PPY[terms.payment_freq] ?? 4)
+  const couponPer = couponRate(terms)
 
   const barriersEqual = Math.abs(cpLevel - kiLevel) < 1e-6
   const showCoupon = n <= 8 && couponPer > 0
@@ -79,7 +75,7 @@ export default function NoteTimeline({ terms }: { terms: NoteTerms }) {
   // x-axis time: real dates when the note has an issue date, else the tenor
   const issueIso = terms.issue_date || null
   const issueDateLabel = issueIso ? fmtMonthYear(issueIso) : null
-  const matDateLabel = issueIso ? fmtMonthYear(addYears(issueIso, terms.maturity)) : tenorLabel(terms.maturity)
+  const matDateLabel = issueIso ? fmtMonthYear(addYears(issueIso, terms.maturity)) : maturityLabel(terms.maturity)
 
   const stepped = hasStepDown(terms)
   const sched = stepped ? autocallSchedule(terms) : null
@@ -236,7 +232,7 @@ export default function NoteTimeline({ terms }: { terms: NoteTerms }) {
                 <text x={x} y={parY - 9} fontSize="8" className="mono" fill={C_COUPON} textAnchor="middle">+{pct(couponPer, 2)}</text>
               )}
               {showYrTicks && !isMat && (
-                <text x={x} y={Y_BOT + 13} fontSize="7.5" className="mono" fill="var(--text-faint)" textAnchor="middle">{yrTick(f * terms.maturity)}</text>
+                <text x={x} y={Y_BOT + 13} fontSize="7.5" className="mono" fill="var(--text-faint)" textAnchor="middle">{maturityLabel(f * terms.maturity)}</text>
               )}
             </g>
           )

@@ -3739,19 +3739,10 @@ def _draw_note_diagram(pdf, terms, lang: str) -> None:
         barriers_equal = abs(cp - ki) < 1e-6
 
         # step-down autocall: the trigger declines each callable period toward a
-        # floor. Mirror web autocallSchedule() so the PDF staircase matches the site.
-        _step  = getattr(terms, "autocall_step_down", 0.0) or 0.0
-        _floor = getattr(terms, "autocall_floor", None)
-        stepped = _step > 0
-        ac_sched = [ac] * n
-        if stepped:
-            _sp = int(getattr(terms, "autocall_start_period", 1) or 1)
-            for j in range(_sp, n + 1):
-                lvl = ac - _step * (j - _sp)
-                if _floor is not None:
-                    lvl = max(lvl, _floor)
-                if 1 <= j <= n:
-                    ac_sched[j - 1] = lvl
+        # floor. Reuse the quant core's schedule (NoteTerms.autocall_barrier_schedule),
+        # the same one the payoff and the web diagram use, so all three stay in step.
+        stepped = bool(getattr(terms, "autocall_step_down", 0.0) or 0.0)
+        ac_sched = [float(x) for x in terms.autocall_barrier_schedule()]
         min_ac = min(ac_sched) if ac_sched else ac
 
         # x-axis time: real dates when the note has an issue date, else the tenor.

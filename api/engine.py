@@ -32,7 +32,8 @@ sys.path.insert(0, str(_REPO / "app"))
 
 from core.note import (NoteTerms, price_note, replay_note,        # noqa: E402
                        _basket, _participation_redemption,
-                       _participation_breakeven)
+                       _participation_breakeven, participation_barrier_levels,
+                       participation_period_income)
 from core.calibrator import HestonCalibrator                      # noqa: E402
 from core.simulator import HestonMultiSimulator                   # noqa: E402
 from core.backtest import run_backtest, snapped_obs_dates         # noqa: E402
@@ -247,12 +248,9 @@ def sample_paths(run_id: str, *, sample: int = 400, seed: int = 7) -> dict | Non
 
     if _is_part:
         periodic = bool(terms.get("participation_periodic"))
-        prot = terms.get("protection_level")
-        floor = (min(float(prot), 1.0) if (not periodic and prot is not None
-                 and terms.get("participation_downside") != "bear") else None)
-        cap = ((1.0 + terms["upside_cap"]) if (not periodic and terms.get("upside_cap") is not None) else None)
+        _lv = participation_barrier_levels(terms)
         barriers = {"participation": {"strike": _f(terms.get("participation_strike")),
-                                      "floor": _f(floor), "cap": _f(cap), "periodic": periodic}}
+                                      "floor": _f(_lv["floor"]), "cap": _f(_lv["cap"]), "periodic": periodic}}
     else:
         barriers = {"knock_in": _f(terms.get("knock_in_barrier")),
                     "autocall": _f(terms.get("autocall_barrier")),
@@ -384,17 +382,14 @@ def _participation_line_and_markers(asset_paths, obs_steps, terms, tr):
     - cliquet: one marker per reset period showing that period's basket move and the
       locked-in participation P&L (which can be negative under buffer/airbag/bear).
     """
-    from dataclasses import replace
     basket_line = _basket(np.asarray(asset_paths, dtype=float), terms.participation_basket)  # (N+1,)
     B = np.asarray([float(basket_line[int(s)]) for s in obs_steps])                            # basket at each obs
     info: list[dict] = []
     if getattr(terms, "participation_periodic", False):
-        eff = replace(terms, participation_periodic=False,
-                      upside_cap=terms.period_cap, participation_strike=1.0)
         prev = 1.0
         for j, b in enumerate(B):
             level = b / prev if prev else 1.0
-            inc = float(_participation_redemption(np.array([level]), eff)[0]) - 1.0
+            inc = float(participation_period_income([level], terms)[0])
             prev = b
             kind = "part_gain" if inc > 1e-9 else ("part_loss" if inc < -1e-9 else "part_flat")
             info.append({"text": tr("leg_part_reset", k=j + 1,
@@ -448,18 +443,13 @@ def _path_payload(worst_path, asset_paths, asset_names, obs_steps, autocall_q,
 
     if note_type == "participation":
         periodic = bool(getattr(terms, "participation_periodic", False))
-        prot = terms.protection_level
         # The floor / cap reference the whole-basket redemption of a single-maturity
         # note; a cliquet's per-period profile resets each period, so a single floor/
-        # cap over the cumulative basket would mislead — omit them there.
-        floor = (min(float(prot), 1.0)
-                 if (not periodic and prot is not None and terms.participation_downside != "bear")
-                 else None)
-        cap = ((1.0 + terms.upside_cap)
-               if (not periodic and terms.upside_cap is not None) else None)
+        # cap over the cumulative basket would mislead — the helper omits them there.
+        _lv = participation_barrier_levels(terms)
         barriers = {"knock_in": None, "autocall": None, "autocall_schedule": None,
                     "participation": {"strike": _f(terms.participation_strike),
-                                      "floor": _f(floor), "cap": _f(cap),
+                                      "floor": _f(_lv["floor"]), "cap": _f(_lv["cap"]),
                                       "periodic": periodic}}
     else:
         ac_sched = ([[int(s), float(lv)]
@@ -870,6 +860,23 @@ def _lerp_hex(c1: str, c2: str, t: float) -> str:
     return "#%02x%02x%02x" % tuple(round(a[k] + (b[k] - a[k]) * t) for k in range(3))
 
 
+def _backtest_outcome_labels(bt) -> "tuple[list[str], dict[str, str]]":
+    """Per-issue outcome label + a matching colour map for the backtest charts.
+    Autocall periods ride a light-emerald→ink-green ramp, held-to-maturity teal,
+    knock-in amber (no red — survives the PDF rebrand). The single source shared by
+    the web backtest and the PDF backtest so their legends and colours stay identical."""
+    def _label(cq, ki):
+        if int(cq) > 0:
+            return f"Autocalled P{int(cq)}"
+        return "Knock-in" if bool(ki) else "Held to maturity"
+    outcome = [_label(cq, ki) for cq, ki in zip(bt["Call Quarter"], bt["Knock-in"])]
+    ac_periods = sorted({int(cq) for cq in bt["Call Quarter"] if int(cq) > 0})
+    color_map = {"Held to maturity": "#2e7e8c", "Knock-in": "#c9772d"}
+    for i, q in enumerate(ac_periods):
+        color_map[f"Autocalled P{q}"] = _lerp_hex("#9bd8b4", "#0b3d2e", i / max(1, len(ac_periods) - 1))
+    return outcome, color_map
+
+
 def _ts(s: str | None):
     return pd.Timestamp(s) if s else None
 
@@ -940,21 +947,9 @@ def run_backtest_api(terms: NoteTerms, *, history_years: float | None = None,
         return {"summary": out_summary, "issues": issues, "figures": figures,
                 "note_type": _note_type}
 
-    # Outcome label per issue + a colour map (autocall periods on a blue ramp,
-    # held-to-maturity slate, knock-in red) — the chart builders key off this.
-    def _label(cq, ki):
-        if int(cq) > 0:
-            return f"Autocalled P{int(cq)}"
-        return "Knock-in" if bool(ki) else "Held to maturity"
-    bt["Outcome"] = [_label(cq, ki) for cq, ki in zip(bt["Call Quarter"], bt["Knock-in"])]
-    ac_periods = sorted({int(cq) for cq in bt["Call Quarter"] if int(cq) > 0})
-    # Green design language: autocall periods on a light-emerald→ink green ramp,
-    # held = teal, knock-in = amber (no red). Greens/teal/amber pass through the
-    # PDF rebrand unchanged, so the backtest charts read on-brand in both views.
-    color_map = {"Held to maturity": "#2e7e8c", "Knock-in": "#c9772d"}
-    for i, q in enumerate(ac_periods):
-        t = i / max(1, len(ac_periods) - 1)
-        color_map[f"Autocalled P{q}"] = _lerp_hex("#9bd8b4", "#0b3d2e", t)
+    # Outcome label per issue + a matching colour map — the chart builders key off
+    # this (shared with the PDF backtest so legends/colours stay identical).
+    bt["Outcome"], color_map = _backtest_outcome_labels(bt)
 
     figures = {
         "worst_asset_pie": _fig(charts.build_worst_asset_pie(bt, tr)),
@@ -992,12 +987,9 @@ def backtest_paths(terms: NoteTerms, *, history_years: float | None = None,
     _is_part = _note_type == "participation"
     if _is_part:
         periodic = bool(getattr(terms, "participation_periodic", False))
-        prot = terms.protection_level
-        floor = (min(float(prot), 1.0) if (not periodic and prot is not None
-                 and terms.participation_downside != "bear") else None)
-        cap = ((1.0 + terms.upside_cap) if (not periodic and terms.upside_cap is not None) else None)
+        _lv = participation_barrier_levels(terms)
         barriers = {"participation": {"strike": _f(terms.participation_strike),
-                                      "floor": _f(floor), "cap": _f(cap), "periodic": periodic}}
+                                      "floor": _f(_lv["floor"]), "cap": _f(_lv["cap"]), "periodic": periodic}}
     else:
         barriers = {"knock_in": _f(terms.knock_in_barrier),
                     "autocall": _f(terms.autocall_barrier),
@@ -1169,16 +1161,13 @@ def _participation_live_result(terms, tr, asset_names, disp_to_sym, obs_labels,
     distance to breakeven / floor / cap). Cliquet notes also accrue the per-period
     locked-in P&L over the elapsed resets, mark the running period to today, and list
     each reset in the observation table."""
-    from dataclasses import replace
     pk = terms.participation_basket
     periodic = bool(getattr(terms, "participation_periodic", False))
     basket_today = float(_basket(perf_today[None, :], pk)[0])
     proj_now = float(_participation_redemption(np.array([basket_today]), terms)[0])
     breakeven = _participation_breakeven(terms)
-    prot = terms.protection_level
-    floor = (min(float(prot), 1.0) if (not periodic and prot is not None
-             and terms.participation_downside != "bear") else None)
-    cap = ((1.0 + terms.upside_cap) if (not periodic and terms.upside_cap is not None) else None)
+    _lv = participation_barrier_levels(terms)
+    floor, cap = _lv["floor"], _lv["cap"]
 
     n_past = len(past_dates)
     reset_markers: list[dict] = []
@@ -1186,14 +1175,12 @@ def _participation_live_result(terms, tr, asset_names, disp_to_sym, obs_labels,
     accrued = 0.0
     current_income = 0.0
     if periodic:
-        eff = replace(terms, participation_periodic=False,
-                      upside_cap=terms.period_cap, participation_strike=1.0)
         B_reset = _basket(perf_obs, pk) if n_past else np.empty(0)
         prev = 1.0
         running = 0.0
         for j in range(n_past):
             level = float(B_reset[j]) / prev if prev else 1.0
-            inc = float(_participation_redemption(np.array([level]), eff)[0]) - 1.0
+            inc = float(participation_period_income([level], terms)[0])
             prev = float(B_reset[j])
             accrued += inc
             running += inc
@@ -1208,7 +1195,7 @@ def _participation_live_result(terms, tr, asset_names, disp_to_sym, obs_labels,
         # Running (unsettled) period, marked to today off the last reset basket.
         if n_past < terms.n_obs:
             cur_level = basket_today / prev if prev else 1.0
-            current_income = float(_participation_redemption(np.array([cur_level]), eff)[0]) - 1.0
+            current_income = float(participation_period_income([cur_level], terms)[0])
             obs_rows.append({"period": obs_labels[n_past],
                              "date": (obs_cal[n_past].date().isoformat() if n_past < len(obs_cal) else None),
                              "status": "running", "move": round(cur_level - 1.0, 6),
@@ -1590,12 +1577,6 @@ def _quote_one(sym: str) -> dict:
     """One symbol's fast_info snapshot (best-effort; nulls on any failure)."""
     import yfinance as yf
 
-    def _f(v):
-        try:
-            return None if v is None else float(v)
-        except (TypeError, ValueError):
-            return None
-
     rec = _empty_quote()
     try:
         fi = yf.Ticker(sym).fast_info
@@ -1705,15 +1686,7 @@ def _backtest_for_pdf(terms: NoteTerms, tr, history_years: float | None) -> tupl
         return None, None
     bt = bt.copy()
 
-    def _label(cq, ki):
-        if int(cq) > 0:
-            return f"Autocalled P{int(cq)}"
-        return "Knock-in" if bool(ki) else "Held to maturity"
-    bt["Outcome"] = [_label(cq, ki) for cq, ki in zip(bt["Call Quarter"], bt["Knock-in"])]
-    ac_periods = sorted({int(cq) for cq in bt["Call Quarter"] if int(cq) > 0})
-    color_map = {"Held to maturity": "#2e7e8c", "Knock-in": "#c9772d"}
-    for i, q in enumerate(ac_periods):
-        color_map[f"Autocalled P{q}"] = _lerp_hex("#9bd8b4", "#0b3d2e", i / max(1, len(ac_periods) - 1))
+    bt["Outcome"], color_map = _backtest_outcome_labels(bt)
 
     bt_summary = dict(summary)
     ki_rows = bt[bt["Knock-in"]]

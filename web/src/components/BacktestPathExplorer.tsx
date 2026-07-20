@@ -1,8 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { api } from '../api/client'
 import { useI18n } from '../i18n/I18nProvider'
-import Panel from './Panel'
-import Icon from './Icon'
+import Panel, { LoadingPanel } from './Panel'
 import { PathFan } from './PathExplorer'
 import PathInspector from './PathInspector'
 import type { BtRange, ExplorerData, NoteTerms } from '../api/types'
@@ -42,7 +41,7 @@ function BacktestSamplePaths({ terms, range, sig }: { terms: NoteTerms; range: B
   }, [sig, seed])
 
   if (status === 'loading') {
-    return <Panel pad={40}><div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 10, color: 'var(--text-muted)', fontSize: 14 }}><Icon name="spinner" size={18} /> {t('loading')}</div></Panel>
+    return <LoadingPanel />
   }
   if (status === 'error' || !data) {
     return <Panel pad={40}><div style={{ textAlign: 'center', color: 'var(--text-muted)', fontSize: 14 }}>{t('bt_explorer_empty')}</div></Panel>
