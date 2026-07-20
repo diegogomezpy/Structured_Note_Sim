@@ -515,6 +515,32 @@ def load_underlying_metrics(
                 except Exception:
                     pass
 
+            # Market cap: `.info["marketCap"]` is flaky — Yahoo omits it from the
+            # .info payload for some tickers (partial/rate-limited responses), so a
+            # single source leaves cards showing "—". Fall back to the lighter
+            # fast_info endpoint, then to shares × last price.
+            if rec["market_cap"] is None:
+                try:
+                    fi = t.fast_info
+                    mc = getattr(fi, "market_cap", None)
+                    if mc is None and hasattr(fi, "get"):
+                        mc = fi.get("market_cap") or fi.get("marketCap")
+                    rec["market_cap"] = mc
+                except Exception:
+                    pass
+            if rec["market_cap"] is None and rec["last_price"]:
+                shares = info.get("sharesOutstanding") or info.get("impliedSharesOutstanding")
+                if shares is None:
+                    try:
+                        shares = getattr(t.fast_info, "shares", None)
+                    except Exception:
+                        shares = None
+                if shares:
+                    try:
+                        rec["market_cap"] = float(shares) * float(rec["last_price"])
+                    except (TypeError, ValueError):
+                        pass
+
             rec["iv_3m"], rec["iv_source"] = _iv_3m(
                 t, sym, rec["type"], rec["last_price"], _hist)
         except Exception as e:
