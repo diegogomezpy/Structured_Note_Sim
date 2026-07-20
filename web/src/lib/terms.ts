@@ -63,10 +63,39 @@ export function hasStepDown(t: NoteTerms): boolean {
   return (t.autocall_step_down ?? 0) > 0
 }
 
+/** One-line summary of a Participation note's payoff — its downside × upside
+    profile, not the (irrelevant) coupon/autocall ladder. E.g.
+    "Full protection · Linear 100% · upside cap 160%" or, for a cliquet,
+    "Cliquet · Quarterly · Full protection · Linear 100% · upside cap 108%". */
+export function participationSummary(terms: NoteTerms, tr: (k: string) => string): string {
+  const dn = terms.participation_downside ?? 'full'
+  const up = terms.participation_upside ?? 'linear'
+  const prot = terms.protection_level ?? 1
+  const rate = terms.participation_rate ?? 1
+  const strike = terms.participation_strike ?? 1
+  const capVal = terms.participation_periodic ? (terms.period_cap ?? null) : (terms.upside_cap ?? null)
+  const segs: string[] = []
+  if (terms.participation_periodic) segs.push(`${tr('grp_cliquet')} · ${tr(`freq_${terms.payment_freq}`)}`)
+  // Downside style (+ its protection level; `full` at par shows no number).
+  if (dn === 'bear') segs.push(`${tr('pd_bear')} ${pct(rate, 0)}`)
+  else if (dn === 'full') segs.push(prot < 0.999 ? `${tr('pd_full')} ${pct(prot, 0)}` : tr('pd_full'))
+  else segs.push(`${tr(`pd_${dn}`)} ${pct(prot, 0)}`)
+  // Upside style (a `bear` note defines its own payoff — no separate upside).
+  if (dn !== 'bear') {
+    if (up === 'digital') segs.push(`${tr('pu_digital')} +${pct(terms.digital_payout ?? 0, 0)}`)
+    else if (up === 'shark_fin') segs.push(terms.knockout_level != null ? `${tr('pu_shark_fin')} ${pct(terms.knockout_level, 0)}` : tr('pu_shark_fin'))
+    else segs.push(`${tr('pu_linear')} ${pct(rate, 0)}${capVal != null ? ` · ${tr('upside_cap').toLowerCase()} ${pct(1 + capVal, 0)}` : ''}`)
+  }
+  if (Math.abs(strike - 1) > 1e-6) segs.push(`${tr('participation_strike').toLowerCase()} ${pct(strike, 0)}`)
+  return segs.join(' · ')
+}
+
 /** One-line plain-language summary of the coupon schedule, e.g.
     "4 × Quarterly · 10.0% coupon p.a. · +2.50%/period · memory coupons".
+    Routes to `participationSummary` for Participation notes (payoff, not ladder).
     `tr` is the i18n lookup; only plain keys are used (no interpolation vars). */
 export function noteSummary(terms: NoteTerms, tr: (k: string) => string): string {
+  if (terms.note_type === 'participation' || (terms.capital_guarantee ?? 0) > 0) return participationSummary(terms, tr)
   const n = nObs(terms)
   const cper = couponRate(terms)
   const couponNote = cper > 0 ? ` · +${pct(cper, 2)}/${tr('per_period')}` : ''
