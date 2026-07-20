@@ -3576,6 +3576,22 @@ def _draw_note_diagram(pdf, terms, lang: str) -> None:
         show_yr_ticks = (n <= 6)
         barriers_equal = abs(cp - ki) < 1e-6
 
+        # step-down autocall: the trigger declines each callable period toward a
+        # floor. Mirror web autocallSchedule() so the PDF staircase matches the site.
+        _step  = getattr(terms, "autocall_step_down", 0.0) or 0.0
+        _floor = getattr(terms, "autocall_floor", None)
+        stepped = _step > 0
+        ac_sched = [ac] * n
+        if stepped:
+            _sp = int(getattr(terms, "autocall_start_period", 1) or 1)
+            for j in range(_sp, n + 1):
+                lvl = ac - _step * (j - _sp)
+                if _floor is not None:
+                    lvl = max(lvl, _floor)
+                if 1 <= j <= n:
+                    ac_sched[j - 1] = lvl
+        min_ac = min(ac_sched) if ac_sched else ac
+
         # x-axis time: real dates when the note has an issue date, else the tenor
         _mat_yrs = terms.maturity
         _tenor = (f"{int(round(_mat_yrs * 12)) // 12}y" if round(_mat_yrs * 12) % 12 == 0
@@ -3643,6 +3659,22 @@ def _draw_note_diagram(pdf, terms, lang: str) -> None:
         if os_lvl is not None:
             _dash(os_lvl, C_OS)
 
+        # step-down autocall staircase — matches the web NoteTimeline stepPath:
+        # from the issue at the initial barrier, hold across each period then drop
+        # to that period's (declining) trigger. Drawn before the dots so they sit
+        # on top.
+        if stepped:
+            pdf.set_draw_color(*pdf.accent_color)
+            pdf.set_line_width(0.4)
+            pdf.set_dash_pattern(dash=1.6, gap=1.2)
+            cur_x, cur_y = x0, mapY(ac)
+            for i, f in enumerate(fracs):
+                nx, ny = mapX(f), mapY(ac_sched[i])
+                pdf.line(cur_x, cur_y, nx, cur_y)
+                pdf.line(nx, cur_y, nx, ny)
+                cur_x, cur_y = nx, ny
+            pdf.set_dash_pattern()
+
         # axes — extended past the data with arrowheads so it doesn't end abruptly
         pdf.set_draw_color(150, 162, 180)
         pdf.set_line_width(0.4)
@@ -3659,7 +3691,6 @@ def _draw_note_diagram(pdf, terms, lang: str) -> None:
         def _dot(cx, r, fill):
             pdf.set_fill_color(*fill)
             pdf.ellipse(cx - r, par_y - r, 2 * r, 2 * r, style="F")
-        _dot(x0, 1.5, pdf.accent_color)
         for i, f in enumerate(fracs):
             is_mat = (i + 1 == n)
             is_ac = (i + 1 >= start)
@@ -3692,7 +3723,8 @@ def _draw_note_diagram(pdf, terms, lang: str) -> None:
         # floating barrier labels (right gutter): name over value on two lines so
         # they stay narrow and the plot box can sit centred on the page.
         lx = x1 + 4
-        entries = [(ac_y, pdf.primary_color, _t("diag_autocall", lang), _bp(ac))]
+        _ac_val = f"{_bp(ac)} → {_bp(min_ac)}" if stepped else _bp(ac)
+        entries = [(ac_y, pdf.primary_color, _t("diag_autocall", lang), _ac_val)]
         if barriers_equal:
             entries.append((ki_y, C_COUPON, f"{_t('diag_coupon', lang)} / {_t('diag_knockin', lang)}", _bp(cp)))
         else:
