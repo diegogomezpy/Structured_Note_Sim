@@ -50,12 +50,12 @@ export default function ParticipationProfile({ terms, summary }: { terms: NoteTe
   const xMax = 1 + (baseMax - 1) * zoom
   const N = 120
   const EPS = 1e-3
-  const breaks = [strike, terms.knockout_level ?? NaN].flatMap((b) => [b - EPS, b])
+  const breaks = [strike, eff.knockout_level ?? NaN].flatMap((b) => [b - EPS, b])
   const xset = new Set<number>()
   for (let i = 0; i <= N; i++) xset.add(xMin + (i / N) * (xMax - xMin))
   for (const b of breaks) if (Number.isFinite(b) && b > xMin && b < xMax) xset.add(b)
   const xs = [...xset].sort((a, b) => a - b)
-  const rs = xs.map((b) => participationRedemption(b, terms))
+  const rs = xs.map((b) => participationRedemption(b, eff))
   const yLo = Math.min(0.6, Math.floor(Math.min(...rs) * 10) / 10)
   const yHi = Math.max(1.4, Math.ceil(Math.max(...rs) * 10) / 10)
 
@@ -98,7 +98,7 @@ export default function ParticipationProfile({ terms, summary }: { terms: NoteTe
   for (let r = Math.ceil(yLo * 5) / 5; r <= yHi + 1e-9; r += 0.2) yTicks.push(+r.toFixed(2))
   const xTicks = [0.5, 1.0, 1.5, 2.0].filter((b) => b >= xMin && b <= xMax)
   const gridcol = 'var(--border)'
-  const hoverR = hoverB != null ? participationRedemption(hoverB, terms) : null
+  const hoverR = hoverB != null ? participationRedemption(hoverB, eff) : null
 
   const zoomBtn: React.CSSProperties = {
     width: 24, height: 24, display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
