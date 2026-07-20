@@ -18,6 +18,9 @@ Nothing else in the codebase should know about file paths or yfinance.
 from __future__ import annotations
 
 import pathlib
+import re
+import time
+import urllib.request
 import warnings
 from concurrent.futures import ThreadPoolExecutor
 import pandas as pd
@@ -444,6 +447,45 @@ def _iv_3m(ticker, sym: str, quote_type: str | None, spot, closes=None):
     return None, None
 
 
+_SA_CAP_RE = re.compile(r'Market Cap</a><!--\]--></td><td[^>]*>\s*([\d.,]+)\s*([TBMK])\b', re.S)
+_SA_MULT = {"T": 1e12, "B": 1e9, "M": 1e6, "K": 1e3}
+_SA_CACHE: dict[str, tuple[float, float | None]] = {}   # sym → (ts, market_cap)
+_SA_TTL = 3600.0
+
+
+def _stockanalysis_market_cap(sym: str) -> float | None:
+    """Independent market-cap source, used only when Yahoo doesn't supply one.
+
+    Yahoo's `.info["marketCap"]` is dropped for some tickers on cloud IPs (Yahoo
+    throttles the fundamentals payload — prices still come through, so a single
+    ticker shows "—"). stockanalysis.com renders the figure server-side, so a plain
+    GET works without an API key or JS. US-listed symbols only — exchange-suffixed
+    tickers ('MBG.DE') and share-class dashes are skipped (Yahoo covers those, and
+    the stockanalysis URL scheme differs). Returns None on any failure; cached 1h."""
+    if not sym or "." in sym or "-" in sym:
+        return None
+    base = sym.upper().strip()
+    now = time.time()
+    hit = _SA_CACHE.get(base)
+    if hit is not None and now - hit[0] < _SA_TTL:
+        return hit[1]
+    cap = None
+    for path in (f"stocks/{base}", f"etf/{base}"):
+        try:
+            req = urllib.request.Request(
+                f"https://stockanalysis.com/{path}/",
+                headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"})
+            html = urllib.request.urlopen(req, timeout=6).read().decode("utf-8", "ignore")
+            m = _SA_CAP_RE.search(html)
+            if m:
+                cap = float(m.group(1).replace(",", "")) * _SA_MULT[m.group(2)]
+                break
+        except Exception:
+            continue
+    _SA_CACHE[base] = (now, cap)
+    return cap
+
+
 def load_underlying_metrics(
     tickers: dict[str, str],
     closes:  dict[str, pd.Series] | None = None,
@@ -540,6 +582,11 @@ def load_underlying_metrics(
                         rec["market_cap"] = float(shares) * float(rec["last_price"])
                     except (TypeError, ValueError):
                         pass
+            # Last resort: an independent, non-Yahoo source. Yahoo can drop the whole
+            # fundamentals payload (marketCap AND sharesOutstanding) for a ticker on
+            # cloud IPs, defeating the tiers above — stockanalysis.com still has it.
+            if rec["market_cap"] is None:
+                rec["market_cap"] = _stockanalysis_market_cap(sym)
 
             rec["iv_3m"], rec["iv_source"] = _iv_3m(
                 t, sym, rec["type"], rec["last_price"], _hist)
