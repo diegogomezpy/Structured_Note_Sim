@@ -48,17 +48,61 @@ interface PathLabels {
   ev: Record<string, string>
 }
 
+/** Renormalise a per-day series so each cliquet reset period restarts at 100%.
+    A cliquet's strike resets every period, so its "base" for measuring the move
+    changes at each reset — this divides each period's segment by the (cumulative)
+    level at that period's start, giving the per-period move the payoff actually
+    uses. `resetXs` are the reset x-positions (ascending). */
+function renormPerPeriod(tArr: number[], yArr: number[], resetXs: number[]): number[] {
+  if (!resetXs.length || !yArr.length) return yArr
+  const valAt = (x: number) => {
+    let bi = 0, bd = Infinity
+    for (let k = 0; k < tArr.length; k++) { const d = Math.abs(tArr[k] - x); if (d < bd) { bd = d; bi = k } }
+    return yArr[bi]
+  }
+  const refAt = resetXs.map(valAt)
+  const base = yArr[0] || 1
+  return yArr.map((v, i) => {
+    let j = 0
+    while (j < resetXs.length && resetXs[j] < tArr[i] - 1e-9) j++
+    const ref = j === 0 ? base : (refAt[j - 1] || base)
+    return ref ? v / ref : v
+  })
+}
+
 /** Build the single-path figure client-side, in the app's chart aesthetic.
     Every series — the underlyings, the worst-of, the par / knock-in / autocall
     reference levels, and each event-marker type — is a named trace so the
-    horizontal top legend fully explains the chart. */
-function buildPathFig(path: PathData, labels: PathLabels) {
+    horizontal top legend fully explains the chart. When `renorm` (cliquet
+    per-period view) the basket, underlyings and reset markers are renormalised so
+    every reset period restarts at 100%. */
+function buildPathFig(path: PathData, labels: PathLabels, renorm = false) {
+  // Reset x-positions of a cliquet = its per-period participation markers.
+  const resetXs = renorm
+    ? [...new Set(path.markers.filter((m) => m.kind.startsWith('part_')).map((m) => m.x))].sort((a, b) => a - b)
+    : []
+  const on = renorm && resetXs.length > 0
+  const rn = (y: number[]) => (on ? renormPerPeriod(path.t, y, resetXs) : y)
+  // Per-period reference divisor for a marker sitting at x (its period's start level).
+  const wofRefAt = resetXs.map((rx) => {
+    let bi = 0, bd = Infinity
+    for (let k = 0; k < path.t.length; k++) { const d = Math.abs(path.t[k] - rx); if (d < bd) { bd = d; bi = k } }
+    return path.wof[bi]
+  })
+  const base = path.wof[0] || 1
+  const refForX = (x: number) => {
+    let j = 0
+    while (j < resetXs.length && resetXs[j] < x - 1e-9) j++
+    return j === 0 ? base : (wofRefAt[j - 1] || base)
+  }
+  const mY = (m: { x: number; y: number }) => (on ? m.y / refForX(m.x) : m.y)
+
   const traces: any[] = []
   path.series.forEach((s, i) => traces.push({
-    x: path.t, y: s.perf, mode: 'lines', name: s.name, type: 'scatter',
+    x: path.t, y: rn(s.perf), mode: 'lines', name: s.name, type: 'scatter',
     line: { color: ASSET_COLORS[i % ASSET_COLORS.length], width: 1, dash: 'dot' }, opacity: 0.5,
   }))
-  traces.push({ x: path.t, y: path.wof, mode: 'lines', name: labels.wof, type: 'scatter', line: { color: WOF_COLOR, width: 2 } })
+  traces.push({ x: path.t, y: rn(path.wof), mode: 'lines', name: labels.wof, type: 'scatter', line: { color: WOF_COLOR, width: 2 } })
 
   // Reference levels as named, non-hovering line traces (so they appear in the legend).
   const x0 = 0, x1 = path.x_max
@@ -100,7 +144,8 @@ function buildPathFig(path: PathData, labels: PathLabels) {
     const xs: number[] = [], ys: number[] = [], text: string[] = []
     ms.forEach((m) => {
       const stacks = Math.max(1, m.n ?? 1)
-      for (let j = 0; j < stacks; j++) { xs.push(m.x); ys.push(m.y + j * STACK_DY); text.push(m.text) }
+      const y0 = mY(m)
+      for (let j = 0; j < stacks; j++) { xs.push(m.x); ys.push(y0 + j * STACK_DY); text.push(m.text) }
     })
     traces.push({
       x: xs, y: ys, text, mode: 'markers', type: 'scatter', name: labels.ev[kind] ?? kind,
@@ -228,6 +273,7 @@ function InspectorPanel({ fetcher, terms, label, onRemove }: {
   const [position, setPosition] = useState(0)
   const [data, setData] = useState<InspectResult | null>(null)
   const [filtersOpen, setFiltersOpen] = useState(false)
+  const [renorm, setRenorm] = useState(false)   // cliquet: per-period renormalised view
 
   const nObs = data?.n_obs ?? 0
   const filterKey = JSON.stringify({ outcome, acPeriods, ki, couponPeriods, band, atBounds: !bounds })
@@ -278,8 +324,8 @@ function InspectorPanel({ fetcher, terms, label, onRemove }: {
               redeem: t('insp_ev_redeem'), knock_in: t('insp_ev_knock_in'),
               part_hold: t('insp_ev_basket'), part_redeem: t('insp_ev_redeem'),
               part_gain: t('insp_ev_lock_gain'), part_loss: t('insp_ev_lock_loss'), part_flat: t('insp_ev_flat') },
-      })
-    : null, [data, t, isPart])
+      }, isPart && periodic && renorm)
+    : null, [data, t, isPart, periodic, renorm])
 
   return (
     <Panel>
@@ -365,6 +411,16 @@ function InspectorPanel({ fetcher, terms, label, onRemove }: {
       ) : fig ? (
         <>
           {title && <div style={{ fontSize: 13.5, fontWeight: 600, marginBottom: 6 }}>{title}</div>}
+          {/* Cliquet: toggle the cumulative basket vs. each reset period renormalised
+              to 100% (the per-period basis the payoff actually resets to). */}
+          {isPart && periodic && (
+            <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 8 }}>
+              <Segmented value={renorm ? 'period' : 'cum'} onChange={(v) => setRenorm(v === 'period')} options={[
+                { v: 'cum', label: t('insp_view_cumulative') },
+                { v: 'period', label: t('insp_view_perperiod') },
+              ]} />
+            </div>
+          )}
           {/* Key by the loaded path so the draw-in animation replays on every new
               path (random / next / prev), not just on first mount. */}
           <div style={{ height: 360 }}>

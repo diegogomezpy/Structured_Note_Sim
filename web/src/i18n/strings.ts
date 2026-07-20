@@ -575,6 +575,8 @@ export const S: Dict = {
 
   // participation path inspector
   insp_basket_name: { en: 'Basket', es: 'Cesta' },
+  insp_view_cumulative: { en: 'Cumulative', es: 'Acumulado' },
+  insp_view_perperiod:  { en: 'Per period', es: 'Por período' },
   insp_lvl_floor:   { en: 'Protection floor', es: 'Suelo de protección' },
   insp_lvl_cap:     { en: 'Cap', es: 'Tope' },
   insp_lvl_strike:  { en: 'Strike', es: 'Strike' },
