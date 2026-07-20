@@ -4390,12 +4390,15 @@ def _build_pdf_report(
         _sec()
         pdf.figure(_fig_to_png(figures.get("irr_dist"), **_kw), _t("fig_irr", lang), src_mc)
     prob_by_period = results.get("prob_autocall_by_period", [])
-    if _inc("mc_autocall") and prob_by_period:
+    # Skip when the note can't autocall (participation ⇒ all-zero) — the table is
+    # meaningless there, and `obs_times` isn't bound (the obs schedule is hidden).
+    if _inc("mc_autocall") and any(p > 0 for p in prob_by_period):
         _sec()
+        _obs_times = list(terms.obs_times())
         pdf.subsection(_t("autocall_by_period", lang),
                        min_room=14 + _table_room(len(prob_by_period)))
         rows = []
-        for i, (t_obs, p_ac) in enumerate(zip(obs_times, prob_by_period)):
+        for i, (t_obs, p_ac) in enumerate(zip(_obs_times, prob_by_period)):
             eligible = _t("yes", lang) if (i + 1) >= terms.autocall_start_period else _t("no", lang)
             rows.append([f"P{i+1}", f"{t_obs * 12:.0f}", f"{p_ac:.2%}", eligible])
         pdf.data_table(
