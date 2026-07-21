@@ -1,38 +1,45 @@
 """
-app/pdf_theme.py
-----------------
-Pluggable visual-identity layer for the PDF report (app/pdf_report.py).
+reportkit.theme
+---------------
+Pluggable, domain-agnostic visual-identity layer for themed PDF reports.
 
-The report's *content* (tables, metric bands, figures, glossary, cover copy,
-disclaimer body, chart rebranding) is theme-agnostic and lives in pdf_report.py.
-Everything that is a *look* — the shape vocabulary (chamfered hexagons), the
-running header/footer chrome, section heads and chapter dividers, the cover
-masthead, and the empty-space decorations — is owned by a ReportTheme here, so a
-brand can swap the entire visual language without touching the content code.
+A report's *content* (tables, metric bands, figures, cover copy, …) is theme-
+agnostic. Everything that is a *look* — the shape vocabulary (e.g. chamfered
+hexagons or rounded cards), the running header/footer chrome, section heads and
+chapter dividers, the cover masthead, and empty-space decorations — is owned by a
+ReportTheme here, so a brand can swap the entire visual language without touching
+content code.
+
+The theme is handed palette-derived ThemeTokens and draws through the host's live
+document instance (passed as `pdf`, any FPDF subclass exposing the small surface
+the hooks use: `.t(key)`, `._safe`, `._sf`, tokens like `.ink`/`.lime`/…), so it
+has full access to fpdf primitives, fonts, and page geometry. The host module in
+this repo is app/pdf_report.py (the Structured Note Simulator's report adapter),
+but nothing here depends on that — reportkit is reusable by any project.
 
 Themes
 ------
-- HexagonTheme  — the CADIEM / "green" language: chamfer-hexagon mastheads,
-  lime number-chips, hex-cluster watermarks. This is the original look, moved
-  verbatim; CADIEM selects it via branding["report_theme"] = "cadiem".
+- HexagonTheme  — a chamfer-hexagon language (dark mastheads, lime number-chips,
+  hex-cluster watermarks). CADIEM selects it via branding["report_theme"].
 - MercatorTheme — a cleaner, website-inspired language (rounded cards, accent
   keylines, no chamfers/hexagons). The default for un-themed brands.
 
 Selection: branding["report_theme"] → resolve_theme(); an absent/unknown value
-falls back to the default theme. The theme is handed the palette-derived
-ThemeTokens and draws through the live _NotePDF instance (passed as `pdf`), so it
-has full access to fpdf primitives, fonts, and page geometry.
+falls back to DEFAULT_THEME.
 
-Byte-identity contract: the HexagonTheme must reproduce the pre-refactor CADIEM
-output pixel-for-pixel (see scratchpad/golden.py). Any change to a drawing
-routine here that alters CADIEM output is a regression.
+Regression contract: HexagonTheme reproduces the reference CADIEM output; a
+hermetic golden pixel-diff harness (scratchpad/golden.py) guards against drift.
 """
 from __future__ import annotations
 
 import io
+import math
 from dataclasses import dataclass
 
 from fpdf.drawing import DeviceRGB
+from fpdf.pattern import LinearGradient, RadialGradient
+
+from reportkit.images import _cover_crop
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -544,8 +551,6 @@ class HexagonTheme(ReportTheme):
     def decorate_void_photo(self, pdf, x0, x1, y, floor, gap, filler) -> bool:
         """Render the egregious-void photo band (see decorate_void). Returns True
         on success so the caller can skip the graphic composition."""
-        # _cover_crop lives in pdf_report; deferred import avoids an import cycle.
-        from pdf_report import _cover_crop
         try:
             pad_top = 13.0                       # breathing room below the content
             band_w = x1 - x0
@@ -848,7 +853,6 @@ class MercatorTheme(ReportTheme):
 
     def decorate_void_photo(self, pdf, x0, x1, y, floor, gap, filler) -> bool:
         """Photo band (image + brand tint + accent top rule). Shape-neutral."""
-        from pdf_report import _cover_crop
         try:
             pad_top = 13.0
             band_w = x1 - x0

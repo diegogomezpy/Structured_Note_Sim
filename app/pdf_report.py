@@ -71,16 +71,18 @@ import numpy as np
 from pathlib import Path
 from fpdf import FPDF
 
-# Visual-identity layer (shape vocabulary + design tokens + themes). The chamfer
-# primitives are re-exported under their original names so existing call sites in
-# this module are unchanged; the neutral tokens are single-sourced here too.
-from pdf_theme import (  # noqa: E402
+# Visual-identity layer — now lives in the reusable `reportkit` package (the
+# theme engine is domain-agnostic). The chamfer primitives are re-exported under
+# their original names so existing call sites here are unchanged; the neutral
+# tokens are single-sourced from there too.
+from reportkit.theme import (  # noqa: E402
     _dev_rgb, _chamfer_outline, _chamfer_dims,
     _fill_chamfer, _stroke_chamfer, _hex_cluster,
     build_tokens, HexagonTheme, resolve_theme,
     AMBER as _AMBER, AMBER_DARK as _AMBER_DARK, MUTED as _MUTED,
     BODY_INK as _BODY_INK, RULE_SOFT as _RULE_SOFT, FOOTNOTE_GREY as _FOOTNOTE_GREY,
 )
+from reportkit.images import _cover_crop  # noqa: E402
 
 _REPO_ROOT       = Path(__file__).parent.parent
 _TICKER_LOGO_DIR = _REPO_ROOT / "branding" / "ticker_logos"
@@ -2509,40 +2511,6 @@ def _exec_bullets(terms, results, bt_summary, live_data, lang: str) -> list[str]
                 f"({live_data.get('worst_asset', '')} is the worst performer); coupon IRR to date is "
                 f"{live_data.get('irr_to_date', 0):.1%} annualised.")
     return b
-
-
-def _cover_crop(raw: bytes | None, aspect: float,
-                bias_x: float = 0.0, bias_y: float = 0.0) -> bytes | None:
-    """Crop an image to `aspect` (= width / height) so a full-bleed placement
-    fills the box without stretching (CSS object-fit: cover). `bias_x`/`bias_y`
-    in [-1, 1] shift the crop window off-centre (0 = centred, -1 = left/top,
-    +1 = right/bottom) — used to show different regions of the same source on
-    successive pages so a repeated filler photo doesn't read as identical.
-    Returns PNG bytes; on any failure returns the input unchanged."""
-    if not raw:
-        return raw
-    try:
-        from PIL import Image
-        im = Image.open(io.BytesIO(raw)).convert("RGB")
-        w, h = im.size
-        cur = w / h
-        if abs(cur - aspect) < 1e-3 and not (bias_x or bias_y):
-            return raw
-        if cur > aspect:                       # too wide → crop the sides
-            nw = int(round(h * aspect))
-            x0 = int(round((w - nw) * (0.5 + 0.5 * max(-1.0, min(1.0, bias_x)))))
-            x0 = max(0, min(w - nw, x0))
-            im = im.crop((x0, 0, x0 + nw, h))
-        else:                                  # too tall → crop top/bottom
-            nh = int(round(w / aspect))
-            y0 = int(round((h - nh) * (0.5 + 0.5 * max(-1.0, min(1.0, bias_y)))))
-            y0 = max(0, min(h - nh, y0))
-            im = im.crop((0, y0, w, y0 + nh))
-        buf = io.BytesIO(); im.save(buf, "PNG")
-        return buf.getvalue()
-    except Exception as e:
-        print(f"[PDF cover] crop skipped: {e}")
-        return raw
 
 
 def _cover_left_photo(pdf: "_NotePDF", x0: float, top: float, w: float,
