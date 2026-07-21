@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Segmented } from './fields'
 import {
-  resolveSpec, resolveColor, rgbCss, rgbToHex, type Tokens,
+  resolveColor, rgbToHex, type Tokens,
 } from '../lib/reportTheme'
 
 /* Freeform theme builder — edits a declarative theme spec (the same one the PDF
@@ -11,8 +11,6 @@ import {
 
 type Spec = Record<string, unknown>
 type Any = Record<string, unknown>
-
-const TOKEN_OPTIONS = ['ink', 'lime', 'teal', 'primary', 'accent', 'panel', 'rule_soft', 'muted', 'white', 'black']
 
 function setIn(o: unknown, path: (string | number)[], v: unknown): unknown {
   if (!path.length) return v
@@ -25,31 +23,18 @@ function setIn(o: unknown, path: (string | number)[], v: unknown): unknown {
 const lbl = { fontSize: 11, color: 'var(--text-muted)', marginBottom: 4, display: 'block', fontWeight: 600 } as const
 const row = { display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' as const }
 
-// ── colour reference: a token dropdown + optional custom hex ─────────────────
-function ColorRefControl({ value, tokens, onChange }: { value: unknown; tokens: Tokens; onChange: (v: unknown) => void }) {
-  const isHex = !!value && typeof value === 'object' && 'hex' in (value as Any)
-  const isMix = !!value && typeof value === 'object' && 'mix' in (value as Any)
-  const cur = isHex ? '__hex' : (typeof value === 'string' ? value : (isMix ? '__mix' : '__hex'))
-  const preview = rgbCss(resolveColor(value as never, tokens))
+// ── plain colour well: a native picker + hex, no token presets ───────────────
+// Writes an absolute { hex } — same "just choose the colour" model as the
+// Colours section, used for fills / gradient stops.
+function ColorWell({ value, tokens, onChange }: { value: unknown; tokens: Tokens; onChange: (v: unknown) => void }) {
+  const hex = rgbToHex(resolveColor(value as never, tokens))
   return (
     <div style={row}>
-      <span style={{ width: 18, height: 18, borderRadius: 4, background: preview, border: '1px solid var(--border)', flexShrink: 0 }} />
-      <select value={cur} onChange={(e) => {
-        const v = e.target.value
-        if (v === '__hex') onChange({ hex: rgbToHex(resolveColor(value as never, tokens)) })
-        else if (v === '__mix') onChange({ mix: ['lime', 'white', 0.5] })
-        else onChange(v)
-      }} style={{ fontSize: 12, padding: '4px 6px', borderRadius: 7, border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--text)' }}>
-        {TOKEN_OPTIONS.map((t) => <option key={t} value={t}>{t}</option>)}
-        <option value="__hex">custom…</option>
-        <option value="__mix">mix…</option>
-      </select>
-      {isHex && (
-        <input type="color" value={rgbToHex(resolveColor(value as never, tokens))}
-          onChange={(e) => onChange({ hex: e.target.value })}
-          style={{ width: 30, height: 26, padding: 0, border: '1px solid var(--border)', borderRadius: 6, background: 'none' }} />
-      )}
-      {isMix && <span style={{ fontSize: 10.5, color: 'var(--text-faint)' }}>edit stops in JSON</span>}
+      <input type="color" value={hex} aria-label="Colour" onChange={(e) => onChange({ hex: e.target.value })}
+        style={{ width: 32, height: 28, padding: 0, border: '1px solid var(--border-strong, var(--border))', borderRadius: 7, background: 'none', cursor: 'pointer', flexShrink: 0 }} />
+      <input type="text" value={hex}
+        onChange={(e) => { const v = e.target.value.trim(); const h = v.startsWith('#') ? v : '#' + v; if (/^#[0-9a-fA-F]{0,6}$/.test(h)) onChange({ hex: h }) }}
+        style={{ width: 96, fontSize: 12, fontFamily: 'var(--font-mono, monospace)', padding: '6px 8px', borderRadius: 7, border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--text)' }} />
     </div>
   )
 }
@@ -68,7 +53,7 @@ function FillControl({ value, tokens, onChange }: { value: unknown; tokens: Toke
           else onChange({ type: t, angle: fill.angle ?? 90, stops: stops.length ? stops : [{ color: fill.color ?? 'ink' }, { color: 'teal' }] })
         }} />
       {type === 'solid' ? (
-        <ColorRefControl value={fill.color} tokens={tokens} onChange={(c) => onChange({ ...fill, color: c })} />
+        <ColorWell value={fill.color} tokens={tokens} onChange={(c) => onChange({ ...fill, color: c })} />
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
           {type === 'linear' && (
@@ -80,7 +65,7 @@ function FillControl({ value, tokens, onChange }: { value: unknown; tokens: Toke
           )}
           {stops.map((s, i) => (
             <div key={i} style={row}>
-              <ColorRefControl value={(s as Any).color} tokens={tokens} onChange={(c) => onChange(setIn(fill, ['stops', i, 'color'], c))} />
+              <ColorWell value={(s as Any).color} tokens={tokens} onChange={(c) => onChange(setIn(fill, ['stops', i, 'color'], c))} />
               {stops.length > 2 && (
                 <button type="button" className="btn btn--ghost" style={{ padding: '2px 7px', fontSize: 12 }}
                   onClick={() => onChange({ ...fill, stops: stops.filter((_, j) => j !== i) })}>×</button>
@@ -143,13 +128,6 @@ export default function ThemeBuilder({ spec, tokens, onChange }: { spec: Spec; t
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' }}>
-        <span style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>Start from</span>
-        <Segmented value="__" ariaLabel="Start from"
-          options={[{ value: 'mercator', label: 'Mercator' }, { value: 'cadiem', label: 'Hexagon' }]}
-          onChange={(base) => { setJson(null); onChange({ ...(resolveSpec(base) as Spec), name: 'Custom theme' }) }} />
-      </div>
-
       <Group title="Cover masthead">
         <div><span style={lbl}>Shape</span><ShapeControl value={masthead.shape} onChange={(v) => upd(['cover_masthead', 'shape'], v)} /></div>
         <div><span style={lbl}>Fill</span><FillControl value={masthead.fill} tokens={tokens} onChange={(v) => upd(['cover_masthead', 'fill'], v)} /></div>
@@ -185,7 +163,7 @@ export default function ThemeBuilder({ spec, tokens, onChange }: { spec: Spec; t
       </Group>
 
       <Group title="Header & void">
-        <div><span style={lbl}>Header rule</span><ColorRefControl value={(header.rule as Any)?.color} tokens={tokens} onChange={(v) => upd(['header', 'rule', 'color'], v)} /></div>
+        <div><span style={lbl}>Header rule</span><ColorWell value={(header.rule as Any)?.color} tokens={tokens} onChange={(v) => upd(['header', 'rule', 'color'], v)} /></div>
         <label style={{ ...row, fontSize: 12.5, color: 'var(--text-muted)', cursor: 'pointer' }}>
           <input type="checkbox" checked={!!header.tick} style={{ width: 'auto' }}
             onChange={(e) => upd(['header', 'tick'], e.target.checked ? { color: 'lime', w: 15, h: 0.8, y: 16.1, radius: 0.4 } : null)} />

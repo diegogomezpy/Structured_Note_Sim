@@ -105,10 +105,9 @@ export default function PdfDesigner({ studio, terms }: { studio: BrandingStudio;
   const b = studio.brand
   const set = studio.setBrandField
   const noteName = terms?.name
-  const themeName = studio.themeIsCustom ? 'custom' : ((b.report_theme as string) || 'mercator')
 
   return (
-    <div className="brand-editor-grid fade-up" style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 300px', gap: 22, alignItems: 'start' }}>
+    <div className="brand-editor-grid fade-up" style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 440px', gap: 22, alignItems: 'start' }}>
       {/* ── left: the studio ─────────────────────────────────────────── */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 16, minWidth: 0 }}>
         {/* config bar */}
@@ -160,20 +159,8 @@ export default function PdfDesigner({ studio, terms }: { studio: BrandingStudio;
         </Card>
 
         <Card title={t('brand_theme')} desc={t('brand_theme_hint')}>
-          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-            {[['mercator', t('brand_theme_mercator')], ['cadiem', t('brand_theme_hexagon')], ['custom', t('brand_theme_custom')]].map(([val, label]) => (
-              <button key={val} type="button" className="preset-pill" data-on={themeName === val}
-                onClick={() => {
-                  if (val === 'custom') set('report_theme', { ...(resolveSpec(b.report_theme) as Record<string, unknown>), name: 'Custom theme' } as never)
-                  else set('report_theme', val as never)
-                }}>{label}</button>
-            ))}
-          </div>
-          {studio.themeIsCustom && (
-            <div style={{ marginTop: 14 }}>
-              <ThemeBuilder spec={b.report_theme as Record<string, unknown>} tokens={buildTokens(b)} onChange={(s) => set('report_theme', s as never)} />
-            </div>
-          )}
+          <ThemeBuilder spec={resolveSpec(b.report_theme) as Record<string, unknown>} tokens={buildTokens(b)}
+            onChange={(s) => set('report_theme', s as never)} />
         </Card>
 
         <Card title={t('brand_typography')}>
