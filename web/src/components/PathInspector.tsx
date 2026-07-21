@@ -83,6 +83,28 @@ function buildPathFig(path: PathData, labels: PathLabels, renorm = false) {
     : []
   const on = renorm && resetXs.length > 0
   const rn = (y: number[]) => (on ? renormPerPeriod(path.t, y, resetXs) : y)
+  // In the per-period view each reset restarts the basis at 100%, so a single
+  // continuous line would draw a vertical cliff from a high period-end straight down
+  // to the next period's 100%. Break the line at each reset (except the last) so the
+  // sawtooth reads as separate per-period arcs instead of spurious crashes. The reset
+  // vertex sits exactly on a sampled column (the engine forces obs steps onto the grid).
+  const breakIdx = new Set<number>()
+  if (on) {
+    for (let k = 0; k < resetXs.length - 1; k++) {
+      const idx = path.t.findIndex((x) => Math.abs(x - resetXs[k]) < 1e-6)
+      if (idx >= 0) breakIdx.add(idx)
+    }
+  }
+  // Insert a gap (null y) right after each reset vertex so Plotly lifts the pen there.
+  const withGaps = (y: (number | null)[]): { x: number[]; y: (number | null)[] } => {
+    if (!breakIdx.size) return { x: path.t, y }
+    const X: number[] = [], Y: (number | null)[] = []
+    for (let i = 0; i < y.length; i++) {
+      X.push(path.t[i]); Y.push(y[i])
+      if (breakIdx.has(i)) { X.push(path.t[i]); Y.push(null) }
+    }
+    return { x: X, y: Y }
+  }
   // Per-period reference divisor for a marker sitting at x (its period's start level).
   const wofRefAt = resetXs.map((rx) => {
     let bi = 0, bd = Infinity
@@ -98,11 +120,15 @@ function buildPathFig(path: PathData, labels: PathLabels, renorm = false) {
   const mY = (m: { x: number; y: number }) => (on ? m.y / refForX(m.x) : m.y)
 
   const traces: any[] = []
-  path.series.forEach((s, i) => traces.push({
-    x: path.t, y: rn(s.perf), mode: 'lines', name: s.name, type: 'scatter',
-    line: { color: ASSET_COLORS[i % ASSET_COLORS.length], width: 1, dash: 'dot' }, opacity: 0.5,
-  }))
-  traces.push({ x: path.t, y: rn(path.wof), mode: 'lines', name: labels.wof, type: 'scatter', line: { color: WOF_COLOR, width: 2 } })
+  path.series.forEach((s, i) => {
+    const g = withGaps(rn(s.perf))
+    traces.push({
+      x: g.x, y: g.y, mode: 'lines', name: s.name, type: 'scatter', connectgaps: false,
+      line: { color: ASSET_COLORS[i % ASSET_COLORS.length], width: 1, dash: 'dot' }, opacity: 0.5,
+    })
+  })
+  const gw = withGaps(rn(path.wof))
+  traces.push({ x: gw.x, y: gw.y, mode: 'lines', name: labels.wof, type: 'scatter', connectgaps: false, line: { color: WOF_COLOR, width: 2 } })
 
   // Reference levels as named, non-hovering line traces (so they appear in the legend).
   const x0 = 0, x1 = path.x_max
