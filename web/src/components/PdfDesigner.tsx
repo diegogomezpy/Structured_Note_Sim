@@ -1,0 +1,255 @@
+import { useRef } from 'react'
+import { useI18n } from '../i18n/I18nProvider'
+import Icon from './Icon'
+import BrandPreview from './BrandPreview'
+import ThemeBuilder from './ThemeBuilder'
+import CoverPhotoPicker from './CoverPhotoPicker'
+import FolderConnect from './FolderConnect'
+import { resolveSpec, buildTokens } from '../lib/reportTheme'
+import { COVER_METRIC_KEYS, COVER_METRIC_MAX, type BrandingStudio } from '../lib/useBrandingStudio'
+import type { NoteTerms } from '../api/types'
+
+/* PDF Designer — a bespoke, from-scratch branding studio. Every input here is
+   purpose-built (colour wells, upload tiles, chips) rather than reused generic
+   form controls, and the whole thing is laid out as clear cards with a sticky
+   live preview that renders from the SAME theme spec the PDF uses. */
+
+function dataUrl(v?: string): string | undefined {
+  if (!v) return undefined
+  if (v.startsWith('data:') || v.startsWith('http') || v.startsWith('/')) return v
+  let mime = 'image/png'
+  if (v.startsWith('/9j/')) mime = 'image/jpeg'
+  else if (v.startsWith('R0lGOD')) mime = 'image/gif'
+  else if (v.startsWith('UklGR')) mime = 'image/webp'
+  else if (v.startsWith('iVBOR')) mime = 'image/png'
+  else if (v.includes('ftyp') || v.startsWith('AAAA')) mime = 'image/avif'
+  return `data:${mime};base64,${v}`
+}
+
+// ── bespoke primitives ───────────────────────────────────────────────────────
+function Card({ title, desc, children, tight }: { title: string; desc?: string; children: React.ReactNode; tight?: boolean }) {
+  return (
+    <section style={{ border: '1px solid var(--border)', borderRadius: 14, background: 'var(--surface)', padding: tight ? '14px 16px' : '16px 18px' }}>
+      <div style={{ fontSize: 13.5, fontWeight: 800, color: 'var(--text)', letterSpacing: '-0.01em' }}>{title}</div>
+      {desc && <div style={{ fontSize: 11.5, color: 'var(--text-faint)', marginTop: 3, lineHeight: 1.5 }}>{desc}</div>}
+      <div style={{ marginTop: 13 }}>{children}</div>
+    </section>
+  )
+}
+
+function Field({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <label style={{ display: 'block' }}>
+      <span style={{ display: 'block', fontSize: 11, fontWeight: 600, color: 'var(--text-muted)', marginBottom: 5, letterSpacing: '0.01em' }}>{label}</span>
+      {children}
+    </label>
+  )
+}
+
+const inputStyle: React.CSSProperties = {
+  width: '100%', fontSize: 13, padding: '9px 11px', borderRadius: 9,
+  border: '1px solid var(--border)', background: 'var(--bg-elev, var(--surface-2))', color: 'var(--text)',
+}
+
+function TextInput({ value, onChange, placeholder }: { value?: string; onChange: (v: string) => void; placeholder?: string }) {
+  return <input type="text" value={value ?? ''} placeholder={placeholder} onChange={(e) => onChange(e.target.value)} style={inputStyle} />
+}
+
+// A colour "well": a big rounded swatch that opens the native picker, with a hex
+// readout you can also type into.
+function ColorWell({ label, value, fallback, onChange }: { label: string; value?: string; fallback: string; onChange: (v: string) => void }) {
+  const ref = useRef<HTMLInputElement>(null)
+  const shown = value || fallback
+  return (
+    <div>
+      <span style={{ display: 'block', fontSize: 11, fontWeight: 600, color: 'var(--text-muted)', marginBottom: 5 }}>{label}</span>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <button type="button" onClick={() => ref.current?.click()} aria-label={label}
+          style={{ width: 30, height: 30, borderRadius: 8, border: '1px solid var(--border-strong)', background: shown, cursor: 'pointer', flexShrink: 0, padding: 0 }} />
+        <input ref={ref} type="color" value={shown} onChange={(e) => onChange(e.target.value)}
+          style={{ position: 'absolute', width: 0, height: 0, opacity: 0, pointerEvents: 'none' }} />
+        <input type="text" value={value ?? ''} placeholder={fallback} onChange={(e) => onChange(e.target.value)}
+          style={{ ...inputStyle, fontFamily: 'var(--font-mono, monospace)', fontSize: 12, padding: '7px 9px' }} />
+      </div>
+    </div>
+  )
+}
+
+function UploadTile({ label, src, onPick, onClear, dark, accept = 'image/*' }: {
+  label: string; src?: string; onPick: (f: File | undefined) => void; onClear: () => void; dark?: boolean; accept?: string
+}) {
+  const ref = useRef<HTMLInputElement>(null)
+  const url = dataUrl(src)
+  return (
+    <div>
+      <span style={{ display: 'block', fontSize: 11, fontWeight: 600, color: 'var(--text-muted)', marginBottom: 5 }}>{label}</span>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <button type="button" onClick={() => ref.current?.click()}
+          style={{ width: 58, height: 38, borderRadius: 9, border: '1px dashed var(--border-strong)', background: url ? (dark ? '#0e1310' : 'var(--surface-2)') : 'transparent', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', padding: 3 }}>
+          {url ? <img src={url} alt="" style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }} /> : <Icon name="upload" size={15} />}
+        </button>
+        <div style={{ display: 'flex', gap: 6 }}>
+          <button type="button" className="btn btn--ghost" style={{ padding: '5px 9px', fontSize: 12 }} onClick={() => ref.current?.click()}>Upload</button>
+          {src && <button type="button" className="btn btn--ghost" style={{ padding: '5px 9px', fontSize: 12 }} onClick={onClear}>Clear</button>}
+        </div>
+        <input ref={ref} type="file" accept={accept} style={{ display: 'none' }} onChange={(e) => { onPick(e.target.files?.[0]); e.target.value = '' }} />
+      </div>
+    </div>
+  )
+}
+
+const grid = (min = 180): React.CSSProperties => ({ display: 'grid', gridTemplateColumns: `repeat(auto-fit, minmax(${min}px, 1fr))`, gap: 12 })
+
+export default function PdfDesigner({ studio, terms }: { studio: BrandingStudio; terms: NoteTerms }) {
+  const { t } = useI18n()
+  const b = studio.brand
+  const set = studio.setBrandField
+  const noteName = terms?.name
+  const themeName = studio.themeIsCustom ? 'custom' : ((b.report_theme as string) || 'mercator')
+
+  return (
+    <div className="brand-editor-grid fade-up" style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 300px', gap: 22, alignItems: 'start' }}>
+      {/* ── left: the studio ─────────────────────────────────────────── */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 16, minWidth: 0 }}>
+        {/* config bar */}
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'center' }}>
+          <select value="" onChange={(e) => {
+            const v = e.target.value
+            if (v.startsWith('local:')) { const f = studio.brandFolder.files.find((x) => `local:${x.name}` === v); if (f) { studio.setBrandLocalName(f.name); studio.applyBranding(f.raw as Record<string, unknown>) } }
+            else if (v) studio.loadPreset(v)
+          }} style={{ ...inputStyle, width: 'auto', minWidth: 180 }}>
+            <option value="">{t('brand_preset_ph')}</option>
+            {studio.brandFolder.files.map((f) => <option key={f.name} value={`local:${f.name}`}>{f.name} {t('folder_tag')}</option>)}
+            {studio.presets.map((p) => <option key={p.file} value={p.file}>{p.firm_name}</option>)}
+          </select>
+          <FolderConnect fld={studio.brandFolder} />
+          <div style={{ flex: 1 }} />
+          <button className="btn" style={{ padding: '7px 12px' }} onClick={() => studio.refs.cfg.current?.click()}><Icon name="upload" size={13} /> {t('brand_upload_cfg_btn')}</button>
+          <button className="btn" style={{ padding: '7px 12px' }} onClick={studio.downloadBranding}><Icon name="download" size={13} /> {t('brand_save_cfg_btn')}</button>
+          {studio.brandFolder.canSave && (
+            <button className="btn" style={{ padding: '7px 12px' }} disabled={studio.brandSaving} onClick={studio.saveBrandingToFolder}>
+              <Icon name={studio.brandSaving ? 'spinner' : 'save'} size={13} /> {t('brand_save_to_folder_btn')}
+            </button>
+          )}
+          <input ref={studio.refs.cfg} type="file" accept="application/json,.json" style={{ display: 'none' }}
+                 onChange={(e) => { studio.onUploadBranding(e.target.files?.[0]); e.target.value = '' }} />
+        </div>
+        {studio.error && <div style={{ fontSize: 12, color: 'var(--red, #c0392b)' }}>{studio.error}</div>}
+
+        <Card title={t('brand_identity')}>
+          <div style={grid()}>
+            <Field label={t('brand_firm')}><TextInput value={b.firm_name} onChange={(v) => set('firm_name', v)} /></Field>
+            <Field label={t('brand_title')}><TextInput value={b.report_title as string} onChange={(v) => set('report_title', v)} /></Field>
+            <Field label={t('brand_website')}><TextInput value={b.website} onChange={(v) => set('website', v)} placeholder="www.firm.com" /></Field>
+            <Field label={t('brand_contact')}><TextInput value={b.contact} onChange={(v) => set('contact', v)} placeholder="research@firm.com" /></Field>
+          </div>
+          <div style={{ marginTop: 12 }}>
+            <UploadTile label={t('brand_logo')} src={b.logo_base64} onPick={(f) => studio.onImage('logo_base64', f)} onClear={() => set('logo_base64', '')} />
+          </div>
+        </Card>
+
+        <Card title={t('brand_colors')} desc={t('brand_palette_hint')}>
+          <div style={grid(150)}>
+            <ColorWell label={t('brand_primary')}   value={b.primary_color} fallback="#1a2e4a" onChange={(v) => set('primary_color', v)} />
+            <ColorWell label={t('brand_accent')}    value={b.accent_color} fallback="#2563eb" onChange={(v) => set('accent_color', v)} />
+            <ColorWell label={t('brand_rule')}      value={b.section_rule_color} fallback="#2563eb" onChange={(v) => set('section_rule_color', v)} />
+            <ColorWell label={t('brand_panel')}     value={b.panel_color} fallback="#eaf1f8" onChange={(v) => set('panel_color', v)} />
+            <ColorWell label={t('brand_secondary')} value={b.chart_secondary_color} fallback="#c69426" onChange={(v) => set('chart_secondary_color', v)} />
+            <ColorWell label={t('brand_sidebar')}   value={b.sidebar_bar_color as string} fallback={b.primary_color ?? '#1a2e4a'} onChange={(v) => set('sidebar_bar_color', v)} />
+          </div>
+        </Card>
+
+        <Card title={t('brand_theme')} desc={t('brand_theme_hint')}>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            {[['mercator', t('brand_theme_mercator')], ['cadiem', t('brand_theme_hexagon')], ['custom', t('brand_theme_custom')]].map(([val, label]) => (
+              <button key={val} type="button" className="preset-pill" data-on={themeName === val}
+                onClick={() => {
+                  if (val === 'custom') set('report_theme', { ...(resolveSpec(b.report_theme) as Record<string, unknown>), name: 'Custom theme' } as never)
+                  else set('report_theme', val as never)
+                }}>{label}</button>
+            ))}
+          </div>
+          {studio.themeIsCustom && (
+            <div style={{ marginTop: 14 }}>
+              <ThemeBuilder spec={b.report_theme as Record<string, unknown>} tokens={buildTokens(b)} onChange={(s) => set('report_theme', s as never)} />
+            </div>
+          )}
+        </Card>
+
+        <Card title={t('brand_typography')}>
+          <div style={grid()}>
+            {(['title_font', 'body_font'] as const).map((f, i) => {
+              const filesKey = (i === 0 ? 'title_font_files' : 'body_font_files') as 'title_font_files' | 'body_font_files'
+              const ref = i === 0 ? studio.refs.titleFont : studio.refs.bodyFont
+              return (
+                <Field key={f} label={i === 0 ? t('brand_title_font') : t('brand_body_font')}>
+                  <TextInput value={b[f] as string} onChange={(v) => set(f, v)} placeholder="IBM Plex Sans" />
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 6, flexWrap: 'wrap' }}>
+                    <button type="button" className="btn btn--ghost" style={{ padding: '5px 9px', fontSize: 11.5 }} onClick={() => ref.current?.click()}><Icon name="upload" size={12} /> {t('brand_embed_fonts')}</button>
+                    {studio.fontCount(filesKey) > 0 && <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>{t('brand_fonts_n', { n: studio.fontCount(filesKey) })}</span>}
+                    <input ref={ref} type="file" accept=".ttf,.otf" multiple style={{ display: 'none' }} onChange={(e) => { studio.onFontFiles(filesKey, e.target.files); e.target.value = '' }} />
+                  </div>
+                </Field>
+              )
+            })}
+          </div>
+          <div style={{ fontSize: 11, color: 'var(--text-faint)', marginTop: 8 }}>{t('brand_font_hint')}</div>
+        </Card>
+
+        <Card title={t('brand_cover')}>
+          <div style={grid()}>
+            <UploadTile label={t('brand_alt_logo')} src={b.cover_logo_base64} dark onPick={(f) => studio.onImage('cover_logo_base64', f)} onClear={() => set('cover_logo_base64', '')} />
+            <UploadTile label={t('brand_cover_sigil')} src={b.cover_sigil_base64} dark onPick={(f) => studio.onImage('cover_sigil_base64', f)} onClear={() => set('cover_sigil_base64', '')} />
+            <ColorWell label={t('brand_overlay_color')} value={b.cover_overlay_color} fallback={b.primary_color ?? '#1a2e4a'} onChange={(v) => set('cover_overlay_color', v)} />
+            <Field label={t('brand_overlay_opacity')}>
+              <input type="number" min={0} max={1} step={0.05} placeholder="0.55"
+                value={b.cover_overlay_opacity != null ? String(b.cover_overlay_opacity) : ''}
+                onChange={(e) => set('cover_overlay_opacity', e.target.value)} style={inputStyle} />
+            </Field>
+          </div>
+          <div style={{ marginTop: 14 }}>
+            <div style={{ fontSize: 11.5, color: 'var(--text-muted)', marginBottom: 2 }}>{t('cover_lib')}</div>
+            <div style={{ fontSize: 11, color: 'var(--text-faint)', marginBottom: 8, lineHeight: 1.5 }}>{t('cover_lib_multi_hint')}</div>
+            <button className="btn" style={{ padding: '6px 11px', marginBottom: 8 }} onClick={() => studio.refs.filler.current?.click()}><Icon name="upload" size={13} /> {t('rep_photos_upload')}</button>
+            <input ref={studio.refs.filler} type="file" accept="image/*" multiple style={{ display: 'none' }} onChange={(e) => { studio.onFillerUpload(e.target.files); e.target.value = '' }} />
+            <CoverPhotoPicker terms={terms} max={12}
+              selected={(b.filler_images_base64 as string[]) ?? []}
+              onChange={(urls) => set('filler_images_base64', urls as never)} />
+          </div>
+          <div style={{ marginTop: 16 }}>
+            <div style={{ fontSize: 11.5, color: 'var(--text-muted)', marginBottom: 2 }}>{t('cover_metrics')}</div>
+            <div style={{ fontSize: 11, color: 'var(--text-faint)', marginBottom: 8, lineHeight: 1.5 }}>{t('cover_metrics_hint')}</div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7 }}>
+              {COVER_METRIC_KEYS.map((k) => {
+                const on = studio.coverMetricsSel.includes(k)
+                const over = on && studio.coverMetricsSel.indexOf(k) >= COVER_METRIC_MAX
+                return (
+                  <button key={k} type="button" className="preset-pill" data-on={on}
+                    title={over ? t('cover_metrics_over') : undefined} style={over ? { opacity: 0.45 } : undefined}
+                    onClick={() => studio.toggleCoverMetric(k)}>{studio.metricLabel(k)}</button>
+                )
+              })}
+            </div>
+          </div>
+        </Card>
+
+        <Card title={t('brand_legal')}>
+          <Field label={t('brand_footer')}><TextInput value={b.footer_note} onChange={(v) => set('footer_note', v)} /></Field>
+          <div style={{ marginTop: 12 }}>
+            <Field label={t('brand_disclaimer')}>
+              <textarea value={b.disclaimer_body ?? ''} onChange={(e) => set('disclaimer_body', e.target.value)}
+                style={{ ...inputStyle, minHeight: 84, resize: 'vertical', lineHeight: 1.5 }} />
+            </Field>
+          </div>
+        </Card>
+      </div>
+
+      {/* ── right: sticky live preview ───────────────────────────────── */}
+      <div className="brand-preview-col" style={{ position: 'sticky', top: 12, display: 'flex', flexDirection: 'column', gap: 8 }}>
+        <div style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: '0.07em', textTransform: 'uppercase', color: 'var(--text-faint)' }}>{t('brand_preview')}</div>
+        <BrandPreview brand={b} noteName={noteName} />
+        <div style={{ fontSize: 10.5, color: 'var(--text-faint)', lineHeight: 1.45 }}>{t('brand_preview_hint')}</div>
+      </div>
+    </div>
+  )
+}

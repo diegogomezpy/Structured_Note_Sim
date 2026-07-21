@@ -21,8 +21,7 @@ import { type PathImage } from './components/PathInspector'
 import BacktestPanel from './components/BacktestPanel'
 import LivePanel from './components/LivePanel'
 import ComparePanel from './components/ComparePanel'
-import ReportPanel from './components/ReportPanel'
-import BatchReportPanel from './components/BatchReportPanel'
+import ReportView from './components/ReportView'
 import SettingsOverlay from './components/SettingsOverlay'
 import NavMenu, { type NavItem } from './components/NavMenu'
 import BrandMark from './components/BrandMark'
@@ -70,7 +69,7 @@ export default function App() {
   const [tab, setTab] = useState('mc')
   // Sub-view per view, lifted out of the panels so the rail's NavMenu can drive
   // them (and each view remembers where you were when you come back).
-  const [subs, setSubs] = useState<Record<string, string>>({ mc: 'summary', bt: 'outcomes' })
+  const [subs, setSubs] = useState<Record<string, string>>({ mc: 'summary', bt: 'outcomes', report: 'build' })
   // Picking a view should TAKE you there, not just swap what's rendered further
   // down the page — the main column is its own scroll pane, so without this you
   // keep whatever scroll position you had and may not see that anything changed.
@@ -289,8 +288,11 @@ export default function App() {
     ] },
     { id: 'live', label: t('tab_live') },
     { id: 'compare', label: t('tab_compare') },
-    { id: 'report', label: t('tab_report'), icon: 'chart' },
-    { id: 'batch', label: t('tab_batch') },
+    { id: 'report', label: t('tab_report'), icon: 'chart', subs: [
+      { id: 'build', label: t('rep_sub_build') },
+      { id: 'design', label: t('rep_sub_design') },
+      { id: 'batch', label: t('rep_sub_batch') },
+    ] },
   ]
   const tabs = navItems.map((n) => ({ id: n.id, label: n.label }))
 
@@ -450,9 +452,10 @@ export default function App() {
                           variantB={variantB} onVariantBChange={setVariantB} />
           )}
 
-          {tab === 'report' && terms && <ReportPanel terms={terms} opts={opts} variantB={variantB} pathImages={pathImages} />}
-
-          {tab === 'batch' && <BatchReportPanel terms={terms} opts={opts} configs={configs} />}
+          {tab === 'report' && terms && (
+            <ReportView terms={terms} opts={opts} variantB={variantB} pathImages={pathImages} configs={configs}
+                        sub={subs.report ?? 'build'} onSubChange={(s) => setSubs((p) => ({ ...p, report: s }))} />
+          )}
         </main>
       </div>
 
