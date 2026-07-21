@@ -70,7 +70,17 @@ import warnings
 import numpy as np
 from pathlib import Path
 from fpdf import FPDF
-from fpdf.drawing import DeviceRGB
+
+# Visual-identity layer (shape vocabulary + design tokens + themes). The chamfer
+# primitives are re-exported under their original names so existing call sites in
+# this module are unchanged; the neutral tokens are single-sourced here too.
+from pdf_theme import (  # noqa: E402
+    _dev_rgb, _chamfer_outline, _chamfer_dims,
+    _fill_chamfer, _stroke_chamfer, _hex_cluster,
+    build_tokens, HexagonTheme, resolve_theme,
+    AMBER as _AMBER, AMBER_DARK as _AMBER_DARK, MUTED as _MUTED,
+    BODY_INK as _BODY_INK, RULE_SOFT as _RULE_SOFT, FOOTNOTE_GREY as _FOOTNOTE_GREY,
+)
 
 _REPO_ROOT       = Path(__file__).parent.parent
 _TICKER_LOGO_DIR = _REPO_ROOT / "branding" / "ticker_logos"
@@ -100,18 +110,13 @@ _DEFAULT_SECONDARY = (198, 148, 38) # warm institutional gold #C69426 — 2nd ch
 # ──────────────────────────────────────────────────────────────────────────────
 # Mercator/CADIEM green design language — palette-driven tokens
 # ──────────────────────────────────────────────────────────────────────────────
-# The green design language derives every identity colour from the brand palette
-# so ANY brand inherits the same layout in its own colours (CADIEM's green config
-# reproduces the reference sample; a red-primary brand gets red banners, etc.).
-# Per-instance tokens are computed in _NotePDF.__init__ from the resolved palette;
-# the few here are brand-neutral constants the design shares.
-_AMBER            = (201, 119,  45)  # #C9772D — downside / capital-loss (brand has NO red)
-_AMBER_DARK       = (154, 123,  18)  # #9A7B12 — deep amber (knock-in)
-_MUTED            = (139, 151, 160)  # #8B97A0 — eyebrow/label grey
-_BODY_INK         = ( 36,  59,  51)  # #243B33 — paragraph text on white
-_RULE_SOFT        = (201, 210, 204)  # #C9D2CC — secondary-head hairline
+# The design derives every identity colour from the brand palette so ANY brand
+# inherits its theme's layout in its own colours. The per-instance tokens are
+# computed by pdf_theme.build_tokens() from the resolved palette (see
+# _NotePDF.__init__). The brand-neutral constants the design shares live in
+# pdf_theme.py and are imported at the top of this module (_AMBER, _AMBER_DARK,
+# _MUTED, _BODY_INK, _RULE_SOFT, _FOOTNOTE_GREY).
 _PANEL_TINT       = (236, 241, 246)  # #ECF1F6 — card/tile fill (default panel)
-_FOOTNOTE_GREY    = (166, 176, 184)  # #A6B0B8 — footnote / caption
 
 # The full branding schema. Anything outside this set warns (mirrors
 # NoteTerms.from_dict) so a typo like "primary_colour" surfaces immediately
@@ -134,6 +139,9 @@ _KNOWN_BRANDING_KEYS = {
     "title_font", "body_font",  # NEW — custom report fonts (see _register_brand_fonts)
     "title_font_files", "body_font_files",  # NEW — embedded {Style: base64 TTF} so
                                             # fonts travel with an uploaded config
+    "report_theme",         # NEW — visual-identity theme name (pdf_theme.resolve_theme);
+                            # e.g. "cadiem" (hexagon) or "mercator" (default). Absent
+                            # / unknown falls back to the default theme.
 }
 _HEX_KEYS = ("primary_color", "accent_color", "chart_secondary_color",
              "section_rule_color", "panel_color", "sidebar_bar_color",
@@ -213,104 +221,6 @@ def _resolve_palette(branding: dict | None) -> tuple[
     section_rule = _branding_color(branding, "section_rule_color",    accent)
     firm         = branding.get("firm_name", "Structured Note Analytics") or "Structured Note Analytics"
     return primary, accent, secondary, section_rule, firm
-
-
-# ──────────────────────────────────────────────────────────────────────────────
-# The CADIEM "hexagon" — a rectangular chamfer (rectangle with the top-right and
-# bottom-left corners cut at 45°, all corners rounded). Reproduced as a true
-# vector path (PaintedPath) so it scales crisply at any size — used for the dark
-# mastheads/banners, the lime number chips, and faint watermark clusters.
-# ──────────────────────────────────────────────────────────────────────────────
-def _dev_rgb(t: tuple[int, int, int]) -> DeviceRGB:
-    return DeviceRGB(t[0] / 255.0, t[1] / 255.0, t[2] / 255.0)
-
-
-def _chamfer_outline(path, x: float, y: float, w: float, h: float,
-                     c: float, q: float, r: float) -> None:
-    """Trace the chamfer path into `path`. Transcribes the prototype's
-    hexPath(W,H,c,q,r): chamfer depth `c`, chamfer-corner round `q`, normal
-    corner radius `r`. (x, y) = top-left in mm."""
-    s = q * 0.70710678
-    X = lambda v: x + v
-    Y = lambda v: y + v
-    path.move_to(X(r), Y(0))
-    path.line_to(X(w - c - q), Y(0))
-    path.quadratic_curve_to(X(w - c), Y(0), X(w - c + s), Y(s))
-    path.line_to(X(w - s), Y(c - s))
-    path.quadratic_curve_to(X(w), Y(c), X(w), Y(c + q))
-    path.line_to(X(w), Y(h - r))
-    path.quadratic_curve_to(X(w), Y(h), X(w - r), Y(h))
-    path.line_to(X(c + q), Y(h))
-    path.quadratic_curve_to(X(c), Y(h), X(c - s), Y(h - s))
-    path.line_to(X(s), Y(h - c + s))
-    path.quadratic_curve_to(X(0), Y(h - c), X(0), Y(h - c - q))
-    path.line_to(X(0), Y(r))
-    path.quadratic_curve_to(X(0), Y(0), X(r), Y(0))
-    path.close()
-
-
-def _chamfer_dims(w: float, h: float, c=None, q=None, r=None):
-    """Default chamfer parameters proportional to the shape; any may be pinned."""
-    m = min(w, h)
-    if c is None:
-        c = m * 0.14
-    if q is None:
-        q = c * 0.28
-    if r is None:
-        r = min(m * 0.10, 6.0)
-    return c, q, r
-
-
-def _fill_chamfer(pdf, x: float, y: float, w: float, h: float,
-                  rgb: tuple[int, int, int], c=None, q=None, r=None,
-                  opacity: float = 1.0) -> None:
-    """Draw a filled chamfer-hexagon panel (banner / chip / masthead)."""
-    c, q, r = _chamfer_dims(w, h, c, q, r)
-    with pdf.new_path() as p:
-        p.style.fill_color = _dev_rgb(rgb)
-        p.style.stroke_color = None
-        if opacity != 1.0:
-            p.style.fill_opacity = opacity
-        _chamfer_outline(p, x, y, w, h, c, q, r)
-
-
-def _stroke_chamfer(pdf, x: float, y: float, w: float, h: float,
-                    rgb: tuple[int, int, int], c=None, q=None, r=None,
-                    line_w: float = 0.4, opacity: float = 1.0) -> None:
-    """Draw an unfilled chamfer-hexagon outline (watermark decoration)."""
-    c, q, r = _chamfer_dims(w, h, c, q, r)
-    with pdf.new_path() as p:
-        p.style.fill_color = None
-        p.style.stroke_color = _dev_rgb(rgb)
-        p.style.stroke_width = line_w
-        if opacity != 1.0:
-            p.style.stroke_opacity = opacity
-        _chamfer_outline(p, x, y, w, h, c, q, r)
-
-
-def _hex_cluster(pdf, x: float, y: float, scale: float,
-                 rgb: tuple[int, int, int], variant: int = 0,
-                 opacity: float = 0.5) -> None:
-    """A faint decorative cluster of 2–3 varied chamfer-hexagons (outlines plus
-    one filled), bleeding from (x, y). Brand-graphic only — callers place it in
-    genuinely empty space, behind content, never over text. `variant` 0/1/2
-    picks one of three arrangements so the clusters differ page-to-page."""
-    # (dx, dy, size, filled) tuples in `scale` units — three hand-tuned layouts.
-    layouts = [
-        [(0.0, 0.0, 1.0, False), (0.72, 0.46, 0.62, True), (0.30, 0.92, 0.44, False)],
-        [(0.0, 0.30, 0.82, False), (0.58, 0.0, 1.0, False), (0.94, 0.66, 0.5, True)],
-        [(0.0, 0.0, 0.7, True), (0.46, 0.36, 1.0, False), (1.04, 0.10, 0.5, False)],
-    ]
-    for dx, dy, sz, filled in layouts[variant % len(layouts)]:
-        s = scale * sz
-        bx, by = x + scale * dx, y + scale * dy
-        if filled:
-            _fill_chamfer(pdf, bx, by, s, s, rgb,
-                          c=s * 0.2, q=s * 0.06, r=s * 0.2, opacity=opacity)
-        else:
-            _stroke_chamfer(pdf, bx, by, s, s, rgb,
-                            c=s * 0.2, q=s * 0.06, r=s * 0.2,
-                            line_w=max(0.25, s * 0.02), opacity=opacity)
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -957,44 +867,45 @@ class _NotePDF(FPDF):
                  footer_note: str | None = None,
                  section_rule_color: tuple = _DEFAULT_ACCENT,
                  panel_color: tuple | None = None,
-                 sidebar_bar_color: tuple | None = None):
+                 sidebar_bar_color: tuple | None = None,
+                 theme: "ReportTheme | None" = None):
         super().__init__(orientation="P", unit="mm", format="A4")
+        # Pluggable visual identity — the theme draws every "look" surface
+        # (header/footer, section heads, dividers, cover masthead, void decor)
+        # through this instance. Defaults to the CADIEM hexagon language so an
+        # un-themed document renders exactly as before.
+        self.theme         = theme if theme is not None else HexagonTheme()
         self.lang          = lang
         self.issuer        = issuer
         self.doc_ref       = doc_ref
         self.primary_color = primary_color
         self.accent_color  = accent_color
         self.section_rule_color = section_rule_color
-        # Solid bar across the top of the cover sidebar panel. Defaults to the
-        # PRIMARY colour so it matches the table headers (one brand colour across
-        # the whole report); a brand may still pin it via `sidebar_bar_color`.
-        self.sidebar_bar_color = sidebar_bar_color if sidebar_bar_color is not None else primary_color
-        # Panel fill (cover sidebar, figure/callout/issuer cards). A brand may set
-        # it explicitly via the `panel_color` key; otherwise it's a very light
-        # tint of the brand PRIMARY so every panel echoes the firm palette. The
-        # auto tint is derived from primary (not accent) so a bold accent — e.g. a
-        # red — never produces a pink card; for the default navy it resolves to a
-        # neutral cool-grey. An explicit value gives the firm exact control (e.g.
-        # CADIEM pins its mint green that a 7% teal tint would wash out).
-        self.panel_color = (panel_color if panel_color is not None
-                            else _blend(primary_color, _WHITE, 0.93))
-        # ── Green design-language tokens (palette-driven) ──────────────────
-        # Identity colours derived from the resolved palette so ANY brand
-        # inherits the layout in its own colours. `ink` = a darkened primary
+        # ── Palette-derived design tokens ──────────────────────────────────
+        # build_tokens() (pdf_theme.py) is the single source for the identity
+        # colour derivation, shared by every theme: `ink` = a darkened primary
         # (mastheads / banners / stat values); `lime` = the section-rule colour
         # (keylines, number chips, accents); `teal` = the accent (secondary
-        # series, kickers). Downside stays amber (the brand has no red). The
-        # neutral tokens (muted/body_ink/rule_soft/footnote_grey) match the
-        # reference's grey-green family; `panel` is the card/tile fill.
-        self.ink           = _blend(primary_color, _BLACK, 0.46)
-        self.lime          = section_rule_color
-        self.teal          = accent_color
-        self.amber         = _AMBER
-        self.amber_dark    = _AMBER_DARK
-        self.muted         = _MUTED
-        self.body_ink      = _BODY_INK
-        self.rule_soft     = _RULE_SOFT
-        self.footnote_grey = _FOOTNOTE_GREY
+        # series, kickers); downside stays amber (the brand has no red). `panel`
+        # = the card/tile fill (an explicit brand `panel_color` wins, else a very
+        # light PRIMARY tint so a bold accent never yields a pink card — CADIEM
+        # pins its mint that a 7% teal tint would wash out); `sidebar_bar` = the
+        # solid bar atop the cover sidebar (defaults to PRIMARY, matching the
+        # table headers). The tokens are also kept on `self.tokens` for the theme.
+        tok = build_tokens(primary_color, accent_color, section_rule_color,
+                           panel=panel_color, sidebar_bar=sidebar_bar_color)
+        self.tokens        = tok
+        self.sidebar_bar_color = tok.sidebar_bar
+        self.panel_color   = tok.panel
+        self.ink           = tok.ink
+        self.lime          = tok.lime
+        self.teal          = tok.teal
+        self.amber         = tok.amber
+        self.amber_dark    = tok.amber_dark
+        self.muted         = tok.muted
+        self.body_ink      = tok.body_ink
+        self.rule_soft     = tok.rule_soft
+        self.footnote_grey = tok.footnote_grey
         self.firm_name     = firm_name
         self.firm_logo_bytes = firm_logo_bytes
         # Optional branding content (B5). report_title overrides the default
@@ -1070,6 +981,12 @@ class _NotePDF(FPDF):
     def _safe(self, text: object) -> str:
         return _safe(text, latin1=not self._use_unicode)
 
+    def t(self, key: str) -> str:
+        """Resolve a report label in this document's language. The theme layer
+        (pdf_theme.py) reaches translations through this so it needs no direct
+        dependency on _t / _LABELS."""
+        return _t(key, self.lang)
+
     # ------------------------------------------------------------------
     # Cell/multi_cell overrides for automatic text sanitisation
     # ------------------------------------------------------------------
@@ -1092,68 +1009,16 @@ class _NotePDF(FPDF):
     # ------------------------------------------------------------------
     # Page chrome — running header / footer
     # ------------------------------------------------------------------
+    # ------------------------------------------------------------------
+    # Page chrome & section heads — all delegated to the active theme
+    # (pdf_theme.py). These wrappers keep the _NotePDF method surface (and every
+    # call site) unchanged while the drawing lives in the swappable theme.
+    # ------------------------------------------------------------------
     def header(self):
-        if self._is_cover:
-            return
-
-        # ── Firm logo (top-left) — original colour on the white page, sized by
-        #    true aspect ratio so a wide wordmark isn't squashed ─────────────
-        logo_w = 0.0
-        if self.firm_logo_bytes:
-            try:
-                h = 6.0
-                w = min(h * self.firm_logo_aspect, 46.0)
-                self.image(io.BytesIO(self.firm_logo_bytes),
-                           x=self.l_margin, y=8, w=w, h=h)
-                logo_w = w + 3.0
-            except Exception:
-                logo_w = 0.0
-
-        # ── Note name (right) ────────────────────────────────────────
-        # The firm name is intentionally NOT printed here — the logo alone
-        # identifies the firm (printing both is redundant). Keep the note name on
-        # the right, vertically centred on the logo's centreline (logo at y=8,
-        # height 6 → centre y=11; a 4.5mm cell centres at y = 11 - 4.5/2 = 8.75).
-        _row_y = 8.75
-        self._sf(7, "regular")
-        self.set_text_color(*self.muted)
-        self.set_xy(self.w - self.r_margin - 95, _row_y)
-        note_label = self._safe(self.doc_ref.split("|")[-1].strip() if "|" in self.doc_ref else self.doc_ref)
-        self.cell(95, 4.5, note_label, align="R")
-
-        # ── 2px primary rule below the header (prototype interior chrome) ──
-        self.set_draw_color(*self.primary_color)
-        self.set_line_width(0.6)
-        self.line(self.l_margin, 16.5, self.w - self.r_margin, 16.5)
-        self.set_text_color(*_TEXT)
-        self.set_y(21)
+        return self.theme.header(self)
 
     def footer(self):
-        # The cover renders its own self-contained bottom disclaimer band; the
-        # running footer (rule + footer_line + page number) would print on top of
-        # it, producing the garbled overlap seen at the bottom of page 1. Skip it.
-        if self._is_cover or self.page_no() in self._cover_pages:
-            return
-        # ── Thin rule above footer ────────────────────────────────────
-        self.set_draw_color(*self.rule_soft)
-        self.set_line_width(0.2)
-        self.line(self.l_margin, self.h - 22, self.w - self.r_margin, self.h - 22)
-
-        # ── Disclaimer line (branding may override with footer_note) ───
-        self.set_y(-20)
-        self._sf(6, "light")
-        self.set_text_color(*self.footnote_grey)
-        self.multi_cell(0, 2.9, self.footer_note or _t("footer_line", self.lang), align="L")
-
-        # ── Page number (no generation date — the report carries no visible
-        # date; provenance lives only in the PDF metadata) ────────────
-        self.set_y(-11)
-        self._sf(6.5, "light")
-        self.set_text_color(*self.footnote_grey)
-        _page = _t("page_of", self.lang)
-        _mid  = _t("page_of_mid", self.lang)
-        self.cell(0, 4.5, f"{_page} {self.page_no()} {_mid} {{nb}}", align="R")
-        self.set_text_color(*_TEXT)
+        return self.theme.footer(self)
 
     # ------------------------------------------------------------------
     # Building blocks
@@ -1179,235 +1044,26 @@ class _NotePDF(FPDF):
     def _eyebrow(self, x: float, y: float, text: str, color: tuple,
                  size: float = 7.0, tracking: float = 0.4,
                  w: float = 0.0, align: str = "L") -> None:
-        """A tracked uppercase label — the design's 'eyebrow'/kicker. Uses the
-        BODY font bold (per the reference) and letter-spacing, then resets it."""
-        self._sf(size, "body_bold")
-        self.set_text_color(*color)
-        try:
-            self.set_char_spacing(tracking)
-        except Exception:
-            pass
-        self.set_xy(x, y)
-        self.cell(w, size * 0.55, self._safe(str(text).upper()), align=align)
-        try:
-            self.set_char_spacing(0)
-        except Exception:
-            pass
+        return self.theme.eyebrow(self, x, y, text, color,
+                                  size=size, tracking=tracking, w=w, align=align)
 
     def section_title(self, text: str):
-        """Generic section title — an ink heading over a short lime keyline on a
-        soft full-width hairline. Used for un-numbered sections (glossary,
-        calibration) and as the generic block title; the numbered reference
-        heads use secondary_head() and the analytical lenses use
-        section_divider()."""
-        if self.get_y() > self.h - 60:
-            self.add_page()
-        self.ln(4)
-        self._sf(13, "bold")
-        self.set_text_color(*self.ink)
-        self.cell(0, 8, text, new_x="LMARGIN", new_y="NEXT")
-        band_w = self.w - self.l_margin - self.r_margin
-        y = self.get_y()
-        # Soft full-width hairline with a short lime keyline overlaid at the left.
-        self.set_fill_color(*self.rule_soft)
-        self.rect(self.l_margin, y + 0.4, band_w, 0.4, style="F")
-        self.set_fill_color(*self.lime)
-        self.rect(self.l_margin, y, 22, 1.2, style="F")
-        self.ln(5)
-        self.set_text_color(*_TEXT)
+        return self.theme.section_title(self, text)
 
     def secondary_head(self, number: str, kicker: str, title: str,
                        min_room: float = 40.0, badge: str | None = None,
                        badge_color: tuple | None = None,
                        badge_logo: bytes | None = None):
-        """Reference-section secondary head: a lime chamfer number-chip beside a
-        green eyebrow kicker over an ink title, on a soft rule (Note Terms,
-        Issuer, each Underlying). A right-aligned company logo (`badge_logo`)
-        takes precedence; otherwise an optional `badge` prints a small filled
-        ticker chip (used by the underlying pages)."""
-        if self.page_no() == 0:
-            self.add_page()
-        elif self.get_y() > self.h - self.b_margin - min_room:
-            self.add_page()
-        else:
-            self.ln(4)
-        x0 = self.l_margin
-        w  = self.w - self.l_margin - self.r_margin
-        y0 = self.get_y()
-        chip = 12.0
-        _fill_chamfer(self, x0, y0, chip, chip, self.lime, c=2.4, q=0.9, r=2.4)
-        self.set_xy(x0, y0 + 2.6)
-        self._sf(11, "bold")
-        self.set_text_color(*self.ink)
-        self.cell(chip, 7, number, align="C")
-        tx = x0 + chip + 5
-        tw = w - chip - 5
-        self._eyebrow(tx, y0 + 0.5, kicker, self.primary_color,
-                      size=7.0, tracking=0.5, w=tw)
-        # Right-aligned identity: the company logo when available, else a small
-        # filled ticker chip.
-        if badge_logo:
-            try:
-                lw = 12.0
-                self.image(io.BytesIO(badge_logo), x=x0 + w - lw, y=y0, w=lw, h=lw)
-                tw -= lw + 3
-                badge = None
-            except Exception:
-                badge_logo = None
-        if badge:
-            bc = badge_color or self.primary_color
-            self._sf(8, "bold")
-            bw = self.get_string_width(self._safe(badge)) + 5
-            self.set_fill_color(*bc)
-            self.rect(x0 + w - bw, y0 + 4.5, bw, 6.5, style="F",
-                      round_corners=True, corner_radius=1.4)
-            self.set_xy(x0 + w - bw, y0 + 5.0)
-            self.set_text_color(*_WHITE)
-            self.cell(bw, 5.5, self._safe(badge), align="C")
-            tw -= bw + 3
-        self.set_xy(tx, y0 + 4.8)
-        self._fit_font(self._safe(title), tw, 15, "bold")
-        self.set_text_color(*self.ink)
-        self.cell(tw, 7, self._safe(title))
-        ry = y0 + chip + 2
-        self.set_fill_color(*self.rule_soft)
-        self.rect(x0, ry, w, 0.4, style="F")
-        self.set_y(ry + 4)
-        self.set_text_color(*_TEXT)
-
-    # Voids at/above this height read as egregiously empty — fill them with an
-    # actual brand photo band rather than only a faint sigil/hex composition.
-    # (The 52mm band-height floor in `_decorate_void_photo` is the real cutoff
-    # for very small voids; this just keeps mid-size voids on the photo tier.)
-    _EGREGIOUS_VOID = 70.0
+        return self.theme.secondary_head(self, number, kicker, title,
+                                         min_room=min_room, badge=badge,
+                                         badge_color=badge_color, badge_logo=badge_logo)
 
     def _decorate_void(self, variant: int = 0, min_gap: float = 44.0) -> None:
-        """Fill a large empty band before the footer so a short page reads as
-        composed rather than empty. Two tiers:
-
-        * **Egregious void** (>= `_EGREGIOUS_VOID`, and a brand photo exists) →
-          a full-width photo band anchored low in the void: the brand/sector
-          image (centre-cropped, object-fit cover), a light brand tint so it
-          harmonises with the palette, a lime accent rule, and a white-knockout
-          sigil in the corner. This is the user-requested "cover the white space
-          with an image" treatment.
-        * **Moderate void** (or no photo available) → the lighter graphic
-          composition: a faint sigil watermark, a low-left hex-cluster, and (for
-          tall voids) a couple of outlined hexes mid-band.
-
-        Both tiers are sized to the void and kept clear of the footer rule
-        (drawn at h-22) so a graphic NEVER overlaps the footnote, and neither is
-        ever drawn on a cover page."""
-        if self._is_cover or self.page_no() in self._cover_pages:
-            return
-        y = self.get_y() + 4.0
-        # Hard floor for ALL decoration: a clear margin above the footer rule
-        # (drawn at h-22) and its text, so a graphic NEVER overlaps the footnote.
-        floor = self.h - 28.0
-        gap = floor - y
-        if gap < min_gap:
-            return
-        x0 = self.l_margin
-        x1 = self.w - self.r_margin
-        # Draw from the chosen pool of report images, cycling so each egregious
-        # void gets the next image rather than repeating one (falls back to the
-        # single cover/back photo when only one image is available).
-        pool = getattr(self, "filler_image_list", None) or [
-            b for b in (getattr(self, "cover_image_bytes", None),
-                        getattr(self, "back_image_bytes", None)) if b]
-        if gap >= self._EGREGIOUS_VOID and pool:
-            filler = pool[self._void_photo_idx % len(pool)]
-            if self._decorate_void_photo(x0, x1, y, floor, gap, filler):
-                self._void_photo_idx += 1
-                return
-        # A hex-cluster's lowest shape can reach ~1.4x its scale below the origin
-        # (see _hex_cluster layouts) — account for that so it stays above `floor`.
-        HEX_VEXT = 1.45
-        try:
-            # Big sigil watermark — centred in the void, bleeding off the right.
-            sig = getattr(self, "cover_sigil_bytes", None)
-            if sig:
-                from PIL import Image
-                iw, ih = Image.open(io.BytesIO(sig)).size
-                sh = min(gap * 0.92, 150.0)
-                sw = sh * iw / ih
-                with self.local_context(fill_opacity=0.07):
-                    self.image(io.BytesIO(sig), x=x1 - sw * 0.60,
-                               y=y + (gap - sh) / 2.0, w=sw, h=sh)
-            # Hex cluster anchored low-left — placed so its FULL extent (incl. the
-            # downward overflow) ends at `floor`, never reaching the footnote.
-            scale = min(gap / HEX_VEXT, 52.0)
-            if scale >= 12:
-                _hex_cluster(self, x0 - scale * 0.22, floor - scale * HEX_VEXT,
-                             scale, self.primary_color, variant=variant, opacity=0.13)
-            # Tall voids: two small outlined hexes mid-band tie the corners.
-            if gap > 120:
-                cxm = (x0 + x1) / 2
-                _stroke_chamfer(self, cxm - 10, y + gap * 0.28, 18, 18,
-                                self.primary_color, c=3.6, q=1.1, r=3.6,
-                                line_w=0.45, opacity=0.11)
-                _stroke_chamfer(self, cxm + 20, y + gap * 0.28 + 17, 11, 11,
-                                self.lime, c=2.2, q=0.7, r=2.2,
-                                line_w=0.45, opacity=0.18)
-        except Exception:
-            pass
+        return self.theme.decorate_void(self, variant=variant, min_gap=min_gap)
 
     def _decorate_void_photo(self, x0: float, x1: float, y: float,
                              floor: float, gap: float, filler: bytes) -> bool:
-        """Render the egregious-void photo band (see `_decorate_void`). Returns
-        True on success so the caller can skip the graphic composition; False on
-        any failure so it falls through to the lighter treatment."""
-        try:
-            pad_top = 13.0                       # breathing room below the content
-            band_w = x1 - x0
-            band_h = min(gap - pad_top, 104.0)   # a band, not a giant square
-            if band_h < 52.0:
-                return False
-            by = floor - band_h                  # anchored at the floor
-            # Shift the crop window per page so a repeated filler photo shows a
-            # different region (left / centre / right · top / centre / bottom)
-            # rather than the identical band on consecutive short pages.
-            _bx = (-0.6, 0.0, 0.6)[self.page_no() % 3]
-            _by = (0.0, -0.5, 0.5)[(self.page_no() // 3) % 3]
-            cropped = _cover_crop(filler, band_w / band_h, bias_x=_bx, bias_y=_by) or filler
-            # Re-encode the band as JPEG (each page gets a distinct crop, so fpdf2
-            # can't dedupe them) — a PNG photo per page would bloat the PDF, JPEG
-            # keeps a multi-photo report a few hundred KB instead of multi-MB.
-            try:
-                from PIL import Image
-                _bim = Image.open(io.BytesIO(cropped)).convert("RGB")
-                _buf = io.BytesIO(); _bim.save(_buf, "JPEG", quality=78, optimize=True)
-                cropped = _buf.getvalue()
-            except Exception:
-                pass
-            self.image(io.BytesIO(cropped), x=x0, y=by, w=band_w, h=band_h)
-            # Light brand tint so the photo harmonises with the palette without
-            # hiding it — this is meant to read as an image, not a colour block.
-            tint = getattr(self, "cover_overlay_color", self.primary_color)
-            with self.local_context(fill_opacity=0.30):
-                self.set_fill_color(*tint)
-                self.rect(x0, by, band_w, band_h, style="F")
-            # A darker brand wash along the bottom edge grounds the band and lets
-            # the corner sigil read; kept short so the photo stays visible.
-            with self.local_context(fill_opacity=0.34):
-                self.set_fill_color(*self.ink)
-                self.rect(x0, floor - 16.0, band_w, 16.0, style="F")
-            # Lime accent rule across the top edge — the brand's signature line.
-            self.set_fill_color(*self.lime)
-            self.rect(x0, by, band_w, 1.5, style="F")
-            # White-knockout sigil tucked into the bottom-right corner.
-            sig = getattr(self, "cover_sigil_bytes", None)
-            if sig:
-                from PIL import Image
-                iw, ih = Image.open(io.BytesIO(sig)).size
-                sh = min(band_h * 0.42, 26.0)
-                sw = sh * iw / ih
-                with self.local_context(fill_opacity=0.55):
-                    self.image(io.BytesIO(sig), x=x1 - sw - 6.0,
-                               y=floor - sh - 3.5, w=sw, h=sh)
-            return True
-        except Exception:
-            return False
+        return self.theme.decorate_void_photo(self, x0, x1, y, floor, gap, filler)
 
     # Decorate the page we're leaving (cursor is at the content end here) so any
     # short content page gets its void filled automatically — except covers.
@@ -1418,59 +1074,10 @@ class _NotePDF(FPDF):
         return super().add_page(*args, **kwargs)
 
     def section_divider(self, number: str, kicker: str, heading: str):
-        """Primary section head for an analytical lens (Monte Carlo → Backtest →
-        Current Performance): a full-width dark chamfer banner carrying a big
-        lime section number, a thin divider, a lime eyebrow kicker over a white
-        heading, and a faint hex watermark. Always opens a fresh page so each
-        lens reads as a distinct chapter. Numbers (04/05/06) are FIXED per lens
-        (the prototype's identifiers), so a toggled-off lens never renumbers the
-        others."""
-        if self.page_no() == 0:
-            self.add_page()
-        elif self.get_y() > self.t_margin + 2:
-            self.add_page()
-        x0 = self.l_margin
-        w  = self.w - self.l_margin - self.r_margin
-        y0 = self.get_y() + 2
-        H  = 30.0
-        _fill_chamfer(self, x0, y0, w, H, self.ink, c=4.4, q=1.3, r=3.4)
-        # Faint hex watermark, top-right, bleeding toward the banner edge.
-        try:
-            _var = int(str(number)) % 3
-        except ValueError:
-            _var = 0
-        _hex_cluster(self, x0 + w - 30, y0 - 5, 20, _WHITE, variant=_var, opacity=0.10)
-        # Big lime section number (Neulis), vertically centred.
-        self.set_xy(x0 + 9, y0 + 9)
-        self._sf(26, "bold")
-        self.set_text_color(*self.lime)
-        self.cell(20, 12, str(number), align="L")
-        # Thin vertical divider (a muted tint of the ink).
-        self.set_fill_color(*_blend(self.ink, _WHITE, 0.30))
-        self.rect(x0 + 31, y0 + 7, 0.5, H - 14, style="F")
-        # Lime kicker over the white heading.
-        self._eyebrow(x0 + 37, y0 + 7.5, kicker, self.lime,
-                      size=7.0, tracking=0.6, w=w - 50)
-        self.set_xy(x0 + 37, y0 + 12.5)
-        self._sf(16, "bold")
-        self.set_text_color(*_WHITE)
-        self.cell(w - 50, 9, self._safe(heading))
-        self.set_y(y0 + H + 6)
-        self.set_text_color(*_TEXT)
+        return self.theme.section_divider(self, number, kicker, heading)
 
     def subsection(self, text: str, min_room: float = 27.0):
-        """SemiBold 9pt sub-header. ``min_room`` is the space the header plus the
-        block that follows need; break first so the header isn't orphaned above a
-        table/figure that flows to the next page. Callers preceding a table pass
-        the table's height (see _table_room)."""
-        if self.get_y() > self.h - self.b_margin - min_room:
-            self.add_page()
-        self.ln(2)
-        self._sf(9, "semibold")
-        self.set_text_color(*_TEXT)
-        self.cell(0, 6, text.upper(), new_x="LMARGIN", new_y="NEXT")
-        self.set_text_color(*_TEXT)
-        self.ln(2)
+        return self.theme.subsection(self, text, min_room=min_room)
 
     def body(self, text: str, h: float = 4.5):
         """8.5pt regular body text."""
@@ -3321,8 +2928,7 @@ def _cover_page(
     _show_kpis = _has_mc or bool(bt_summary)
     y_m, pad = 28.5, 9.0
     MH = 58.0 if _show_kpis else 34.0
-    _fill_chamfer(pdf, x0, y_m, W, MH, pdf.ink, c=7.5, q=2.0, r=5.0)
-    _hex_cluster(pdf, x0 + W - 42, y_m - 6, 30, _WHITE, variant=0, opacity=0.12)
+    pdf.theme.cover_masthead(pdf, x0, y_m, W, MH)
     pdf._eyebrow(x0 + pad, y_m + 7, eyebrow, pdf.lime,
                  size=8.0, tracking=0.9, w=W - 2 * pad)
     # Title (Neulis): one big line, shrinking to fit; if a very long note name
@@ -3756,8 +3362,7 @@ def _cover_page(
         # No photo for the left column → fall back to the hex cluster.
         if not _left_filled and ly + 45 < _yc[0] and _bottom - ly > 50:
             _sc = min((_bottom - ly) * 0.5, 54.0)
-            _hex_cluster(pdf, x0 - _sc * 0.2, _bottom - _sc, _sc,
-                         pdf.primary_color, variant=1, opacity=0.13)
+            pdf.theme.cover_left_void_fill(pdf, x0, _sc, _bottom)
     except Exception:
         pass
 
@@ -4299,6 +3904,9 @@ def _build_pdf_report(
     panel_color = _branding_color(branding, "panel_color", _blend(primary_color, _WHITE, 0.93))
     # Cover sidebar top bar: explicit `sidebar_bar_color` wins; else the accent.
     sidebar_bar_color = _branding_color(branding, "sidebar_bar_color", primary_color)
+    # Visual-identity theme — branding["report_theme"] selects the look (e.g.
+    # "cadiem" = hexagon, "mercator" = default); unknown/absent → the default.
+    report_theme = resolve_theme((branding or {}).get("report_theme"))
     # User-uploaded custom ticker logos: normalise to embeddable PNG once, drop
     # any that fail to decode. {display_name: png_bytes}; win over URLs/local files.
     _logo_ovr = {nm: png for nm, b in (logo_overrides or {}).items()
@@ -4339,6 +3947,7 @@ def _build_pdf_report(
         section_rule_color = section_rule_color,   # NEW
         panel_color     = panel_color,             # NEW
         sidebar_bar_color = sidebar_bar_color,     # NEW
+        theme           = report_theme,            # NEW — pluggable visual identity
     )
     # Custom brand typography (title_font / body_font) — no-op + IBM Plex fallback
     # when the brand ships no fonts or the TTF files are absent.

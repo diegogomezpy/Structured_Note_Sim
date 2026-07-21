@@ -471,6 +471,14 @@ export default function ReportPanel({ terms, opts, variantB, pathImages }: {
               <SubHead>{t('brand_identity')}</SubHead>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 14 }}>
                 <Field label={t('brand_firm')}><input type="text" value={brand.firm_name ?? ''} onChange={(e) => setBrandField('firm_name', e.target.value)} /></Field>
+                <Field label={t('brand_theme')}>
+                  <Select value={(brand.report_theme as string) || 'mercator'} ariaLabel={t('brand_theme')}
+                          options={[
+                            { value: 'mercator', label: t('brand_theme_mercator') },
+                            { value: 'cadiem', label: t('brand_theme_hexagon') },
+                          ]}
+                          onChange={(v) => setBrandField('report_theme', v)} />
+                </Field>
                 <Field label={t('brand_title')}><input type="text" value={brand.report_title ?? ''} onChange={(e) => setBrandField('report_title', e.target.value)} /></Field>
                 <Field label={t('brand_website')}><input type="text" placeholder="www.firm.com" value={brand.website ?? ''} onChange={(e) => setBrandField('website', e.target.value)} /></Field>
                 <Field label={t('brand_contact')}><input type="text" placeholder="research@firm.com" value={brand.contact ?? ''} onChange={(e) => setBrandField('contact', e.target.value)} /></Field>
