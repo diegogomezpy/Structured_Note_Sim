@@ -444,7 +444,7 @@ export interface InspectResult {
 /** Firm-branding overrides for the PDF (subset of pdf_report's schema). */
 export interface Branding {
   firm_name?: string
-  report_theme?: string       // PDF visual-identity theme: 'mercator' (default) | 'cadiem' (hexagon)
+  report_theme?: string | Record<string, unknown>  // theme NAME ('mercator'|'cadiem') OR an inline theme spec (optionally {base, ...overrides})
   report_title?: string
   primary_color?: string
   accent_color?: string
