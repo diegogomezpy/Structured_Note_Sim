@@ -181,11 +181,19 @@ function buildPathFig(path: PathData, labels: PathLabels, renorm = false) {
   })
 
   const pad = Math.max(1, x1 * 0.015)
+  // Per-period view: a faint dashed vertical divider at each reset makes the period
+  // boundaries explicit (they line up with the locked-in-gain markers and the line
+  // breaks). yref 'paper' so each spans the full plot height regardless of y-range.
+  const shapes = on ? resetXs.map((rx) => ({
+    type: 'line', xref: 'x', yref: 'paper', x0: rx, x1: rx, y0: 0, y1: 1,
+    line: { color: '#94a3b8', width: 1, dash: 'dot' }, layer: 'below',
+  })) : []
   return {
     data: traces,
     layout: {
       xaxis: { title: { text: labels.x }, range: [x0 - pad, x1 + pad], zeroline: false },
       yaxis: { title: { text: labels.y }, tickformat: '.0%', zeroline: false },
+      shapes,
       showlegend: true, hovermode: 'closest',
       legend: { orientation: 'h', y: 1.14, x: 0, font: { size: 11 }, itemwidth: 30 },
       margin: { l: 58, r: 26, t: 50, b: 46 },
