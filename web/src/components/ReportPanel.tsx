@@ -8,6 +8,8 @@ import { Select } from './fields'
 import FolderConnect from './FolderConnect'
 import CoverPhotoPicker from './CoverPhotoPicker'
 import BrandPreview from './BrandPreview'
+import ThemeBuilder from './ThemeBuilder'
+import { resolveSpec, buildTokens } from '../lib/reportTheme'
 import { useTour, reportTour } from './Tour'
 import { useLocalFolder } from '../lib/localFolder'
 import type { Branding, NoteTerms } from '../api/types'
@@ -232,6 +234,8 @@ export default function ReportPanel({ terms, opts, variantB, pathImages }: {
     const empty = v === '' || v == null || (Array.isArray(v) && v.length === 0)
     return { ...b, [k]: empty ? undefined : v }
   })
+  // report_theme is either a built-in name (string) or a custom inline spec (object).
+  const themeIsCustom = !!brand.report_theme && typeof brand.report_theme === 'object'
   const onImage = (field: keyof Branding, file: File | undefined) => {
     if (!file) return
     const r = new FileReader(); r.onload = () => setBrandField(field, String(r.result)); r.readAsDataURL(file)
@@ -475,12 +479,16 @@ export default function ReportPanel({ terms, opts, variantB, pathImages }: {
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 14 }}>
                 <Field label={t('brand_firm')}><input type="text" value={brand.firm_name ?? ''} onChange={(e) => setBrandField('firm_name', e.target.value)} /></Field>
                 <Field label={t('brand_theme')}>
-                  <Select value={(brand.report_theme as string) || 'mercator'} ariaLabel={t('brand_theme')}
+                  <Select value={themeIsCustom ? '__custom' : ((brand.report_theme as string) || 'mercator')} ariaLabel={t('brand_theme')}
                           options={[
                             { value: 'mercator', label: t('brand_theme_mercator') },
                             { value: 'cadiem', label: t('brand_theme_hexagon') },
+                            { value: '__custom', label: t('brand_theme_custom') },
                           ]}
-                          onChange={(v) => setBrandField('report_theme', v)} />
+                          onChange={(v) => {
+                            if (v === '__custom') setBrandField('report_theme', { ...(resolveSpec(brand.report_theme) as Record<string, unknown>), name: 'Custom theme' })
+                            else setBrandField('report_theme', v)
+                          }} />
                 </Field>
                 <Field label={t('brand_title')}><input type="text" value={brand.report_title ?? ''} onChange={(e) => setBrandField('report_title', e.target.value)} /></Field>
                 <Field label={t('brand_website')}><input type="text" placeholder="www.firm.com" value={brand.website ?? ''} onChange={(e) => setBrandField('website', e.target.value)} /></Field>
@@ -508,6 +516,18 @@ export default function ReportPanel({ terms, opts, variantB, pathImages }: {
                 <Swatch label={t('brand_sidebar')}   value={brand.sidebar_bar_color as string | undefined} fallback={brand.primary_color ?? '#1a2e4a'} onChange={(v) => setBrandField('sidebar_bar_color', v)} />
               </div>
             </div>
+
+            {/* Theme builder — only when a custom theme spec is active */}
+            {themeIsCustom && (
+              <div>
+                <SubHead>{t('brand_theme_builder')}</SubHead>
+                <ThemeBuilder
+                  spec={brand.report_theme as Record<string, unknown>}
+                  tokens={buildTokens(brand)}
+                  onChange={(s) => setBrandField('report_theme', s)}
+                />
+              </div>
+            )}
 
             {/* Typography */}
             <div>

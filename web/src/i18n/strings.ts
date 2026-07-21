@@ -713,6 +713,8 @@ export const S: Dict = {
   brand_preview_hint: { en: 'Approximate — the PDF renders at full fidelity.', es: 'Aproximada — el PDF se genera con fidelidad total.' },
   brand_theme_mercator: { en: 'Mercator (default)', es: 'Mercator (predet.)' },
   brand_theme_hexagon:  { en: 'Hexagon (CADIEM)', es: 'Hexágono (CADIEM)' },
+  brand_theme_custom:   { en: 'Custom…', es: 'Personalizado…' },
+  brand_theme_builder:  { en: 'Theme builder', es: 'Editor de tema' },
   brand_title:      { en: 'Report title', es: 'Título del informe' },
   brand_footer:     { en: 'Footer note', es: 'Nota de pie' },
   brand_primary:    { en: 'Primary colour', es: 'Color primario' },

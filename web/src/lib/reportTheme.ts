@@ -17,6 +17,7 @@ export function hexToRgb(h?: string): RGB | null {
   return [(n >> 16) & 255, (n >> 8) & 255, n & 255]
 }
 export const rgbCss = (t: RGB) => `rgb(${t[0]}, ${t[1]}, ${t[2]})`
+export const rgbToHex = (t: RGB) => '#' + t.map((v) => Math.max(0, Math.min(255, Math.round(v))).toString(16).padStart(2, '0')).join('')
 export const blend = (a: RGB, b: RGB, f: number): RGB =>
   [0, 1, 2].map((i) => Math.round(a[i] * (1 - f) + b[i] * f)) as RGB
 

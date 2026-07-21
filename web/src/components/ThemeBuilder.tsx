@@ -1,0 +1,218 @@
+import { useState } from 'react'
+import { Segmented } from './fields'
+import {
+  resolveSpec, resolveColor, rgbCss, rgbToHex, type Tokens,
+} from '../lib/reportTheme'
+
+/* Freeform theme builder — edits a declarative theme spec (the same one the PDF
+   and the live preview consume). Friendly per-surface controls for the common
+   knobs (shape / fill / gradient / watermark) plus a raw-JSON editor for the
+   full spec (geometry and anything else). Writes to branding.report_theme. */
+
+type Spec = Record<string, unknown>
+type Any = Record<string, unknown>
+
+const TOKEN_OPTIONS = ['ink', 'lime', 'teal', 'primary', 'accent', 'panel', 'rule_soft', 'muted', 'white', 'black']
+
+function setIn(o: unknown, path: (string | number)[], v: unknown): unknown {
+  if (!path.length) return v
+  const [k, ...rest] = path
+  const base: Any = Array.isArray(o) ? [...(o as unknown[])] as unknown as Any : { ...(o as Any) }
+  base[k as string] = setIn((base as Any)[k as string], rest, v)
+  return base
+}
+
+const lbl = { fontSize: 11, color: 'var(--text-muted)', marginBottom: 4, display: 'block', fontWeight: 600 } as const
+const row = { display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' as const }
+
+// ── colour reference: a token dropdown + optional custom hex ─────────────────
+function ColorRefControl({ value, tokens, onChange }: { value: unknown; tokens: Tokens; onChange: (v: unknown) => void }) {
+  const isHex = !!value && typeof value === 'object' && 'hex' in (value as Any)
+  const isMix = !!value && typeof value === 'object' && 'mix' in (value as Any)
+  const cur = isHex ? '__hex' : (typeof value === 'string' ? value : (isMix ? '__mix' : '__hex'))
+  const preview = rgbCss(resolveColor(value as never, tokens))
+  return (
+    <div style={row}>
+      <span style={{ width: 18, height: 18, borderRadius: 4, background: preview, border: '1px solid var(--border)', flexShrink: 0 }} />
+      <select value={cur} onChange={(e) => {
+        const v = e.target.value
+        if (v === '__hex') onChange({ hex: rgbToHex(resolveColor(value as never, tokens)) })
+        else if (v === '__mix') onChange({ mix: ['lime', 'white', 0.5] })
+        else onChange(v)
+      }} style={{ fontSize: 12, padding: '4px 6px', borderRadius: 7, border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--text)' }}>
+        {TOKEN_OPTIONS.map((t) => <option key={t} value={t}>{t}</option>)}
+        <option value="__hex">custom…</option>
+        <option value="__mix">mix…</option>
+      </select>
+      {isHex && (
+        <input type="color" value={rgbToHex(resolveColor(value as never, tokens))}
+          onChange={(e) => onChange({ hex: e.target.value })}
+          style={{ width: 30, height: 26, padding: 0, border: '1px solid var(--border)', borderRadius: 6, background: 'none' }} />
+      )}
+      {isMix && <span style={{ fontSize: 10.5, color: 'var(--text-faint)' }}>edit stops in JSON</span>}
+    </div>
+  )
+}
+
+// ── fill: solid | linear | radial (with gradient stops) ─────────────────────
+function FillControl({ value, tokens, onChange }: { value: unknown; tokens: Tokens; onChange: (v: unknown) => void }) {
+  const fill = (value as Any) || { type: 'solid', color: 'ink' }
+  const type = (fill.type as string) || 'solid'
+  const stops = (fill.stops as Any[]) || []
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+      <Segmented value={type} ariaLabel="Fill type"
+        options={[{ value: 'solid', label: 'Solid' }, { value: 'linear', label: 'Gradient' }, { value: 'radial', label: 'Radial' }]}
+        onChange={(t) => {
+          if (t === 'solid') onChange({ type: 'solid', color: fill.color ?? (stops[0] as Any)?.color ?? 'ink' })
+          else onChange({ type: t, angle: fill.angle ?? 90, stops: stops.length ? stops : [{ color: fill.color ?? 'ink' }, { color: 'teal' }] })
+        }} />
+      {type === 'solid' ? (
+        <ColorRefControl value={fill.color} tokens={tokens} onChange={(c) => onChange({ ...fill, color: c })} />
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+          {type === 'linear' && (
+            <label style={{ ...row, fontSize: 11.5, color: 'var(--text-muted)' }}>
+              Angle
+              <input type="number" value={Number(fill.angle ?? 90)} onChange={(e) => onChange({ ...fill, angle: Number(e.target.value) })}
+                style={{ width: 64, fontSize: 12, padding: '4px 6px', borderRadius: 7, border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--text)' }} />°
+            </label>
+          )}
+          {stops.map((s, i) => (
+            <div key={i} style={row}>
+              <ColorRefControl value={(s as Any).color} tokens={tokens} onChange={(c) => onChange(setIn(fill, ['stops', i, 'color'], c))} />
+              {stops.length > 2 && (
+                <button type="button" className="btn btn--ghost" style={{ padding: '2px 7px', fontSize: 12 }}
+                  onClick={() => onChange({ ...fill, stops: stops.filter((_, j) => j !== i) })}>×</button>
+              )}
+            </div>
+          ))}
+          <button type="button" className="btn btn--ghost" style={{ padding: '3px 9px', fontSize: 11.5, alignSelf: 'flex-start' }}
+            onClick={() => onChange({ ...fill, stops: [...stops, { color: 'lime' }] })}>+ colour stop</button>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function ShapeControl({ value, onChange }: { value: unknown; onChange: (v: unknown) => void }) {
+  const shape = (value as Any) || { kind: 'rounded' }
+  const kind = (shape.kind as string) || 'rounded'
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+      <Segmented value={kind} ariaLabel="Shape"
+        options={[{ value: 'chamfer', label: 'Chamfer' }, { value: 'rounded', label: 'Rounded' }, { value: 'square', label: 'Square' }]}
+        onChange={(k) => {
+          if (k === 'chamfer') onChange({ kind: 'chamfer', c: shape.c ?? 5, q: shape.q ?? 1.5, r: shape.r ?? 4 })
+          else if (k === 'rounded') onChange({ kind: 'rounded', radius: shape.radius ?? 3 })
+          else onChange({ kind: 'square' })
+        }} />
+      {kind === 'chamfer' && (
+        <label style={{ ...row, fontSize: 11.5, color: 'var(--text-muted)' }}>Cut
+          <input type="number" step={0.5} value={Number(shape.c ?? 5)} onChange={(e) => onChange({ ...shape, c: Number(e.target.value) })}
+            style={{ width: 64, fontSize: 12, padding: '4px 6px', borderRadius: 7, border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--text)' }} />mm</label>
+      )}
+      {kind === 'rounded' && (
+        <label style={{ ...row, fontSize: 11.5, color: 'var(--text-muted)' }}>Radius
+          <input type="number" step={0.5} value={Number(shape.radius ?? 3)} onChange={(e) => onChange({ ...shape, radius: Number(e.target.value) })}
+            style={{ width: 64, fontSize: 12, padding: '4px 6px', borderRadius: 7, border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--text)' }} />mm</label>
+      )}
+    </div>
+  )
+}
+
+function Group({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <div style={{ border: '1px solid var(--border)', borderRadius: 10, padding: '11px 12px' }}>
+      <div style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--text-faint)', marginBottom: 9 }}>{title}</div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>{children}</div>
+    </div>
+  )
+}
+
+export default function ThemeBuilder({ spec, tokens, onChange }: { spec: Spec; tokens: Tokens; onChange: (s: Spec) => void }) {
+  const [json, setJson] = useState<string | null>(null)   // null = follow structured state
+  const [jsonErr, setJsonErr] = useState('')
+  const upd = (path: (string | number)[], v: unknown) => onChange(setIn(spec, path, v) as Spec)
+
+  const masthead = (spec.cover_masthead as Any) || {}
+  const divider = (spec.divider as Any) || {}
+  const chip = ((spec.secondary_head as Any)?.chip as Any) || {}
+  const header = (spec.header as Any) || {}
+  const dividerStyle = (divider.style as string) || 'banner'
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' }}>
+        <span style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>Start from</span>
+        <Segmented value="__" ariaLabel="Start from"
+          options={[{ value: 'mercator', label: 'Mercator' }, { value: 'cadiem', label: 'Hexagon' }]}
+          onChange={(base) => { setJson(null); onChange({ ...(resolveSpec(base) as Spec), name: 'Custom theme' }) }} />
+      </div>
+
+      <Group title="Cover masthead">
+        <div><span style={lbl}>Shape</span><ShapeControl value={masthead.shape} onChange={(v) => upd(['cover_masthead', 'shape'], v)} /></div>
+        <div><span style={lbl}>Fill</span><FillControl value={masthead.fill} tokens={tokens} onChange={(v) => upd(['cover_masthead', 'fill'], v)} /></div>
+        <label style={{ ...row, fontSize: 12.5, color: 'var(--text-muted)', cursor: 'pointer' }}>
+          <input type="checkbox" checked={masthead.watermark === 'hexCluster'} style={{ width: 'auto' }}
+            onChange={(e) => upd(['cover_masthead', 'watermark'], e.target.checked ? 'hexCluster' : null)} />
+          Hexagon watermark
+        </label>
+      </Group>
+
+      <Group title="Chapter divider">
+        <div><span style={lbl}>Style</span>
+          <Segmented value={dividerStyle} ariaLabel="Divider style"
+            options={[{ value: 'banner', label: 'Dark banner' }, { value: 'editorial', label: 'Editorial' }]}
+            onChange={(v) => upd(['divider', 'style'], v)} />
+        </div>
+        {dividerStyle === 'banner' && (
+          <>
+            <div><span style={lbl}>Shape</span><ShapeControl value={divider.shape} onChange={(v) => upd(['divider', 'shape'], v)} /></div>
+            <div><span style={lbl}>Fill</span><FillControl value={divider.fill} tokens={tokens} onChange={(v) => upd(['divider', 'fill'], v)} /></div>
+            <label style={{ ...row, fontSize: 12.5, color: 'var(--text-muted)', cursor: 'pointer' }}>
+              <input type="checkbox" checked={divider.watermark === 'hexCluster'} style={{ width: 'auto' }}
+                onChange={(e) => upd(['divider', 'watermark'], e.target.checked ? 'hexCluster' : null)} />
+              Hexagon watermark
+            </label>
+          </>
+        )}
+      </Group>
+
+      <Group title="Section number-chip">
+        <div><span style={lbl}>Shape</span><ShapeControl value={chip.shape} onChange={(v) => upd(['secondary_head', 'chip', 'shape'], v)} /></div>
+        <div><span style={lbl}>Fill</span><FillControl value={chip.fill} tokens={tokens} onChange={(v) => upd(['secondary_head', 'chip', 'fill'], v)} /></div>
+      </Group>
+
+      <Group title="Header & void">
+        <div><span style={lbl}>Header rule</span><ColorRefControl value={(header.rule as Any)?.color} tokens={tokens} onChange={(v) => upd(['header', 'rule', 'color'], v)} /></div>
+        <label style={{ ...row, fontSize: 12.5, color: 'var(--text-muted)', cursor: 'pointer' }}>
+          <input type="checkbox" checked={!!header.tick} style={{ width: 'auto' }}
+            onChange={(e) => upd(['header', 'tick'], e.target.checked ? { color: 'lime', w: 15, h: 0.8, y: 16.1, radius: 0.4 } : null)} />
+          Accent tick on header
+        </label>
+        <div><span style={lbl}>Empty-space decoration</span>
+          <Segmented value={((spec.void as Any)?.decoration as string) || 'none'} ariaLabel="Void decoration"
+            options={[{ value: 'hexCluster', label: 'Hexes' }, { value: 'accentKeyline', label: 'Keyline' }, { value: 'none', label: 'None' }]}
+            onChange={(v) => upd(['void', 'decoration'], v)} />
+        </div>
+      </Group>
+
+      {/* raw-JSON escape hatch — full freeform, incl. geometry */}
+      <details>
+        <summary style={{ cursor: 'pointer', fontSize: 11.5, fontWeight: 600, color: 'var(--text-muted)' }}>Raw spec (JSON)</summary>
+        <textarea
+          value={json ?? JSON.stringify(spec, null, 2)}
+          onChange={(e) => {
+            setJson(e.target.value)
+            try { const parsed = JSON.parse(e.target.value); setJsonErr(''); onChange(parsed) }
+            catch (err) { setJsonErr(String((err as Error).message)) }
+          }}
+          onBlur={() => setJson(null)}
+          spellCheck={false}
+          style={{ width: '100%', minHeight: 180, marginTop: 8, fontFamily: 'var(--font-mono, monospace)', fontSize: 11.5, lineHeight: 1.5, padding: '9px 11px', borderRadius: 9, border: `1px solid ${jsonErr ? 'var(--red, #c0392b)' : 'var(--border)'}`, background: 'var(--surface)', color: 'var(--text)' }} />
+        {jsonErr && <div style={{ fontSize: 11, color: 'var(--red, #c0392b)', marginTop: 4 }}>Invalid JSON: {jsonErr}</div>}
+      </details>
+    </div>
+  )
+}
