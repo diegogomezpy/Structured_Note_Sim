@@ -688,7 +688,8 @@ def _mc_figures(sf: dict, note: dict, terms: NoteTerms, tr) -> dict:
             note["autocall_events"], note["expected_irr"], terms.coupon_pa, tr)),
         "wof_fan": _fig(charts.build_wof_fan(
             None, t_grid, terms.knock_in_barrier, obs_pairs, tr,
-            autocall_barrier=terms.autocall_barrier, bands=wof_bands)),
+            autocall_barrier=terms.autocall_barrier, bands=wof_bands,
+            participation=(getattr(terms, "note_type", "") == "participation"))),
         "asset_fans": [
             {"name": nm, "fig": _fig(charts.build_fan_chart(
                 None, nm, t_grid, obs_pairs, tr, bands=asset_bands[i]))}
@@ -1826,7 +1827,8 @@ def build_report_pdf(terms: NoteTerms, *, sections: list[str] | None = None, lan
                 note["autocall_events"], note["expected_irr"], terms.coupon_pa, tr),
             "wof_fan": charts.build_wof_fan(
                 None, t_grid, terms.knock_in_barrier, obs_pairs, tr,
-                autocall_barrier=terms.autocall_barrier, bands=wof_bands),
+                autocall_barrier=terms.autocall_barrier, bands=wof_bands,
+                participation=(getattr(terms, "note_type", "") == "participation")),
             "individual": [(nm, charts.build_fan_chart(None, nm, t_grid, obs_pairs, tr,
                                                        bands=asset_bands[i]))
                            for i, nm in enumerate(asset_names)],

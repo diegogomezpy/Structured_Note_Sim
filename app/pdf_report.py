@@ -465,6 +465,8 @@ _LABELS: dict[str, dict[str, str]] = {
                               "es": "Distribución de TIR anual simple en los caminos simulados"},
     "fig_wof":               {"en": "Worst-of performance fan with barrier levels",
                               "es": "Abanico worst-of con niveles de barrera"},
+    "fig_wof_part":          {"en": "Basket performance fan (percentile bands)",
+                              "es": "Abanico de rendimiento de la cesta (bandas percentiles)"},
     "fig_corr":              {"en": "Calibrated return correlation matrix",
                               "es": "Matriz de correlaciones de retorno calibrada"},
     "fig_bt_outcome":        {"en": "Distribution of historical outcomes by issue date",
@@ -4666,7 +4668,8 @@ def _build_pdf_report(
     _sec = _lazy_section(_t("mc_subtab_paths", lang), before=_mc_div)
     if _inc("mc_wof"):
         _sec()
-        pdf.figure(_fig_to_png(figures.get("wof_fan"), **_kw), _t("fig_wof", lang), src_mc)
+        _wof_cap = "fig_wof_part" if _is_participation(terms) else "fig_wof"
+        pdf.figure(_fig_to_png(figures.get("wof_fan"), **_kw), _t(_wof_cap, lang), src_mc)
     for i, (nm, fig) in enumerate(figures.get("individual") or []):
         if _inc(f"mc_fan_{i}"):
             _sec()

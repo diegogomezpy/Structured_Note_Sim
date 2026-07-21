@@ -56,6 +56,10 @@ _BASE_FONT = "IBM Plex Sans, Arial, sans-serif"
 _FILL_OUTERMOST = "rgba(37,99,235,0.04)"   # 1st–99th pct (faintest, widest)
 _FILL_OUTER = "rgba(37,99,235,0.08)"
 _FILL_INNER = "rgba(37,99,235,0.20)"
+# Green (participation payoff palette) equivalents of the fan percentile fills.
+_FILL_OUTERMOST_G = "rgba(22,163,74,0.05)"
+_FILL_OUTER_G = "rgba(22,163,74,0.09)"
+_FILL_INNER_G = "rgba(22,163,74,0.20)"
 
 
 def _apply_theme(fig: go.Figure) -> go.Figure:
@@ -363,6 +367,7 @@ def build_wof_fan(
     autocall_barrier: float | None = None,
     autocall_schedule: list[tuple[float, float]] | None = None,
     bands:            np.ndarray | None = None,  # precomputed (7, N+1) percentile bands
+    participation:    bool = False,   # Participation note: no autocall/knock-in barriers
 ) -> go.Figure:
     # Tenors are quoted in MONTHS throughout the app, so the time axis is too.
     # The engine works in years; convert here, at the render boundary only.
@@ -376,36 +381,43 @@ def build_wof_fan(
     if bands is None:
         bands = np.percentile(worst_of_paths, pcts, axis=0)
     # index map: 0=1st 1=5th 2=25th 3=median 4=75th 5=95th 6=99th
+    # Participation notes render in the green payoff palette (matching the redemption
+    # distribution / payoff-profile charts) rather than the phoenix blue.
+    _f_out, _f_mid, _f_in = ((_FILL_OUTERMOST_G, _FILL_OUTER_G, _FILL_INNER_G)
+                             if participation else (_FILL_OUTERMOST, _FILL_OUTER, _FILL_INNER))
     fig = go.Figure()
     fig.add_trace(go.Scatter(
         x=np.concatenate([t_grid, t_grid[::-1]]),
         y=np.concatenate([bands[6], bands[0][::-1]]),
-        fill="toself", fillcolor=_FILL_OUTERMOST,
+        fill="toself", fillcolor=_f_out,
         line=dict(color="rgba(0,0,0,0)"), name=tr("pct_1_99"),
     ))
     fig.add_trace(go.Scatter(
         x=np.concatenate([t_grid, t_grid[::-1]]),
         y=np.concatenate([bands[5], bands[1][::-1]]),
-        fill="toself", fillcolor=_FILL_OUTER,
+        fill="toself", fillcolor=_f_mid,
         line=dict(color="rgba(0,0,0,0)"), name=tr("pct_5_95"),
     ))
     fig.add_trace(go.Scatter(
         x=np.concatenate([t_grid, t_grid[::-1]]),
         y=np.concatenate([bands[4], bands[2][::-1]]),
-        fill="toself", fillcolor=_FILL_INNER,
+        fill="toself", fillcolor=_f_in,
         line=dict(color="rgba(0,0,0,0)"), name=tr("pct_25_75"),
     ))
     fig.add_trace(go.Scatter(
         x=t_grid, y=bands[3],
         mode="lines", name=tr("median"),
-        line=dict(color=_BLUE, width=2),
+        line=dict(color=_GREEN if participation else _BLUE, width=2),
     ))
-    fig.add_hline(
-        y=knock_in_barrier, line_dash="dash", line_color=_RED,
-        annotation_text=tr("chart_ki_barrier", lvl=f"{knock_in_barrier:.0%}"),
-        annotation_position="bottom right",
-    )
-    _add_autocall_barrier(fig, autocall_barrier, autocall_schedule, tr, x0=0.0)
+    # A Participation note has no knock-in / autocall barriers — drawing them (at the
+    # placeholder 0% / 200% those fields hold) would be meaningless, so skip them.
+    if not participation:
+        fig.add_hline(
+            y=knock_in_barrier, line_dash="dash", line_color=_RED,
+            annotation_text=tr("chart_ki_barrier", lvl=f"{knock_in_barrier:.0%}"),
+            annotation_position="bottom right",
+        )
+        _add_autocall_barrier(fig, autocall_barrier, autocall_schedule, tr, x0=0.0)
     for label, t_val in obs_labels:
         fig.add_vline(x=t_val, line_dash="dot", line_color="#aaa",
                       annotation_text=label, annotation_position="top")
