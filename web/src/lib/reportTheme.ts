@@ -158,13 +158,75 @@ export function resolveSpec(reportTheme: unknown): ThemeSpec {
   return BUILTIN[key] ?? BUILTIN[DEFAULT_THEME]
 }
 
-/** Shape → CSS. Chamfer cuts the top-right + bottom-left corners (px `cut`);
-    rounded uses a px `radius`; square is plain. */
-export function shapeStyle(shape: unknown, cut: number, radius: number): Record<string, string | number> {
-  const kind = typeof shape === 'string' ? shape : ((shape as { kind?: string })?.kind ?? 'rounded')
-  if (kind === 'chamfer') {
-    return { clipPath: `polygon(0 0, calc(100% - ${cut}px) 0, 100% ${cut}px, 100% 100%, ${cut}px 100%, 0 calc(100% - ${cut}px))` }
-  }
+/** The shape kind of a spec shape ('chamfer' | 'rounded' | 'soft' | 'square'). */
+export function shapeKind(shape: unknown): string {
+  return typeof shape === 'string' ? shape : ((shape as { kind?: string })?.kind ?? 'rounded')
+}
+
+/** Shape → CSS, for the NON-chamfer kinds (chamfer is drawn as an SVG path via
+    `chamferPath`, since CSS clip-path can't round the cut corners). rounded uses
+    a px `radius`; square is plain. */
+export function shapeStyle(shape: unknown, _cut: number, radius: number): Record<string, string | number> {
+  const kind = shapeKind(shape)
   if (kind === 'rounded' || kind === 'soft') return { borderRadius: radius }
   return {}
+}
+
+/** Proportional chamfer dimensions in the shape's own units — mirrors
+    `_chamfer_dims` in reportkit/theme.py (the 6mm cap on `r` is dropped for the
+    unit-agnostic px preview). c = chamfer depth, q = chamfer-corner round,
+    r = normal-corner radius. Any may be pinned by the spec. */
+export function chamferDims(w: number, h: number, c?: number, q?: number, r?: number) {
+  const m = Math.min(w, h)
+  const C = c ?? m * 0.14
+  const Q = q ?? C * 0.28
+  const R = r ?? m * 0.10
+  return { c: C, q: Q, r: R }
+}
+
+/** An SVG path `d` for the CADIEM chamfer — a rectangle with the top-right and
+    bottom-left corners cut at 45° and ALL corners rounded. Transcribes
+    `_chamfer_outline`, so the preview's chamfer matches the PDF's rounded cut
+    (not a hard bevel). (0,0) = top-left; w,h in px. */
+export function chamferPath(w: number, h: number, c?: number, q?: number, r?: number): string {
+  const { c: C, q: Q, r: R } = chamferDims(w, h, c, q, r)
+  const s = Q * 0.70710678
+  const P = (a: number, b: number) => `${a.toFixed(2)} ${b.toFixed(2)}`
+  return [
+    `M ${P(R, 0)}`,
+    `L ${P(w - C - Q, 0)}`,
+    `Q ${P(w - C, 0)} ${P(w - C + s, s)}`,
+    `L ${P(w - s, C - s)}`,
+    `Q ${P(w, C)} ${P(w, C + Q)}`,
+    `L ${P(w, h - R)}`,
+    `Q ${P(w, h)} ${P(w - R, h)}`,
+    `L ${P(C + Q, h)}`,
+    `Q ${P(C, h)} ${P(C - s, h - s)}`,
+    `L ${P(s, h - C + s)}`,
+    `Q ${P(0, h - C)} ${P(0, h - C - Q)}`,
+    `L ${P(0, R)}`,
+    `Q ${P(0, 0)} ${P(R, 0)}`,
+    'Z',
+  ].join(' ')
+}
+
+/** Gradient axis endpoints (objectBoundingBox 0..1) for an SVG linearGradient
+    from a Python fill angle (90 = top→bottom, 0 = left→right). */
+export function gradientAxis(angle = 90): { x1: number; y1: number; x2: number; y2: number } {
+  const a = (angle * Math.PI) / 180
+  const cx = Math.cos(a), cy = Math.sin(a)
+  return { x1: 0.5 - 0.5 * cx, y1: 0.5 - 0.5 * cy, x2: 0.5 + 0.5 * cx, y2: 0.5 + 0.5 * cy }
+}
+
+/** Resolve a fill's ordered colour stops (each 0..1 positioned) for SVG/gradient
+    rendering. Solid fills collapse to a single repeated stop. */
+export function fillStops(fill: Fill | undefined, tok: Tokens): string[] {
+  if (!fill || !fill.type || fill.type === 'solid') {
+    const c = rgbCss(resolveColor(fill?.color ?? 'ink', tok))
+    return [c, c]
+  }
+  const cols = (fill.stops ?? []).map((s) => rgbCss(resolveColor((s as { color?: ColorRef })?.color ?? (s as ColorRef), tok)))
+  if (!cols.length) { const c = rgbCss(resolveColor(fill.color ?? 'ink', tok)); return [c, c] }
+  if (cols.length === 1) cols.push(cols[0])
+  return cols
 }

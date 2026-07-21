@@ -247,7 +247,8 @@ export default function PdfDesigner({ studio, terms }: { studio: BrandingStudio;
       {/* ── right: sticky live preview ───────────────────────────────── */}
       <div className="brand-preview-col" style={{ position: 'sticky', top: 12, display: 'flex', flexDirection: 'column', gap: 8 }}>
         <div style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: '0.07em', textTransform: 'uppercase', color: 'var(--text-faint)' }}>{t('brand_preview')}</div>
-        <BrandPreview brand={b} noteName={noteName} />
+        <BrandPreview brand={b} noteName={noteName} terms={terms}
+                      coverMetrics={studio.coverMetricsSel} metricLabel={studio.metricLabel} />
         <div style={{ fontSize: 10.5, color: 'var(--text-faint)', lineHeight: 1.45 }}>{t('brand_preview_hint')}</div>
       </div>
     </div>
