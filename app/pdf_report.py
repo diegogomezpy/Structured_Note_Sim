@@ -78,7 +78,7 @@ from fpdf import FPDF
 from reportkit.theme import (  # noqa: E402
     _dev_rgb, _chamfer_outline, _chamfer_dims,
     _fill_chamfer, _stroke_chamfer, _hex_cluster,
-    build_tokens, HexagonTheme, resolve_theme,
+    build_tokens, resolve_theme,
     AMBER as _AMBER, AMBER_DARK as _AMBER_DARK, MUTED as _MUTED,
     BODY_INK as _BODY_INK, RULE_SOFT as _RULE_SOFT, FOOTNOTE_GREY as _FOOTNOTE_GREY,
 )
@@ -876,7 +876,7 @@ class _NotePDF(FPDF):
         # (header/footer, section heads, dividers, cover masthead, void decor)
         # through this instance. Defaults to the CADIEM hexagon language so an
         # un-themed document renders exactly as before.
-        self.theme         = theme if theme is not None else HexagonTheme()
+        self.theme         = theme if theme is not None else resolve_theme(None)
         self.lang          = lang
         self.issuer        = issuer
         self.doc_ref       = doc_ref

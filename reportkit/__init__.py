@@ -19,20 +19,30 @@ from __future__ import annotations
 # Public API re-exports (kept small; import the submodules for the rest).
 from reportkit.theme import (  # noqa: F401
     ReportTheme,
+    SpecTheme,
     ThemeTokens,
     build_tokens,
     resolve_theme,
+    resolve_color,
+    paint_shape,
     register_theme,
     known_themes,
     DEFAULT_THEME,
+    HEXAGON_SPEC,
+    MERCATOR_SPEC,
 )
 
 __all__ = [
     "ReportTheme",
+    "SpecTheme",
     "ThemeTokens",
     "build_tokens",
     "resolve_theme",
+    "resolve_color",
+    "paint_shape",
     "register_theme",
     "known_themes",
     "DEFAULT_THEME",
+    "HEXAGON_SPEC",
+    "MERCATOR_SPEC",
 ]
