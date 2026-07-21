@@ -57,7 +57,8 @@ function Card({ m, override, chart = true }: { m: UnderlyingMetric; override: Un
   const sub = [m.type, m.industry || m.sector].filter(Boolean).join(' · ') || '—'
   const ivRealized = m.iv_source === 'realized'
   const desc = override.description || m.business_summary
-  const a = override.analyst
+  // Analyst consensus: a manual override wins, else the Yahoo autofill (m.analyst).
+  const a = override.analyst ?? m.analyst
   const total = a ? (a.buy + a.hold + a.sell) : 0
   const [hover, setHover] = useState(false)
   const [saving, setSaving] = useState(false)
@@ -72,7 +73,7 @@ function Card({ m, override, chart = true }: { m: UnderlyingMetric; override: Un
       const logoUrls = override.logo
         ? [override.logo]
         : [proxify(logos.ticker(m.symbol)), ...tickerFallbacks(m.symbol).map(proxify)]
-      const url = await renderUnderlyingCard(m, override, logoUrls, {
+      const url = await renderUnderlyingCard(m, { ...override, analyst: a }, logoUrls, {
         marketCap: t('ul_market_cap'), iv: t('ul_iv_3m'), vol: t('ul_vol_3m'),
         lastPrice: t('ul_last_price'), rsi: t('ul_rsi'), analyst: t('ul_analyst'),
         buy: t('sent_buy'), hold: t('sent_hold'), sell: t('sent_sell'),

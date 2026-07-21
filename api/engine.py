@@ -1562,6 +1562,7 @@ def run_underlying_metrics(tickers: dict, *, lang: str = "en") -> list[dict]:
             "day_change": _f(m.get("day_change")),
             "rsi_14":     _f(m.get("rsi_14")),
             "business_summary": _translated(m.get("business_summary"), lang),
+            "analyst":    m.get("analyst"),
             "figure":     fig,
         })
     return out

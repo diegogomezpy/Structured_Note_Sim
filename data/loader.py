@@ -486,6 +486,42 @@ def _stockanalysis_market_cap(sym: str) -> float | None:
     return cap
 
 
+_ANALYST_CACHE: dict[str, tuple[float, dict | None]] = {}   # sym → (ts, split)
+_ANALYST_TTL = 3600.0
+
+
+def _analyst_split(ticker, sym: str, quote_type: str | None) -> dict | None:
+    """Analyst buy/hold/sell counts from Yahoo's recommendation grid (current period).
+
+    Yahoo exposes a rolling grid of analyst ratings — strongBuy / buy / hold / sell /
+    strongSell — with one row per month (`0m` = now). We collapse it to the three
+    buckets the cards render (strongBuy+buy → buy, sell+strongSell → sell). Indices,
+    currencies and funds have no coverage, so we skip the call to avoid a wasted 404.
+    Returns None on any failure; cached 1h (keyed on symbol)."""
+    qt = (quote_type or "").upper()
+    if any(k in qt for k in ("INDEX", "CURRENCY", "ETF", "MUTUALFUND", "CRYPTO")):
+        return None
+    now = time.time()
+    hit = _ANALYST_CACHE.get(sym)
+    if hit is not None and now - hit[0] < _ANALYST_TTL:
+        return hit[1]
+    split = None
+    try:
+        rec = ticker.recommendations
+        if rec is not None and len(rec):
+            row = rec.iloc[0]                       # current period ('0m')
+            g = lambda c: int(row.get(c, 0) or 0)   # noqa: E731 — tiny local
+            buy  = g("strongBuy") + g("buy")
+            hold = g("hold")
+            sell = g("sell") + g("strongSell")
+            if buy + hold + sell > 0:
+                split = {"buy": buy, "hold": hold, "sell": sell}
+    except Exception as e:
+        print(f"[loader] analyst split failed for {sym}: {e}")
+    _ANALYST_CACHE[sym] = (now, split)
+    return split
+
+
 def load_underlying_metrics(
     tickers: dict[str, str],
     closes:  dict[str, pd.Series] | None = None,
@@ -514,7 +550,8 @@ def load_underlying_metrics(
         sym, name = item
         rec = {k: None for k in (
             "long_name", "type", "sector", "industry", "market_cap", "currency",
-            "last_price", "day_change", "rsi_14", "iv_3m", "iv_source", "business_summary")}
+            "last_price", "day_change", "rsi_14", "iv_3m", "iv_source",
+            "business_summary", "analyst")}
         try:
             t = yf.Ticker(sym)
             try:
@@ -590,6 +627,8 @@ def load_underlying_metrics(
 
             rec["iv_3m"], rec["iv_source"] = _iv_3m(
                 t, sym, rec["type"], rec["last_price"], _hist)
+            # Analyst consensus (buy/hold/sell) — autofilled from Yahoo's rating grid.
+            rec["analyst"] = _analyst_split(t, sym, rec["type"])
         except Exception as e:
             print(f"[loader] WARNING: could not load metrics for {sym}: {e}")
         return name, rec

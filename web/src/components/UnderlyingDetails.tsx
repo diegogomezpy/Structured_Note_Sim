@@ -4,7 +4,7 @@ import { useI18n } from '../i18n/I18nProvider'
 import Icon from './Icon'
 import TickerLogo, { LogoImg } from './TickerLogo'
 import { noteDescription } from '../lib/noteDescription'
-import type { AnalystSplit, NoteTerms, Sentiment, UnderlyingOverride } from '../api/types'
+import type { AnalystSplit, NoteTerms, Sentiment, UnderlyingMetric, UnderlyingOverride } from '../api/types'
 
 const SENTIMENTS: Sentiment[] = ['buy', 'hold', 'sell']
 export const SENTIMENT_COLOR: Record<Sentiment, string> = { buy: '#16a34a', hold: '#f59e0b', sell: '#dc2626' }
@@ -27,15 +27,36 @@ export default function UnderlyingDetails({ terms, onChange }: {
     onChange({ ...terms, underlyings: u })
   }
 
+  // Yahoo counts (buy/hold/sell) → whole-percent split summing to 100, matching the
+  // editor's "%" fields. The card/PDF normalise anyway, but the editable override
+  // reads cleaner as percentages.
+  const toPct = (a: AnalystSplit): AnalystSplit => {
+    const total = a.buy + a.hold + a.sell
+    if (total <= 0) return a
+    const buy = Math.round((a.buy / total) * 100)
+    const hold = Math.round((a.hold / total) * 100)
+    return { buy, hold, sell: Math.max(0, 100 - buy - hold) }
+  }
+
   const prefill = async () => {
     setBusy(true)
     try {
       const syms = Object.keys(terms.tickers ?? {})
-      const r = await api.describe(terms.issuer || null, syms, lang)
+      // Descriptions + analyst consensus in one pass (independent Yahoo calls).
+      const [r, metrics] = await Promise.all([
+        api.describe(terms.issuer || null, syms, lang),
+        api.underlyingMetrics(terms.tickers ?? {}, lang).catch(() => [] as UnderlyingMetric[]),
+      ])
+      const analystByName = new Map(metrics.map((m) => [m.name, m.analyst]))
       const u = { ...(terms.underlyings ?? {}) }
       for (const [sym, name] of Object.entries(terms.tickers ?? {})) {
+        const cur = u[name] ?? {}
+        const patch: UnderlyingOverride = { ...cur }
         const d = r.underlyings?.[sym]
-        if (d) u[name] = { ...(u[name] ?? {}), description: d }
+        if (d) patch.description = d
+        const an = analystByName.get(name)
+        if (an && cur.analyst == null) patch.analyst = toPct(an)   // don't clobber a manual split
+        u[name] = patch
       }
       onChange({ ...terms, underlyings: u, issuer_description: r.issuer_description || terms.issuer_description })
     } catch { /* leave as-is */ } finally { setBusy(false) }

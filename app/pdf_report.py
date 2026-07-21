@@ -4532,8 +4532,9 @@ def _build_pdf_report(
                      or _load_ticker_logo(_nm, (logo_urls or {}).get(_nm, ""),
                                           (logo_tickers or {}).get(_nm)))
             _cap  = _t("fig_u_price", lang).format(name=_long)
-            # Analyst consensus (buy/hold/sell) — only when the user loaded it.
-            _an_ov = _ov.get("analyst")
+            # Analyst consensus (buy/hold/sell) — a manual override wins, else the
+            # Yahoo autofill carried on the metric (mirrors the web card fallback).
+            _an_ov = _ov.get("analyst") or _m.get("analyst")
             _analyst = None
             if isinstance(_an_ov, dict):
                 _tot = sum(float(_an_ov.get(k, 0) or 0) for k in ("buy", "hold", "sell"))

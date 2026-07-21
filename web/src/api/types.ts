@@ -382,6 +382,7 @@ export interface UnderlyingMetric {
   day_change: number | null
   rsi_14: number | null
   business_summary: string | null
+  analyst?: AnalystSplit | null   // Yahoo analyst consensus (autofilled; override wins)
   figure: any
 }
 
