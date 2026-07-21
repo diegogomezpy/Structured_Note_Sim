@@ -11,6 +11,7 @@ explorer can fetch/filter individual paths later without re-simulating.
 """
 from __future__ import annotations
 
+import base64
 import json
 import os
 import sys
@@ -1765,12 +1766,24 @@ def _compare_for_pdf(sf_a: dict, terms_a: NoteTerms, terms_b: NoteTerms, tr, *,
     return data, figs
 
 
+def _decode_data_url_png(data_url: str | None) -> bytes | None:
+    """A `data:image/png;base64,…` URL (or a bare base64 string) → raw PNG bytes."""
+    if not data_url:
+        return None
+    try:
+        s = data_url.split(",", 1)[1] if data_url.startswith("data:") else data_url
+        return base64.b64decode(s)
+    except Exception:
+        return None
+
+
 def build_report_pdf(terms: NoteTerms, *, sections: list[str] | None = None, lang: str = "en",
                      n_paths: int = 10000, seed: int = 42, calib_years: float = 5.0,
                      history_years: float | None = None, engine: str = "cpp",
                      branding: dict | None = None,
                      compare_terms: NoteTerms | None = None,
-                     report_kind: str | None = None) -> bytes:
+                     report_kind: str | None = None,
+                     path_images: list | None = None) -> bytes:
     """Assemble the institutional PDF report (app/pdf_report.py). `sections` is the
     set of fine-grained item keys to include (empty/None ⇒ everything available);
     only the flows those keys touch are run. `branding` is an optional firm-branding
@@ -1896,6 +1909,16 @@ def build_report_pdf(terms: NoteTerms, *, sections: list[str] | None = None, lan
                 issuer_desc = _translated(_s, lang)
         except Exception as e:
             print(f"[report] issuer summary fallback skipped: {e}")
+
+    # Selected path-explorer chart(s) captured on the client as report-styled PNGs
+    # (the exact path the user picked, in whatever view — cumulative / per-period).
+    # Embedded verbatim in the Path Explorer section rather than re-simulated, so it
+    # matches the on-screen chart precisely.
+    if path_images:
+        _panel_imgs = [{"title": (pi.get("title") or "").strip(),
+                        "png": _decode_data_url_png(pi.get("png"))}
+                       for pi in path_images]
+        figures["panel_images"] = [p for p in _panel_imgs if p["png"]]
 
     return generate_pdf_report(
         terms=terms, results=results, asset_names=asset_names, figures=figures,

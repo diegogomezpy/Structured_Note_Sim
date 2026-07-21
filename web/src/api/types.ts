@@ -481,6 +481,7 @@ export interface ReportRequest {
   branding?: Branding | null
   compare_terms?: NoteTerms | null   // Note B — adds an A/B comparison section
   report_kind?: string | null        // audience preset key — stamped on the cover
+  path_images?: { title: string; png: string }[]   // path-explorer selection(s), data-URL PNGs
 }
 
 export interface Health {

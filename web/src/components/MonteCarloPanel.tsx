@@ -8,7 +8,7 @@ import ParticipationProfile from './ParticipationProfile'
 import ParticipationWhatIf from './ParticipationWhatIf'
 import CliquetProfiles from './CliquetProfiles'
 import PathExplorer from './PathExplorer'
-import PathInspector from './PathInspector'
+import PathInspector, { type PathImage } from './PathInspector'
 import { AutocallByPeriodTable, CalibrationTable } from './MCTables'
 import Tabs from './Tabs'
 import TickerLogo from './TickerLogo'
@@ -18,8 +18,9 @@ const CHART_H = 320
 
 /** `sub` is owned by App so the rail's NavMenu can drive it; the local tab row
     below is only the phone fallback (the rail is hidden under 640px). */
-export default function MonteCarloPanel({ result, terms, sub, onSubChange }: {
+export default function MonteCarloPanel({ result, terms, sub, onSubChange, onPathImages }: {
   result: SimResult; terms: NoteTerms; sub: string; onSubChange: (s: string) => void
+  onPathImages?: (imgs: PathImage[]) => void   // selected path charts → PDF report
 }) {
   const { t } = useI18n()
   const { summary, figures } = result
@@ -114,7 +115,7 @@ export default function MonteCarloPanel({ result, terms, sub, onSubChange }: {
 
       {sub === 'explorer' && (
         <div className="fade-up">
-          <PathInspector terms={terms} fetcher={inspectFetcher} />
+          <PathInspector terms={terms} fetcher={inspectFetcher} onImages={onPathImages} />
         </div>
       )}
 

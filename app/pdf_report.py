@@ -4696,6 +4696,15 @@ def _build_pdf_report(
             _sec()
             _cap = _p.get("title") or _t("fig_single_wof", lang).format(n=_p.get("num", 0))
             pdf.figure(_fig_to_png(_p["wof"], **_kw), _cap, src_mc)
+    # Client-captured path-explorer selection(s) — the exact chart(s) the user was
+    # viewing, embedded as report-styled PNGs (already the light report palette).
+    if _inc("mc_single_wof"):
+        for _i, _pi in enumerate(figures.get("panel_images") or []):
+            if not _pi.get("png"):
+                continue
+            _sec()
+            _cap = _pi.get("title") or _t("fig_single_wof", lang).format(n=_i + 1)
+            pdf.figure(_pi["png"], _cap, src_mc)
 
     # ── 4. Calibration ─────────────────────────────────────────────────────
     # Still part of the Monte Carlo lens (the model behind the simulation), so it

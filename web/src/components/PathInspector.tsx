@@ -1,11 +1,15 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useI18n } from '../i18n/I18nProvider'
 import Panel from './Panel'
 import Figure from './Figure'
 import Icon from './Icon'
 import TickerLogo from './TickerLogo'
 import { pct, pctSigned, num } from '../lib/format'
+import { figureToReportPng } from '../lib/figurePng'
 import type { InspectFilters, InspectResult, NoteTerms, PathData } from '../api/types'
+
+/** One captured path-explorer chart, ready to embed in the PDF report. */
+export interface PathImage { title: string; png: string }
 
 type Outcome = 'any' | 'autocalled' | 'maturity' | 'loss' | 'part_gain' | 'part_par' | 'part_loss'
 type KiChoice = 'any' | 'yes' | 'no'
@@ -287,8 +291,9 @@ function Metric({ label, value }: { label: string; value: string }) {
   )
 }
 
-function InspectorPanel({ fetcher, terms, label, onRemove }: {
+function InspectorPanel({ fetcher, terms, label, onRemove, panelId, reportImage }: {
   fetcher: InspectFetcher; terms: NoteTerms; label: string; onRemove?: () => void
+  panelId?: number; reportImage?: (id: number, img: PathImage | null) => void
 }) {
   const { t, lang } = useI18n()
   const nameToSym = useMemo(() => {
@@ -360,6 +365,25 @@ function InspectorPanel({ fetcher, terms, label, onRemove }: {
               part_gain: t('insp_ev_lock_gain'), part_loss: t('insp_ev_lock_loss'), part_flat: t('insp_ev_flat') },
       }, isPart && periodic && renorm)
     : null, [data, t, isPart, periodic, renorm])
+
+  // Capture the current chart as a report-styled PNG and hand it to the parent so
+  // the exact path the user is viewing (in whatever view — cumulative / per-period)
+  // can be embedded in the PDF's Path Explorer section. Re-captures on every new
+  // path / filter / view change.
+  useEffect(() => {
+    if (!reportImage || panelId == null) return
+    if (!fig) { reportImage(panelId, null); return }
+    let alive = true
+    const cap = title.trim() || (data?.path_index != null
+      ? `${isPart ? t('insp_basket_name') : t('insp_wof_name')} · #${data.path_index}`
+      : label)
+    figureToReportPng(fig).then((png) => { if (alive && png) reportImage(panelId, { title: cap, png }) })
+    return () => { alive = false }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fig, title, panelId, reportImage, data?.path_index])
+  // Drop this panel's image when it unmounts (e.g. a comparison panel removed).
+  useEffect(() => () => { if (reportImage && panelId != null) reportImage(panelId, null) },
+            [reportImage, panelId])
 
   return (
     <Panel>
@@ -497,9 +521,25 @@ function InspectorPanel({ fetcher, terms, label, onRemove }: {
 /** Single-path inspector — 1 to 3 comparison panels, each filtering the run's
     paths and stepping through the matches. Sits below the worst-of fan; the
     `fetcher` decides whether it inspects MC paths or backtest issues. */
-export default function PathInspector({ fetcher, terms }: { fetcher: InspectFetcher; terms: NoteTerms }) {
+export default function PathInspector({ fetcher, terms, onImages }: {
+  fetcher: InspectFetcher; terms: NoteTerms
+  onImages?: (imgs: PathImage[]) => void   // captured panel charts, for the PDF report
+}) {
   const { t } = useI18n()
   const [ids, setIds] = useState<number[]>([0])
+  const [imgs, setImgs] = useState<Record<number, PathImage>>({})
+
+  // Stable collector each panel calls with its current captured chart (or null).
+  const reportImage = useCallback((id: number, img: PathImage | null) => {
+    setImgs((m) => {
+      if (!img) { if (!(id in m)) return m; const n = { ...m }; delete n[id]; return n }
+      return { ...m, [id]: img }
+    })
+  }, [])
+  // Emit the panels' images to the parent in panel order whenever they change.
+  useEffect(() => {
+    onImages?.(ids.map((id) => imgs[id]).filter(Boolean) as PathImage[])
+  }, [imgs, ids, onImages])
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
@@ -510,6 +550,7 @@ export default function PathInspector({ fetcher, terms }: { fetcher: InspectFetc
       <div style={{ display: 'grid', gridTemplateColumns: ids.length > 1 ? 'repeat(auto-fit, minmax(440px, 1fr))' : '1fr', gap: 16 }}>
         {ids.map((id, i) => (
           <InspectorPanel key={id} fetcher={fetcher} terms={terms} label={String.fromCharCode(65 + i)}
+            panelId={id} reportImage={reportImage}
             onRemove={i === 0 ? undefined : () => setIds((s) => s.filter((x) => x !== id))} />
         ))}
       </div>

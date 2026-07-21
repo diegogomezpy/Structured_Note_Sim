@@ -17,6 +17,7 @@ import Panel from './components/Panel'
 import Tabs from './components/Tabs'
 import RunProgress from './components/RunProgress'
 import MonteCarloPanel from './components/MonteCarloPanel'
+import { type PathImage } from './components/PathInspector'
 import BacktestPanel from './components/BacktestPanel'
 import LivePanel from './components/LivePanel'
 import ComparePanel from './components/ComparePanel'
@@ -58,6 +59,10 @@ export default function App() {
   const [opts, setOpts] = useState<RunOpts>({ n_paths: 10000, engine: 'numpy', seed: 42, calib_years: 5 })
   const [cppAvailable, setCppAvailable] = useState(false)
   const [result, setResult] = useState<SimResult | null>(null)
+  // Path-explorer chart(s) the user selected, captured for the PDF report. Reset
+  // on each new run so a report never carries a stale prior selection.
+  const [pathImages, setPathImages] = useState<PathImage[]>([])
+  useEffect(() => { setPathImages([]) }, [result?.run_id])
   const [runSig, setRunSig] = useState('')
   const [runDay, setRunDay] = useState('')   // calendar day the shown run was calibrated on
   const [status, setStatus] = useState<Status>('idle')
@@ -367,7 +372,8 @@ export default function App() {
               {status === 'error' && <ErrorState message={errorMsg} onRetry={run} />}
               {status !== 'running' && result && terms && (
                 <MonteCarloPanel result={result} terms={terms} sub={subs.mc ?? 'summary'}
-                                 onSubChange={(s) => setSubs((p) => ({ ...p, mc: s }))} />
+                                 onSubChange={(s) => setSubs((p) => ({ ...p, mc: s }))}
+                                 onPathImages={setPathImages} />
               )}
               {status === 'idle' && !result && (
                 <Panel pad={48}>
@@ -444,7 +450,7 @@ export default function App() {
                           variantB={variantB} onVariantBChange={setVariantB} />
           )}
 
-          {tab === 'report' && terms && <ReportPanel terms={terms} opts={opts} variantB={variantB} />}
+          {tab === 'report' && terms && <ReportPanel terms={terms} opts={opts} variantB={variantB} pathImages={pathImages} />}
 
           {tab === 'batch' && <BatchReportPanel terms={terms} opts={opts} configs={configs} />}
         </main>

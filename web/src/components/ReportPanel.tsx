@@ -64,7 +64,10 @@ function Check({ on, indeterminate }: { on: boolean; indeterminate?: boolean }) 
   )
 }
 
-export default function ReportPanel({ terms, opts, variantB }: { terms: NoteTerms; opts: RunOpts; variantB?: NoteTerms | null }) {
+export default function ReportPanel({ terms, opts, variantB, pathImages }: {
+  terms: NoteTerms; opts: RunOpts; variantB?: NoteTerms | null
+  pathImages?: { title: string; png: string }[]   // path-explorer selection(s) → report
+}) {
   const { t, lang } = useI18n()
   const toast = useToast()
   const { start: startTour } = useTour()
@@ -305,6 +308,9 @@ export default function ReportPanel({ terms, opts, variantB }: { terms: NoteTerm
         // Stamps the report type on the cover. "custom" has no audience to name,
         // so it goes out untyped rather than labelled "Custom report".
         report_kind: preset === 'custom' ? null : preset,
+        // The captured path-explorer selection(s); the backend renders them only
+        // when the "Selected path(s)" section (mc_single_wof) is included.
+        path_images: pathImages ?? [],
       })
       const blob = await res.blob()
       const url = URL.createObjectURL(blob)

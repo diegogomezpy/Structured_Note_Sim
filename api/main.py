@@ -174,6 +174,9 @@ class ReportRequest(BaseModel):
     # Audience preset the report was built for (advisor / client / ic / risk / full).
     # Rendered as the report-type subtitle on the cover; None = untyped.
     report_kind: str | None = None
+    # Path-explorer selection(s) captured on the client as report-styled PNGs
+    # (data-URL), embedded verbatim in the Path Explorer section. Each: {title, png}.
+    path_images: list[dict] = Field(default_factory=list)
 
 
 # ── endpoints ─────────────────────────────────────────────────────────────────
@@ -734,7 +737,8 @@ def _build_report_bytes(terms, compare_terms, req: ReportRequest) -> bytes:
     return engine.build_report_pdf(
         terms, sections=req.sections, lang=req.lang, n_paths=req.n_paths,
         seed=req.seed, calib_years=req.calib_years, engine=req.engine,
-        branding=req.branding, compare_terms=compare_terms, report_kind=req.report_kind)
+        branding=req.branding, compare_terms=compare_terms, report_kind=req.report_kind,
+        path_images=req.path_images)
 
 
 @app.post("/api/report")

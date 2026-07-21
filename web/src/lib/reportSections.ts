@@ -22,6 +22,7 @@ export const TREE: Group[] = [
     ['mc_irr', 'IRR distribution', 'Distribución de TIR'],
     ['mc_wof', 'Worst-of fan chart', 'Abanico del peor de'],
     ['mc_sample', 'Sample paths', 'Trayectorias de muestra'],
+    ['mc_single_wof', 'Selected path(s)', 'Trayectoria(s) seleccionada(s)'],
     ['mc_fans', 'Per-underlying fans', 'Abanicos por activo'],
     ['calib_corr', 'Correlation diagnostics', 'Diagnóstico de correlación'],
     ['calib_table', 'Calibration table', 'Tabla de calibración'],

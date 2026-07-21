@@ -3,6 +3,7 @@ import Plotly from '../lib/plotly'
 import createPlotlyComponent from 'react-plotly.js/factory'
 import { useTheme } from '../theme/ThemeProvider'
 import { themeFigure } from '../lib/plotlyTheme'
+import { figureToReportPng } from '../lib/figurePng'
 import Icon from './Icon'
 
 const Plot = createPlotlyComponent(Plotly)
@@ -46,26 +47,11 @@ export default function Figure({ fig, height, name = 'chart', noDownload, reveal
   // like the report. Renders off-screen via toImage so the on-screen chart is
   // untouched.
   const download = async () => {
-    const W = 1120, H = 640
-    const light = themeFigure(fig, 'light')
-    const hasTitle = !!light.layout?.title?.text
-    const layout = {
-      ...light.layout,
-      paper_bgcolor: '#ffffff', plot_bgcolor: '#ffffff',
-      width: W, height: H,
-      margin: { l: 70, r: 32, t: hasTitle ? 66 : 36, b: 60 },
-    }
-    try {
-      const url = await Plotly.toImage(
-        { data: light.data, layout, config: { staticPlot: true } } as any,
-        { format: 'png', width: W, height: H, scale: 2 },
-      )
-      const a = document.createElement('a')
-      a.href = url; a.download = `${name}.png`
-      document.body.appendChild(a); a.click(); a.remove()
-    } catch (e) {
-      console.warn('chart download failed', e)
-    }
+    const url = await figureToReportPng(fig)
+    if (!url) return
+    const a = document.createElement('a')
+    a.href = url; a.download = `${name}.png`
+    document.body.appendChild(a); a.click(); a.remove()
   }
 
   return (
