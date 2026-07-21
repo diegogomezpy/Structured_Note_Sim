@@ -39,13 +39,16 @@ export default function ParticipationProfile({ terms, summary }: { terms: NoteTe
   const p5 = !periodic ? summary?.p5_redemption ?? null : null
   const p95 = !periodic ? summary?.p95_redemption ?? null : null
 
-  // x-domain: 40%..180%, stretched to include a shark-fin knock-out if higher.
-  // `zoom` (>1) widens the visible basket range around par so the user can zoom
-  // out to see redemption at more extreme final levels (the deep-loss floor, an
-  // uncapped upside, a far knock-out).
+  // x-domain framed around where the payoff actually varies, so a small-cap or
+  // fully-protected profile fills the plot instead of sitting as a flat line in a
+  // huge empty box. Full protection has a flat par floor below the strike (nothing
+  // to show deep in the downside); a capped upside needs only a little room past the
+  // cap. `zoom` (>1) still widens this base range around par to reveal extreme levels
+  // (a deep-loss floor, uncapped upside, a far knock-out).
   const [zoom, setZoom] = useState(1)
-  const baseMin = 0.4
-  const baseMax = Math.max(1.8, (eff.knockout_level ?? 0) + 0.2)
+  const capFinite = Number.isFinite(cap)
+  const baseMin = pd === 'full' ? 0.6 : 0.4
+  const baseMax = Math.max(1.3, capFinite ? cap + 0.15 : 1.8, (eff.knockout_level ?? 0) + 0.2)
   const xMin = Math.max(0, 1 - (1 - baseMin) * zoom)
   const xMax = 1 + (baseMax - 1) * zoom
   const N = 120
@@ -56,8 +59,13 @@ export default function ParticipationProfile({ terms, summary }: { terms: NoteTe
   for (const b of breaks) if (Number.isFinite(b) && b > xMin && b < xMax) xset.add(b)
   const xs = [...xset].sort((a, b) => a - b)
   const rs = xs.map((b) => participationRedemption(b, eff))
-  const yLo = Math.min(0.6, Math.floor(Math.min(...rs) * 10) / 10)
-  const yHi = Math.max(1.4, Math.ceil(Math.max(...rs) * 10) / 10)
+  // y-domain hugs the actual redemption range (always including par) with a little
+  // padding, rounded to 5% — not a fixed 60–140% box that squashes a narrow payoff.
+  const rMin = Math.min(1, ...rs)
+  const rMax = Math.max(1, ...rs)
+  const padY = Math.max(0.05, (rMax - rMin) * 0.18)
+  const yLo = Math.floor((rMin - padY) * 20) / 20
+  const yHi = Math.ceil((rMax + padY) * 20) / 20
 
   const mapX = (b: number) => X0 + ((b - xMin) / (xMax - xMin)) * (X1 - X0)
   const mapY = (r: number) => Y_BOT - ((r - yLo) / (yHi - yLo)) * (Y_BOT - Y_TOP)
@@ -94,9 +102,16 @@ export default function ParticipationProfile({ terms, summary }: { terms: NoteTe
     densityPath = `${mapX(xMin).toFixed(1)},${base} ${pts.join(' ')} ${mapX(xMax).toFixed(1)},${base}`
   }
 
+  // Tick density scales to the (now variable) domain span so a tight axis still gets
+  // several labelled gridlines instead of one lonely 100%.
+  const ySpan = yHi - yLo
+  const yStep = ySpan <= 0.35 ? 0.05 : ySpan <= 0.7 ? 0.1 : 0.2
   const yTicks: number[] = []
-  for (let r = Math.ceil(yLo * 5) / 5; r <= yHi + 1e-9; r += 0.2) yTicks.push(+r.toFixed(2))
-  const xTicks = [0.5, 1.0, 1.5, 2.0].filter((b) => b >= xMin && b <= xMax)
+  for (let r = Math.ceil(yLo / yStep) * yStep; r <= yHi + 1e-9; r += yStep) yTicks.push(+r.toFixed(2))
+  const xSpan = xMax - xMin
+  const xStep = xSpan <= 1 ? 0.25 : 0.5
+  const xTicks: number[] = []
+  for (let b = Math.ceil(xMin / xStep) * xStep; b <= xMax + 1e-9; b += xStep) xTicks.push(+b.toFixed(2))
   const gridcol = 'var(--border)'
   const hoverR = hoverB != null ? participationRedemption(hoverB, eff) : null
 

@@ -3799,9 +3799,12 @@ def _draw_participation_profile(pdf, terms, lang: str) -> None:
         cap    = (1.0 + _capf) if _capf is not None else float("inf")
         ko     = getattr(eff, "knockout_level", None)
 
-        # x-domain 40%..180%, stretched to include a shark-fin knock-out if higher.
-        x_min = 0.4
-        x_max = max(1.8, (ko + 0.2) if ko is not None else 0.0)
+        # Frame the view around where the payoff actually varies (mirrors the web
+        # ParticipationProfile) so a small-cap or fully-protected profile fills the
+        # box instead of sitting as a flat line in a fixed 40–180% / 60–140% frame.
+        _capf_finite = math.isfinite(cap)
+        x_min = 0.6 if pd_style == "full" else 0.4
+        x_max = max(1.3, cap + 0.15 if _capf_finite else 1.8, (ko + 0.2) if ko is not None else 0.0)
         N, EPS = 160, 1e-3
         xset = {x_min + (i / N) * (x_max - x_min) for i in range(N + 1)}
         for b in (strike - EPS, strike, (ko - EPS) if ko is not None else None, ko):
@@ -3809,8 +3812,16 @@ def _draw_participation_profile(pdf, terms, lang: str) -> None:
                 xset.add(b)
         xs = sorted(xset)
         rs = [float(v) for v in _participation_redemption(np.asarray(xs, dtype=float), eff)]
-        y_lo = min(0.6, math.floor(min(rs) * 10) / 10)
-        y_hi = max(1.4, math.ceil(max(rs) * 10) / 10)
+        # y-domain hugs the actual redemption range (always including par) with a
+        # little padding, rounded to 5% — not a fixed 60–140% box.
+        r_min, r_max = min(1.0, min(rs)), max(1.0, max(rs))
+        pad_y = max(0.05, (r_max - r_min) * 0.18)
+        y_lo = math.floor((r_min - pad_y) * 20) / 20
+        y_hi = math.ceil((r_max + pad_y) * 20) / 20
+        y_span = y_hi - y_lo
+        y_step = 0.05 if y_span <= 0.35 else 0.1 if y_span <= 0.7 else 0.2
+        x_span = x_max - x_min
+        x_step = 0.25 if x_span <= 1.0 else 0.5
 
         # Centre a plot box on the page: left gutter for the rotated y-title + ticks.
         x0 = pdf.l_margin + 22.0
@@ -3836,8 +3847,9 @@ def _draw_participation_profile(pdf, terms, lang: str) -> None:
             top += 4.0
             bottom = top + plot_h
 
-        # y grid + tick labels (par line at 100% emphasised)
-        r = math.ceil(y_lo * 5) / 5
+        # y grid + tick labels (par line at 100% emphasised). Tick step scales to the
+        # (now variable) domain span so a tight axis still gets several gridlines.
+        r = math.ceil(y_lo / y_step) * y_step
         while r <= y_hi + 1e-9:
             gy = mapY(r)
             is_par = abs(r - 1.0) < 1e-9
@@ -3848,15 +3860,16 @@ def _draw_participation_profile(pdf, terms, lang: str) -> None:
             pdf.set_text_color(150, 162, 180)
             _tl = f"{r:.0%}"
             pdf.text(x0 - 2 - pdf.get_string_width(_tl), gy + 1.0, _tl)
-            r += 0.2
+            r += y_step
 
         # x tick labels (basket level %)
         pdf._sf(6.8, "regular")
         pdf.set_text_color(150, 162, 180)
-        for b in (0.5, 1.0, 1.5, 2.0):
-            if x_min <= b <= x_max:
-                _xt = f"{b:.0%}"
-                pdf.text(mapX(b) - pdf.get_string_width(_xt) / 2, bottom + 5.0, _xt)
+        _xt_b = math.ceil(x_min / x_step) * x_step
+        while _xt_b <= x_max + 1e-9:
+            _xt = f"{_xt_b:.0%}"
+            pdf.text(mapX(_xt_b) - pdf.get_string_width(_xt) / 2, bottom + 5.0, _xt)
+            _xt_b += x_step
 
         # reference lines (dashed, bare — matching the web setup diagram)
         pdf.set_line_width(0.3)
