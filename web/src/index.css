@@ -701,3 +701,9 @@ input.slider-val-input:focus { background: var(--surface); border-color: var(--a
     scroll-behavior: auto !important;
   }
 }
+
+/* Branding editor: fields + sticky live preview side-by-side; stack on narrow. */
+@media (max-width: 820px) {
+  .brand-editor-grid { grid-template-columns: 1fr !important; }
+  .brand-editor-grid .brand-preview-col { position: static !important; order: -1; }
+}

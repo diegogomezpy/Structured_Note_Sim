@@ -451,6 +451,7 @@ export interface Branding {
   chart_secondary_color?: string
   section_rule_color?: string
   panel_color?: string
+  sidebar_bar_color?: string      // solid bar atop the cover sidebar (default: primary)
   website?: string
   contact?: string
   footer_note?: string

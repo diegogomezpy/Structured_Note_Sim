@@ -7,6 +7,7 @@ import Icon from './Icon'
 import { Select } from './fields'
 import FolderConnect from './FolderConnect'
 import CoverPhotoPicker from './CoverPhotoPicker'
+import BrandPreview from './BrandPreview'
 import { useTour, reportTour } from './Tour'
 import { useLocalFolder } from '../lib/localFolder'
 import type { Branding, NoteTerms } from '../api/types'
@@ -463,7 +464,9 @@ export default function ReportPanel({ terms, opts, variantB, pathImages }: {
           </div>
         )}
         {brandOpen && (
-          <div style={{ padding: '0 16px 18px', display: 'flex', flexDirection: 'column', gap: 18 }}>
+          <div className="brand-editor-grid" style={{ padding: '0 16px 18px', display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 288px', gap: 20, alignItems: 'start' }}>
+           {/* Left column: every editable field, grouped. */}
+           <div style={{ display: 'flex', flexDirection: 'column', gap: 18, minWidth: 0 }}>
             {/* Core identity (firm, logo, colours, fonts) — the "Brand it" tour step. */}
             <div data-tour="rep-branding" style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
             {/* Identity */}
@@ -502,6 +505,7 @@ export default function ReportPanel({ terms, opts, variantB, pathImages }: {
                 <Swatch label={t('brand_secondary')} value={brand.chart_secondary_color} fallback="#c69426" onChange={(v) => setBrandField('chart_secondary_color', v)} />
                 <Swatch label={t('brand_rule')}      value={brand.section_rule_color} fallback="#2563eb" onChange={(v) => setBrandField('section_rule_color', v)} />
                 <Swatch label={t('brand_panel')}     value={brand.panel_color} fallback="#eaf1f8" onChange={(v) => setBrandField('panel_color', v)} />
+                <Swatch label={t('brand_sidebar')}   value={brand.sidebar_bar_color as string | undefined} fallback={brand.primary_color ?? '#1a2e4a'} onChange={(v) => setBrandField('sidebar_bar_color', v)} />
               </div>
             </div>
 
@@ -616,6 +620,14 @@ export default function ReportPanel({ terms, opts, variantB, pathImages }: {
                   style={{ width: '100%', minHeight: 84, resize: 'vertical', fontFamily: 'inherit', fontSize: 12.5, lineHeight: 1.5, padding: '9px 11px', borderRadius: 9, border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--text)' }} />
               </Field>
             </div>
+           </div>{/* /left column */}
+
+           {/* Right column: live, theme-aware preview of the report's key surfaces. */}
+           <div className="brand-preview-col" style={{ position: 'sticky', top: 12, display: 'flex', flexDirection: 'column', gap: 8 }}>
+             <SubHead>{t('brand_preview')}</SubHead>
+             <BrandPreview brand={brand} noteName={terms?.name} />
+             <div style={{ fontSize: 10.5, color: 'var(--text-faint)', lineHeight: 1.45 }}>{t('brand_preview_hint')}</div>
+           </div>
           </div>
         )}
       </Panel>
