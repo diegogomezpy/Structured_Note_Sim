@@ -738,6 +738,8 @@ export const S: Dict = {
   chart_line_width:     { en: 'Line width ×', es: 'Grosor de línea ×' },
   chart_series:         { en: 'Series colours', es: 'Colores de series' },
   chart_series_reset:   { en: 'Reset', es: 'Restablecer' },
+  rep_brand_config:     { en: 'Branding config', es: 'Configuración de marca' },
+  rep_brand_active:     { en: 'Using:', es: 'Usando:' },
   rep_images:           { en: 'Report images', es: 'Imágenes del informe' },
   rep_images_hint:      { en: 'Shared with the PDF Designer — pictures are usually picked per report, so you can swap them without leaving Build.', es: 'Compartido con el Diseñador PDF — las imágenes suelen elegirse por informe, así que puedes cambiarlas sin salir de Construir.' },
   brand_palette_hint:   { en: 'Every identity colour in the report derives from these.', es: 'Todos los colores de identidad del informe derivan de estos.' },

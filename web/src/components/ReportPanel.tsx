@@ -6,6 +6,7 @@ import Panel from './Panel'
 import Icon from './Icon'
 import { useTour, reportTour } from './Tour'
 import ReportImages from './ReportImages'
+import BrandConfigBar from './BrandConfigBar'
 import type { Branding, NoteTerms } from '../api/types'
 import type { BrandingStudio } from '../lib/useBrandingStudio'
 import type { RunOpts } from './SetupRail'
@@ -239,6 +240,12 @@ export default function ReportPanel({ terms, opts, variantB, pathImages, brand, 
           })}
         </div>
         <div style={{ fontSize: 11.5, color: 'var(--text-faint)', marginTop: 6, lineHeight: 1.5 }}>{t('report_note')}</div>
+      </Panel>
+
+      {/* Load the brand config for this report without detouring into the
+          Designer (which still owns the full editing surface). */}
+      <Panel title={t('rep_brand_config')}>
+        <BrandConfigBar studio={studio} compact />
       </Panel>
 
       {/* Pictures are usually chosen per report, so they live here too — the
