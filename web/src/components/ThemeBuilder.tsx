@@ -80,6 +80,49 @@ function FillControl({ value, tokens, onChange }: { value: unknown; tokens: Toke
   )
 }
 
+// ── watermark: driven by the uploaded image, placed tastefully ───────────────
+// There is deliberately no "hexagon" option here — the hex cluster is a value a
+// brand config authors for itself (CADIEM's), not a switch offered to everyone.
+function WatermarkControl({ value, onChange }: { value: unknown; onChange: (v: unknown) => void }) {
+  const on = !(value == null || value === false || value === 'none')
+  const isBuiltIn = typeof value === 'string'
+  const obj = (typeof value === 'object' && value ? value : {}) as Any
+  const num = (k: string, def: number) => Number(obj[k] ?? def)
+  const numStyle = { width: 64, fontSize: 12, padding: '4px 6px', borderRadius: 7, border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--text)' }
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+      <label style={{ ...row, fontSize: 12.5, color: 'var(--text-muted)', cursor: 'pointer' }}>
+        <input type="checkbox" checked={on} style={{ width: 'auto' }}
+          onChange={(e) => onChange(e.target.checked ? { opacity: 0.13, scale: 0.58, anchor: 'right' } : null)} />
+        Show watermark
+      </label>
+      {on && isBuiltIn && (
+        <div style={{ fontSize: 10.5, color: 'var(--text-faint)', lineHeight: 1.45 }}>
+          This config supplies its own built-in mark. Upload a watermark image to replace it, or adjust it by switching this off and on.
+        </div>
+      )}
+      {on && !isBuiltIn && (
+        <>
+          <label style={{ ...row, fontSize: 11.5, color: 'var(--text-muted)' }}>Opacity
+            <input type="number" min={0} max={1} step={0.01} value={num('opacity', 0.13)}
+              onChange={(e) => onChange({ ...obj, opacity: Math.max(0, Math.min(1, Number(e.target.value) || 0)) })} style={numStyle} /></label>
+          <label style={{ ...row, fontSize: 11.5, color: 'var(--text-muted)' }}>Size
+            <input type="number" min={0.1} max={1} step={0.02} value={num('scale', 0.58)}
+              onChange={(e) => onChange({ ...obj, scale: Math.max(0.1, Math.min(1, Number(e.target.value) || 0.58)) })} style={numStyle} />× panel height</label>
+          <div><span style={lbl}>Anchor</span>
+            <Segmented value={(obj.anchor as string) ?? 'right'} ariaLabel="Watermark anchor"
+              options={[{ value: 'left', label: 'Left' }, { value: 'center', label: 'Centre' }, { value: 'right', label: 'Right' }]}
+              onChange={(v) => onChange({ ...obj, anchor: v })} />
+          </div>
+        </>
+      )}
+      <div style={{ fontSize: 10.5, color: 'var(--text-faint)', lineHeight: 1.45 }}>
+        Uses the image from the Watermark card. With none uploaded, nothing is drawn.
+      </div>
+    </div>
+  )
+}
+
 function ShapeControl({ value, onChange }: { value: unknown; onChange: (v: unknown) => void }) {
   const shape = (value as Any) || { kind: 'rounded' }
   const kind = (shape.kind as string) || 'rounded'
@@ -142,11 +185,8 @@ export default function ThemeBuilder({ spec, tokens, onChange }: { spec: Spec; t
       <Group title="Cover masthead">
         <div><span style={lbl}>Shape</span><ShapeControl value={masthead.shape} onChange={(v) => upd(['cover_masthead', 'shape'], v)} /></div>
         <div><span style={lbl}>Fill</span><FillControl value={masthead.fill} tokens={tokens} onChange={(v) => upd(['cover_masthead', 'fill'], v)} /></div>
-        <label style={{ ...row, fontSize: 12.5, color: 'var(--text-muted)', cursor: 'pointer' }}>
-          <input type="checkbox" checked={masthead.watermark === 'hexCluster'} style={{ width: 'auto' }}
-            onChange={(e) => upd(['cover_masthead', 'watermark'], e.target.checked ? 'hexCluster' : null)} />
-          Hexagon watermark
-        </label>
+        <div><span style={lbl}>Watermark</span>
+          <WatermarkControl value={masthead.watermark} onChange={(v) => upd(['cover_masthead', 'watermark'], v)} /></div>
       </Group>
 
       <Group title="Chapter divider">
@@ -159,11 +199,8 @@ export default function ThemeBuilder({ spec, tokens, onChange }: { spec: Spec; t
           <>
             <div><span style={lbl}>Shape</span><ShapeControl value={divider.shape} onChange={(v) => upd(['divider', 'shape'], v)} /></div>
             <div><span style={lbl}>Fill</span><FillControl value={divider.fill} tokens={tokens} onChange={(v) => upd(['divider', 'fill'], v)} /></div>
-            <label style={{ ...row, fontSize: 12.5, color: 'var(--text-muted)', cursor: 'pointer' }}>
-              <input type="checkbox" checked={divider.watermark === 'hexCluster'} style={{ width: 'auto' }}
-                onChange={(e) => upd(['divider', 'watermark'], e.target.checked ? 'hexCluster' : null)} />
-              Hexagon watermark
-            </label>
+            <div><span style={lbl}>Watermark</span>
+              <WatermarkControl value={divider.watermark} onChange={(v) => upd(['divider', 'watermark'], v)} /></div>
           </>
         )}
       </Group>

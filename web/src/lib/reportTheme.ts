@@ -244,6 +244,29 @@ export function hexClusterPaths(scale: number, variant: number): HexShape[] {
   })
 }
 
+// ── watermark spec (mirrors reportkit/theme.py wm_spec) ─────────────────────
+export const WM_DEFAULTS = { opacity: 0.13, scale: 0.58, anchor: 'right' as const, inset: null as number | null }
+export interface WmSpec { source: string; opacity: number; scale: number; anchor: string; inset: number | null }
+
+/** Normalize a surface's `watermark` value → spec, or null for "no watermark".
+    `"hexCluster"` is a value a CONFIG authors (CADIEM's), not a generic option. */
+export function wmSpec(v: unknown): WmSpec | null {
+  if (v == null || v === false || v === 'none') return null
+  if (v === true) return { ...WM_DEFAULTS, source: 'image' }
+  if (typeof v === 'string') return { ...WM_DEFAULTS, source: v }
+  if (typeof v === 'object') {
+    const o = v as Partial<WmSpec>
+    return {
+      source: o.source ?? 'image',
+      opacity: o.opacity ?? WM_DEFAULTS.opacity,
+      scale: o.scale ?? WM_DEFAULTS.scale,
+      anchor: o.anchor ?? WM_DEFAULTS.anchor,
+      inset: o.inset ?? WM_DEFAULTS.inset,
+    }
+  }
+  return null
+}
+
 /** Gradient axis endpoints (objectBoundingBox 0..1) for an SVG linearGradient
     from a Python fill angle (90 = top→bottom, 0 = left→right). */
 export function gradientAxis(angle = 90): { x1: number; y1: number; x2: number; y2: number } {

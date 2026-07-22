@@ -2,7 +2,7 @@ import { useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { Branding, NoteTerms } from '../api/types'
 import {
   buildTokens, resolveSpec, resolveColor, fillBackground, shapeKind, blend,
-  chamferPath, chamferPadMm, hexClusterPaths, gradientAxis, fillStops, rgbCss,
+  chamferPath, chamferPadMm, hexClusterPaths, wmSpec, gradientAxis, fillStops, rgbCss,
   type Tokens, type ColorRef, type Fill,
 } from '../lib/reportTheme'
 
@@ -122,28 +122,45 @@ function Panel({ shape, fill, tok, radius = 8, cPx: cOv, qPx: qOv, rPx: rOv, sty
 // to the panel silhouette) OR — when none is supplied — a FAITHFUL hex-cluster
 // (transcribed from reportkit/theme.py's _hex_cluster), not the old fake dots.
 // panelW/panelH and geo are the panel's px size + chamfer so the clip matches.
-function Watermark({ img, enabled, panelW, panelH, geo, sScale, sx, sy, variant, opacity, color }: {
+function Watermark({ img, enabled, panelW, panelH, geo, wm, sScale, sx, sy, variant, clusterOpacity, color }: {
   img?: string; enabled: boolean; panelW: number; panelH: number
   geo: { c?: number; q?: number; r?: number }
-  sScale: number; sx: number; sy: number  // cluster scale + anchor, in px
-  variant: number; opacity: number; color: string
+  wm: unknown                              // the surface's raw `watermark` value
+  sScale: number; sx: number; sy: number   // legacy cluster scale + anchor, in px
+  variant: number; clusterOpacity: number; color: string
 }) {
   const idRef = useRef<string>('')
   if (!idRef.current) idRef.current = `bpw${_gid++}`
+  const spec = wmSpec(wm)
+  if (!spec) return null
+  const useImg = !!(img && enabled)
+  // The drawn hex cluster only appears when the CONFIG authored it (CADIEM's).
+  if (!useImg && spec.source !== 'hexCluster') return null
+
   const clipId = idRef.current
   const clipD = chamferPath(panelW, panelH, geo.c, geo.q, geo.r)
+  // Restrained placement: a fraction of the panel HEIGHT (never stretched to
+  // fill), capped at 42% width, inset from the edge so it clears the chamfer,
+  // vertically centred, low opacity — it sits behind the text, not over it.
+  const bh = panelH * Math.max(0.05, Math.min(1, spec.scale))
+  const bw = panelW * 0.42
+  const inset = spec.inset != null ? spec.inset : panelH * 0.16
+  const bx = spec.anchor === 'left' ? inset
+    : spec.anchor === 'center' ? (panelW - bw) / 2
+    : panelW - inset - bw
+  const by = (panelH - bh) / 2
   return (
     <svg width={panelW} height={panelH} aria-hidden
       style={{ position: 'absolute', inset: 0, zIndex: 0, pointerEvents: 'none' }}>
       <defs><clipPath id={clipId}><path d={clipD} /></clipPath></defs>
       <g clipPath={`url(#${clipId})`}>
-        {img && enabled
-          ? <image href={img} x={panelW * 0.52} y={panelH * 0.08} width={panelW * 0.44} height={panelH * 0.84}
-              opacity={Math.min(1, opacity * 2.4)} preserveAspectRatio="xMidYMid meet" />
+        {useImg
+          ? <image href={img} x={bx} y={by} width={bw} height={bh}
+              opacity={spec.opacity} preserveAspectRatio="xMidYMid meet" />
           : hexClusterPaths(sScale, variant).map((p, i) => (
               <path key={i} d={p.d} transform={`translate(${sx + p.bx} ${sy + p.by})`}
-                fill={p.filled ? color : 'none'} fillOpacity={p.filled ? opacity : undefined}
-                stroke={p.filled ? 'none' : color} strokeOpacity={p.filled ? undefined : opacity} strokeWidth={p.strokeW} />
+                fill={p.filled ? color : 'none'} fillOpacity={p.filled ? clusterOpacity : undefined}
+                stroke={p.filled ? 'none' : color} strokeOpacity={p.filled ? undefined : clusterOpacity} strokeWidth={p.strokeW} />
             ))}
       </g>
     </svg>
@@ -187,10 +204,9 @@ function Masthead({ tok, spec, headStyle, eyebrow, title, subtitle, kpis, wmImg,
       {s > 0 && (
         <Panel shape={cm.shape} fill={cm.fill} tok={tok} cPx={cPx} qPx={qPx} rPx={rPx}
           style={{ height: MH * s, color: '#fff' }} contentStyle={{ position: 'relative', height: MH * s }}>
-          {cm.watermark && cm.watermark !== 'none' && (
-            <Watermark img={wmImg} enabled={wmOn} panelW={178 * s} panelH={MH * s} geo={{ c: cPx, q: qPx, r: rPx }}
-              sScale={30 * s} sx={(178 - 42) * s} sy={-6 * s} variant={0} opacity={0.12} color="#ffffff" />
-          )}
+          <Watermark img={wmImg} enabled={wmOn} panelW={178 * s} panelH={MH * s} geo={{ c: cPx, q: qPx, r: rPx }}
+            wm={cm.watermark} sScale={30 * s} sx={(178 - 42) * s} sy={-6 * s}
+            variant={0} clusterOpacity={0.12} color="#ffffff" />
           <div style={{ position: 'absolute', left: pad * s, top: 7 * s, right: pad * s, fontSize: fpx(8), fontWeight: 700, letterSpacing: '0.13em', color: col('lime'), whiteSpace: 'nowrap', overflow: 'hidden' }}>{eyebrow}</div>
           <div style={{ position: 'absolute', left: pad * s, top: 11.5 * s, right: pad * s, fontSize: fpx(21), fontWeight: 800, lineHeight: 1.02, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', ...headStyle }}>{title}</div>
           <div style={{ position: 'absolute', left: pad * s, top: 24 * s, right: pad * s, fontSize: fpx(9.5), color: mint, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{subtitle}</div>
@@ -267,10 +283,9 @@ function DividerBanner({ tok, dv, headStyle, num, kicker, heading, wmImg, wmOn }
       {s > 0 && (
         <Panel shape={dv.shape} fill={dv.fill as Fill} tok={tok} cPx={cPx} qPx={qPx} rPx={rPx}
           style={{ height: H * s, color: '#fff' }} contentStyle={{ position: 'relative', height: H * s }}>
-          {!!dv.watermark && dv.watermark !== 'none' && (
-            <Watermark img={wmImg} enabled={wmOn} panelW={178 * s} panelH={H * s} geo={{ c: cPx, q: qPx, r: rPx }}
-              sScale={20 * s} sx={(178 - 30) * s} sy={-5 * s} variant={num % 3} opacity={0.10} color="#ffffff" />
-          )}
+          <Watermark img={wmImg} enabled={wmOn} panelW={178 * s} panelH={H * s} geo={{ c: cPx, q: qPx, r: rPx }}
+            wm={dv.watermark} sScale={20 * s} sx={(178 - 30) * s} sy={-5 * s}
+            variant={num % 3} clusterOpacity={0.10} color="#ffffff" />
           <div style={{ position: 'absolute', left: 9 * s, top: 9 * s, fontSize: fpx(26), fontWeight: 800, color: col(numColor), lineHeight: 1, ...headStyle }}>{num}</div>
           {(dv.vline as boolean) && <div style={{ position: 'absolute', left: 31 * s, top: 7 * s, width: Math.max(1, 0.5 * s), height: 16 * s, background: col(dv.vline_color as ColorRef) }} />}
           <div style={{ position: 'absolute', left: 37 * s, top: 7.5 * s, fontSize: fpx(7), fontWeight: 700, letterSpacing: '0.06em', color: col(dv.kicker_color as ColorRef), textTransform: 'uppercase' }}>{kicker}</div>
