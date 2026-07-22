@@ -143,13 +143,18 @@ _KNOWN_BRANDING_KEYS = {
     "title_font", "body_font",  # NEW — custom report fonts (see _register_brand_fonts)
     "title_font_files", "body_font_files",  # NEW — embedded {Style: base64 TTF} so
                                             # fonts travel with an uploaded config
+    # NEW — chart/graph styling (see charts.set_chart_options / CHART_OPTION_DEFAULTS)
+    "chart_bg_color", "chart_grid_color", "chart_axis_color", "chart_label_color",
+    "chart_text_color", "chart_font_size", "chart_series_colors",
+    "chart_band_opacity", "chart_line_width",
     "report_theme",         # NEW — visual-identity theme name (pdf_theme.resolve_theme);
                             # e.g. "cadiem" (hexagon) or "mercator" (default). Absent
                             # / unknown falls back to the default theme.
 }
 _HEX_KEYS = ("primary_color", "accent_color", "chart_secondary_color",
              "section_rule_color", "panel_color", "sidebar_bar_color",
-             "cover_overlay_color")
+             "cover_overlay_color", "chart_grid_color", "chart_axis_color",
+             "chart_label_color", "chart_text_color")
 
 
 def _hex_to_rgb(hex_str: str) -> tuple[int, int, int]:

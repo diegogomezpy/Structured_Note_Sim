@@ -1777,7 +1777,37 @@ def _decode_data_url_png(data_url: str | None) -> bytes | None:
         return None
 
 
-def build_report_pdf(terms: NoteTerms, *, sections: list[str] | None = None, lang: str = "en",
+def _chart_options_from_branding(branding: dict | None) -> dict:
+    """Map the branding config's `chart_*` keys onto charts.set_chart_options()."""
+    b = branding or {}
+    pal = b.get("chart_series_colors")
+    if isinstance(pal, str):
+        pal = [c.strip() for c in pal.split(",") if c.strip()]
+    return {
+        "bg_color":      b.get("chart_bg_color"),
+        "grid_color":    b.get("chart_grid_color"),
+        "axis_color":    b.get("chart_axis_color"),
+        "label_color":   b.get("chart_label_color"),
+        "text_color":    b.get("chart_text_color"),
+        "font_size":     b.get("chart_font_size"),
+        "series_colors": pal or None,
+        "band_opacity":  b.get("chart_band_opacity"),
+        "line_width":    b.get("chart_line_width"),
+    }
+
+
+def build_report_pdf(terms: NoteTerms, *, branding: dict | None = None, **kw) -> bytes:
+    """Install the brand's chart options for the duration of the build (every
+    figure builder ends with charts._apply_theme, which reads them), then always
+    restore the stock look so the SPA's own figures are unaffected."""
+    charts.set_chart_options(_chart_options_from_branding(branding))
+    try:
+        return _build_report_pdf(terms, branding=branding, **kw)
+    finally:
+        charts.reset_chart_options()
+
+
+def _build_report_pdf(terms: NoteTerms, *, sections: list[str] | None = None, lang: str = "en",
                      n_paths: int = 10000, seed: int = 42, calib_years: float = 5.0,
                      history_years: float | None = None, engine: str = "cpp",
                      branding: dict | None = None,

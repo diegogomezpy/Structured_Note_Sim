@@ -21,6 +21,9 @@ export default function PdfDesigner({ studio, terms }: { studio: BrandingStudio;
   const b = studio.brand
   const set = studio.setBrandField
   const noteName = terms?.name
+  // The report's default multi-series colourway (charts.py `_SERIES_COLORS`).
+  const DEFAULT_SERIES = ['#2563eb', '#1a2e4a', '#60a5fa', '#0891b2', '#7c3aed', '#0d9488']
+  const seriesColors = (b.chart_series_colors as string[] | undefined) ?? DEFAULT_SERIES
 
   return (
     <div className="brand-editor-grid fade-up" style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 440px', gap: 22, alignItems: 'start' }}>
@@ -81,6 +84,59 @@ export default function PdfDesigner({ studio, terms }: { studio: BrandingStudio;
             <ColorWell label={t('brand_sidebar')}   value={b.sidebar_bar_color as string} fallback={b.primary_color ?? '#1a2e4a'} onChange={(v) => set('sidebar_bar_color', v)} />
           </div>
           <div style={{ fontSize: 11, color: 'var(--text-faint)', marginTop: 10, lineHeight: 1.5 }}>{t('brand_colors_charts_hint')}</div>
+        </Card>
+
+        <Card title={t('brand_charts')} desc={t('brand_charts_hint')}>
+          <div style={grid(150)}>
+            <ColorWell label={t('chart_grid')}  value={b.chart_grid_color}  fallback="#f1f5f9" onChange={(v) => set('chart_grid_color', v)} />
+            <ColorWell label={t('chart_axis')}  value={b.chart_axis_color}  fallback="#e5e7eb" onChange={(v) => set('chart_axis_color', v)} />
+            <ColorWell label={t('chart_label')} value={b.chart_label_color} fallback="#6b7280" onChange={(v) => set('chart_label_color', v)} />
+            <ColorWell label={t('chart_text')}  value={b.chart_text_color}  fallback="#1a2e4a" onChange={(v) => set('chart_text_color', v)} />
+            <ColorWell label={t('chart_bg')}    value={b.chart_bg_color}    fallback="#ffffff" onChange={(v) => set('chart_bg_color', v)} />
+          </div>
+          <div style={{ ...grid(150), marginTop: 12 }}>
+            <Field label={t('chart_font_size')}>
+              <input type="number" min={6} max={20} step={0.5} placeholder="12"
+                value={b.chart_font_size != null ? String(b.chart_font_size) : ''}
+                onChange={(e) => set('chart_font_size', e.target.value)} style={inputStyle} />
+            </Field>
+            <Field label={t('chart_band_opacity')}>
+              <input type="number" min={0} max={3} step={0.05} placeholder="1.0"
+                value={b.chart_band_opacity != null ? String(b.chart_band_opacity) : ''}
+                onChange={(e) => set('chart_band_opacity', e.target.value)} style={inputStyle} />
+            </Field>
+            <Field label={t('chart_line_width')}>
+              <input type="number" min={0.2} max={4} step={0.1} placeholder="1.0"
+                value={b.chart_line_width != null ? String(b.chart_line_width) : ''}
+                onChange={(e) => set('chart_line_width', e.target.value)} style={inputStyle} />
+            </Field>
+          </div>
+          {/* Multi-series colourway — the per-underlying line/slice colours. */}
+          <div style={{ marginTop: 14 }}>
+            <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-muted)', marginBottom: 6 }}>{t('chart_series')}</div>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+              {seriesColors.map((c, i) => (
+                <input key={i} type="color" value={c} aria-label={`${t('chart_series')} ${i + 1}`}
+                  onChange={(e) => {
+                    const next = [...seriesColors]; next[i] = e.target.value
+                    set('chart_series_colors', next as never)
+                  }}
+                  style={{ width: 34, height: 30, padding: 0, border: '1px solid var(--border-strong)', borderRadius: 7, background: 'none', cursor: 'pointer' }} />
+              ))}
+              {seriesColors.length > 2 && (
+                <button type="button" className="btn btn--ghost" style={{ padding: '4px 9px', fontSize: 12 }}
+                  onClick={() => set('chart_series_colors', seriesColors.slice(0, -1) as never)}>−</button>
+              )}
+              {seriesColors.length < 8 && (
+                <button type="button" className="btn btn--ghost" style={{ padding: '4px 9px', fontSize: 12 }}
+                  onClick={() => set('chart_series_colors', [...seriesColors, '#0891b2'] as never)}>+</button>
+              )}
+              {b.chart_series_colors != null && (
+                <button type="button" className="btn btn--ghost" style={{ padding: '4px 9px', fontSize: 12 }}
+                  onClick={() => set('chart_series_colors', undefined as never)}>{t('chart_series_reset')}</button>
+              )}
+            </div>
+          </div>
         </Card>
 
         <Card title={t('brand_theme')} desc={t('brand_theme_hint')}>

@@ -499,7 +499,7 @@ export default function BrandPreview({ brand, noteName, terms, coverMetrics, met
       </div>
 
       {/* mini distribution chart — accent + secondary colours */}
-      <MiniChart tok={tok} />
+      <MiniChart tok={tok} brand={brand} />
 
       {/* ── INTERIOR PAGE 2 · terms table + callout ────────────────────── */}
       <PageTag n={3} label="INTERIOR · NOTE TERMS" muted={muted} />
@@ -568,21 +568,27 @@ function PageTag({ n, label, muted, first }: { n: number; label: string; muted: 
 
 // A stylised worst-of fan — shows the accent + secondary palette colours in a
 // chart context so those tokens are reflected too.
-function MiniChart({ tok }: { tok: Tokens }) {
-  const accent = rgbCss(tok.accent)
-  const sec = rgbCss(tok.chart_secondary)
-  const band = `rgba(${tok.accent[0]}, ${tok.accent[1]}, ${tok.accent[2]}, 0.16)`
+function MiniChart({ tok, brand }: { tok: Tokens; brand: Branding }) {
+  const series = (brand.chart_series_colors as string[] | undefined) ?? []
+  const accent = series[0] || rgbCss(tok.accent)
+  const sec = series[1] || rgbCss(tok.chart_secondary)
+  const bandMul = brand.chart_band_opacity != null ? Number(brand.chart_band_opacity) : 1
+  const lwMul = brand.chart_line_width != null ? Number(brand.chart_line_width) : 1
+  const grid = (brand.chart_grid_color as string) || rgbCss(tok.rule_soft)
+  const chartBg = (brand.chart_bg_color as string) || rgbCss(tok.panel)
+  const band = `rgba(${tok.accent[0]}, ${tok.accent[1]}, ${tok.accent[2]}, ${Math.max(0, Math.min(1, 0.16 * (isFinite(bandMul) ? bandMul : 1))).toFixed(3)})`
+  const w = (base: number) => Math.max(0.3, base * (isFinite(lwMul) ? lwMul : 1))
   return (
     <svg viewBox="0 0 260 76" style={{ width: '100%', height: 'auto', marginTop: 12, display: 'block' }} aria-hidden>
-      <rect x="0" y="0" width="260" height="76" rx="6" fill={rgbCss(tok.panel)} />
+      <rect x="0" y="0" width="260" height="76" rx="6" fill={chartBg} />
       {/* percentile band */}
       <path d="M8 46 C60 40 110 30 175 26 C210 24 240 22 252 21 L252 40 C240 42 210 46 175 49 C110 55 60 60 8 62 Z" fill={band} />
       {/* median line (accent) */}
-      <path d="M8 54 C60 50 110 42 175 37 C210 34 240 31 252 30" fill="none" stroke={accent} strokeWidth="2" />
+      <path d="M8 54 C60 50 110 42 175 37 C210 34 240 31 252 30" fill="none" stroke={accent} strokeWidth={w(2)} />
       {/* secondary line */}
-      <path d="M8 60 C60 58 110 55 175 52 C210 50 240 49 252 48" fill="none" stroke={sec} strokeWidth="1.6" strokeDasharray="3 2" />
+      <path d="M8 60 C60 58 110 55 175 52 C210 50 240 49 252 48" fill="none" stroke={sec} strokeWidth={w(1.6)} strokeDasharray="3 2" />
       {/* barrier */}
-      <line x1="8" y1="66" x2="252" y2="66" stroke={rgbCss(tok.rule_soft)} strokeWidth="1" strokeDasharray="2 2" />
+      <line x1="8" y1="66" x2="252" y2="66" stroke={grid} strokeWidth="1" strokeDasharray="2 2" />
     </svg>
   )
 }

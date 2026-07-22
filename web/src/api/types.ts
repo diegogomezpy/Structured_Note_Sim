@@ -467,6 +467,16 @@ export interface Branding {
   cover_metrics?: string[]        // which KEY TERMS show on the at-a-glance cover rail (order = render order)
   cover_overlay_color?: string    // overlay colour over the cover/back photo
   cover_overlay_opacity?: string | number  // 0..1
+  // Chart/graph styling — threaded into every figure via charts.set_chart_options
+  chart_bg_color?: string         // plot + paper background
+  chart_grid_color?: string       // gridlines
+  chart_axis_color?: string       // axis + zero lines
+  chart_label_color?: string      // tick + axis-title text
+  chart_text_color?: string       // base / title / legend text
+  chart_font_size?: string | number   // base pt; ticks -1, title +3
+  chart_series_colors?: string[]  // multi-series colourway
+  chart_band_opacity?: string | number // multiplier on percentile-band alphas
+  chart_line_width?: string | number   // multiplier on series line widths
   title_font?: string             // headings font (fonts/brand/<Name>-Bold.ttf)
   body_font?: string              // body font
   title_font_files?: Record<string, string>  // {Style: base64 TTF} embedded in the config

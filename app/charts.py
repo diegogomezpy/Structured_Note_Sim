@@ -62,36 +62,118 @@ _FILL_OUTER_G = "rgba(22,163,74,0.09)"
 _FILL_INNER_G = "rgba(22,163,74,0.20)"
 
 
+# ── brand-tunable chart options ───────────────────────────────────────────────
+# Every builder ends with _apply_theme(fig), so this dict is the single place a
+# brand can restyle all 19 figures. `set_chart_options()` is called from the PDF
+# adapter with the branding config before the figures are built; defaults below
+# reproduce the original look exactly, so an un-themed report is unchanged.
+CHART_OPTION_DEFAULTS: dict = {
+    "bg_color":      _WHITE,      # plot + paper background
+    "grid_color":    "#f1f5f9",   # gridlines
+    "axis_color":    "#e5e7eb",   # axis + zero lines
+    "label_color":   _GREY,       # tick + axis-title text
+    "text_color":    _NAVY,       # base / title / legend text
+    "font_size":     12.0,        # base size; ticks -1, title +3
+    "series_colors": None,        # list[str] — the multi-series colourway
+    "band_opacity":  1.0,         # multiplier on percentile-band alphas
+    "line_width":    1.0,         # multiplier on series line widths
+}
+_CHART_OPTS: dict = dict(CHART_OPTION_DEFAULTS)
+
+
+def set_chart_options(opts: dict | None) -> None:
+    """Install brand chart options (see CHART_OPTION_DEFAULTS). Unknown/None
+    values fall back to the default, so a partial dict is fine."""
+    merged = dict(CHART_OPTION_DEFAULTS)
+    for k, v in (opts or {}).items():
+        if k in merged and v not in (None, ""):
+            merged[k] = v
+    _CHART_OPTS.clear()
+    _CHART_OPTS.update(merged)
+
+
+def reset_chart_options() -> None:
+    """Restore the stock look (call after a branded render)."""
+    _CHART_OPTS.clear()
+    _CHART_OPTS.update(CHART_OPTION_DEFAULTS)
+
+
+def _scale_rgba_alpha(color: str, factor: float) -> str:
+    """Scale the alpha of an 'rgba(r,g,b,a)' string, leaving anything else be."""
+    if not isinstance(color, str) or not color.startswith("rgba("):
+        return color
+    try:
+        parts = color[5:-1].split(",")
+        r, g, b = (p.strip() for p in parts[:3])
+        a = float(parts[3])
+        return f"rgba({r},{g},{b},{max(0.0, min(1.0, a * factor)):.4f})"
+    except Exception:
+        return color
+
+
+def _apply_trace_options(fig: go.Figure) -> None:
+    """Apply the trace-level options that can't be expressed in the layout:
+    percentile-band alpha and series line width. Done centrally here so every
+    builder inherits it without touching 19 functions."""
+    band = float(_CHART_OPTS.get("band_opacity") or 1.0)
+    lw = float(_CHART_OPTS.get("line_width") or 1.0)
+    if band == 1.0 and lw == 1.0:
+        return
+    for tr in fig.data:
+        if band != 1.0:
+            fc = getattr(tr, "fillcolor", None)
+            if fc:
+                try:
+                    tr.fillcolor = _scale_rgba_alpha(fc, band)
+                except Exception:
+                    pass
+        if lw != 1.0:
+            line = getattr(tr, "line", None)
+            w = getattr(line, "width", None) if line is not None else None
+            if w:
+                try:
+                    tr.line.width = max(0.2, float(w) * lw)
+                except Exception:
+                    pass
+
+
 def _apply_theme(fig: go.Figure) -> go.Figure:
     """
-    Shared clean theme for every figure: white background, IBM Plex Sans font,
-    navy text, light-grey gridlines, no Plotly logo. Preserves all existing
-    traces, barrier lines, markers and titles.
+    Shared clean theme for every figure: background, IBM Plex Sans font, text
+    and gridline colours, no Plotly logo. Preserves all existing traces, barrier
+    lines, markers and titles. Reads _CHART_OPTS so a brand can restyle every
+    chart from its config (defaults reproduce the original look exactly).
     """
+    o = _CHART_OPTS
+    bg, grid, axis = o["bg_color"], o["grid_color"], o["axis_color"]
+    label, text = o["label_color"], o["text_color"]
+    fs = float(o["font_size"] or 12.0)
+    colorway = o.get("series_colors") or _SERIES_COLORS
     fig.update_layout(
-        plot_bgcolor=_WHITE,
-        paper_bgcolor=_WHITE,
-        font=dict(family=_BASE_FONT, size=12, color=_NAVY),
-        title=dict(font=dict(family=_BASE_FONT, size=15, color=_NAVY)),
+        plot_bgcolor=bg,
+        paper_bgcolor=bg,
+        font=dict(family=_BASE_FONT, size=fs, color=text),
+        title=dict(font=dict(family=_BASE_FONT, size=fs + 3, color=text)),
         legend=dict(
-            font=dict(family=_BASE_FONT, size=11, color=_NAVY),
+            font=dict(family=_BASE_FONT, size=fs - 1, color=text),
             bgcolor="rgba(255,255,255,0.6)",
-            bordercolor="#e5e7eb", borderwidth=0,
+            bordercolor=axis, borderwidth=0,
         ),
         margin=dict(l=60, r=30, t=50, b=50),
         modebar_remove=["logo", "sendDataToCloud", "lasso2d", "select2d"],
-        colorway=_SERIES_COLORS,
+        colorway=list(colorway),
     )
     fig.update_xaxes(
-        linecolor="#e5e7eb", gridcolor="#f1f5f9", zerolinecolor="#e5e7eb",
-        title_font=dict(family=_BASE_FONT, size=12, color=_GREY),
-        tickfont=dict(family=_BASE_FONT, size=11, color=_GREY),
+        linecolor=axis, gridcolor=grid, zerolinecolor=axis,
+        title_font=dict(family=_BASE_FONT, size=fs, color=label),
+        tickfont=dict(family=_BASE_FONT, size=fs - 1, color=label),
     )
     fig.update_yaxes(
-        linecolor="#e5e7eb", gridcolor="#f1f5f9", zerolinecolor="#e5e7eb",
-        title_font=dict(family=_BASE_FONT, size=12, color=_GREY),
-        tickfont=dict(family=_BASE_FONT, size=11, color=_GREY),
+        linecolor=axis, gridcolor=grid, zerolinecolor=axis,
+        title_font=dict(family=_BASE_FONT, size=fs, color=label),
+        tickfont=dict(family=_BASE_FONT, size=fs - 1, color=label),
     )
+    _apply_trace_options(fig)
     # The title font set above creates a title object; if a chart never set
     # title text, plotly.js renders the literal JS value "undefined" as the
     # title. Blank it so title-less charts show nothing instead of "undefined".
