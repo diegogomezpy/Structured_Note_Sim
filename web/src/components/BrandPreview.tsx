@@ -3,7 +3,7 @@ import type { Branding, NoteTerms } from '../api/types'
 import type { ReportFont } from '../lib/useBrandingStudio'
 import {
   buildTokens, resolveSpec, resolveColor, fillBackground, shapeKind, blend,
-  chamferPath, chamferPadMm, hexClusterPaths, wmSpec, gradientAxis, fillStops, rgbCss,
+  chamferPath, chamferPadMm, hexClusterPaths, wmSpec, WM_DEFAULTS, gradientAxis, fillStops, rgbCss,
   type Tokens, type ColorRef, type Fill,
 } from '../lib/reportTheme'
 
@@ -132,10 +132,13 @@ function Watermark({ img, enabled, panelW, panelH, geo, wm, sScale, sx, sy, vari
 }) {
   const idRef = useRef<string>('')
   if (!idRef.current) idRef.current = `bpw${_gid++}`
-  const spec = wmSpec(wm)
-  if (!spec) return null
   const useImg = !!(img && enabled)
-  // The drawn hex cluster only appears when the CONFIG authored it (CADIEM's).
+  // An uploaded watermark means "show it" — a theme needn't declare a key for
+  // the user's own mark to appear (only an explicit "none"/false suppresses it).
+  // The DRAWN hex cluster still requires the config to author it (CADIEM's).
+  const suppressed = wm === null || wm === false || wm === 'none'
+  const spec = wmSpec(wm) ?? (useImg && !suppressed ? { ...WM_DEFAULTS, source: 'image' } : null)
+  if (!spec) return null
   if (!useImg && spec.source !== 'hexCluster') return null
 
   const clipId = idRef.current

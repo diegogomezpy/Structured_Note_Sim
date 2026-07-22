@@ -84,8 +84,12 @@ function FillControl({ value, tokens, onChange }: { value: unknown; tokens: Toke
 // There is deliberately no "hexagon" option here — the hex cluster is a value a
 // brand config authors for itself (CADIEM's), not a switch offered to everyone.
 function WatermarkControl({ value, onChange }: { value: unknown; onChange: (v: unknown) => void }) {
-  const on = !(value == null || value === false || value === 'none')
-  const isBuiltIn = typeof value === 'string'
+  // Absent (undefined) means "no opinion" → an uploaded mark still shows, so the
+  // toggle reads ON. Only an explicit "none" (what we write when you switch it
+  // off — `null` can't be told from "absent" once it round-trips through JSON)
+  // suppresses it.
+  const on = !(value === null || value === false || value === 'none')
+  const isBuiltIn = typeof value === 'string' && value !== 'none'
   const obj = (typeof value === 'object' && value ? value : {}) as Any
   const num = (k: string, def: number) => Number(obj[k] ?? def)
   const numStyle = { width: 64, fontSize: 12, padding: '4px 6px', borderRadius: 7, border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--text)' }
@@ -93,7 +97,7 @@ function WatermarkControl({ value, onChange }: { value: unknown; onChange: (v: u
     <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
       <label style={{ ...row, fontSize: 12.5, color: 'var(--text-muted)', cursor: 'pointer' }}>
         <input type="checkbox" checked={on} style={{ width: 'auto' }}
-          onChange={(e) => onChange(e.target.checked ? { opacity: 0.13, scale: 0.58, anchor: 'right' } : null)} />
+          onChange={(e) => onChange(e.target.checked ? { opacity: 0.13, scale: 0.58, anchor: 'right' } : 'none')} />
         Show watermark
       </label>
       {on && isBuiltIn && (

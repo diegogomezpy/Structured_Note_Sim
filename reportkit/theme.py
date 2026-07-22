@@ -274,15 +274,20 @@ def _watermark(pdf, px: float, py: float, pw: float, ph: float, wm_value,
                *, cluster: tuple | None = None) -> None:
     """Draw a surface watermark inside the panel rect (px, py, pw, ph).
 
-    A loaded watermark image wins whenever one is supplied. Otherwise the only
-    thing drawn is the built-in hex cluster, and only when the CONFIG authored
-    `"watermark": "hexCluster"` for that surface — it is not a generic option.
-    With neither, nothing is drawn. `cluster` carries the legacy hex-cluster
-    args so that path stays byte-for-byte identical."""
+    A loaded watermark image wins whenever one is supplied, and it does NOT need
+    the theme to declare a key — uploading a mark means "show it", so it appears
+    on every watermarkable surface unless that surface opts out with
+    `"watermark": "none"`. The built-in hex cluster is the opposite: it is drawn
+    only when the CONFIG authored `"watermark": "hexCluster"` for that surface,
+    never as a generic option. With neither, nothing is drawn. `cluster` carries
+    the legacy hex-cluster args so that path stays byte-for-byte identical."""
     spec = wm_spec(wm_value)
+    has_img = bool(getattr(pdf, "watermark_bytes", None)) and getattr(pdf, "watermark_enabled", True)
     if not spec:
-        return
-    if getattr(pdf, "watermark_bytes", None) and getattr(pdf, "watermark_enabled", True):
+        if not has_img or wm_value is False or wm_value == "none":
+            return
+        spec = dict(WM_DEFAULTS, source="image")
+    if has_img:
         _wm_image(pdf, px, py, pw, ph, spec)
         return
     if spec.get("source") == "hexCluster" and cluster:

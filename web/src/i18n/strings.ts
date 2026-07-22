@@ -717,7 +717,7 @@ export const S: Dict = {
   brand_theme_builder:  { en: 'Theme builder', es: 'Editor de tema' },
   brand_theme_hint:     { en: 'This report’s visual identity, carried by the branding config. Edit any surface below — shapes, fills, gradients.', es: 'La identidad visual de este informe, definida por la configuración de marca. Edita cualquier superficie abajo — formas, rellenos, degradados.' },
   brand_watermark:      { en: 'Watermark', es: 'Marca de agua' },
-  brand_watermark_hint: { en: 'A faint image drawn into the masthead / banner panels. Replaces the built-in hexagon cluster. Leave empty to keep the hexagons.', es: 'Una imagen tenue dibujada en los paneles de cabecera. Sustituye al grupo de hexágonos integrado. Déjalo vacío para conservar los hexágonos.' },
+  brand_watermark_hint: { en: 'A faint image set into the masthead / banner panels, behind the text. Upload one and it appears straight away; tune its opacity, size and side under Report theme.', es: 'Una imagen tenue integrada en los paneles de cabecera, detrás del texto. Súbela y aparecerá de inmediato; ajusta su opacidad, tamaño y lado en Tema del informe.' },
   brand_watermark_toggle: { en: 'Use the uploaded watermark', es: 'Usar la marca de agua subida' },
   brand_new:            { en: 'New config', es: 'Nueva config.' },
   brand_new_hint:       { en: 'Start a blank branding config from scratch, then name and save it.', es: 'Empieza una configuración de marca en blanco, luego nómbrala y guárdala.' },
