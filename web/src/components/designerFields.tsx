@@ -1,4 +1,4 @@
-import { useRef } from 'react'
+import { useRef, useState } from 'react'
 import Icon from './Icon'
 
 /* Bespoke form primitives shared by the PDF Designer and the Build tab's
@@ -26,12 +26,52 @@ export const grid = (min = 180): React.CSSProperties => ({
   display: 'grid', gridTemplateColumns: `repeat(auto-fit, minmax(${min}px, 1fr))`, gap: 12,
 })
 
-export function Card({ title, desc, children, tight }: { title: string; desc?: string; children: React.ReactNode; tight?: boolean }) {
+const CARD_LS = 'mercator_designer_cards'
+
+function readCardState(): Record<string, boolean> {
+  try { return JSON.parse(localStorage.getItem(CARD_LS) || '{}') } catch { return {} }
+}
+function writeCardState(id: string, open: boolean) {
+  try {
+    const s = readCardState(); s[id] = open
+    localStorage.setItem(CARD_LS, JSON.stringify(s))
+  } catch { /* ignore */ }
+}
+
+/** A collapsible settings island. Open by default (nothing hides unexpectedly),
+    and each card remembers its own open/closed state across sessions so a long
+    studio can be folded down to just the sections you're working in. */
+export function Card({ id, title, desc, children, tight, defaultOpen = true }: {
+  id?: string; title: string; desc?: string; children: React.ReactNode
+  tight?: boolean; defaultOpen?: boolean
+}) {
+  const [open, setOpen] = useState(() => {
+    if (!id) return defaultOpen
+    const saved = readCardState()[id]
+    return typeof saved === 'boolean' ? saved : defaultOpen
+  })
+  const toggle = () => {
+    setOpen((o) => { const n = !o; if (id) writeCardState(id, n); return n })
+  }
+  const pad = tight ? '14px 16px' : '16px 18px'
   return (
-    <section style={{ border: '1px solid var(--border)', borderRadius: 14, background: 'var(--surface)', padding: tight ? '14px 16px' : '16px 18px' }}>
-      <div style={{ fontSize: 13.5, fontWeight: 800, color: 'var(--text)', letterSpacing: '-0.01em' }}>{title}</div>
-      {desc && <div style={{ fontSize: 11.5, color: 'var(--text-faint)', marginTop: 3, lineHeight: 1.5 }}>{desc}</div>}
-      <div style={{ marginTop: 13 }}>{children}</div>
+    <section style={{ border: '1px solid var(--border)', borderRadius: 14, background: 'var(--surface)' }}>
+      <button type="button" onClick={toggle} aria-expanded={open}
+        style={{
+          width: '100%', display: 'flex', alignItems: 'flex-start', gap: 10, textAlign: 'left',
+          background: 'transparent', border: 'none', cursor: 'pointer', fontFamily: 'inherit',
+          padding: open ? `${pad.split(' ')[0]} ${pad.split(' ')[1]} 0` : pad, color: 'var(--text)',
+        }}>
+        <span style={{ flex: 1, minWidth: 0 }}>
+          <span style={{ display: 'block', fontSize: 13.5, fontWeight: 800, letterSpacing: '-0.01em' }}>{title}</span>
+          {desc && <span style={{ display: 'block', fontSize: 11.5, color: 'var(--text-faint)', marginTop: 3, lineHeight: 1.5 }}>{desc}</span>}
+        </span>
+        <span aria-hidden style={{
+          flexShrink: 0, color: 'var(--text-faint)', fontSize: 15, lineHeight: 1, marginTop: 2,
+          transform: open ? 'rotate(90deg)' : 'none', transition: 'transform 140ms ease',
+        }}>›</span>
+      </button>
+      {open && <div style={{ padding: `13px ${pad.split(' ')[1]} ${pad.split(' ')[0]}` }}>{children}</div>}
     </section>
   )
 }

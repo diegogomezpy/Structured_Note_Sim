@@ -31,7 +31,7 @@ export default function PdfDesigner({ studio, terms }: { studio: BrandingStudio;
       <div style={{ display: 'flex', flexDirection: 'column', gap: 16, minWidth: 0 }}>
         <BrandConfigBar studio={studio} />
 
-        <Card title={t('brand_identity')}>
+        <Card id="identity" title={t('brand_identity')}>
           <div style={grid()}>
             <Field label={t('brand_firm')}><TextInput value={b.firm_name} onChange={(v) => set('firm_name', v)} /></Field>
             <Field label={t('brand_title')}><TextInput value={b.report_title as string} onChange={(v) => set('report_title', v)} /></Field>
@@ -43,7 +43,7 @@ export default function PdfDesigner({ studio, terms }: { studio: BrandingStudio;
           </div>
         </Card>
 
-        <Card title={t('brand_colors')} desc={t('brand_palette_hint')}>
+        <Card id="colors" title={t('brand_colors')} desc={t('brand_palette_hint')}>
           <div style={grid(150)}>
             <ColorWell label={t('brand_primary')}   value={b.primary_color} fallback="#1a2e4a" onChange={(v) => set('primary_color', v)} />
             <ColorWell label={t('brand_accent')}    value={b.accent_color} fallback="#2563eb" onChange={(v) => set('accent_color', v)} />
@@ -55,7 +55,7 @@ export default function PdfDesigner({ studio, terms }: { studio: BrandingStudio;
           <div style={{ fontSize: 11, color: 'var(--text-faint)', marginTop: 10, lineHeight: 1.5 }}>{t('brand_colors_charts_hint')}</div>
         </Card>
 
-        <Card title={t('brand_charts')} desc={t('brand_charts_hint')}>
+        <Card id="charts" title={t('brand_charts')} desc={t('brand_charts_hint')}>
           <div style={grid(150)}>
             <ColorWell label={t('chart_grid')}  value={b.chart_grid_color}  fallback="#f1f5f9" onChange={(v) => set('chart_grid_color', v)} />
             <ColorWell label={t('chart_axis')}  value={b.chart_axis_color}  fallback="#e5e7eb" onChange={(v) => set('chart_axis_color', v)} />
@@ -108,12 +108,12 @@ export default function PdfDesigner({ studio, terms }: { studio: BrandingStudio;
           </div>
         </Card>
 
-        <Card title={t('brand_theme')} desc={t('brand_theme_hint')}>
+        <Card id="theme" title={t('brand_theme')} desc={t('brand_theme_hint')}>
           <ThemeBuilder spec={resolveSpec(b.report_theme) as Record<string, unknown>} tokens={buildTokens(b)}
             onChange={(s) => set('report_theme', s as never)} />
         </Card>
 
-        <Card title={t('brand_typography')}>
+        <Card id="typography" title={t('brand_typography')}>
           <div style={grid()}>
             {(['title_font', 'body_font'] as const).map((f, i) => {
               const filesKey = (i === 0 ? 'title_font_files' : 'body_font_files') as 'title_font_files' | 'body_font_files'
@@ -143,7 +143,7 @@ export default function PdfDesigner({ studio, terms }: { studio: BrandingStudio;
           <div style={{ fontSize: 11, color: 'var(--text-faint)', marginTop: 8 }}>{t('brand_font_hint')}</div>
         </Card>
 
-        <Card title={t('brand_cover')}>
+        <Card id="cover" title={t('brand_cover')}>
           {/* Shared with the Build tab — images are usually chosen per report. */}
           <ReportImages studio={studio} terms={terms} compact />
           <div style={{ marginTop: 16 }}>
@@ -163,7 +163,7 @@ export default function PdfDesigner({ studio, terms }: { studio: BrandingStudio;
           </div>
         </Card>
 
-        <Card title={t('brand_watermark')} desc={t('brand_watermark_hint')}>
+        <Card id="watermark" title={t('brand_watermark')} desc={t('brand_watermark_hint')}>
           <div style={{ display: 'flex', alignItems: 'flex-end', gap: 16, flexWrap: 'wrap' }}>
             <UploadTile label={t('brand_watermark')} src={b.watermark_base64 as string} dark
               onPick={(f) => studio.onImage('watermark_base64', f)} onClear={() => set('watermark_base64', '')} />
@@ -175,7 +175,7 @@ export default function PdfDesigner({ studio, terms }: { studio: BrandingStudio;
           </div>
         </Card>
 
-        <Card title={t('brand_legal')}>
+        <Card id="legal" title={t('brand_legal')}>
           <Field label={t('brand_footer')}><TextInput value={b.footer_note} onChange={(v) => set('footer_note', v)} /></Field>
           <div style={{ marginTop: 12 }}>
             <Field label={t('brand_disclaimer')}>
