@@ -18,16 +18,11 @@ export const COVER_METRIC_DEFAULT = ['coupon_pa', 'maturity', 'knock_in_barrier'
 export const COVER_METRIC_MAX = 4
 const MAX_PHOTOS = 12
 
-// Curated font families offered in the Designer. IBM Plex Sans is bundled with
-// the PDF (renders end-to-end); the rest render in the live preview and set the
-// config's font name — embed the .ttf files (below the picker) to guarantee they
-// render in the PDF too.
-export const FONT_PRESETS = [
-  'IBM Plex Sans', 'Inter', 'Helvetica Neue', 'Arial', 'Georgia',
-  'Times New Roman', 'Garamond', 'Playfair Display', 'Lora', 'Merriweather',
-  'Roboto', 'Roboto Slab', 'Montserrat', 'Work Sans', 'Source Serif Pro',
-  'Libre Franklin', 'DM Sans', 'Space Grotesk', 'Courier New',
-]
+// Fonts the PDF can actually render, discovered by the API from fonts/ and
+// fonts/brand/. Dropping a <Name>-<Style>.ttf into fonts/brand/ adds it here
+// automatically — and the preview loads the very same file, so what you pick is
+// what the report renders.
+export interface ReportFont { family: string; file: string; styles: string[]; builtin: boolean }
 
 export interface BrandingStudio {
   brand: Branding
@@ -35,6 +30,7 @@ export interface BrandingStudio {
   setBrandField: <K extends keyof Branding>(k: K, v: Branding[K]) => void
   themeIsCustom: boolean
   presets: { file: string; firm_name: string }[]
+  reportFonts: ReportFont[]
   brandFolder: ReturnType<typeof useLocalFolder>
   brandLocalName: string | null
   setBrandLocalName: (n: string | null) => void
@@ -70,6 +66,7 @@ export function useBrandingStudio(): BrandingStudio {
   const toast = useToast()
   const [brand, setBrand] = useState<Branding>({})
   const [presets, setPresets] = useState<{ file: string; firm_name: string }[]>([])
+  const [reportFonts, setReportFonts] = useState<ReportFont[]>([])
   const brandFolder = useLocalFolder('branding')
   const [brandLocalName, setBrandLocalName] = useState<string | null>(null)
   const [brandSaving, setBrandSaving] = useState(false)
@@ -86,6 +83,7 @@ export function useBrandingStudio(): BrandingStudio {
   }
 
   useEffect(() => { api.brandingList().then(setPresets).catch(() => {}) }, [])
+  useEffect(() => { api.fonts().then(setReportFonts).catch(() => {}) }, [])
 
   const setBrandField = <K extends keyof Branding>(k: K, v: Branding[K]) => setBrand((b) => {
     const empty = v === '' || v == null || (Array.isArray(v) && v.length === 0)
@@ -190,7 +188,7 @@ export function useBrandingStudio(): BrandingStudio {
   }
 
   return {
-    brand, setBrand, setBrandField, themeIsCustom, presets, brandFolder,
+    brand, setBrand, setBrandField, themeIsCustom, presets, reportFonts, brandFolder,
     brandLocalName, setBrandLocalName, brandSaving, error, setError,
     applyBranding, newBranding, loadPreset, onUploadBranding, saveBrandingToFolder, downloadBranding,
     onImage, onFillerUpload, onFontFiles, fontCount,

@@ -63,6 +63,9 @@ export const api = {
     jpost<Record<string, Quote>>('/api/quotes', { symbols }),
   describe: (issuer: string | null, symbols: string[], lang = 'en') =>
     jpost<DescribeResult>('/api/describe', { issuer, symbols, lang }),
+  /** Fonts the PDF can actually render — the Designer offers exactly these and
+      the preview @font-faces the same files, so a pick looks identical in both. */
+  fonts: () => jget<{ family: string; file: string; styles: string[]; builtin: boolean }[]>('/api/fonts'),
   brandingList: () => jget<{ file: string; firm_name: string }[]>('/api/branding'),
   branding: (file: string) => jget<Record<string, unknown>>(`/api/branding/${file}`),
   coverSectors: () => jget<{ available: boolean; sectors: string[] }>('/api/cover/sectors'),

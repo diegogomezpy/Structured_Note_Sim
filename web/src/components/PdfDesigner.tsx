@@ -6,7 +6,7 @@ import ReportImages from './ReportImages'
 import FolderConnect from './FolderConnect'
 import { Card, ColorWell, Field, TextInput, UploadTile, grid, inputStyle } from './designerFields'
 import { resolveSpec, buildTokens } from '../lib/reportTheme'
-import { COVER_METRIC_KEYS, COVER_METRIC_MAX, FONT_PRESETS, type BrandingStudio } from '../lib/useBrandingStudio'
+import { COVER_METRIC_KEYS, COVER_METRIC_MAX, type BrandingStudio } from '../lib/useBrandingStudio'
 import type { NoteTerms } from '../api/types'
 
 /* PDF Designer — a bespoke, from-scratch branding studio. Every input here is
@@ -152,11 +152,13 @@ export default function PdfDesigner({ studio, terms }: { studio: BrandingStudio;
               return (
                 <Field key={f} label={i === 0 ? t('brand_title_font') : t('brand_body_font')}>
                   <div style={{ display: 'flex', gap: 6 }}>
-                    <select value={FONT_PRESETS.includes(b[f] as string) ? (b[f] as string) : ''}
+                    <select value={studio.reportFonts.some((rf) => rf.family === b[f]) ? (b[f] as string) : ''}
                       onChange={(e) => set(f, e.target.value)}
-                      style={{ ...inputStyle, width: 'auto', flexShrink: 0, minWidth: 92 }}>
+                      style={{ ...inputStyle, width: 'auto', flexShrink: 0, minWidth: 110 }}>
                       <option value="">{t('brand_font_custom')}</option>
-                      {FONT_PRESETS.map((fn) => <option key={fn} value={fn}>{fn}</option>)}
+                      {studio.reportFonts.map((rf) => (
+                        <option key={rf.file} value={rf.family}>{rf.family}</option>
+                      ))}
                     </select>
                     <TextInput value={b[f] as string} onChange={(v) => set(f, v)} placeholder="IBM Plex Sans" />
                   </div>
@@ -219,7 +221,7 @@ export default function PdfDesigner({ studio, terms }: { studio: BrandingStudio;
       <div className="brand-preview-col" style={{ position: 'sticky', top: 12, display: 'flex', flexDirection: 'column', gap: 8, maxHeight: 'calc(100vh - 24px)' }}>
         <div style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: '0.07em', textTransform: 'uppercase', color: 'var(--text-faint)' }}>{t('brand_preview')}</div>
         <div style={{ overflowY: 'auto', overflowX: 'hidden', flex: 1, borderRadius: 12, paddingRight: 2 }}>
-          <BrandPreview brand={b} noteName={noteName} terms={terms}
+          <BrandPreview brand={b} noteName={noteName} terms={terms} reportFonts={studio.reportFonts}
                         coverMetrics={studio.coverMetricsSel} metricLabel={studio.metricLabel} />
         </div>
         <div style={{ fontSize: 10.5, color: 'var(--text-faint)', lineHeight: 1.45 }}>{t('brand_preview_hint')}</div>

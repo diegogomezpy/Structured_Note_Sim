@@ -1,5 +1,6 @@
 import { useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { Branding, NoteTerms } from '../api/types'
+import type { ReportFont } from '../lib/useBrandingStudio'
 import {
   buildTokens, resolveSpec, resolveColor, fillBackground, shapeKind, blend,
   chamferPath, chamferPadMm, hexClusterPaths, wmSpec, gradientAxis, fillStops, rgbCss,
@@ -309,6 +310,22 @@ function fontFaceCss(files: Record<string, string> | undefined, family: string):
     return `@font-face{font-family:'${family}';font-weight:${w};font-style:${st};font-display:swap;src:url(${src}) format('truetype');}`
   }).join('\n')
 }
+/** @font-face rules for a font the PDF ships with, pointing at the SAME .ttf the
+    report embeds (served by /api/fonts). This is what makes a font pick honest:
+    the preview and the PDF render the identical file. */
+function serverFontFaceCss(rf: ReportFont | undefined, family: string): string {
+  if (!rf) return ''
+  return rf.styles.map((style) => {
+    const [w, st] = _STYLE_MAP[style] ?? ['normal', 'normal']
+    return `@font-face{font-family:'${family}';font-weight:${w};font-style:${st};font-display:swap;` +
+           `src:url('/api/fonts/${rf.file}/${style}.ttf') format('truetype');}`
+  }).join('\n')
+}
+
+const _alnum = (v?: string) => (v || '').replace(/[^A-Za-z0-9]/g, '').toLowerCase()
+const findReportFont = (fonts: ReportFont[] | undefined, name?: string) =>
+  (fonts || []).find((f) => _alnum(f.family) === _alnum(name) || _alnum(f.file) === _alnum(name))
+
 // A short stable id from the payload so changing the fonts busts the @font-face cache.
 function fontKey(files: Record<string, string> | undefined): string {
   if (!files) return ''
@@ -336,8 +353,9 @@ function metricValue(k: string, terms?: NoteTerms): string {
   }
 }
 
-export default function BrandPreview({ brand, noteName, terms, coverMetrics, metricLabel }: {
+export default function BrandPreview({ brand, noteName, terms, reportFonts, coverMetrics, metricLabel }: {
   brand: Branding; noteName?: string; terms?: NoteTerms
+  reportFonts?: ReportFont[]                       // fonts the PDF can render
   coverMetrics?: string[]; metricLabel?: (k: string) => string
 }) {
   const tok: Tokens = buildTokens(brand)
@@ -380,8 +398,15 @@ export default function BrandPreview({ brand, noteName, terms, coverMetrics, met
   const titleFam = useMemo(() => (titleFiles ? `bp-title-${hash(fontKey(titleFiles))}` : ''), [titleFiles])
   const bodyFam = useMemo(() => (bodyFiles ? `bp-body-${hash(fontKey(bodyFiles))}` : ''), [bodyFiles])
   const faceCss = useMemo(() => `${fontFaceCss(titleFiles, titleFam)}\n${fontFaceCss(bodyFiles, bodyFam)}`, [titleFiles, bodyFiles, titleFam, bodyFam])
-  const headFont = titleFam || (brand.title_font as string) || 'inherit'
-  const bodyFont = bodyFam || (brand.body_font as string) || 'inherit'
+  // A picked font only "counts" if the PDF can render it: embedded files first,
+  // then a family the API ships, else fall back (so the preview can't lie).
+  const titleSrv = findReportFont(reportFonts, brand.title_font as string)
+  const bodySrv = findReportFont(reportFonts, brand.body_font as string)
+  const srvFaceCss = useMemo(
+    () => `${serverFontFaceCss(titleSrv, `bp-srv-${titleSrv?.file}`)}\n${serverFontFaceCss(bodySrv, `bp-srv-${bodySrv?.file}`)}`,
+    [titleSrv, bodySrv])
+  const headFont = titleFam || (titleSrv ? `bp-srv-${titleSrv.file}` : '') || (brand.title_font as string) || 'inherit'
+  const bodyFont = bodyFam || (bodySrv ? `bp-srv-${bodySrv.file}` : '') || (brand.body_font as string) || 'inherit'
   const rootFont = bodyFont !== 'inherit' ? `${bodyFont}, var(--font-sans, system-ui)` : 'var(--font-sans, system-ui)'
   const headStyle = headFont !== 'inherit' ? { fontFamily: `${headFont}, var(--font-sans, system-ui)` } : {}
 
@@ -409,7 +434,7 @@ export default function BrandPreview({ brand, noteName, terms, coverMetrics, met
       padding: 14, boxShadow: '0 1px 2px rgba(40,35,20,0.05)', overflow: 'hidden',
       fontFamily: rootFont,
     }}>
-      {faceCss.trim() && <style dangerouslySetInnerHTML={{ __html: faceCss }} />}
+      {(faceCss + srvFaceCss).trim() && <style dangerouslySetInnerHTML={{ __html: `${srvFaceCss}\n${faceCss}` }} />}
 
       {/* ── COVER PAGE mock (full-bleed brand cover) ───────────────────── */}
       <PageTag n={1} label="COVER" muted={muted} first />

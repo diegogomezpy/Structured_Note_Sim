@@ -21,7 +21,7 @@ from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import Response
+from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel, Field
 
 _REPO = Path(__file__).resolve().parent.parent
@@ -593,6 +593,61 @@ def get_branding(file: str):
         return json.loads(path.read_text())
     except Exception as e:
         raise HTTPException(400, f"could not parse branding: {e}")
+
+
+_FONT_DIR = _REPO / "fonts"
+_FONT_STYLES = ("Regular", "Bold", "Italic", "BoldItalic")
+
+
+def _scan_report_fonts() -> list[dict]:
+    """Families the PDF can actually render, discovered the same way
+    `_register_brand_fonts` resolves them: fonts/brand/<AlnumName>-<Style>.ttf,
+    plus the bundled IBM Plex Sans. The Designer offers exactly these, and the
+    live preview @font-faces the very same files — so a font pick looks identical
+    in the preview and the report."""
+    out: list[dict] = []
+    plex = [s for s in _FONT_STYLES if (_FONT_DIR / f"IBMPlexSans-{s}.ttf").is_file()]
+    if plex:
+        out.append({"family": "IBM Plex Sans", "file": "IBMPlexSans",
+                    "styles": plex, "builtin": True})
+    brand_dir = _FONT_DIR / "brand"
+    if brand_dir.is_dir():
+        fams: dict[str, list[str]] = {}
+        for p in sorted(brand_dir.glob("*.ttf")):
+            stem = p.stem
+            if "-" not in stem:
+                continue
+            name, style = stem.rsplit("-", 1)
+            if style in _FONT_STYLES:
+                fams.setdefault(name, []).append(style)
+        for name, styles in sorted(fams.items()):
+            out.append({"family": name, "file": name,
+                        "styles": sorted(styles), "builtin": False})
+    return out
+
+
+@app.get("/api/fonts")
+def list_fonts():
+    """Fonts available to the PDF report (see _scan_report_fonts)."""
+    return _scan_report_fonts()
+
+
+@app.get("/api/fonts/{file}/{style}.ttf")
+def get_font(file: str, style: str):
+    """Serve one font file so the web preview can @font-face the exact TTF the
+    PDF embeds. Path-traversal safe: the name must match a discovered family."""
+    if style not in _FONT_STYLES:
+        raise HTTPException(404, "unknown style")
+    known = {f["file"] for f in _scan_report_fonts()}
+    if file not in known:
+        raise HTTPException(404, f"font '{file}' not available")
+    path = _FONT_DIR / f"{file}-{style}.ttf"
+    if not path.is_file():
+        path = _FONT_DIR / "brand" / f"{file}-{style}.ttf"
+    if not path.is_file():
+        raise HTTPException(404, f"font '{file}-{style}' not found")
+    return FileResponse(path, media_type="font/ttf",
+                        headers={"Cache-Control": "public, max-age=86400"})
 
 
 @app.post("/api/describe")
