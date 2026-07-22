@@ -133,6 +133,8 @@ _KNOWN_BRANDING_KEYS = {
     "disclaimer_body",      # NEW — overrides the full disclaimer body text
     "cover_logo_base64",    # NEW — white knockout logo for the full-bleed cover
     "cover_sigil_base64",   # NEW — optional emblem/sigil shown on the cover (≠ wordmark)
+    "watermark_base64",     # NEW — faint watermark image drawn into chamfer panels (replaces the hex cluster)
+    "watermark_enabled",    # NEW — use the loaded watermark image; False falls back to the hex cluster
     "cover_image_base64",   # NEW — optional full-bleed cover background photo
     "back_image_base64",    # NEW — optional full-bleed photo for the disclaimer back page
     "filler_images_base64", # NEW — pool of report photos (cover/back fallback + void-filler bands cycle through it)
@@ -3970,6 +3972,10 @@ def _build_pdf_report(
             _seen.add(_img); _pool.append(_img)
     pdf.cover_logo_bytes  = _decode_b64_img(_b.get("cover_logo_base64"))
     pdf.cover_sigil_bytes = _decode_b64_img(_b.get("cover_sigil_base64"))
+    # Loadable watermark image (read by reportkit's _watermark; falls back to the
+    # drawn hex cluster when absent, so themed output is unchanged without one).
+    pdf.watermark_bytes   = _decode_b64_img(_b.get("watermark_base64"))
+    pdf.watermark_enabled = _b.get("watermark_enabled", True) is not False
     # Cover face: explicit `cover_image_base64`, else the first pooled photo.
     pdf.cover_image_bytes = _decode_b64_img(_b.get("cover_image_base64")) or (_pool[0] if _pool else None)
     # Back (disclaimer) face: explicit `back_image_base64`, else the SECOND pooled

@@ -212,6 +212,38 @@ export function chamferPath(w: number, h: number, c?: number, q?: number, r?: nu
   ].join(' ')
 }
 
+/** Millimetres of interior inset that clears both chamfer cuts, mirroring the
+    PDF (which hardcodes 9mm against a pinned 7.5mm cut, i.e. c + 1.5). Unlike the
+    PDF this adapts upward if the Cut is dragged past 7.5 so text never collides. */
+export function chamferPadMm(cMm?: number): number {
+  return Math.max(9, (cMm ?? 0) + 1.5)
+}
+
+// The hex-cluster watermark — a faithful transcription of reportkit/theme.py's
+// _hex_cluster. Three chamfer-hexagons per variant; each hex OVERRIDES the
+// default chamfer proportions with c=0.2s, q=0.06s, r=0.2s (theme.py:206/209).
+const HEX_LAYOUTS: ReadonlyArray<ReadonlyArray<readonly [number, number, number, boolean]>> = [
+  [[0, 0, 1.0, false], [0.72, 0.46, 0.62, true], [0.30, 0.92, 0.44, false]],
+  [[0, 0.30, 0.82, false], [0.58, 0, 1.0, false], [0.94, 0.66, 0.5, true]],
+  [[0, 0, 0.7, true], [0.46, 0.36, 1.0, false], [1.04, 0.10, 0.5, false]],
+]
+
+export interface HexShape { d: string; bx: number; by: number; filled: boolean; strokeW: number }
+
+/** The 3 chamfer-hexagon paths (in `scale` units, translate by bx/by) for a
+    cluster variant — mirrors _hex_cluster's per-hex geometry. */
+export function hexClusterPaths(scale: number, variant: number): HexShape[] {
+  const layout = HEX_LAYOUTS[(((variant | 0) % 3) + 3) % 3]
+  return layout.map(([dx, dy, sz, filled]) => {
+    const s = scale * sz
+    return {
+      d: chamferPath(s, s, 0.20 * s, 0.06 * s, 0.20 * s),
+      bx: scale * dx, by: scale * dy,
+      filled, strokeW: Math.max(0.25, 0.02 * s),
+    }
+  })
+}
+
 /** Gradient axis endpoints (objectBoundingBox 0..1) for an SVG linearGradient
     from a Python fill angle (90 = top→bottom, 0 = left→right). */
 export function gradientAxis(angle = 90): { x1: number; y1: number; x2: number; y2: number } {

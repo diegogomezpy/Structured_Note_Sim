@@ -220,6 +220,18 @@ export default function PdfDesigner({ studio, terms }: { studio: BrandingStudio;
           </div>
         </Card>
 
+        <Card title={t('brand_watermark')} desc={t('brand_watermark_hint')}>
+          <div style={{ display: 'flex', alignItems: 'flex-end', gap: 16, flexWrap: 'wrap' }}>
+            <UploadTile label={t('brand_watermark')} src={b.watermark_base64 as string} dark
+              onPick={(f) => studio.onImage('watermark_base64', f)} onClear={() => set('watermark_base64', '')} />
+            <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12.5, color: 'var(--text-muted)', cursor: 'pointer', paddingBottom: 6 }}>
+              <input type="checkbox" checked={b.watermark_enabled !== false}
+                onChange={(e) => set('watermark_enabled', e.target.checked as never)} style={{ width: 'auto' }} />
+              {t('brand_watermark_toggle')}
+            </label>
+          </div>
+        </Card>
+
         <Card title={t('brand_legal')}>
           <Field label={t('brand_footer')}><TextInput value={b.footer_note} onChange={(v) => set('footer_note', v)} /></Field>
           <div style={{ marginTop: 12 }}>

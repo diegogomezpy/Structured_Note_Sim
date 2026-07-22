@@ -210,6 +210,35 @@ def _hex_cluster(pdf, x: float, y: float, scale: float,
                             line_w=max(0.25, s * 0.02), opacity=opacity)
 
 
+def _watermark(pdf, cx: float, cy: float, scale: float,
+               rgb: tuple[int, int, int], variant: int, opacity: float,
+               box: tuple[float, float, float, float] | None = None) -> None:
+    """The brand watermark: a user-loaded image (faint, aspect-fit into `box`)
+    when one is attached to the pdf, else the built-in hex cluster. `box` =
+    (x, y, w, h) is the safe region for the image (kept clear of chamfer cuts);
+    without it the cluster's own footprint is used. When no image is supplied the
+    call is byte-for-byte the original `_hex_cluster` — so themed output is
+    unchanged unless a watermark is explicitly loaded."""
+    wm = getattr(pdf, "watermark_bytes", None)
+    if wm and getattr(pdf, "watermark_enabled", True):
+        bx, by, bw, bh = box if box else (cx, cy, scale, scale)
+        try:
+            from PIL import Image as _PILImage
+            with _PILImage.open(io.BytesIO(wm)) as _im:
+                iw, ih = _im.size
+            asp = (ih / iw) if iw else 1.0
+            tw, th = bw, bw * asp
+            if th > bh:
+                th, tw = bh, (bh / asp if asp else bw)
+            px, py = bx + (bw - tw) / 2.0, by + (bh - th) / 2.0
+            with pdf.local_context(fill_opacity=min(1.0, opacity * 3.0)):
+                pdf.image(io.BytesIO(wm), x=px, y=py, w=tw, h=th)
+            return
+        except Exception:
+            pass
+    _hex_cluster(pdf, cx, cy, scale, rgb, variant, opacity)
+
+
 # ──────────────────────────────────────────────────────────────────────────────
 # ReportTheme — the pluggable visual-identity interface.
 # ──────────────────────────────────────────────────────────────────────────────
@@ -666,7 +695,8 @@ class SpecTheme(ReportTheme):
                 _var = int(str(number)) % 3
             except ValueError:
                 _var = 0
-            _hex_cluster(pdf, x0 + w - 30, y0 - 5, 20, WHITE, variant=_var, opacity=0.10)
+            _watermark(pdf, x0 + w - 30, y0 - 5, 20, WHITE, _var, 0.10,
+                       box=(x0 + w * 0.55, y0 + 5, w * 0.38, H - 10))
         num = dv.get("number", {"size": 26, "color": "lime", "x": 9})
         pdf.set_xy(x0 + num.get("x", 9), y0 + 9)
         pdf._sf(num.get("size", 26), "bold")
@@ -718,8 +748,9 @@ class SpecTheme(ReportTheme):
                                   y=y + (gap - sh) / 2.0, w=sw, h=sh)
                 scale = min(gap / HEX_VEXT, 52.0)
                 if scale >= 12:
-                    _hex_cluster(pdf, x0 - scale * 0.22, floor - scale * HEX_VEXT,
-                                 scale, pdf.primary_color, variant=variant, opacity=0.13)
+                    _watermark(pdf, x0 - scale * 0.22, floor - scale * HEX_VEXT,
+                               scale, pdf.primary_color, variant, 0.13,
+                               box=(x0, floor - scale, scale, scale))
                 if gap > 120:
                     cxm = (x0 + x1) / 2
                     _stroke_chamfer(pdf, cxm - 10, y + gap * 0.28, 18, 18,
@@ -798,7 +829,8 @@ class SpecTheme(ReportTheme):
                     cm.get("shape", {"kind": "chamfer", "c": 7.5, "q": 2.0, "r": 5.0}),
                     cm.get("fill", {"type": "solid", "color": "ink"}))
         if cm.get("watermark") == "hexCluster":
-            _hex_cluster(pdf, x0 + W - 42, y_m - 6, 30, WHITE, variant=0, opacity=0.12)
+            _watermark(pdf, x0 + W - 42, y_m - 6, 30, WHITE, 0, 0.12,
+                       box=(x0 + W * 0.52, y_m + 8, W * 0.40, MH - 16))
         ar = cm.get("accent_rule")
         if ar:
             inset = ar.get("inset", 4)
@@ -810,8 +842,8 @@ class SpecTheme(ReportTheme):
     def cover_left_void_fill(self, pdf, x0, sc, bottom) -> None:
         dec = self._s("cover_left_void").get("decoration", "hexCluster")
         if dec == "hexCluster":
-            _hex_cluster(pdf, x0 - sc * 0.2, bottom - sc, sc,
-                         pdf.primary_color, variant=1, opacity=0.13)
+            _watermark(pdf, x0 - sc * 0.2, bottom - sc, sc,
+                       pdf.primary_color, 1, 0.13, box=(x0, bottom - sc, sc, sc))
         elif dec == "accentKeyline":
             ry = bottom - 6.0
             pdf.set_fill_color(*pdf.lime)

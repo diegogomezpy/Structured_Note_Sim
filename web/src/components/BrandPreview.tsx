@@ -1,10 +1,12 @@
 import { useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { Branding, NoteTerms } from '../api/types'
 import {
-  buildTokens, resolveSpec, resolveColor, fillBackground, shapeKind,
-  chamferPath, gradientAxis, fillStops, rgbCss,
+  buildTokens, resolveSpec, resolveColor, fillBackground, shapeKind, blend,
+  chamferPath, chamferPadMm, hexClusterPaths, gradientAxis, fillStops, rgbCss,
   type Tokens, type ColorRef, type Fill,
 } from '../lib/reportTheme'
+
+const MM_PER_PT = 0.352778  // millimetres per point (for pt→mm→px font scaling)
 
 /* Live preview of the PDF report's signature surfaces. It renders from the SAME
    theme spec the PDF uses (reportkit/theme.py ↔ lib/reportTheme.ts), so editing
@@ -59,8 +61,9 @@ function useSize<T extends HTMLElement>() {
   return { ref, size }
 }
 
-function Panel({ shape, fill, tok, radius = 8, style, contentStyle, children }: {
+function Panel({ shape, fill, tok, radius = 8, cPx: cOv, qPx: qOv, rPx: rOv, style, contentStyle, children }: {
   shape: unknown; fill: Fill | undefined; tok: Tokens; radius?: number
+  cPx?: number; qPx?: number; rPx?: number  // pre-scaled chamfer geometry (px) — overrides mm×MM_PX
   style?: React.CSSProperties; contentStyle?: React.CSSProperties; children?: React.ReactNode
 }) {
   const kind = shapeKind(shape)
@@ -85,12 +88,12 @@ function Panel({ shape, fill, tok, radius = 8, style, contentStyle, children }: 
   const ax = gradientAxis(fill?.angle ?? 90)
   const id = idRef.current
   const paint = solid ? stops[0] : `url(#${id})`
-  // Scale the spec's chamfer geometry (PDF mm) into preview px so the "Cut"
-  // control visibly changes the shape; clamp the cut so it can't self-intersect.
+  // Chamfer geometry in px: explicit overrides (scale-faithful callers) win;
+  // otherwise scale the spec's mm geometry by MM_PX so the Cut control moves it.
   const m = Math.min(size.w, size.h)
-  const cPx = geo.c != null ? Math.min(geo.c * MM_PX, m * 0.48) : undefined
-  const qPx = geo.q != null ? geo.q * MM_PX : undefined
-  const rPx = geo.r != null ? geo.r * MM_PX : undefined
+  const cPx = cOv != null ? Math.min(cOv, m * 0.5) : (geo.c != null ? Math.min(geo.c * MM_PX, m * 0.48) : undefined)
+  const qPx = qOv != null ? qOv : (geo.q != null ? geo.q * MM_PX : undefined)
+  const rPx = rOv != null ? rOv : (geo.r != null ? geo.r * MM_PX : undefined)
   return (
     <div ref={ref} style={{ position: 'relative', ...style }}>
       {size.w > 1 && size.h > 1 && (
@@ -115,14 +118,165 @@ function Panel({ shape, fill, tok, radius = 8, style, contentStyle, children }: 
   )
 }
 
-// Faint chamfered "hex" dots — the hexCluster watermark, approximated.
-function HexDots({ cut = 3 }: { cut?: number }) {
-  const clip = `polygon(0 0, calc(100% - ${cut}px) 0, 100% ${cut}px, 100% 100%, ${cut}px 100%, 0 calc(100% - ${cut}px))`
+// Watermark drawn into a chamfer panel: the user's loaded image (faint, clipped
+// to the panel silhouette) OR — when none is supplied — a FAITHFUL hex-cluster
+// (transcribed from reportkit/theme.py's _hex_cluster), not the old fake dots.
+// panelW/panelH and geo are the panel's px size + chamfer so the clip matches.
+function Watermark({ img, enabled, panelW, panelH, geo, sScale, sx, sy, variant, opacity, color }: {
+  img?: string; enabled: boolean; panelW: number; panelH: number
+  geo: { c?: number; q?: number; r?: number }
+  sScale: number; sx: number; sy: number  // cluster scale + anchor, in px
+  variant: number; opacity: number; color: string
+}) {
+  const idRef = useRef<string>('')
+  if (!idRef.current) idRef.current = `bpw${_gid++}`
+  const clipId = idRef.current
+  const clipD = chamferPath(panelW, panelH, geo.c, geo.q, geo.r)
   return (
-    <div style={{ position: 'absolute', top: 6, right: 10, display: 'flex', gap: 4, opacity: 0.14, zIndex: 1 }}>
-      {[10, 7, 5].map((s, i) => (
-        <div key={i} style={{ width: s, height: s, background: '#fff', clipPath: clip }} />
-      ))}
+    <svg width={panelW} height={panelH} aria-hidden
+      style={{ position: 'absolute', inset: 0, zIndex: 0, pointerEvents: 'none' }}>
+      <defs><clipPath id={clipId}><path d={clipD} /></clipPath></defs>
+      <g clipPath={`url(#${clipId})`}>
+        {img && enabled
+          ? <image href={img} x={panelW * 0.52} y={panelH * 0.08} width={panelW * 0.44} height={panelH * 0.84}
+              opacity={Math.min(1, opacity * 2.4)} preserveAspectRatio="xMidYMid meet" />
+          : hexClusterPaths(sScale, variant).map((p, i) => (
+              <path key={i} d={p.d} transform={`translate(${sx + p.bx} ${sy + p.by})`}
+                fill={p.filled ? color : 'none'} fillOpacity={p.filled ? opacity : undefined}
+                stroke={p.filled ? 'none' : color} strokeOpacity={p.filled ? undefined : opacity} strokeWidth={p.strokeW} />
+            ))}
+      </g>
+    </svg>
+  )
+}
+
+// A generic theme-spec bag (loose typing — the shapes vary by surface).
+type Spec = Record<string, unknown>
+const asObj = (v: unknown): Record<string, unknown> => (typeof v === 'object' && v ? v as Record<string, unknown> : {})
+const geoOf = (shape: unknown) => asObj(shape) as { c?: number; q?: number; r?: number }
+
+// ── scale-faithful chamfer surfaces ──────────────────────────────────────────
+// These measure their own width, derive a px-per-mm `s = W/178` (the PDF's
+// content column is 178mm), then lay out every child in mm×s and every font in
+// pt×MM_PER_PT×s — so the preview matches the real PDF geometry, not a guess.
+
+// Summary-page masthead: dark chamfer panel, lime eyebrow, white title, muted
+// subtitle, and a KPI strip with lime tick bars. Mirrors _summary_page + the
+// cover_masthead hook (panel 178×58mm, chamfer 7.5/2.0/5.0, pad 9mm, KPI strip
+// at MH-24, tick 0.8×14mm, label 6.3pt / value 13.5pt).
+function Masthead({ tok, spec, headStyle, eyebrow, title, subtitle, kpis, wmImg, wmOn }: {
+  tok: Tokens; spec: Spec; headStyle: React.CSSProperties
+  eyebrow: string; title: string; subtitle: string; kpis: [string, string][]
+  wmImg?: string; wmOn: boolean
+}) {
+  const cm = asObj(spec.cover_masthead) as { shape?: unknown; fill?: Fill; watermark?: string; accent_rule?: Record<string, ColorRef | number> }
+  const geo = geoOf(cm.shape)
+  const { ref, size } = useSize<HTMLDivElement>()
+  const s = size.w > 0 ? size.w / 178 : 0
+  const col = (r?: ColorRef) => rgbCss(resolveColor(r, tok))
+  const mint = rgbCss([159, 196, 179])
+  const fpx = (pt: number) => pt * MM_PER_PT * s
+  const hasKpis = kpis.length > 0
+  const MH = hasKpis ? 58 : 34
+  const pad = chamferPadMm(geo.c)
+  const stripTop = MH - 24
+  const kw = (178 - 2 * pad) / Math.max(1, kpis.length)
+  const cPx = (geo.c ?? 0) * s, qPx = (geo.q ?? 0) * s, rPx = (geo.r ?? 0) * s
+  return (
+    <div ref={ref} style={{ marginTop: 12 }}>
+      {s > 0 && (
+        <Panel shape={cm.shape} fill={cm.fill} tok={tok} cPx={cPx} qPx={qPx} rPx={rPx}
+          style={{ height: MH * s, color: '#fff' }} contentStyle={{ position: 'relative', height: MH * s }}>
+          {cm.watermark && cm.watermark !== 'none' && (
+            <Watermark img={wmImg} enabled={wmOn} panelW={178 * s} panelH={MH * s} geo={{ c: cPx, q: qPx, r: rPx }}
+              sScale={30 * s} sx={(178 - 42) * s} sy={-6 * s} variant={0} opacity={0.12} color="#ffffff" />
+          )}
+          <div style={{ position: 'absolute', left: pad * s, top: 7 * s, right: pad * s, fontSize: fpx(8), fontWeight: 700, letterSpacing: '0.13em', color: col('lime'), whiteSpace: 'nowrap', overflow: 'hidden' }}>{eyebrow}</div>
+          <div style={{ position: 'absolute', left: pad * s, top: 11.5 * s, right: pad * s, fontSize: fpx(21), fontWeight: 800, lineHeight: 1.02, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', ...headStyle }}>{title}</div>
+          <div style={{ position: 'absolute', left: pad * s, top: 24 * s, right: pad * s, fontSize: fpx(9.5), color: mint, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{subtitle}</div>
+          {hasKpis && <>
+            <div style={{ position: 'absolute', left: pad * s, top: stripTop * s, width: (178 - 2 * pad) * s, height: Math.max(1, 0.3 * s), background: rgbCss(blend(tok.ink, [255, 255, 255], 0.18)) }} />
+            {kpis.map(([k, v], i) => {
+              const cx = pad + i * kw
+              return (
+                <div key={k}>
+                  <div style={{ position: 'absolute', left: cx * s, top: (stripTop + 4) * s, width: Math.max(1.4, 0.8 * s), height: 14 * s, background: col('lime') }} />
+                  <div style={{ position: 'absolute', left: (cx + 3) * s, top: (stripTop + 4) * s, width: (kw - 4) * s, fontSize: fpx(6.3), fontWeight: 700, letterSpacing: '0.04em', color: mint, lineHeight: 1.12, textTransform: 'uppercase' }}>{k}</div>
+                  <div style={{ position: 'absolute', left: (cx + 3) * s, top: (stripTop + 12) * s, fontSize: fpx(13.5), fontWeight: 800, color: '#fff', whiteSpace: 'nowrap', ...headStyle }}>{v}</div>
+                </div>
+              )
+            })}
+          </>}
+          {cm.accent_rule && (
+            <div style={{ position: 'absolute', left: 4 * s, right: 4 * s, bottom: 1.6 * s, height: Math.max(1, 1.2 * s), background: col(cm.accent_rule.color as ColorRef), borderRadius: 1, zIndex: 1 }} />
+          )}
+        </Panel>
+      )}
+    </div>
+  )
+}
+
+// Numbered secondary head: a 12mm chamfer chip (20% cut → the leaning-hexagon /
+// downward-chevron silhouette), then kicker + title, then a rule. Mirrors
+// SpecTheme.secondary_head (chip 12mm, chamfer 2.4/0.9/2.4, kicker at +17mm/7pt,
+// title +17mm/15pt, rule at chip+2mm).
+function SectionHead({ tok, spec, headStyle, num, kicker, title }: {
+  tok: Tokens; spec: Spec; headStyle: React.CSSProperties; num: string; kicker: string; title: string
+}) {
+  const sh = asObj(spec.secondary_head) as { chip?: { size?: number; shape?: unknown; fill?: Fill; number_color?: ColorRef }; kicker_color?: ColorRef; title_color?: ColorRef; rule_color?: ColorRef }
+  const chip = sh.chip ?? {}
+  const geo = geoOf(chip.shape)
+  const { ref, size } = useSize<HTMLDivElement>()
+  const s = size.w > 0 ? size.w / 178 : 0
+  const col = (r?: ColorRef) => rgbCss(resolveColor(r, tok))
+  const fpx = (pt: number) => pt * MM_PER_PT * s
+  const chipMm = chip.size ?? 12
+  return (
+    <div ref={ref} style={{ marginTop: 14, position: 'relative', height: (chipMm + 6) * s }}>
+      {s > 0 && <>
+        <Panel shape={chip.shape} fill={chip.fill} tok={tok}
+          cPx={(geo.c ?? 0) * s} qPx={(geo.q ?? 0) * s} rPx={(geo.r ?? 0) * s} radius={((chip.shape as { radius?: number })?.radius ?? 2.6) * s}
+          style={{ position: 'absolute', left: 0, top: 0, width: chipMm * s, height: chipMm * s }}
+          contentStyle={{ width: chipMm * s, height: chipMm * s, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <span style={{ fontSize: fpx(11), fontWeight: 800, color: col(chip.number_color), lineHeight: 1, ...headStyle }}>{num}</span>
+        </Panel>
+        <div style={{ position: 'absolute', left: (chipMm + 5) * s, top: 0.5 * s, fontSize: fpx(7), fontWeight: 700, letterSpacing: '0.07em', color: col(sh.kicker_color), textTransform: 'uppercase' }}>{kicker}</div>
+        <div style={{ position: 'absolute', left: (chipMm + 5) * s, top: 4.8 * s, fontSize: fpx(15), fontWeight: 800, color: col(sh.title_color), lineHeight: 1.1, whiteSpace: 'nowrap', ...headStyle }}>{title}</div>
+        <div style={{ position: 'absolute', left: 0, right: 0, top: (chipMm + 2) * s, height: Math.max(1, 0.4 * s), background: col(sh.rule_color), opacity: 0.9 }} />
+      </>}
+    </div>
+  )
+}
+
+// Analytical chapter divider (banner style): chamfer banner, big number, vline,
+// kicker + heading. Mirrors SpecTheme.section_divider banner branch (H 30mm,
+// chamfer 4.4/1.3/3.4, number 26pt at 9mm, vline at 31mm, text at 37mm).
+function DividerBanner({ tok, dv, headStyle, num, kicker, heading, wmImg, wmOn }: {
+  tok: Tokens; dv: Spec; headStyle: React.CSSProperties; num: number; kicker: string; heading: string; wmImg?: string; wmOn: boolean
+}) {
+  const geo = geoOf(dv.shape)
+  const { ref, size } = useSize<HTMLDivElement>()
+  const s = size.w > 0 ? size.w / 178 : 0
+  const col = (r?: ColorRef) => rgbCss(resolveColor(r, tok))
+  const fpx = (pt: number) => pt * MM_PER_PT * s
+  const H = (dv.height as number) ?? 30
+  const cPx = (geo.c ?? 0) * s, qPx = (geo.q ?? 0) * s, rPx = (geo.r ?? 0) * s
+  const numColor = (asObj(dv.number).color as ColorRef) ?? 'lime'
+  return (
+    <div ref={ref} style={{ marginTop: 12 }}>
+      {s > 0 && (
+        <Panel shape={dv.shape} fill={dv.fill as Fill} tok={tok} cPx={cPx} qPx={qPx} rPx={rPx}
+          style={{ height: H * s, color: '#fff' }} contentStyle={{ position: 'relative', height: H * s }}>
+          {!!dv.watermark && dv.watermark !== 'none' && (
+            <Watermark img={wmImg} enabled={wmOn} panelW={178 * s} panelH={H * s} geo={{ c: cPx, q: qPx, r: rPx }}
+              sScale={20 * s} sx={(178 - 30) * s} sy={-5 * s} variant={num % 3} opacity={0.10} color="#ffffff" />
+          )}
+          <div style={{ position: 'absolute', left: 9 * s, top: 9 * s, fontSize: fpx(26), fontWeight: 800, color: col(numColor), lineHeight: 1, ...headStyle }}>{num}</div>
+          {(dv.vline as boolean) && <div style={{ position: 'absolute', left: 31 * s, top: 7 * s, width: Math.max(1, 0.5 * s), height: 16 * s, background: col(dv.vline_color as ColorRef) }} />}
+          <div style={{ position: 'absolute', left: 37 * s, top: 7.5 * s, fontSize: fpx(7), fontWeight: 700, letterSpacing: '0.06em', color: col(dv.kicker_color as ColorRef), textTransform: 'uppercase' }}>{kicker}</div>
+          <div style={{ position: 'absolute', left: 37 * s, top: 12.5 * s, fontSize: fpx(16), fontWeight: 800, color: col(dv.heading_color as ColorRef), lineHeight: 1.05, whiteSpace: 'nowrap', ...headStyle }}>{heading}</div>
+        </Panel>
+      )}
     </div>
   )
 }
@@ -214,16 +368,18 @@ export default function BrandPreview({ brand, noteName, terms, coverMetrics, met
   const headStyle = headFont !== 'inherit' ? { fontFamily: `${headFont}, var(--font-sans, system-ui)` } : {}
 
   const hd = (spec.header ?? {}) as unknown as { rule?: Record<string, ColorRef | number>; tick?: Record<string, ColorRef | number> }
-  const cm = (spec.cover_masthead ?? {}) as unknown as { shape?: unknown; fill?: Fill; watermark?: string; accent_rule?: Record<string, ColorRef | number> }
-  const sh = (spec.secondary_head ?? {}) as unknown as {
-    chip?: { size?: number; shape?: unknown; fill?: Fill; number_color?: ColorRef }
-    kicker_color?: ColorRef; title_color?: ColorRef; rule_color?: ColorRef
-  }
   const dv = (spec.divider ?? {}) as unknown as Record<string, unknown>
-  const chip = sh.chip ?? {}
+  const specBag = spec as unknown as Spec  // loose bag for the faithful sub-components
   // Cover-page background fill (solid brand colour by default; gradients allowed).
   const coverFill = ((spec.cover as { fill?: Fill } | undefined)?.fill) ?? ({ type: 'solid', color: 'primary' } as Fill)
   const disclaimer = (brand.disclaimer_body as string) || 'This document is for information purposes only and does not constitute investment advice or an offer to sell any security. Capital is at risk. Past performance is not indicative of future results.'
+
+  // Masthead subtitle = report/series title · underlyings (mirrors the PDF).
+  const tickerList = terms?.tickers ? Object.values(terms.tickers as Record<string, string>).slice(0, 5) : []
+  const subtitle = [brand.report_title || 'Structured note', tickerList.join(' / ')].filter(Boolean).join('  ·  ')
+  // Loadable watermark (image → used in place of the drawn hex cluster).
+  const wmImg = dataUrl(brand.watermark_base64)
+  const wmOn = brand.watermark_enabled !== false
 
   const paletteDots: [string, RGBLike][] = [
     ['primary', tok.primary], ['accent', tok.accent], ['section rule', tok.section_rule], ['sidebar', tok.sidebar_bar],
@@ -288,53 +444,16 @@ export default function BrandPreview({ brand, noteName, terms, coverMetrics, met
         )}
       </div>
 
-      {/* cover masthead (interior summary masthead) */}
-      <Panel shape={cm.shape} fill={cm.fill} tok={tok} radius={9}
-        style={{ marginTop: 12, color: '#fff' }} contentStyle={{ padding: '13px 13px 12px' }}>
-        {cm.watermark === 'hexCluster' && <HexDots />}
-        <div style={{ fontSize: 7, fontWeight: 700, letterSpacing: '0.16em', color: col('lime') }}>{eyebrow}</div>
-        <div style={{ fontSize: 15, fontWeight: 800, marginTop: 3, lineHeight: 1.1, ...headStyle }}>{title}</div>
-        <div style={{ display: 'flex', gap: 16, marginTop: 10 }}>
-          {mastKpis.map(([k, v]) => (
-            <div key={k}>
-              <div style={{ fontSize: 6, fontWeight: 700, letterSpacing: '0.1em', color: rgbCss(resolveColor({ mix: ['lime', 'white', 0.35] }, tok)) }}>{k}</div>
-              <div style={{ fontSize: 11, fontWeight: 800, marginTop: 2, ...headStyle }}>{v}</div>
-            </div>
-          ))}
-        </div>
-        {cm.accent_rule && (
-          <div style={{ position: 'absolute', left: 8, right: 8, bottom: 4, height: 2, background: col(cm.accent_rule.color as ColorRef), borderRadius: 1, zIndex: 1 }} />
-        )}
-      </Panel>
+      {/* cover masthead (interior summary masthead) — scale-faithful */}
+      <Masthead tok={tok} spec={specBag} headStyle={headStyle} eyebrow={eyebrow} title={title}
+        subtitle={subtitle} kpis={mastKpis} wmImg={wmImg} wmOn={wmOn} />
 
-      {/* numbered section head */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 14 }}>
-        <Panel shape={chip.shape} fill={chip.fill} tok={tok} radius={6}
-          style={{ width: 26, height: 26, flexShrink: 0 }}
-          contentStyle={{ width: 26, height: 26, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 800, color: col(chip.number_color), ...headStyle }}>
-          01
-        </Panel>
-        <div>
-          <div style={{ fontSize: 7, fontWeight: 700, letterSpacing: '0.12em', color: col(sh.kicker_color) }}>NOTE TERMS</div>
-          <div style={{ fontSize: 12.5, fontWeight: 800, color: col(sh.title_color), lineHeight: 1.15, ...headStyle }}>Terms &amp; Structure</div>
-        </div>
-      </div>
-      <div style={{ height: 1, background: col(sh.rule_color), marginTop: 6, opacity: 0.9 }} />
+      {/* numbered section head — scale-faithful chamfer chip */}
+      <SectionHead tok={tok} spec={specBag} headStyle={headStyle} num="01" kicker="NOTE TERMS" title="Terms & Structure" />
 
       {/* analytical chapter opener */}
       {(dv.style as string) === 'banner' ? (
-        <Panel shape={dv.shape} fill={dv.fill as Fill} tok={tok} radius={6}
-          style={{ marginTop: 12, color: '#fff' }} contentStyle={{ padding: '9px 12px' }}>
-          {(dv.watermark as string) === 'hexCluster' && <HexDots cut={2} />}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <div style={{ fontSize: 18, fontWeight: 800, color: col((dv.number as { color?: ColorRef })?.color), ...headStyle }}>04</div>
-            {(dv.vline as boolean) && <div style={{ width: 1, alignSelf: 'stretch', background: col((dv.vline_color as ColorRef)) }} />}
-            <div>
-              <div style={{ fontSize: 6.5, fontWeight: 700, letterSpacing: '0.14em', color: col(dv.kicker_color as ColorRef) }}>MONTE CARLO</div>
-              <div style={{ fontSize: 12, fontWeight: 800, color: col(dv.heading_color as ColorRef), ...headStyle }}>Projected Outcomes</div>
-            </div>
-          </div>
-        </Panel>
+        <DividerBanner tok={tok} dv={dv} headStyle={headStyle} num={4} kicker="MONTE CARLO" heading="Projected Outcomes" wmImg={wmImg} wmOn={wmOn} />
       ) : (
         <div style={{ marginTop: 12, position: 'relative' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -366,18 +485,8 @@ export default function BrandPreview({ brand, noteName, terms, coverMetrics, met
 
       {/* ── INTERIOR PAGE 2 · terms table + callout ────────────────────── */}
       <PageTag n={3} label="INTERIOR · NOTE TERMS" muted={muted} />
-      {/* numbered section head (reuse the chip) */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-        <Panel shape={chip.shape} fill={chip.fill} tok={tok} radius={6}
-          style={{ width: 26, height: 26, flexShrink: 0 }}
-          contentStyle={{ width: 26, height: 26, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 800, color: col(chip.number_color), ...headStyle }}>
-          02
-        </Panel>
-        <div>
-          <div style={{ fontSize: 7, fontWeight: 700, letterSpacing: '0.12em', color: col(sh.kicker_color) }}>TERM SHEET</div>
-          <div style={{ fontSize: 12.5, fontWeight: 800, color: col(sh.title_color), lineHeight: 1.15, ...headStyle }}>Key Economic Terms</div>
-        </div>
-      </div>
+      {/* numbered section head — scale-faithful chamfer chip */}
+      <SectionHead tok={tok} spec={specBag} headStyle={headStyle} num="02" kicker="TERM SHEET" title="Key Economic Terms" />
       <div style={{ marginTop: 10, border: `1px solid ${rgbCss(tok.rule_soft)}`, borderRadius: 8, overflow: 'hidden' }}>
         {mastKpis.concat([['COUPON FREQUENCY', 'Quarterly'], ['MEMORY', 'Yes']]).slice(0, 5).map(([k, v], i) => (
           <div key={k} style={{ display: 'flex', justifyContent: 'space-between', padding: '7px 11px', fontSize: 9.5,
