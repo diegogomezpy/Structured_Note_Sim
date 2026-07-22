@@ -18,6 +18,17 @@ export const COVER_METRIC_DEFAULT = ['coupon_pa', 'maturity', 'knock_in_barrier'
 export const COVER_METRIC_MAX = 4
 const MAX_PHOTOS = 12
 
+// Curated font families offered in the Designer. IBM Plex Sans is bundled with
+// the PDF (renders end-to-end); the rest render in the live preview and set the
+// config's font name — embed the .ttf files (below the picker) to guarantee they
+// render in the PDF too.
+export const FONT_PRESETS = [
+  'IBM Plex Sans', 'Inter', 'Helvetica Neue', 'Arial', 'Georgia',
+  'Times New Roman', 'Garamond', 'Playfair Display', 'Lora', 'Merriweather',
+  'Roboto', 'Roboto Slab', 'Montserrat', 'Work Sans', 'Source Serif Pro',
+  'Libre Franklin', 'DM Sans', 'Space Grotesk', 'Courier New',
+]
+
 export interface BrandingStudio {
   brand: Branding
   setBrand: React.Dispatch<React.SetStateAction<Branding>>
@@ -31,6 +42,7 @@ export interface BrandingStudio {
   error: string
   setError: (s: string) => void
   applyBranding: (b: Record<string, unknown>) => void
+  newBranding: () => void
   loadPreset: (file: string) => Promise<void>
   onUploadBranding: (file: File | undefined) => void
   saveBrandingToFolder: () => Promise<void>
@@ -90,6 +102,11 @@ export function useBrandingStudio(): BrandingStudio {
       disclaimer_body: flat(b.disclaimer_body),
     } as Branding)
   }
+  const newBranding = () => {
+    setBrandLocalName(null)
+    setBrand({})
+    setError('')
+  }
   const loadPreset = async (file: string) => {
     if (!file) return
     setBrandLocalName(null)
@@ -119,7 +136,7 @@ export function useBrandingStudio(): BrandingStudio {
     const json = JSON.stringify(brand, null, 2)
     const blob = new Blob([json], { type: 'application/json' })
     const url = URL.createObjectURL(blob)
-    const fname = `${(brand.firm_name || 'branding').replace(/[^A-Za-z0-9]+/g, '_').toLowerCase()}_branding.json`
+    const fname = `${(brandLocalName || brand.firm_name || 'branding').replace(/[^A-Za-z0-9]+/g, '_').toLowerCase()}_branding.json`
     const a = document.createElement('a')
     a.href = url; a.download = fname
     document.body.appendChild(a); a.click(); a.remove()
@@ -175,7 +192,7 @@ export function useBrandingStudio(): BrandingStudio {
   return {
     brand, setBrand, setBrandField, themeIsCustom, presets, brandFolder,
     brandLocalName, setBrandLocalName, brandSaving, error, setError,
-    applyBranding, loadPreset, onUploadBranding, saveBrandingToFolder, downloadBranding,
+    applyBranding, newBranding, loadPreset, onUploadBranding, saveBrandingToFolder, downloadBranding,
     onImage, onFillerUpload, onFontFiles, fontCount,
     coverMetricsSel, toggleCoverMetric, metricLabel, refs,
   }

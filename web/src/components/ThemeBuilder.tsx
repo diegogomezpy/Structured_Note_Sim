@@ -94,12 +94,16 @@ function ShapeControl({ value, onChange }: { value: unknown; onChange: (v: unkno
         }} />
       {kind === 'chamfer' && (
         <label style={{ ...row, fontSize: 11.5, color: 'var(--text-muted)' }}>Cut
-          <input type="number" step={0.5} value={Number(shape.c ?? 5)} onChange={(e) => onChange({ ...shape, c: Number(e.target.value) })}
+          <input type="number" step={0.5} min={0} max={12}
+            value={Number(shape.c ?? 5)}
+            onChange={(e) => onChange({ ...shape, c: Math.max(0, Math.min(12, Number(e.target.value) || 0)) })}
             style={{ width: 64, fontSize: 12, padding: '4px 6px', borderRadius: 7, border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--text)' }} />mm</label>
       )}
       {kind === 'rounded' && (
         <label style={{ ...row, fontSize: 11.5, color: 'var(--text-muted)' }}>Radius
-          <input type="number" step={0.5} value={Number(shape.radius ?? 3)} onChange={(e) => onChange({ ...shape, radius: Number(e.target.value) })}
+          <input type="number" step={0.5} min={0} max={12}
+            value={Number(shape.radius ?? 3)}
+            onChange={(e) => onChange({ ...shape, radius: Math.max(0, Math.min(12, Number(e.target.value) || 0)) })}
             style={{ width: 64, fontSize: 12, padding: '4px 6px', borderRadius: 7, border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--text)' }} />mm</label>
       )}
     </div>

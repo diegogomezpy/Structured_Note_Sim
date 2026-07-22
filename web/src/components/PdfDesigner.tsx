@@ -6,7 +6,7 @@ import ThemeBuilder from './ThemeBuilder'
 import CoverPhotoPicker from './CoverPhotoPicker'
 import FolderConnect from './FolderConnect'
 import { resolveSpec, buildTokens } from '../lib/reportTheme'
-import { COVER_METRIC_KEYS, COVER_METRIC_MAX, type BrandingStudio } from '../lib/useBrandingStudio'
+import { COVER_METRIC_KEYS, COVER_METRIC_MAX, FONT_PRESETS, type BrandingStudio } from '../lib/useBrandingStudio'
 import type { NoteTerms } from '../api/types'
 
 /* PDF Designer — a bespoke, from-scratch branding studio. Every input here is
@@ -112,15 +112,23 @@ export default function PdfDesigner({ studio, terms }: { studio: BrandingStudio;
       <div style={{ display: 'flex', flexDirection: 'column', gap: 16, minWidth: 0 }}>
         {/* config bar */}
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'center' }}>
+          <button className="btn btn--primary" style={{ padding: '7px 12px' }} onClick={studio.newBranding}
+            title={t('brand_new_hint')}><Icon name="plus" size={13} /> {t('brand_new')}</button>
           <select value="" onChange={(e) => {
             const v = e.target.value
+            if (v === '__new') { studio.newBranding(); return }
             if (v.startsWith('local:')) { const f = studio.brandFolder.files.find((x) => `local:${x.name}` === v); if (f) { studio.setBrandLocalName(f.name); studio.applyBranding(f.raw as Record<string, unknown>) } }
             else if (v) studio.loadPreset(v)
           }} style={{ ...inputStyle, width: 'auto', minWidth: 180 }}>
             <option value="">{t('brand_preset_ph')}</option>
+            <option value="__new">{t('brand_new')}</option>
             {studio.brandFolder.files.map((f) => <option key={f.name} value={`local:${f.name}`}>{f.name} {t('folder_tag')}</option>)}
             {studio.presets.map((p) => <option key={p.file} value={p.file}>{p.firm_name}</option>)}
           </select>
+          {/* config name — used as the saved filename */}
+          <input type="text" value={studio.brandLocalName ?? ''} placeholder={t('brand_config_name')}
+            onChange={(e) => studio.setBrandLocalName(e.target.value || null)}
+            style={{ ...inputStyle, width: 'auto', minWidth: 150 }} />
           <FolderConnect fld={studio.brandFolder} />
           <div style={{ flex: 1 }} />
           <button className="btn" style={{ padding: '7px 12px' }} onClick={() => studio.refs.cfg.current?.click()}><Icon name="upload" size={13} /> {t('brand_upload_cfg_btn')}</button>
@@ -156,6 +164,7 @@ export default function PdfDesigner({ studio, terms }: { studio: BrandingStudio;
             <ColorWell label={t('brand_secondary')} value={b.chart_secondary_color} fallback="#c69426" onChange={(v) => set('chart_secondary_color', v)} />
             <ColorWell label={t('brand_sidebar')}   value={b.sidebar_bar_color as string} fallback={b.primary_color ?? '#1a2e4a'} onChange={(v) => set('sidebar_bar_color', v)} />
           </div>
+          <div style={{ fontSize: 11, color: 'var(--text-faint)', marginTop: 10, lineHeight: 1.5 }}>{t('brand_colors_charts_hint')}</div>
         </Card>
 
         <Card title={t('brand_theme')} desc={t('brand_theme_hint')}>
@@ -170,7 +179,15 @@ export default function PdfDesigner({ studio, terms }: { studio: BrandingStudio;
               const ref = i === 0 ? studio.refs.titleFont : studio.refs.bodyFont
               return (
                 <Field key={f} label={i === 0 ? t('brand_title_font') : t('brand_body_font')}>
-                  <TextInput value={b[f] as string} onChange={(v) => set(f, v)} placeholder="IBM Plex Sans" />
+                  <div style={{ display: 'flex', gap: 6 }}>
+                    <select value={FONT_PRESETS.includes(b[f] as string) ? (b[f] as string) : ''}
+                      onChange={(e) => set(f, e.target.value)}
+                      style={{ ...inputStyle, width: 'auto', flexShrink: 0, minWidth: 92 }}>
+                      <option value="">{t('brand_font_custom')}</option>
+                      {FONT_PRESETS.map((fn) => <option key={fn} value={fn}>{fn}</option>)}
+                    </select>
+                    <TextInput value={b[f] as string} onChange={(v) => set(f, v)} placeholder="IBM Plex Sans" />
+                  </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 6, flexWrap: 'wrap' }}>
                     <button type="button" className="btn btn--ghost" style={{ padding: '5px 9px', fontSize: 11.5 }} onClick={() => ref.current?.click()}><Icon name="upload" size={12} /> {t('brand_embed_fonts')}</button>
                     {studio.fontCount(filesKey) > 0 && <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>{t('brand_fonts_n', { n: studio.fontCount(filesKey) })}</span>}
@@ -187,6 +204,8 @@ export default function PdfDesigner({ studio, terms }: { studio: BrandingStudio;
           <div style={grid()}>
             <UploadTile label={t('brand_alt_logo')} src={b.cover_logo_base64} dark onPick={(f) => studio.onImage('cover_logo_base64', f)} onClear={() => set('cover_logo_base64', '')} />
             <UploadTile label={t('brand_cover_sigil')} src={b.cover_sigil_base64} dark onPick={(f) => studio.onImage('cover_sigil_base64', f)} onClear={() => set('cover_sigil_base64', '')} />
+            <UploadTile label={t('brand_cover_image')} src={b.cover_image_base64 as string} dark onPick={(f) => studio.onImage('cover_image_base64', f)} onClear={() => set('cover_image_base64', '')} />
+            <UploadTile label={t('brand_back_image')} src={b.back_image_base64 as string} dark onPick={(f) => studio.onImage('back_image_base64', f)} onClear={() => set('back_image_base64', '')} />
             <ColorWell label={t('brand_overlay_color')} value={b.cover_overlay_color} fallback={b.primary_color ?? '#1a2e4a'} onChange={(v) => set('cover_overlay_color', v)} />
             <Field label={t('brand_overlay_opacity')}>
               <input type="number" min={0} max={1} step={0.05} placeholder="0.55"

@@ -2570,6 +2570,27 @@ def _mat_label(terms) -> str:
     return f"{round(float(terms.maturity) * 12)}M"
 
 
+def _draw_logo_fit(pdf, logo_b, x: float, y: float, max_h: float, max_w: float,
+                   *, cover: bool = False) -> None:
+    """Draw a logo at (x, y) fit inside (max_w, max_h) preserving aspect — never
+    stretched. The cover wordmark uses its OWN aspect (cover_logo_aspect), not the
+    header logo's, so a wide cover logo isn't squished into the header's box."""
+    if not logo_b:
+        return
+    if cover and getattr(pdf, "cover_logo_bytes", None):
+        asp = getattr(pdf, "cover_logo_aspect", None) or pdf.firm_logo_aspect
+    else:
+        asp = pdf.firm_logo_aspect
+    asp = asp or 1.0
+    h, w = max_h, max_h * asp
+    if w > max_w:
+        w, h = max_w, (max_w / asp if asp else max_h)
+    try:
+        pdf.image(io.BytesIO(logo_b), x=x, y=y, w=w, h=h)
+    except Exception:
+        pass
+
+
 def _paint_cover_bg(pdf: _NotePDF, W: float, H: float) -> None:
     """Fill a full-bleed page with the theme's cover background — a solid brand
     colour by default, or a gradient when the active theme spec sets
@@ -2647,13 +2668,7 @@ def _front_cover_page(pdf: _NotePDF, terms, lang: str, report_title: str, websit
     # Logo (white wordmark) top-left. A brand may supply a white knockout logo
     # (`cover_logo_base64`); otherwise the normal logo is used.
     logo_b = getattr(pdf, "cover_logo_bytes", None) or pdf.firm_logo_bytes
-    if logo_b:
-        try:
-            lh = 16.0
-            lw = min(lh * pdf.firm_logo_aspect, 90.0)
-            pdf.image(io.BytesIO(logo_b), x=ml, y=H * 0.07, w=lw, h=lh)
-        except Exception:
-            pass
+    _draw_logo_fit(pdf, logo_b, ml, H * 0.07, 16.0, 90.0, cover=True)
 
     # Hero block, left-aligned in the lower-middle of the page.
     eb = (report_title or _t("report_eyebrow", lang)).upper()
@@ -2774,13 +2789,7 @@ def _full_bleed_disclaimer(pdf: _NotePDF, lang: str, text: str, website: str = "
                 pass
 
     logo_b = getattr(pdf, "cover_logo_bytes", None) or pdf.firm_logo_bytes
-    if logo_b:
-        try:
-            lh = 12.0
-            lw = min(lh * pdf.firm_logo_aspect, 58.0)
-            pdf.image(io.BytesIO(logo_b), x=pdf.l_margin, y=15, w=lw, h=lh)
-        except Exception:
-            pass
+    _draw_logo_fit(pdf, logo_b, pdf.l_margin, 15, 12.0, 58.0, cover=True)
     pdf.set_draw_color(*pdf.section_rule_color)
     pdf.set_line_width(0.8)
     pdf.line(pdf.l_margin, 33, W - pdf.r_margin, 33)
@@ -3971,6 +3980,7 @@ def _build_pdf_report(
         if _img and _img not in _seen:
             _seen.add(_img); _pool.append(_img)
     pdf.cover_logo_bytes  = _decode_b64_img(_b.get("cover_logo_base64"))
+    pdf.cover_logo_aspect = _logo_aspect(pdf.cover_logo_bytes, default=pdf.firm_logo_aspect)
     pdf.cover_sigil_bytes = _decode_b64_img(_b.get("cover_sigil_base64"))
     # Loadable watermark image (read by reportkit's _watermark; falls back to the
     # drawn hex cluster when absent, so themed output is unchanged without one).
