@@ -1,0 +1,94 @@
+import { useRef } from 'react'
+import Icon from './Icon'
+
+/* Bespoke form primitives shared by the PDF Designer and the Build tab's
+   per-report image picker. Purpose-built (colour wells, upload tiles, cards)
+   rather than reused generic controls. */
+
+export function dataUrl(v?: string): string | undefined {
+  if (!v) return undefined
+  if (v.startsWith('data:') || v.startsWith('http') || v.startsWith('/')) return v
+  let mime = 'image/png'
+  if (v.startsWith('/9j/')) mime = 'image/jpeg'
+  else if (v.startsWith('R0lGOD')) mime = 'image/gif'
+  else if (v.startsWith('UklGR')) mime = 'image/webp'
+  else if (v.startsWith('iVBOR')) mime = 'image/png'
+  else if (v.includes('ftyp') || v.startsWith('AAAA')) mime = 'image/avif'
+  return `data:${mime};base64,${v}`
+}
+
+export const inputStyle: React.CSSProperties = {
+  width: '100%', fontSize: 13, padding: '9px 11px', borderRadius: 9,
+  border: '1px solid var(--border)', background: 'var(--bg-elev, var(--surface-2))', color: 'var(--text)',
+}
+
+export const grid = (min = 180): React.CSSProperties => ({
+  display: 'grid', gridTemplateColumns: `repeat(auto-fit, minmax(${min}px, 1fr))`, gap: 12,
+})
+
+export function Card({ title, desc, children, tight }: { title: string; desc?: string; children: React.ReactNode; tight?: boolean }) {
+  return (
+    <section style={{ border: '1px solid var(--border)', borderRadius: 14, background: 'var(--surface)', padding: tight ? '14px 16px' : '16px 18px' }}>
+      <div style={{ fontSize: 13.5, fontWeight: 800, color: 'var(--text)', letterSpacing: '-0.01em' }}>{title}</div>
+      {desc && <div style={{ fontSize: 11.5, color: 'var(--text-faint)', marginTop: 3, lineHeight: 1.5 }}>{desc}</div>}
+      <div style={{ marginTop: 13 }}>{children}</div>
+    </section>
+  )
+}
+
+export function Field({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <label style={{ display: 'block' }}>
+      <span style={{ display: 'block', fontSize: 11, fontWeight: 600, color: 'var(--text-muted)', marginBottom: 5, letterSpacing: '0.01em' }}>{label}</span>
+      {children}
+    </label>
+  )
+}
+
+export function TextInput({ value, onChange, placeholder }: { value?: string; onChange: (v: string) => void; placeholder?: string }) {
+  return <input type="text" value={value ?? ''} placeholder={placeholder} onChange={(e) => onChange(e.target.value)} style={inputStyle} />
+}
+
+/** A colour "well": a rounded swatch that opens the native picker, plus a hex
+    readout you can type into. */
+export function ColorWell({ label, value, fallback, onChange }: { label: string; value?: string; fallback: string; onChange: (v: string) => void }) {
+  const ref = useRef<HTMLInputElement>(null)
+  const shown = value || fallback
+  return (
+    <div>
+      <span style={{ display: 'block', fontSize: 11, fontWeight: 600, color: 'var(--text-muted)', marginBottom: 5 }}>{label}</span>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <button type="button" onClick={() => ref.current?.click()} aria-label={label}
+          style={{ width: 30, height: 30, borderRadius: 8, border: '1px solid var(--border-strong)', background: shown, cursor: 'pointer', flexShrink: 0, padding: 0 }} />
+        <input ref={ref} type="color" value={shown} onChange={(e) => onChange(e.target.value)}
+          style={{ position: 'absolute', width: 0, height: 0, opacity: 0, pointerEvents: 'none' }} />
+        <input type="text" value={value ?? ''} placeholder={fallback} onChange={(e) => onChange(e.target.value)}
+          style={{ ...inputStyle, fontFamily: 'var(--font-mono, monospace)', fontSize: 12, padding: '7px 9px' }} />
+      </div>
+    </div>
+  )
+}
+
+/** An image slot: a thumbnail that opens the file picker, with upload/clear. */
+export function UploadTile({ label, src, onPick, onClear, dark, accept = 'image/*' }: {
+  label: string; src?: string; onPick: (f: File | undefined) => void; onClear: () => void; dark?: boolean; accept?: string
+}) {
+  const ref = useRef<HTMLInputElement>(null)
+  const url = dataUrl(src)
+  return (
+    <div>
+      <span style={{ display: 'block', fontSize: 11, fontWeight: 600, color: 'var(--text-muted)', marginBottom: 5 }}>{label}</span>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <button type="button" onClick={() => ref.current?.click()}
+          style={{ width: 58, height: 38, borderRadius: 9, border: '1px dashed var(--border-strong)', background: url ? (dark ? '#0e1310' : 'var(--surface-2)') : 'transparent', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', padding: 3 }}>
+          {url ? <img src={url} alt="" style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }} /> : <Icon name="upload" size={15} />}
+        </button>
+        <div style={{ display: 'flex', gap: 6 }}>
+          <button type="button" className="btn btn--ghost" style={{ padding: '5px 9px', fontSize: 12 }} onClick={() => ref.current?.click()}>Upload</button>
+          {src && <button type="button" className="btn btn--ghost" style={{ padding: '5px 9px', fontSize: 12 }} onClick={onClear}>Clear</button>}
+        </div>
+        <input ref={ref} type="file" accept={accept} style={{ display: 'none' }} onChange={(e) => { onPick(e.target.files?.[0]); e.target.value = '' }} />
+      </div>
+    </div>
+  )
+}

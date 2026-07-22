@@ -726,6 +726,8 @@ export const S: Dict = {
   brand_back_image:     { en: 'Back-page photo', es: 'Foto de contraportada' },
   brand_colors_charts_hint: { en: 'Accent + Secondary colour the chart series (fans, lines, pies); Primary the cover; Section rule the accents & keylines; Panel the card fills.', es: 'Acento + Secundario colorean las series de los gráficos; Primario la portada; Regla de sección los acentos; Panel los rellenos de tarjetas.' },
   brand_font_custom:    { en: 'Custom…', es: 'Personalizado…' },
+  rep_images:           { en: 'Report images', es: 'Imágenes del informe' },
+  rep_images_hint:      { en: 'Shared with the PDF Designer — pictures are usually picked per report, so you can swap them without leaving Build.', es: 'Compartido con el Diseñador PDF — las imágenes suelen elegirse por informe, así que puedes cambiarlas sin salir de Construir.' },
   brand_palette_hint:   { en: 'Every identity colour in the report derives from these.', es: 'Todos los colores de identidad del informe derivan de estos.' },
   brand_legal:          { en: 'Legal', es: 'Legal' },
   rep_sub_build:        { en: 'Build', es: 'Crear' },

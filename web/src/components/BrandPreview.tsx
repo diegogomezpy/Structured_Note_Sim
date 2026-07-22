@@ -349,7 +349,11 @@ export default function BrandPreview({ brand, noteName, terms, coverMetrics, met
   const logo = dataUrl(brand.logo_base64)
   const altLogo = dataUrl(brand.cover_logo_base64)
   const sigil = dataUrl(brand.cover_sigil_base64)
-  const coverPhoto = dataUrl(((brand.filler_images_base64 as string[] | undefined) ?? [])[0])
+  // Cover / back photos mirror the PDF's resolution order: the explicit field
+  // first, then the photo-library pool ([0] for the cover, [1] for the back).
+  const pool = (brand.filler_images_base64 as string[] | undefined) ?? []
+  const coverPhoto = dataUrl((brand.cover_image_base64 as string) || pool[0])
+  const backPhoto = dataUrl((brand.back_image_base64 as string) || pool[1]) ?? coverPhoto
   const firm = brand.firm_name || 'Your Firm'
   const eyebrow = (brand.report_title || 'STRUCTURED NOTE').toUpperCase()
   const title = noteName || 'Sample Structured Note'
@@ -359,14 +363,13 @@ export default function BrandPreview({ brand, noteName, terms, coverMetrics, met
 
   // Cover metric band — the actually-selected metrics with values from `terms`.
   const label = metricLabel ?? ((k: string) => k.replace(/_/g, ' ').toUpperCase())
-  const selKeys = (coverMetrics && coverMetrics.length ? coverMetrics : COVER_METRIC_DEFAULT)
-  const coverKpis = selKeys
+  // An EXPLICIT empty selection means "no strip" (as the PDF does); only an
+  // absent selection falls back to the default trio.
+  const selKeys = coverMetrics ?? COVER_METRIC_DEFAULT
+  const mastKpis: [string, string][] = selKeys
     .map((k) => [label(k).toUpperCase(), metricValue(k, terms)] as [string, string])
     .filter(([, v]) => v !== '')
     .slice(0, 4)
-  // The masthead reuses the same selection (fallback to a generic trio if empty).
-  const mastKpis: [string, string][] = coverKpis.length ? coverKpis
-    : [['COUPON P.A.', '12.00%'], ['MATURITY', '18M'], ['BARRIER', '55%']]
 
   const overlayColor = brand.cover_overlay_color || brand.primary_color || rgbToHexSafe(tok.primary)
   const overlayOpacity = brand.cover_overlay_opacity != null ? Number(brand.cover_overlay_opacity) : 0.55
@@ -421,8 +424,8 @@ export default function BrandPreview({ brand, noteName, terms, coverMetrics, met
 
         <div style={{ position: 'relative', flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '22px 18px', textAlign: 'center' }}>
           {sigil && <img src={sigil} alt="" style={{ height: 26, marginBottom: 12, objectFit: 'contain', opacity: 0.95 }} />}
-          {altLogo
-            ? <img src={altLogo} alt="" style={{ height: 28, maxWidth: '70%', objectFit: 'contain' }} />
+          {(altLogo ?? logo)
+            ? <img src={altLogo ?? logo} alt="" style={{ height: 28, maxWidth: '70%', objectFit: 'contain' }} />
             : <div style={{ fontSize: 21, fontWeight: 800, letterSpacing: '0.01em', ...headStyle }}>{firm}</div>}
           <div style={{ fontSize: 8, fontWeight: 700, letterSpacing: '0.22em', marginTop: 14, color: rgbCss(tok.lime) }}>{eyebrow}</div>
           <div style={{ fontSize: 16, fontWeight: 800, marginTop: 5, lineHeight: 1.15, maxWidth: '85%', ...headStyle }}>{title}</div>
@@ -523,9 +526,11 @@ export default function BrandPreview({ brand, noteName, terms, coverMetrics, met
       <PageTag n={4} label="DISCLAIMER" muted={muted} />
       <div style={{ position: 'relative', borderRadius: 10, overflow: 'hidden', color: '#fff', height: 150,
         background: fillBackground(coverFill, tok), padding: '14px 16px', display: 'flex', flexDirection: 'column' }}>
+        {backPhoto && <img src={backPhoto} alt="" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} />}
+        {backPhoto && <div style={{ position: 'absolute', inset: 0, background: overlayColor, opacity: overlayOpacity }} />}
         <div style={{ position: 'absolute', top: 0, bottom: 0, left: 0, width: 5, background: rgbCss(tok.sidebar_bar) }} />
-        {altLogo
-          ? <img src={altLogo} alt="" style={{ height: 16, alignSelf: 'flex-start', objectFit: 'contain', opacity: 0.95 }} />
+        {(altLogo ?? logo)
+          ? <img src={altLogo ?? logo} alt="" style={{ height: 16, alignSelf: 'flex-start', objectFit: 'contain', opacity: 0.95 }} />
           : <div style={{ fontSize: 12, fontWeight: 800, ...headStyle }}>{firm}</div>}
         <div style={{ fontSize: 7, fontWeight: 700, letterSpacing: '0.16em', color: rgbCss(tok.lime), marginTop: 10 }}>DISCLAIMER</div>
         <div style={{ fontSize: 7.5, lineHeight: 1.55, marginTop: 5, color: 'rgba(255,255,255,0.82)',
@@ -537,7 +542,7 @@ export default function BrandPreview({ brand, noteName, terms, coverMetrics, met
       {(footerNote || contact || website) && (
         <div style={{ marginTop: 14, paddingTop: 8, borderTop: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: 8 }}>
           <div style={{ flex: 1, fontSize: 8, color: muted, lineHeight: 1.4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-            {footerNote || [firm, contact].filter(Boolean).join(' · ')}
+            {[footerNote, contact].filter(Boolean).join('  ·  ') || firm}
           </div>
           <div style={{ display: 'flex', gap: 4 }}>
             {paletteDots.map(([name, c]) => (
@@ -565,7 +570,7 @@ function PageTag({ n, label, muted, first }: { n: number; label: string; muted: 
 // chart context so those tokens are reflected too.
 function MiniChart({ tok }: { tok: Tokens }) {
   const accent = rgbCss(tok.accent)
-  const sec = rgbCss(tok.amber)
+  const sec = rgbCss(tok.chart_secondary)
   const band = `rgba(${tok.accent[0]}, ${tok.accent[1]}, ${tok.accent[2]}, 0.16)`
   return (
     <svg viewBox="0 0 260 76" style={{ width: '100%', height: 'auto', marginTop: 12, display: 'block' }} aria-hidden>

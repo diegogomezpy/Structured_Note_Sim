@@ -5,7 +5,9 @@ import { useToast } from './Toast'
 import Panel from './Panel'
 import Icon from './Icon'
 import { useTour, reportTour } from './Tour'
+import ReportImages from './ReportImages'
 import type { Branding, NoteTerms } from '../api/types'
+import type { BrandingStudio } from '../lib/useBrandingStudio'
 import type { RunOpts } from './SetupRail'
 import { TREE, PRESET_ORDER, presetKeys, savePresetOverride, resetPresetOverride,
          isPresetCustomised, type Preset, type Group } from '../lib/reportSections'
@@ -34,10 +36,11 @@ function Check({ on, indeterminate }: { on: boolean; indeterminate?: boolean }) 
   )
 }
 
-export default function ReportPanel({ terms, opts, variantB, pathImages, brand, onOpenDesigner }: {
+export default function ReportPanel({ terms, opts, variantB, pathImages, brand, studio, onOpenDesigner }: {
   terms: NoteTerms; opts: RunOpts; variantB?: NoteTerms | null
   pathImages?: { title: string; png: string }[]   // path-explorer selection(s) → report
   brand: Branding                                  // owned by ReportView; sent in the request
+  studio: BrandingStudio                           // shared branding state (per-report images)
   onOpenDesigner?: () => void                      // jump to the PDF Designer sub-tab
 }) {
   const { t, lang } = useI18n()
@@ -238,7 +241,13 @@ export default function ReportPanel({ terms, opts, variantB, pathImages, brand, 
         <div style={{ fontSize: 11.5, color: 'var(--text-faint)', marginTop: 6, lineHeight: 1.5 }}>{t('report_note')}</div>
       </Panel>
 
-      {/* Branding lives in the PDF Designer sub-tab now. */}
+      {/* Pictures are usually chosen per report, so they live here too — the
+          same controls as the Designer, editing the same shared state. */}
+      <Panel title={t('rep_images')}>
+        <ReportImages studio={studio} terms={terms} />
+      </Panel>
+
+      {/* The durable design/identity settings live in the PDF Designer sub-tab. */}
       <Panel pad={0}>
         <button onClick={() => onOpenDesigner?.()}
           style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 10, background: 'transparent', border: 'none', cursor: 'pointer', fontFamily: 'inherit', padding: '14px 16px', color: 'var(--text)', textAlign: 'left' }}>

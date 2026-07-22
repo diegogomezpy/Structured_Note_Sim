@@ -26,6 +26,9 @@ export interface Tokens {
   primary: RGB; accent: RGB; section_rule: RGB; panel: RGB; sidebar_bar: RGB
   ink: RGB; lime: RGB; teal: RGB; amber: RGB; amber_dark: RGB
   muted: RGB; body_ink: RGB; rule_soft: RGB; footnote_grey: RGB
+  /** The brand's second chart series colour (chart_secondary_color). Kept apart
+      from `amber`, which Python holds constant for byte-identity. */
+  chart_secondary: RGB
 }
 
 export function buildTokens(brand: Branding): Tokens {
@@ -39,6 +42,7 @@ export function buildTokens(brand: Branding): Tokens {
     ink: blend(primary, BLACK, 0.46),
     lime: section_rule, teal: accent,
     amber: [201, 119, 45], amber_dark: [154, 123, 18],
+    chart_secondary: hexToRgb(brand.chart_secondary_color) ?? [201, 119, 45],
     muted: [139, 151, 160], body_ink: [36, 59, 51],
     rule_soft: [201, 210, 204], footnote_grey: [166, 176, 184],
   }

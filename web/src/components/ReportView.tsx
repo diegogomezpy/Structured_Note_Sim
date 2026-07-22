@@ -41,7 +41,7 @@ export default function ReportView({ terms, opts, variantB, pathImages, configs,
         <BatchReportPanel terms={terms} opts={opts} configs={configs} />
       ) : (
         <ReportPanel terms={terms} opts={opts} variantB={variantB} pathImages={pathImages}
-                     brand={studio.brand} onOpenDesigner={() => onSubChange('design')} />
+                     brand={studio.brand} studio={studio} onOpenDesigner={() => onSubChange('design')} />
       )}
     </div>
   )
