@@ -78,7 +78,7 @@ from fpdf import FPDF
 from reportkit.theme import (  # noqa: E402
     _dev_rgb, _chamfer_outline, _chamfer_dims,
     _fill_chamfer, _stroke_chamfer, _hex_cluster,
-    build_tokens, resolve_theme,
+    build_tokens, resolve_theme, paint_shape, resolve_color,
     AMBER as _AMBER, AMBER_DARK as _AMBER_DARK, MUTED as _MUTED,
     BODY_INK as _BODY_INK, RULE_SOFT as _RULE_SOFT, FOOTNOTE_GREY as _FOOTNOTE_GREY,
 )
@@ -2568,6 +2568,28 @@ def _mat_label(terms) -> str:
     return f"{round(float(terms.maturity) * 12)}M"
 
 
+def _paint_cover_bg(pdf: _NotePDF, W: float, H: float) -> None:
+    """Fill a full-bleed page with the theme's cover background — a solid brand
+    colour by default, or a gradient when the active theme spec sets
+    `cover.fill`. Falls back to solid primary if anything is off."""
+    fill = None
+    spec = getattr(getattr(pdf, "theme", None), "spec", None)
+    if isinstance(spec, dict):
+        fill = (spec.get("cover") or {}).get("fill")
+    try:
+        if fill and fill.get("type") in ("linear", "radial"):
+            paint_shape(pdf, 0, 0, W, H, {"kind": "square"}, fill)
+            return
+        if fill and fill.get("type") == "solid":
+            pdf.set_fill_color(*resolve_color(fill.get("color", "primary"), pdf))
+            pdf.rect(0, 0, W, H, style="F")
+            return
+    except Exception:
+        pass
+    pdf.set_fill_color(*pdf.primary_color)
+    pdf.rect(0, 0, W, H, style="F")
+
+
 def _front_cover_page(pdf: _NotePDF, terms, lang: str, report_title: str, website: str,
                       report_kind: str | None = None):
     """Full-bleed branded cover (page 1, toggleable): brand-colour background, the
@@ -2586,10 +2608,10 @@ def _front_cover_page(pdf: _NotePDF, terms, lang: str, report_title: str, websit
     W, H = pdf.w, pdf.h
     cx = W / 2
 
-    # Full-bleed background: brand primary colour, or an optional photo with a
-    # colour overlay at the configured opacity (so text stays legible over it).
-    pdf.set_fill_color(*pdf.primary_color)
-    pdf.rect(0, 0, W, H, style="F")
+    # Full-bleed background: brand primary colour (or a theme gradient), or an
+    # optional photo with a colour overlay at the configured opacity (so text
+    # stays legible over it).
+    _paint_cover_bg(pdf, W, H)
     if getattr(pdf, "cover_image_bytes", None):
         try:
             _cov = _cover_crop(pdf.cover_image_bytes, W / H)
@@ -2730,8 +2752,7 @@ def _full_bleed_disclaimer(pdf: _NotePDF, lang: str, text: str, website: str = "
     pdf.add_page()
     pdf._cover_pages.add(pdf.page_no())
     W, H = pdf.w, pdf.h
-    pdf.set_fill_color(*pdf.primary_color)
-    pdf.rect(0, 0, W, H, style="F")
+    _paint_cover_bg(pdf, W, H)
 
     # Optional full-bleed photo with a colour overlay (mirrors the front cover) so
     # the back page matches the cover treatment.

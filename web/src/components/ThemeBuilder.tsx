@@ -120,6 +120,7 @@ export default function ThemeBuilder({ spec, tokens, onChange }: { spec: Spec; t
   const [jsonErr, setJsonErr] = useState('')
   const upd = (path: (string | number)[], v: unknown) => onChange(setIn(spec, path, v) as Spec)
 
+  const cover = (spec.cover as Any) || {}
   const masthead = (spec.cover_masthead as Any) || {}
   const divider = (spec.divider as Any) || {}
   const chip = ((spec.secondary_head as Any)?.chip as Any) || {}
@@ -128,6 +129,12 @@ export default function ThemeBuilder({ spec, tokens, onChange }: { spec: Spec; t
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+      <Group title="Cover page background">
+        <div><span style={lbl}>Fill</span>
+          <FillControl value={cover.fill ?? { type: 'solid', color: 'primary' }} tokens={tokens} onChange={(v) => upd(['cover', 'fill'], v)} /></div>
+        <div style={{ fontSize: 10.5, color: 'var(--text-faint)', lineHeight: 1.45 }}>Shown on the full-bleed cover &amp; disclaimer pages (behind any cover photo).</div>
+      </Group>
+
       <Group title="Cover masthead">
         <div><span style={lbl}>Shape</span><ShapeControl value={masthead.shape} onChange={(v) => upd(['cover_masthead', 'shape'], v)} /></div>
         <div><span style={lbl}>Fill</span><FillControl value={masthead.fill} tokens={tokens} onChange={(v) => upd(['cover_masthead', 'fill'], v)} /></div>

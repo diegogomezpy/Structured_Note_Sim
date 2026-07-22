@@ -107,6 +107,7 @@ export const HEXAGON_SPEC = {
   void: { decoration: 'hexCluster' },
   cover_masthead: { shape: { kind: 'chamfer', c: 7.5, q: 2.0, r: 5.0 }, fill: { type: 'solid', color: 'ink' }, watermark: 'hexCluster' },
   cover_left_void: { decoration: 'hexCluster' },
+  cover: { fill: { type: 'solid', color: 'primary' } },
 }
 
 export const MERCATOR_SPEC = {
@@ -124,6 +125,7 @@ export const MERCATOR_SPEC = {
   void: { decoration: 'accentKeyline' },
   cover_masthead: { shape: { kind: 'rounded', radius: 3.0 }, fill: { type: 'solid', color: 'ink' }, accent_rule: { color: 'lime', inset: 4, h: 1.2, y_from_bottom: 1.6, radius: 0.5 } },
   cover_left_void: { decoration: 'accentKeyline' },
+  cover: { fill: { type: 'solid', color: 'primary' } },
 }
 
 export type ThemeSpec = typeof MERCATOR_SPEC & Record<string, unknown>

@@ -27,6 +27,9 @@ function dataUrl(v?: string): string | undefined {
 // ── shape-aware panel ────────────────────────────────────────────────────────
 // Measures itself so the chamfer SVG is drawn 1:1 in px (no distortion, real
 // rounded corners). Non-chamfer shapes fall back to CSS background + radius.
+// The theme spec's geometry is in PDF millimetres; this factor maps it into
+// preview pixels so editing a Cut / Radius visibly moves the shape.
+const MM_PX = 1.7
 let _gid = 0
 function useSize<T extends HTMLElement>() {
   const ref = useRef<T>(null)
@@ -61,12 +64,14 @@ function Panel({ shape, fill, tok, radius = 8, style, contentStyle, children }: 
   style?: React.CSSProperties; contentStyle?: React.CSSProperties; children?: React.ReactNode
 }) {
   const kind = shapeKind(shape)
+  const geo = (typeof shape === 'object' && shape ? shape : {}) as { c?: number; q?: number; r?: number; radius?: number }
   const { ref, size } = useSize<HTMLDivElement>()
   const idRef = useRef<string>('')
   if (!idRef.current) idRef.current = `bpg${_gid++}`
 
   if (kind !== 'chamfer') {
-    const br = kind === 'square' ? 0 : radius
+    // Honor the spec's rounded radius (mm → px) so editing it moves the preview.
+    const br = kind === 'square' ? 0 : (geo.radius != null ? geo.radius * MM_PX : radius)
     return (
       <div style={{ position: 'relative', overflow: 'hidden', borderRadius: br, background: fillBackground(fill, tok), ...style }}>
         <div style={{ position: 'relative', ...contentStyle }}>{children}</div>
@@ -80,6 +85,12 @@ function Panel({ shape, fill, tok, radius = 8, style, contentStyle, children }: 
   const ax = gradientAxis(fill?.angle ?? 90)
   const id = idRef.current
   const paint = solid ? stops[0] : `url(#${id})`
+  // Scale the spec's chamfer geometry (PDF mm) into preview px so the "Cut"
+  // control visibly changes the shape; clamp the cut so it can't self-intersect.
+  const m = Math.min(size.w, size.h)
+  const cPx = geo.c != null ? Math.min(geo.c * MM_PX, m * 0.48) : undefined
+  const qPx = geo.q != null ? geo.q * MM_PX : undefined
+  const rPx = geo.r != null ? geo.r * MM_PX : undefined
   return (
     <div ref={ref} style={{ position: 'relative', ...style }}>
       {size.w > 1 && size.h > 1 && (
@@ -96,7 +107,7 @@ function Panel({ shape, fill, tok, radius = 8, style, contentStyle, children }: 
                   </linearGradient>}
             </defs>
           )}
-          <path d={chamferPath(size.w, size.h)} fill={paint} />
+          <path d={chamferPath(size.w, size.h, cPx, qPx, rPx)} fill={paint} />
         </svg>
       )}
       <div style={{ position: 'relative', ...contentStyle }}>{children}</div>
@@ -210,6 +221,9 @@ export default function BrandPreview({ brand, noteName, terms, coverMetrics, met
   }
   const dv = (spec.divider ?? {}) as unknown as Record<string, unknown>
   const chip = sh.chip ?? {}
+  // Cover-page background fill (solid brand colour by default; gradients allowed).
+  const coverFill = ((spec.cover as { fill?: Fill } | undefined)?.fill) ?? ({ type: 'solid', color: 'primary' } as Fill)
+  const disclaimer = (brand.disclaimer_body as string) || 'This document is for information purposes only and does not constitute investment advice or an offer to sell any security. Capital is at risk. Past performance is not indicative of future results.'
 
   const paletteDots: [string, RGBLike][] = [
     ['primary', tok.primary], ['accent', tok.accent], ['section rule', tok.section_rule], ['sidebar', tok.sidebar_bar],
@@ -224,41 +238,41 @@ export default function BrandPreview({ brand, noteName, terms, coverMetrics, met
       {faceCss.trim() && <style dangerouslySetInnerHTML={{ __html: faceCss }} />}
 
       {/* ── COVER PAGE mock (full-bleed brand cover) ───────────────────── */}
-      <div style={{ fontSize: 8, fontWeight: 700, letterSpacing: '0.09em', color: muted, marginBottom: 6 }}>COVER</div>
+      <PageTag n={1} label="COVER" muted={muted} first />
       <div style={{
         position: 'relative', borderRadius: 10, overflow: 'hidden', color: '#fff',
-        height: 176, background: col('primary'), display: 'flex', flexDirection: 'column',
+        height: 232, background: fillBackground(coverFill, tok), display: 'flex', flexDirection: 'column',
       }}>
         {coverPhoto && <img src={coverPhoto} alt="" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} />}
         {coverPhoto && <div style={{ position: 'absolute', inset: 0, background: overlayColor, opacity: overlayOpacity }} />}
         {/* sidebar accent rail (sidebar_bar colour) */}
-        <div style={{ position: 'absolute', top: 0, bottom: 0, left: 0, width: 4, background: rgbCss(tok.sidebar_bar) }} />
+        <div style={{ position: 'absolute', top: 0, bottom: 0, left: 0, width: 5, background: rgbCss(tok.sidebar_bar) }} />
 
-        <div style={{ position: 'relative', flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '18px 16px', textAlign: 'center' }}>
-          {sigil && <img src={sigil} alt="" style={{ height: 20, marginBottom: 10, objectFit: 'contain', opacity: 0.95 }} />}
+        <div style={{ position: 'relative', flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '22px 18px', textAlign: 'center' }}>
+          {sigil && <img src={sigil} alt="" style={{ height: 26, marginBottom: 12, objectFit: 'contain', opacity: 0.95 }} />}
           {altLogo
-            ? <img src={altLogo} alt="" style={{ height: 22, maxWidth: '70%', objectFit: 'contain' }} />
-            : <div style={{ fontSize: 17, fontWeight: 800, letterSpacing: '0.01em', ...headStyle }}>{firm}</div>}
-          <div style={{ fontSize: 7, fontWeight: 700, letterSpacing: '0.2em', marginTop: 12, color: rgbCss(tok.lime) }}>{eyebrow}</div>
-          <div style={{ fontSize: 13, fontWeight: 800, marginTop: 4, lineHeight: 1.15, maxWidth: '85%', ...headStyle }}>{title}</div>
+            ? <img src={altLogo} alt="" style={{ height: 28, maxWidth: '70%', objectFit: 'contain' }} />
+            : <div style={{ fontSize: 21, fontWeight: 800, letterSpacing: '0.01em', ...headStyle }}>{firm}</div>}
+          <div style={{ fontSize: 8, fontWeight: 700, letterSpacing: '0.22em', marginTop: 14, color: rgbCss(tok.lime) }}>{eyebrow}</div>
+          <div style={{ fontSize: 16, fontWeight: 800, marginTop: 5, lineHeight: 1.15, maxWidth: '85%', ...headStyle }}>{title}</div>
         </div>
 
         {/* bottom metric band (ink) */}
-        <div style={{ position: 'relative', background: rgbCss(tok.ink), padding: '9px 12px', display: 'flex', alignItems: 'flex-end', gap: 12 }}>
-          <div style={{ display: 'flex', gap: 14, flex: 1, flexWrap: 'wrap' }}>
+        <div style={{ position: 'relative', background: rgbCss(tok.ink), padding: '11px 14px', display: 'flex', alignItems: 'flex-end', gap: 12 }}>
+          <div style={{ display: 'flex', gap: 16, flex: 1, flexWrap: 'wrap' }}>
             {mastKpis.map(([k, v]) => (
               <div key={k}>
-                <div style={{ fontSize: 5.5, fontWeight: 700, letterSpacing: '0.1em', color: rgbCss([159, 196, 179]) }}>{k}</div>
-                <div style={{ fontSize: 11, fontWeight: 800, marginTop: 1, ...headStyle }}>{v}</div>
+                <div style={{ fontSize: 6, fontWeight: 700, letterSpacing: '0.1em', color: rgbCss([159, 196, 179]) }}>{k}</div>
+                <div style={{ fontSize: 12.5, fontWeight: 800, marginTop: 2, ...headStyle }}>{v}</div>
               </div>
             ))}
           </div>
-          {website && <div style={{ fontSize: 7.5, fontWeight: 700, letterSpacing: '0.05em', color: rgbCss(tok.section_rule), whiteSpace: 'nowrap', alignSelf: 'center' }}>{website}</div>}
+          {website && <div style={{ fontSize: 8, fontWeight: 700, letterSpacing: '0.05em', color: rgbCss(tok.section_rule), whiteSpace: 'nowrap', alignSelf: 'center' }}>{website}</div>}
         </div>
       </div>
 
       {/* ── INTERIOR PAGE ──────────────────────────────────────────────── */}
-      <div style={{ fontSize: 8, fontWeight: 700, letterSpacing: '0.09em', color: muted, margin: '16px 0 6px' }}>INTERIOR</div>
+      <PageTag n={2} label="INTERIOR · SUMMARY" muted={muted} />
 
       {/* running header */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
@@ -339,12 +353,60 @@ export default function BrandPreview({ brand, noteName, terms, coverMetrics, met
 
       {/* metric tiles (panel fill) */}
       <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
-        {[['EXPECTED IRR', '14.1%'], ['P(AUTOCALL)', '90%']].map(([k, v]) => (
+        {[['EXPECTED IRR', '14.1%'], ['P(AUTOCALL)', '90%'], ['P(LOSS)', '6.2%']].map(([k, v]) => (
           <div key={k} style={{ flex: 1, background: rgbCss(tok.panel), borderRadius: 7, padding: '8px 10px' }}>
             <div style={{ fontSize: 6.5, fontWeight: 700, letterSpacing: '0.08em', color: muted }}>{k}</div>
             <div style={{ fontSize: 13, fontWeight: 800, color: bodyInk, marginTop: 2, ...headStyle }}>{v}</div>
           </div>
         ))}
+      </div>
+
+      {/* mini distribution chart — accent + secondary colours */}
+      <MiniChart tok={tok} />
+
+      {/* ── INTERIOR PAGE 2 · terms table + callout ────────────────────── */}
+      <PageTag n={3} label="INTERIOR · NOTE TERMS" muted={muted} />
+      {/* numbered section head (reuse the chip) */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <Panel shape={chip.shape} fill={chip.fill} tok={tok} radius={6}
+          style={{ width: 26, height: 26, flexShrink: 0 }}
+          contentStyle={{ width: 26, height: 26, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 800, color: col(chip.number_color), ...headStyle }}>
+          02
+        </Panel>
+        <div>
+          <div style={{ fontSize: 7, fontWeight: 700, letterSpacing: '0.12em', color: col(sh.kicker_color) }}>TERM SHEET</div>
+          <div style={{ fontSize: 12.5, fontWeight: 800, color: col(sh.title_color), lineHeight: 1.15, ...headStyle }}>Key Economic Terms</div>
+        </div>
+      </div>
+      <div style={{ marginTop: 10, border: `1px solid ${rgbCss(tok.rule_soft)}`, borderRadius: 8, overflow: 'hidden' }}>
+        {mastKpis.concat([['COUPON FREQUENCY', 'Quarterly'], ['MEMORY', 'Yes']]).slice(0, 5).map(([k, v], i) => (
+          <div key={k} style={{ display: 'flex', justifyContent: 'space-between', padding: '7px 11px', fontSize: 9.5,
+            background: i % 2 ? rgbCss(tok.panel) : '#fff', color: bodyInk }}>
+            <span style={{ color: muted }}>{k}</span>
+            <span style={{ fontWeight: 700, ...headStyle }}>{v}</span>
+          </div>
+        ))}
+      </div>
+      {/* callout box — accent keyline */}
+      <div style={{ marginTop: 12, display: 'flex', gap: 8, background: rgbCss(tok.panel), borderRadius: 8, padding: '9px 11px', borderLeft: `3px solid ${rgbCss(tok.section_rule)}` }}>
+        <div style={{ fontSize: 9, lineHeight: 1.5, color: bodyInk }}>
+          <span style={{ fontWeight: 800, ...headStyle }}>Worst-of barrier.</span> Capital is protected unless the worst-performing
+          underlying closes below the knock-in at maturity.
+        </div>
+      </div>
+
+      {/* ── DISCLAIMER back page (full-bleed brand) ────────────────────── */}
+      <PageTag n={4} label="DISCLAIMER" muted={muted} />
+      <div style={{ position: 'relative', borderRadius: 10, overflow: 'hidden', color: '#fff', height: 150,
+        background: fillBackground(coverFill, tok), padding: '14px 16px', display: 'flex', flexDirection: 'column' }}>
+        <div style={{ position: 'absolute', top: 0, bottom: 0, left: 0, width: 5, background: rgbCss(tok.sidebar_bar) }} />
+        {altLogo
+          ? <img src={altLogo} alt="" style={{ height: 16, alignSelf: 'flex-start', objectFit: 'contain', opacity: 0.95 }} />
+          : <div style={{ fontSize: 12, fontWeight: 800, ...headStyle }}>{firm}</div>}
+        <div style={{ fontSize: 7, fontWeight: 700, letterSpacing: '0.16em', color: rgbCss(tok.lime), marginTop: 10 }}>DISCLAIMER</div>
+        <div style={{ fontSize: 7.5, lineHeight: 1.55, marginTop: 5, color: 'rgba(255,255,255,0.82)',
+          display: '-webkit-box', WebkitLineClamp: 5, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{disclaimer}</div>
+        {website && <div style={{ marginTop: 'auto', fontSize: 7.5, fontWeight: 700, color: rgbCss(tok.section_rule) }}>{website}</div>}
       </div>
 
       {/* footer strip — footer note / contact + palette dots */}
@@ -361,6 +423,38 @@ export default function BrandPreview({ brand, noteName, terms, coverMetrics, met
         </div>
       )}
     </div>
+  )
+}
+
+// A small "page N" divider label between preview surfaces.
+function PageTag({ n, label, muted, first }: { n: number; label: string; muted: string; first?: boolean }) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 7, margin: first ? '0 0 8px' : '18px 0 8px' }}>
+      <span style={{ fontSize: 7.5, fontWeight: 800, color: muted, border: `1px solid ${muted}`, borderRadius: 20, padding: '1px 6px', letterSpacing: '0.03em' }}>PAGE {n}</span>
+      <span style={{ fontSize: 8, fontWeight: 700, letterSpacing: '0.1em', color: muted }}>{label}</span>
+      <span style={{ flex: 1, height: 1, background: 'var(--border)' }} />
+    </div>
+  )
+}
+
+// A stylised worst-of fan — shows the accent + secondary palette colours in a
+// chart context so those tokens are reflected too.
+function MiniChart({ tok }: { tok: Tokens }) {
+  const accent = rgbCss(tok.accent)
+  const sec = rgbCss(tok.amber)
+  const band = `rgba(${tok.accent[0]}, ${tok.accent[1]}, ${tok.accent[2]}, 0.16)`
+  return (
+    <svg viewBox="0 0 260 76" style={{ width: '100%', height: 'auto', marginTop: 12, display: 'block' }} aria-hidden>
+      <rect x="0" y="0" width="260" height="76" rx="6" fill={rgbCss(tok.panel)} />
+      {/* percentile band */}
+      <path d="M8 46 C60 40 110 30 175 26 C210 24 240 22 252 21 L252 40 C240 42 210 46 175 49 C110 55 60 60 8 62 Z" fill={band} />
+      {/* median line (accent) */}
+      <path d="M8 54 C60 50 110 42 175 37 C210 34 240 31 252 30" fill="none" stroke={accent} strokeWidth="2" />
+      {/* secondary line */}
+      <path d="M8 60 C60 58 110 55 175 52 C210 50 240 49 252 48" fill="none" stroke={sec} strokeWidth="1.6" strokeDasharray="3 2" />
+      {/* barrier */}
+      <line x1="8" y1="66" x2="252" y2="66" stroke={rgbCss(tok.rule_soft)} strokeWidth="1" strokeDasharray="2 2" />
+    </svg>
   )
 }
 

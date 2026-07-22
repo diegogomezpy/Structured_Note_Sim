@@ -231,11 +231,13 @@ export default function PdfDesigner({ studio, terms }: { studio: BrandingStudio;
         </Card>
       </div>
 
-      {/* ── right: sticky live preview ───────────────────────────────── */}
-      <div className="brand-preview-col" style={{ position: 'sticky', top: 12, display: 'flex', flexDirection: 'column', gap: 8 }}>
+      {/* ── right: sticky live preview (scrolls internally: 4 pages) ───── */}
+      <div className="brand-preview-col" style={{ position: 'sticky', top: 12, display: 'flex', flexDirection: 'column', gap: 8, maxHeight: 'calc(100vh - 24px)' }}>
         <div style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: '0.07em', textTransform: 'uppercase', color: 'var(--text-faint)' }}>{t('brand_preview')}</div>
-        <BrandPreview brand={b} noteName={noteName} terms={terms}
-                      coverMetrics={studio.coverMetricsSel} metricLabel={studio.metricLabel} />
+        <div style={{ overflowY: 'auto', overflowX: 'hidden', flex: 1, borderRadius: 12, paddingRight: 2 }}>
+          <BrandPreview brand={b} noteName={noteName} terms={terms}
+                        coverMetrics={studio.coverMetricsSel} metricLabel={studio.metricLabel} />
+        </div>
         <div style={{ fontSize: 10.5, color: 'var(--text-faint)', lineHeight: 1.45 }}>{t('brand_preview_hint')}</div>
       </div>
     </div>
