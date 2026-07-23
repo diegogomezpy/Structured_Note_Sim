@@ -807,7 +807,10 @@ export const S: Dict = {
   brand_alt_logo:   { en: 'Cover logo (white)', es: 'Logo de portada (blanco)' },
   brand_cover_sigil: { en: 'Cover emblem / sigil', es: 'Emblema de portada' },
   brand_overlay_color: { en: 'Overlay colour', es: 'Color de superposición' },
-  brand_overlay_opacity: { en: 'Overlay opacity', es: 'Opacidad de superposición' },
+  brand_overlay_opacity: { en: 'Cover photo tint', es: 'Tinte de la foto de portada' },
+  brand_overlay_opacity_hint: {
+    en: 'How strongly the cover-page background tints a cover photo. Lower shows more of the photo; 1 covers it entirely. The colour comes from Report theme → Cover page background.',
+    es: 'Cuánto tiñe el fondo de portada a la foto. Menor muestra más la foto; 1 la cubre por completo. El color viene de Tema del informe → Fondo de portada.' },
   brand_preset:     { en: 'Load branding preset', es: 'Cargar marca guardada' },
   brand_preset_ph:  { en: 'From branding/ folder…', es: 'Desde la carpeta branding/…' },
   brand_upload_cfg: { en: 'Branding config', es: 'Configuración de marca' },

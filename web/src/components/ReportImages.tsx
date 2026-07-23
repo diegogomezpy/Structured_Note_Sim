@@ -1,7 +1,7 @@
 import { useI18n } from '../i18n/I18nProvider'
 import Icon from './Icon'
 import CoverPhotoPicker from './CoverPhotoPicker'
-import { ColorWell, Field, UploadTile, grid, inputStyle } from './designerFields'
+import { Field, UploadTile, grid, inputStyle } from './designerFields'
 import type { BrandingStudio } from '../lib/useBrandingStudio'
 import type { NoteTerms } from '../api/types'
 
@@ -30,12 +30,16 @@ export default function ReportImages({ studio, terms, compact }: {
           onPick={(f) => studio.onImage('cover_sigil_base64', f)} onClear={() => set('cover_sigil_base64', '')} />
         <UploadTile label={t('brand_watermark')} src={b.watermark_base64 as string} dark
           onPick={(f) => studio.onImage('watermark_base64', f)} onClear={() => set('watermark_base64', '')} />
-        <ColorWell label={t('brand_overlay_color')} value={b.cover_overlay_color}
-          fallback={b.primary_color ?? '#1a2e4a'} onChange={(v) => set('cover_overlay_color', v)} />
+        {/* The cover's colour is set once, under Report theme → "Cover page
+            background" (solid/gradient/radial). This is only how strongly that
+            fill tints a cover PHOTO — there is no second colour control. */}
         <Field label={t('brand_overlay_opacity')}>
           <input type="number" min={0} max={1} step={0.05} placeholder="0.55"
             value={b.cover_overlay_opacity != null ? String(b.cover_overlay_opacity) : ''}
             onChange={(e) => set('cover_overlay_opacity', e.target.value)} style={inputStyle} />
+          <span style={{ display: 'block', fontSize: 10.5, color: 'var(--text-faint)', marginTop: 4, lineHeight: 1.4 }}>
+            {t('brand_overlay_opacity_hint')}
+          </span>
         </Field>
       </div>
 
