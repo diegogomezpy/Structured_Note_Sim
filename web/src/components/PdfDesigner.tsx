@@ -18,6 +18,41 @@ import type { Branding, NoteTerms } from '../api/types'
    primitives live in designerFields.tsx so the Build tab can reuse them. */
 
 
+/* Whether a chosen font can actually serve its role in the PDF.
+
+   _register_brand_fonts asks the TITLE face for a Bold and the BODY face for a
+   Regular, and drops the family silently if that weight is missing — which
+   looks exactly like the setting having no effect. This says so up front, and
+   also names the case where the pick is a no-op because it IS the default. */
+function FontStatus({ font, role, fonts, embedded }: {
+  font?: string
+  role: 'title' | 'body'
+  fonts: { family: string; styles: string[]; builtin: boolean }[]
+  embedded: number
+}) {
+  const { t } = useI18n()
+  if (!font) return null
+  const need = role === 'title' ? 'Bold' : 'Regular'
+  const rf = fonts.find((x) => x.family === font)
+  let msg = '', warn = false
+  if (embedded > 0) {
+    msg = t('font_ok_embedded')
+  } else if (!rf) {
+    msg = t('font_unknown'); warn = true
+  } else if (rf.builtin) {
+    msg = t('font_is_default')
+  } else if (!rf.styles.includes(need)) {
+    msg = t('font_missing_weight').replace('{w}', need); warn = true
+  } else {
+    msg = t('font_ok').replace('{s}', rf.styles.join(', '))
+  }
+  return (
+    <div style={{ fontSize: 10.5, marginTop: 5, lineHeight: 1.45, color: warn ? 'var(--amber, #c9772d)' : 'var(--text-faint)' }}>
+      {msg}
+    </div>
+  )
+}
+
 /* How far this config's theme has drifted from whatever it was authored on.
 
    Deliberately NOT a theme picker. The report's visual identity comes from the
@@ -174,6 +209,12 @@ export default function PdfDesigner({ studio, terms, preview = 'proof', onPrevie
                     {studio.fontCount(filesKey) > 0 && <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>{t('brand_fonts_n', { n: studio.fontCount(filesKey) })}</span>}
                     <input ref={ref} type="file" accept=".ttf,.otf" multiple style={{ display: 'none' }} onChange={(e) => { studio.onFontFiles(filesKey, e.target.files); e.target.value = '' }} />
                   </div>
+                  {/* Say whether the pick will actually reach the PDF. The report
+                      asks a title face for Bold and a body face for Regular; a
+                      family missing that weight is silently ignored, which is
+                      indistinguishable from "the setting does nothing". */}
+                  <FontStatus font={b[f] as string} role={i === 0 ? 'title' : 'body'}
+                    fonts={studio.reportFonts} embedded={studio.fontCount(filesKey)} />
                 </Field>
               )
             })}

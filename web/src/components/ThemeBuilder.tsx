@@ -107,11 +107,25 @@ function ShapeControl({ value, onChange }: { value: unknown; onChange: (v: unkno
   )
 }
 
-function Group({ title, children }: { title: string; children: React.ReactNode }) {
+function Group({ title, note, children }: { title: string; note?: string; children: React.ReactNode }) {
   return (
     <div style={{ border: '1px solid var(--border)', borderRadius: 10, padding: '11px 12px' }}>
-      <div style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--text-faint)', marginBottom: 9 }}>{title}</div>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>{children}</div>
+      <div style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--text-faint)' }}>{title}</div>
+      {note && <div style={{ fontSize: 10.5, color: 'var(--text-faint)', lineHeight: 1.45, marginTop: 4 }}>{note}</div>}
+      <div style={{ display: 'flex', flexDirection: 'column', marginTop: 9 }}>{children}</div>
+    </div>
+  )
+}
+
+/* One labelled setting. Every value in a group used to be a bare stack of divs,
+   so a shape control and the fill beneath it ran together with nothing marking
+   where one setting ended and the next began. A hairline and a consistent label
+   column give each its own line. */
+function Row({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div style={{ paddingTop: 9, marginTop: 9, borderTop: '1px solid var(--border)' }}>
+      <span style={lbl}>{label}</span>
+      {children}
     </div>
   )
 }
@@ -130,50 +144,52 @@ export default function ThemeBuilder({ spec, tokens, onChange }: { spec: Spec; t
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-      <Group title="Cover page background">
-        <div><span style={lbl}>Fill</span>
-          <FillControl value={cover.fill ?? { type: 'solid', color: 'primary' }} tokens={tokens} onChange={(v) => upd(['cover', 'fill'], v)} /></div>
-        <div style={{ fontSize: 10.5, color: 'var(--text-faint)', lineHeight: 1.45 }}>Shown on the full-bleed cover &amp; disclaimer pages (behind any cover photo).</div>
+      <Group title="Cover page background" note="Shown on the full-bleed cover & disclaimer pages, behind any cover photo.">
+        <Row label="Fill">
+          <FillControl value={cover.fill ?? { type: 'solid', color: 'primary' }} tokens={tokens} onChange={(v) => upd(['cover', 'fill'], v)} /></Row>
       </Group>
 
       <Group title="Cover masthead">
-        <div><span style={lbl}>Shape</span><ShapeControl value={masthead.shape} onChange={(v) => upd(['cover_masthead', 'shape'], v)} /></div>
-        <div><span style={lbl}>Fill</span><FillControl value={masthead.fill} tokens={tokens} onChange={(v) => upd(['cover_masthead', 'fill'], v)} /></div>
-        <div><span style={lbl}>Watermark</span></div>
+        <Row label="Shape"><ShapeControl value={masthead.shape} onChange={(v) => upd(['cover_masthead', 'shape'], v)} /></Row>
+        <Row label="Fill"><FillControl value={masthead.fill} tokens={tokens} onChange={(v) => upd(['cover_masthead', 'fill'], v)} /></Row>
       </Group>
 
       <Group title="Chapter divider">
-        <div><span style={lbl}>Style</span>
+        <Row label="Style">
           <Segmented value={dividerStyle} ariaLabel="Divider style"
             options={[{ value: 'banner', label: 'Dark banner' }, { value: 'editorial', label: 'Editorial' }]}
             onChange={(v) => upd(['divider', 'style'], v)} />
-        </div>
+        </Row>
         {dividerStyle === 'banner' && (
           <>
-            <div><span style={lbl}>Shape</span><ShapeControl value={divider.shape} onChange={(v) => upd(['divider', 'shape'], v)} /></div>
-            <div><span style={lbl}>Fill</span><FillControl value={divider.fill} tokens={tokens} onChange={(v) => upd(['divider', 'fill'], v)} /></div>
-            <div><span style={lbl}>Watermark</span></div>
+            <Row label="Shape"><ShapeControl value={divider.shape} onChange={(v) => upd(['divider', 'shape'], v)} /></Row>
+            <Row label="Fill"><FillControl value={divider.fill} tokens={tokens} onChange={(v) => upd(['divider', 'fill'], v)} /></Row>
           </>
         )}
       </Group>
 
       <Group title="Section number-chip">
-        <div><span style={lbl}>Shape</span><ShapeControl value={chip.shape} onChange={(v) => upd(['secondary_head', 'chip', 'shape'], v)} /></div>
-        <div><span style={lbl}>Fill</span><FillControl value={chip.fill} tokens={tokens} onChange={(v) => upd(['secondary_head', 'chip', 'fill'], v)} /></div>
+        <Row label="Shape"><ShapeControl value={chip.shape} onChange={(v) => upd(['secondary_head', 'chip', 'shape'], v)} /></Row>
+        <Row label="Fill"><FillControl value={chip.fill} tokens={tokens} onChange={(v) => upd(['secondary_head', 'chip', 'fill'], v)} /></Row>
       </Group>
 
-      <Group title="Header & void">
-        <div><span style={lbl}>Header rule</span><ColorWell value={(header.rule as Any)?.color} tokens={tokens} onChange={(v) => upd(['header', 'rule', 'color'], v)} /></div>
-        <label style={{ ...row, fontSize: 12.5, color: 'var(--text-muted)', cursor: 'pointer' }}>
-          <input type="checkbox" checked={!!header.tick} style={{ width: 'auto' }}
-            onChange={(e) => upd(['header', 'tick'], e.target.checked ? { color: 'lime', w: 15, h: 0.8, y: 16.1, radius: 0.4 } : null)} />
-          Accent tick on header
-        </label>
-        <div><span style={lbl}>Empty-space decoration</span>
+      <Group title="Running header" note="The rule and accent tick at the top of every interior page.">
+        <Row label="Rule colour"><ColorWell value={(header.rule as Any)?.color} tokens={tokens} onChange={(v) => upd(['header', 'rule', 'color'], v)} /></Row>
+        <Row label="Accent tick">
+          <label style={{ ...row, fontSize: 12.5, color: 'var(--text-muted)', cursor: 'pointer' }}>
+            <input type="checkbox" checked={!!header.tick} style={{ width: 'auto' }}
+              onChange={(e) => upd(['header', 'tick'], e.target.checked ? { color: 'lime', w: 15, h: 0.8, y: 16.1, radius: 0.4 } : null)} />
+            Show the tick
+          </label>
+        </Row>
+      </Group>
+
+      <Group title="Empty space" note="What fills the gap when a section ends short of the page.">
+        <Row label="Decoration">
           <Segmented value={((spec.void as Any)?.decoration as string) || 'none'} ariaLabel="Void decoration"
             options={[{ value: 'watermark', label: 'Watermark' }, { value: 'accentKeyline', label: 'Keyline' }, { value: 'none', label: 'None' }]}
             onChange={(v) => upd(['void', 'decoration'], v)} />
-        </div>
+        </Row>
       </Group>
 
       {/* raw-JSON escape hatch — full freeform, incl. geometry */}
