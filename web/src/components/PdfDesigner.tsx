@@ -1,7 +1,9 @@
 import { useI18n } from '../i18n/I18nProvider'
 import Icon from './Icon'
 import BrandPreview from './BrandPreview'
+import ProofCanvas from './studio/ProofCanvas'
 import ThemeBuilder from './ThemeBuilder'
+import { Segmented } from './fields'
 import ReportImages from './ReportImages'
 import BrandConfigBar from './BrandConfigBar'
 import { Card, ColorWell, Field, TextInput, UploadTile, grid, inputStyle } from './designerFields'
@@ -69,8 +71,13 @@ function ThemeLineage({ brand, set }: {
   )
 }
 
-export default function PdfDesigner({ studio, terms }: { studio: BrandingStudio; terms: NoteTerms }) {
-  const { t } = useI18n()
+export default function PdfDesigner({ studio, terms, preview = 'proof', onPreviewChange = () => {} }: {
+  studio: BrandingStudio
+  terms: NoteTerms
+  preview?: 'proof' | 'mock'
+  onPreviewChange?: (v: 'proof' | 'mock') => void
+}) {
+  const { t, lang } = useI18n()
   const b = studio.brand
   const set = studio.setBrandField
   const noteName = terms?.name
@@ -240,14 +247,33 @@ export default function PdfDesigner({ studio, terms }: { studio: BrandingStudio;
         </Card>
       </div>
 
-      {/* ── right: sticky live preview (scrolls internally: 4 pages) ───── */}
+      {/* ── right: the preview column ──────────────────────────────────────
+          Two implementations live here for now. `proof` renders the real PDF
+          server-side and is the one that cannot drift; `mock` is the original
+          hand-drawn DOM approximation, kept until the proof's latency has been
+          measured on the deploy rather than a dev machine. */}
       <div className="brand-preview-col" style={{ position: 'sticky', top: 12, display: 'flex', flexDirection: 'column', gap: 8, maxHeight: 'calc(100vh - 24px)' }}>
-        <div style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: '0.07em', textTransform: 'uppercase', color: 'var(--text-faint)' }}>{t('brand_preview')}</div>
-        <div style={{ overflowY: 'auto', overflowX: 'hidden', flex: 1, borderRadius: 12, paddingRight: 2 }}>
-          <BrandPreview brand={b} noteName={noteName} terms={terms} reportFonts={studio.reportFonts}
-                        coverMetrics={studio.coverMetricsSel} metricLabel={studio.metricLabel} />
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <div style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: '0.07em', textTransform: 'uppercase', color: 'var(--text-faint)', whiteSpace: 'nowrap' }}>
+            {preview === 'proof' ? t('proof_title') : t('brand_preview')}
+          </div>
+          <div style={{ flex: 1, minWidth: 0, maxWidth: 190, marginLeft: 'auto' }}>
+            <Segmented value={preview} ariaLabel={t('proof_mode')}
+              options={[{ value: 'proof', label: t('proof_mode_real') }, { value: 'mock', label: t('proof_mode_fast') }]}
+              onChange={(v) => onPreviewChange(v as 'proof' | 'mock')} />
+          </div>
         </div>
-        <div style={{ fontSize: 10.5, color: 'var(--text-faint)', lineHeight: 1.45 }}>{t('brand_preview_hint')}</div>
+        <div style={{ overflowY: 'auto', overflowX: 'hidden', flex: 1, borderRadius: 12, paddingRight: 2 }}>
+          {preview === 'proof' ? (
+            <ProofCanvas brand={b} terms={terms} lang={lang} zoom={0.78} />
+          ) : (
+            <BrandPreview brand={b} noteName={noteName} terms={terms} reportFonts={studio.reportFonts}
+                          coverMetrics={studio.coverMetricsSel} metricLabel={studio.metricLabel} />
+          )}
+        </div>
+        <div style={{ fontSize: 10.5, color: 'var(--text-faint)', lineHeight: 1.45 }}>
+          {preview === 'proof' ? t('proof_hint') : t('brand_preview_hint')}
+        </div>
       </div>
     </div>
   )

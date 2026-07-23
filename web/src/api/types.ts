@@ -517,3 +517,22 @@ export interface CoverPhoto {
   alt: string
   term?: string
 }
+
+/** A PDF Studio proof render (POST /api/report/proof). Everything is optional:
+    with no note the server's fixture stands in, so the Studio is usable before
+    anything has been simulated. */
+export interface ProofRequest {
+  branding?: Branding
+  terms?: NoteTerms | null
+  sections?: string[]
+  lang?: string
+  kind?: string
+  scale?: number
+  pages?: number[] | null
+}
+
+export interface ProofResult {
+  pages: string[]        // base64 PNG per page, in document order
+  page_count: number
+  cached: boolean
+}

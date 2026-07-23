@@ -1,7 +1,7 @@
 import type {
   BacktestResult, BtRange, CompareResult, ConfigMeta, CoverPhoto, DescribeResult, ExplorerData, Health, HistorySpan,
-  InspectFilters, InspectResult, LiveResult, LogoData, NoteTerms, Quote, ReportRequest, SimResult, SimulateRequest,
-  UnderlyingMetric, UnderlyingOption,
+  InspectFilters, InspectResult, LiveResult, LogoData, NoteTerms, ProofRequest, ProofResult, Quote,
+  ReportRequest, SimResult, SimulateRequest, UnderlyingMetric, UnderlyingOption,
 } from './types'
 
 /** Typed API failure. The backend returns a uniform {ok:false, error:{status,
@@ -30,11 +30,12 @@ async function jget<T>(url: string): Promise<T> {
   return r.json()
 }
 
-async function jpost<T>(url: string, body: unknown): Promise<T> {
+async function jpost<T>(url: string, body: unknown, signal?: AbortSignal): Promise<T> {
   const r = await fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
+    signal,
   })
   if (!r.ok) return throwApiError(r)
   return r.json()
@@ -66,6 +67,13 @@ export const api = {
   /** Fonts the PDF can actually render — the Designer offers exactly these and
       the preview @font-faces the same files, so a pick looks identical in both. */
   fonts: () => jget<{ family: string; file: string; styles: string[]; builtin: boolean }[]>('/api/fonts'),
+  /** Render the REAL report as page images for the Studio's proof.
+
+      `signal` matters: brand edits fire faster than a render completes, so an
+      in-flight proof is aborted when a newer one supersedes it. Without that,
+      responses can land out of order and the canvas settles on a stale page. */
+  reportProof: (body: ProofRequest, signal?: AbortSignal) =>
+    jpost<ProofResult>('/api/report/proof', body, signal),
   brandingList: () => jget<{ file: string; firm_name: string }[]>('/api/branding'),
   branding: (file: string) => jget<Record<string, unknown>>(`/api/branding/${file}`),
   coverSectors: () => jget<{ available: boolean; sectors: string[] }>('/api/cover/sectors'),
