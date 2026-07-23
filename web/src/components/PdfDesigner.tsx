@@ -6,7 +6,7 @@ import ThemeBuilder from './ThemeBuilder'
 import { Segmented } from './fields'
 import ReportImages from './ReportImages'
 import BrandConfigBar from './BrandConfigBar'
-import { Card, ColorWell, Field, TextInput, UploadTile, grid, inputStyle } from './designerFields'
+import { Card, ColorWell, Field, NumberInput, TextInput, UploadTile, grid, inputStyle } from './designerFields'
 import { resolveSpec, buildTokens, writeSpec, specBase, diffSpec } from '../lib/reportTheme'
 import { COVER_METRIC_KEYS, COVER_METRIC_MAX, type BrandingStudio } from '../lib/useBrandingStudio'
 import type { Branding, NoteTerms } from '../api/types'
@@ -203,13 +203,55 @@ export default function PdfDesigner({ studio, terms, preview = 'proof', onPrevie
 
         <Card id="watermark" title={t('brand_watermark')} desc={t('brand_watermark_hint')}>
           <div style={{ display: 'flex', alignItems: 'flex-end', gap: 16, flexWrap: 'wrap' }}>
-            <UploadTile label={t('brand_watermark')} src={b.watermark_base64 as string} dark
+            <UploadTile label={t('brand_watermark_img')} src={b.watermark_base64 as string} dark
               onPick={(f) => studio.onImage('watermark_base64', f)} onClear={() => set('watermark_base64', '')} />
             <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12.5, color: 'var(--text-muted)', cursor: 'pointer', paddingBottom: 6 }}>
               <input type="checkbox" checked={b.watermark_enabled !== false}
                 onChange={(e) => set('watermark_enabled', e.target.checked as never)} style={{ width: 'auto' }} />
               {t('brand_watermark_toggle')}
             </label>
+          </div>
+
+          {/* Appearance — one place, applied wherever the mark is drawn. */}
+          <div style={{ ...grid(150), marginTop: 14 }}>
+            <Field label={t('wm_opacity')}>
+              <NumberInput value={b.watermark_opacity as number | undefined} min={0} max={1} step={0.01}
+                placeholder="0.13" onChange={(v) => set('watermark_opacity', v as never)} />
+            </Field>
+            <Field label={t('wm_scale')}>
+              <NumberInput value={b.watermark_scale as number | undefined} min={0.05} max={1} step={0.02}
+                placeholder="0.58" onChange={(v) => set('watermark_scale', v as never)} />
+            </Field>
+            <Field label={t('wm_inset')}>
+              <NumberInput value={b.watermark_inset as number | undefined} min={0} max={100} step={1}
+                placeholder="auto" onChange={(v) => set('watermark_inset', v as never)} />
+            </Field>
+          </div>
+
+          <div style={{ marginTop: 12 }}>
+            <span style={{ display: 'block', fontSize: 11, fontWeight: 600, color: 'var(--text-muted)', marginBottom: 5 }}>{t('wm_anchor')}</span>
+            <Segmented value={(b.watermark_anchor as string) ?? 'right'} ariaLabel={t('wm_anchor')}
+              options={[{ value: 'left', label: t('wm_left') }, { value: 'center', label: t('wm_center') }, { value: 'right', label: t('wm_right') }]}
+              onChange={(v) => set('watermark_anchor', v as never)} />
+          </div>
+
+          {/* Where it appears. Empty = wherever the theme draws one. */}
+          <div style={{ marginTop: 14 }}>
+            <span style={{ display: 'block', fontSize: 11, fontWeight: 600, color: 'var(--text-muted)', marginBottom: 6 }}>{t('wm_places')}</span>
+            <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap' }}>
+              {(['masthead', 'divider', 'void', 'cover'] as const).map((k) => {
+                const sel = (b.watermark_places as string[] | undefined) ?? ['masthead', 'divider', 'void', 'cover']
+                const on = sel.includes(k)
+                return (
+                  <label key={k} style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: 12.5, color: 'var(--text-muted)', cursor: 'pointer' }}>
+                    <input type="checkbox" checked={on} style={{ width: 'auto' }}
+                      onChange={() => set('watermark_places',
+                        (on ? sel.filter((x) => x !== k) : [...sel, k]) as never)} />
+                    {t(`wm_place_${k}`)}
+                  </label>
+                )
+              })}
+            </div>
           </div>
         </Card>
 

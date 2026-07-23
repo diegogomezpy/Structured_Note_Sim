@@ -4014,6 +4014,23 @@ def _build_pdf_report(
     # Loadable watermark image (read by reportkit's _watermark; falls back to the
     # drawn hex cluster when absent, so themed output is unchanged without one).
     pdf.watermark_bytes   = _decode_b64_img(_b.get("watermark_base64"))
+    # Watermark appearance is configured ONCE at brand level and applies wherever
+    # the mark is drawn — the theme spec no longer carries its look, only whether
+    # a surface opts out. `watermark_places` gates the surfaces; absent/empty
+    # means "everywhere the theme draws one".
+    def _wm_num(key, lo, hi):
+        try:
+            return max(lo, min(hi, float(_b.get(key))))
+        except (TypeError, ValueError):
+            return None
+    pdf.watermark_opacity = _wm_num("watermark_opacity", 0.0, 1.0)
+    pdf.watermark_scale   = _wm_num("watermark_scale", 0.05, 1.0)
+    pdf.watermark_inset   = _wm_num("watermark_inset", 0.0, 100.0)
+    _anchor = str(_b.get("watermark_anchor") or "").strip().lower()
+    pdf.watermark_anchor  = _anchor if _anchor in ("left", "center", "right") else None
+    _places = _b.get("watermark_places")
+    pdf.watermark_places  = ([str(x) for x in _places]
+                             if isinstance(_places, (list, tuple)) and _places else None)
     pdf.watermark_enabled = _b.get("watermark_enabled", True) is not False
     # Cover face: explicit `cover_image_base64`, else the first pooled photo.
     pdf.cover_image_bytes = _decode_b64_img(_b.get("cover_image_base64")) or (_pool[0] if _pool else None)

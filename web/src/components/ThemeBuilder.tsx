@@ -81,53 +81,6 @@ function FillControl({ value, tokens, onChange }: { value: unknown; tokens: Toke
   )
 }
 
-// ── watermark: driven by the uploaded image, placed tastefully ───────────────
-// There is deliberately no "hexagon" option here — the hex cluster is a value a
-// brand config authors for itself (CADIEM's), not a switch offered to everyone.
-function WatermarkControl({ value, onChange }: { value: unknown; onChange: (v: unknown) => void }) {
-  // Absent (undefined) means "no opinion" → an uploaded mark still shows, so the
-  // toggle reads ON. Only an explicit "none" (what we write when you switch it
-  // off — `null` can't be told from "absent" once it round-trips through JSON)
-  // suppresses it.
-  const on = !(value === null || value === false || value === 'none')
-  const isBuiltIn = typeof value === 'string' && value !== 'none'
-  const obj = (typeof value === 'object' && value ? value : {}) as Any
-  const num = (k: string, def: number) => Number(obj[k] ?? def)
-  const numStyle = { width: 64, fontSize: 12, padding: '4px 6px', borderRadius: 7, border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--text)' }
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-      <label style={{ ...row, fontSize: 12.5, color: 'var(--text-muted)', cursor: 'pointer' }}>
-        <input type="checkbox" checked={on} style={{ width: 'auto' }}
-          onChange={(e) => onChange(e.target.checked ? { opacity: 0.13, scale: 0.58, anchor: 'right' } : 'none')} />
-        Show watermark
-      </label>
-      {on && isBuiltIn && (
-        <div style={{ fontSize: 10.5, color: 'var(--text-faint)', lineHeight: 1.45 }}>
-          This config supplies its own built-in mark. Upload a watermark image to replace it, or adjust it by switching this off and on.
-        </div>
-      )}
-      {on && !isBuiltIn && (
-        <>
-          <label style={{ ...row, fontSize: 11.5, color: 'var(--text-muted)' }}>Opacity
-            <NumberInput value={num('opacity', 0.13)} min={0} max={1} step={0.01}
-              onChange={(v) => onChange({ ...obj, opacity: v })} style={numStyle} /></label>
-          <label style={{ ...row, fontSize: 11.5, color: 'var(--text-muted)' }}>Size
-            <NumberInput value={num('scale', 0.58)} min={0.1} max={1} step={0.02}
-              onChange={(v) => onChange({ ...obj, scale: v })} style={numStyle} />× panel height</label>
-          <div><span style={lbl}>Anchor</span>
-            <Segmented value={(obj.anchor as string) ?? 'right'} ariaLabel="Watermark anchor"
-              options={[{ value: 'left', label: 'Left' }, { value: 'center', label: 'Centre' }, { value: 'right', label: 'Right' }]}
-              onChange={(v) => onChange({ ...obj, anchor: v })} />
-          </div>
-        </>
-      )}
-      <div style={{ fontSize: 10.5, color: 'var(--text-faint)', lineHeight: 1.45 }}>
-        Uses the image from the Watermark card. With none uploaded, nothing is drawn.
-      </div>
-    </div>
-  )
-}
-
 function ShapeControl({ value, onChange }: { value: unknown; onChange: (v: unknown) => void }) {
   const shape = (value as Any) || { kind: 'rounded' }
   const kind = (shape.kind as string) || 'rounded'
@@ -186,8 +139,7 @@ export default function ThemeBuilder({ spec, tokens, onChange }: { spec: Spec; t
       <Group title="Cover masthead">
         <div><span style={lbl}>Shape</span><ShapeControl value={masthead.shape} onChange={(v) => upd(['cover_masthead', 'shape'], v)} /></div>
         <div><span style={lbl}>Fill</span><FillControl value={masthead.fill} tokens={tokens} onChange={(v) => upd(['cover_masthead', 'fill'], v)} /></div>
-        <div><span style={lbl}>Watermark</span>
-          <WatermarkControl value={masthead.watermark} onChange={(v) => upd(['cover_masthead', 'watermark'], v)} /></div>
+        <div><span style={lbl}>Watermark</span></div>
       </Group>
 
       <Group title="Chapter divider">
@@ -200,8 +152,7 @@ export default function ThemeBuilder({ spec, tokens, onChange }: { spec: Spec; t
           <>
             <div><span style={lbl}>Shape</span><ShapeControl value={divider.shape} onChange={(v) => upd(['divider', 'shape'], v)} /></div>
             <div><span style={lbl}>Fill</span><FillControl value={divider.fill} tokens={tokens} onChange={(v) => upd(['divider', 'fill'], v)} /></div>
-            <div><span style={lbl}>Watermark</span>
-              <WatermarkControl value={divider.watermark} onChange={(v) => upd(['divider', 'watermark'], v)} /></div>
+            <div><span style={lbl}>Watermark</span></div>
           </>
         )}
       </Group>

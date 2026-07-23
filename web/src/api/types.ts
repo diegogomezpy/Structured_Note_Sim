@@ -460,7 +460,12 @@ export interface Branding {
   cover_logo_base64?: string      // white knockout logo for the cover
   cover_sigil_base64?: string     // emblem/sigil shown on the cover (≠ wordmark)
   watermark_base64?: string       // faint watermark image drawn into chamfer panels (replaces the built-in hex cluster)
-  watermark_enabled?: boolean     // use the uploaded watermark image; false → fall back to the hex cluster
+  watermark_enabled?: boolean
+  watermark_opacity?: number
+  watermark_scale?: number
+  watermark_inset?: number
+  watermark_anchor?: string
+  watermark_places?: string[]     // use the uploaded watermark image; false → fall back to the hex cluster
   cover_image_base64?: string     // full-bleed cover background photo
   back_image_base64?: string      // full-bleed photo for the disclaimer back page
   filler_images_base64?: string[] // pool of report photos: cover/back fallback + void-filler bands cycle through it

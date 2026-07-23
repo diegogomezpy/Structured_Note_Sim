@@ -271,26 +271,35 @@ def _wm_image(pdf, px: float, py: float, pw: float, ph: float, spec: dict) -> No
 
 
 def _watermark(pdf, px: float, py: float, pw: float, ph: float, wm_value,
-               *, cluster: tuple | None = None) -> None:
+               *, cluster: tuple | None = None, surface: str | None = None) -> None:
     """Draw a surface watermark inside the panel rect (px, py, pw, ph).
 
-    A loaded watermark image wins whenever one is supplied, and it does NOT need
-    the theme to declare a key — uploading a mark means "show it", so it appears
-    on every watermarkable surface unless that surface opts out with
-    `"watermark": "none"`. The built-in hex cluster is the opposite: it is drawn
-    only when the CONFIG authored `"watermark": "hexCluster"` for that surface,
-    never as a generic option. With neither, nothing is drawn. `cluster` carries
-    the legacy hex-cluster args so that path stays byte-for-byte identical."""
-    spec = wm_spec(wm_value)
-    has_img = bool(getattr(pdf, "watermark_bytes", None)) and getattr(pdf, "watermark_enabled", True)
-    if not spec:
-        if not has_img or wm_value is False or wm_value == "none":
-            return
-        spec = dict(WM_DEFAULTS, source="image")
-    if has_img:
-        _wm_image(pdf, px, py, pw, ph, spec)
+    The uploaded mark is configured ONCE, at brand level — image, opacity, size,
+    anchor and which surfaces it appears on — and those settings apply wherever
+    it is drawn. Per-surface theme values do not carry its appearance; they only
+    let a surface opt out ("none") or ask for the built-in hex cluster, which is
+    a CADIEM-config value and never a generic option.
+
+    `surface` names the placement ('masthead' | 'divider' | 'void' | 'cover')
+    and is matched against the brand's `watermark_places`.
+    """
+    if wm_value is False or wm_value == "none":
         return
-    if spec.get("source") == "hexCluster" and cluster:
+
+    if getattr(pdf, "watermark_bytes", None) and getattr(pdf, "watermark_enabled", True):
+        places = getattr(pdf, "watermark_places", None)
+        if surface and places and surface not in places:
+            return
+        # Only pass keys the brand actually set. `_wm_image` reads scale with
+        # dict.get(key, default), so a present-but-None value would defeat the
+        # default and blow up the float() — silently dropping the mark.
+        brand = {k: getattr(pdf, f"watermark_{k}", None)
+                 for k in ("opacity", "scale", "anchor", "inset")}
+        _wm_image(pdf, px, py, pw, ph, {k: v for k, v in brand.items() if v is not None})
+        return
+
+    spec = wm_spec(wm_value)
+    if spec and spec.get("source") == "hexCluster" and cluster:
         _hex_cluster(pdf, *cluster)
 
 
@@ -749,7 +758,7 @@ class SpecTheme(ReportTheme):
             _var = int(str(number)) % 3
         except ValueError:
             _var = 0
-        _watermark(pdf, x0, y0, w, H, dv.get("watermark"),
+        _watermark(pdf, x0, y0, w, H, dv.get("watermark"), surface="divider",
                    cluster=(x0 + w - 30, y0 - 5, 20, WHITE, _var, 0.10))
         num = dv.get("number", {"size": 26, "color": "lime", "x": 9})
         pdf.set_xy(x0 + num.get("x", 9), y0 + 9)
@@ -795,8 +804,7 @@ class SpecTheme(ReportTheme):
                                    and getattr(pdf, "watermark_enabled", True)):
             sc = min(gap * 0.62, 60.0)
             if sc >= 12:
-                _watermark(pdf, x0 + (x1 - x0 - sc) / 2, floor - sc, sc, sc,
-                           {"opacity": 0.10, "scale": 0.9, "anchor": "center"})
+                _watermark(pdf, x0, floor - sc, x1 - x0, sc, True, surface="void")
             return
         try:
             if deco == "hexCluster":
@@ -892,7 +900,7 @@ class SpecTheme(ReportTheme):
         paint_shape(pdf, x0, y_m, W, MH,
                     cm.get("shape", {"kind": "chamfer", "c": 7.5, "q": 2.0, "r": 5.0}),
                     cm.get("fill", {"type": "solid", "color": "ink"}))
-        _watermark(pdf, x0, y_m, W, MH, cm.get("watermark"),
+        _watermark(pdf, x0, y_m, W, MH, cm.get("watermark"), surface="masthead",
                    cluster=(x0 + W - 42, y_m - 6, 30, WHITE, 0, 0.12))
         ar = cm.get("accent_rule")
         if ar:
@@ -906,8 +914,7 @@ class SpecTheme(ReportTheme):
         dec = self._s("cover_left_void").get("decoration", "hexCluster")
         if dec == "watermark" or (dec == "hexCluster" and getattr(pdf, "watermark_bytes", None)
                                   and getattr(pdf, "watermark_enabled", True)):
-            _watermark(pdf, x0, bottom - sc, sc, sc,
-                       {"opacity": 0.11, "scale": 0.9, "anchor": "center"})
+            _watermark(pdf, x0, bottom - sc, sc, sc, True, surface="cover")
             return
         if dec == "hexCluster":
             _watermark(pdf, x0, bottom - sc, sc, sc, "hexCluster",
