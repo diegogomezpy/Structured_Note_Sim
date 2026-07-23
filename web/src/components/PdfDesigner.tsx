@@ -5,9 +5,12 @@ import ThemeBuilder from './ThemeBuilder'
 import ReportImages from './ReportImages'
 import BrandConfigBar from './BrandConfigBar'
 import { Card, ColorWell, Field, TextInput, UploadTile, grid, inputStyle } from './designerFields'
-import { resolveSpec, buildTokens } from '../lib/reportTheme'
+import {
+  resolveSpec, buildTokens, writeSpec, specBase, diffSpec,
+  BUILTIN_THEME_NAMES,
+} from '../lib/reportTheme'
 import { COVER_METRIC_KEYS, COVER_METRIC_MAX, type BrandingStudio } from '../lib/useBrandingStudio'
-import type { NoteTerms } from '../api/types'
+import type { Branding, NoteTerms } from '../api/types'
 
 /* PDF Designer — a bespoke, from-scratch branding studio. Every input here is
    purpose-built (colour wells, upload tiles, chips) rather than reused generic
@@ -15,6 +18,56 @@ import type { NoteTerms } from '../api/types'
    live preview that renders from the SAME theme spec the PDF uses. The form
    primitives live in designerFields.tsx so the Build tab can reuse them. */
 
+
+/* Theme lineage: which built-in this brand's report inherits from, and how far
+   it has drifted. Edits are stored as `{base, ...overrides}`, so this reads back
+   the override count and can drop any surface — or all of them — back to the
+   built-in. A config with no discoverable lineage (a hand-authored inline spec)
+   says so rather than pretending to inherit. */
+function ThemeLineage({ brand, set }: {
+  brand: Branding
+  set: <K extends keyof Branding>(k: K, v: Branding[K]) => void
+}) {
+  const { t } = useI18n()
+  const base = specBase(brand.report_theme)
+  const overrides = base
+    ? diffSpec(resolveSpec(base), resolveSpec(brand.report_theme))
+    : {}
+  const surfaces = Object.keys(overrides)
+  const label = (n: string) =>
+    n === 'mercator' ? t('brand_theme_mercator')
+      : n === 'cadiem' || n === 'hexagon' ? t('brand_theme_hexagon') : n
+
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 14 }}>
+      <label style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-muted)' }}>{t('brand_theme_base')}</span>
+        <select value={base ?? ''} style={{ ...inputStyle, width: 'auto', minWidth: 150 }}
+          onChange={(e) => set('report_theme', e.target.value as never)}>
+          {!base && <option value="">{t('brand_theme_custom')}</option>}
+          {BUILTIN_THEME_NAMES.map((n) => <option key={n} value={n}>{label(n)}</option>)}
+        </select>
+      </label>
+
+      {base ? (
+        surfaces.length ? (
+          <>
+            <span style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>
+              {t('brand_theme_edited').replace('{n}', String(surfaces.length))}
+              <span style={{ color: 'var(--text-faint)' }}> — {surfaces.join(', ')}</span>
+            </span>
+            <button type="button" className="btn btn--ghost" style={{ padding: '4px 9px', fontSize: 12 }}
+              onClick={() => set('report_theme', base as never)}>{t('brand_theme_reset')}</button>
+          </>
+        ) : (
+          <span style={{ fontSize: 11.5, color: 'var(--text-faint)' }}>{t('brand_theme_pristine')}</span>
+        )
+      ) : (
+        <span style={{ fontSize: 11.5, color: 'var(--text-faint)' }}>{t('brand_theme_standalone')}</span>
+      )}
+    </div>
+  )
+}
 
 export default function PdfDesigner({ studio, terms }: { studio: BrandingStudio; terms: NoteTerms }) {
   const { t } = useI18n()
@@ -109,8 +162,9 @@ export default function PdfDesigner({ studio, terms }: { studio: BrandingStudio;
         </Card>
 
         <Card id="theme" title={t('brand_theme')} desc={t('brand_theme_hint')}>
+          <ThemeLineage brand={b} set={set} />
           <ThemeBuilder spec={resolveSpec(b.report_theme) as Record<string, unknown>} tokens={buildTokens(b)}
-            onChange={(s) => set('report_theme', s as never)} />
+            onChange={(s) => set('report_theme', writeSpec(b.report_theme, s as never) as never)} />
         </Card>
 
         <Card id="typography" title={t('brand_typography')}>

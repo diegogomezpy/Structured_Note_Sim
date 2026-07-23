@@ -3,6 +3,7 @@ import { api } from '../api/client'
 import { useI18n } from '../i18n/I18nProvider'
 import { useToast } from '../components/Toast'
 import { useLocalFolder } from './localFolder'
+import { normalizeTheme } from './reportTheme'
 import type { Branding } from '../api/types'
 
 /* Single source of truth for the PDF branding config + all its editing helpers.
@@ -98,6 +99,11 @@ export function useBrandingStudio(): BrandingStudio {
       report_title: flat(b.report_title),
       footer_note: flat(b.footer_note),
       disclaimer_body: flat(b.disclaimer_body),
+      // Configs written by the old designer carry a full inline snapshot of the
+      // resolved spec. Collapse one back to its built-in name when it is
+      // equivalent, so the theme starts tracking that built-in again instead of
+      // being frozen at whatever it looked like when it was first touched.
+      report_theme: normalizeTheme(b.report_theme) as Branding['report_theme'],
     } as Branding)
   }
   const newBranding = () => {

@@ -135,6 +135,7 @@ _KNOWN_BRANDING_KEYS = {
     "cover_sigil_base64",   # NEW — optional emblem/sigil shown on the cover (≠ wordmark)
     "watermark_base64",     # NEW — faint watermark image drawn into chamfer panels (replaces the hex cluster)
     "watermark_enabled",    # NEW — use the loaded watermark image; False falls back to the hex cluster
+    "cover_metrics",        # which key-term chips the cover footer band shows (read at _b.get below)
     "cover_image_base64",   # NEW — optional full-bleed cover background photo
     "back_image_base64",    # NEW — optional full-bleed photo for the disclaimer back page
     "filler_images_base64", # NEW — pool of report photos (cover/back fallback + void-filler bands cycle through it)

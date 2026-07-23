@@ -154,14 +154,93 @@ function deepMerge(base: Record<string, unknown>, over: Record<string, unknown>)
 }
 
 /** Resolve `branding.report_theme` (a name string OR an inline spec, optionally
-    with a "base") into a full spec — mirrors resolve_theme(). */
+    with a "base") into a full spec — mirrors resolve_theme().
+
+    The result is always a CLONE. Returning the module constant itself let a
+    caller's nested edit reach into HEXAGON_SPEC/MERCATOR_SPEC and corrupt the
+    built-in for the rest of the session — a bug that would survive a theme
+    switch and look like data corruption. */
 export function resolveSpec(reportTheme: unknown): ThemeSpec {
   if (isObj(reportTheme)) {
     const base = BUILTIN[String(reportTheme.base ?? '').toLowerCase()]
-    return (base ? deepMerge(base, reportTheme) : reportTheme) as ThemeSpec
+    return clone((base ? deepMerge(base, reportTheme) : reportTheme)) as ThemeSpec
   }
   const key = String(reportTheme ?? '').toLowerCase()
-  return BUILTIN[key] ?? BUILTIN[DEFAULT_THEME]
+  return clone(BUILTIN[key] ?? BUILTIN[DEFAULT_THEME])
+}
+
+function clone<T>(v: T): T {
+  return typeof structuredClone === 'function'
+    ? structuredClone(v)
+    : JSON.parse(JSON.stringify(v))
+}
+
+function deepEqual(a: unknown, b: unknown): boolean {
+  if (a === b) return true
+  if (isObj(a) && isObj(b)) {
+    const ka = Object.keys(a), kb = Object.keys(b)
+    return ka.length === kb.length && ka.every((k) => deepEqual(a[k], b[k]))
+  }
+  if (Array.isArray(a) && Array.isArray(b)) {
+    return a.length === b.length && a.every((x, i) => deepEqual(x, b[i]))
+  }
+  return false
+}
+
+/** Which built-in a `report_theme` value inherits from, or null if it is a
+    standalone inline spec with no declared lineage. */
+export function specBase(reportTheme: unknown): string | null {
+  if (isObj(reportTheme)) {
+    const b = String(reportTheme.base ?? '').toLowerCase()
+    return BUILTIN[b] ? b : null
+  }
+  const key = String(reportTheme ?? '').toLowerCase()
+  return BUILTIN[key] ? key : (reportTheme == null ? DEFAULT_THEME : null)
+}
+
+/** The minimal set of keys where `next` differs from `base`, deep. Keys that
+    still match the base are omitted, so an untouched surface keeps tracking the
+    built-in instead of being frozen at whatever it looked like on first edit. */
+export function diffSpec(base: unknown, next: unknown): Record<string, unknown> {
+  const out: Record<string, unknown> = {}
+  if (!isObj(next)) return out
+  for (const [k, v] of Object.entries(next)) {
+    if (k === 'base') continue
+    const bv = isObj(base) ? base[k] : undefined
+    if (deepEqual(bv, v)) continue
+    out[k] = isObj(v) && isObj(bv) ? diffSpec(bv, v) : v
+  }
+  return out
+}
+
+/** Fold an edited RESOLVED spec back into a value to store in
+    `branding.report_theme`, PRESERVING LINEAGE.
+
+    The designer edits a fully-resolved spec, but storing that snapshot is what
+    made the first theme click permanently fork a config off its built-in: every
+    surface froze, so later fixes to Mercator/Hexagon never reached it and a
+    change to `primary_color` no longer moved anything already touched. Storing
+    `{base, ...diff}` keeps untouched surfaces live. Only a spec with no
+    discoverable lineage is stored whole. */
+export function writeSpec(reportTheme: unknown, edited: ThemeSpec): unknown {
+  const base = specBase(reportTheme)
+  if (!base) return edited
+  const diff = diffSpec(BUILTIN[base], edited)
+  return Object.keys(diff).length ? { base, ...diff } : base
+}
+
+/** Collapse a stored value to its simplest equivalent form.
+
+    Configs written by the old designer carry a full inline snapshot. When one
+    is byte-equivalent to a built-in, rewrite it as the plain name so it starts
+    tracking that built-in again. A snapshot that genuinely differs is left
+    alone — guessing its lineage would silently change how it renders. */
+export function normalizeTheme(reportTheme: unknown): unknown {
+  if (!isObj(reportTheme) || reportTheme.base) return reportTheme
+  for (const name of BUILTIN_THEME_NAMES) {
+    if (deepEqual(BUILTIN[name], reportTheme)) return name
+  }
+  return reportTheme
 }
 
 /** The shape kind of a spec shape ('chamfer' | 'rounded' | 'soft' | 'square'). */
