@@ -811,6 +811,38 @@ def report(req: ReportRequest, request: Request):
                     headers={"Content-Disposition": f'attachment; filename="{filename}"'})
 
 
+class ProofRequest(BaseModel):
+    """A PDF Studio proof render. Everything is optional: with no note the
+    fixture stands in, so the Studio works before anything has been simulated."""
+    branding: dict | None = None
+    terms: dict | None = None
+    sections: list[str] = Field(default_factory=list)
+    lang: str = "en"
+    kind: str = "phoenix"                                # fixture family when terms is None
+    scale: float = Field(1.4, ge=0.3, le=3.0)
+    pages: list[int] | None = None                       # viewport window; None = all
+
+
+@app.post("/api/report/proof")
+def report_proof(req: ProofRequest):
+    """Render the REAL report as page images for the Studio's live proof.
+
+    Synchronous like /api/report, and for the same reason: Cloud Run only
+    allocates CPU while a request is in flight, so a background job would
+    starve. It is affordable here because figures are stubbed — the ~2s-per-
+    figure Kaleido cost is what makes a full render slow, and every other
+    surface is genuine.
+    """
+    from .proof import render_proof
+    try:
+        return render_proof(
+            branding=req.branding, terms=req.terms,
+            sections=req.sections or None, lang=req.lang,
+            kind=req.kind, scale=req.scale, pages=req.pages)
+    except Exception as e:
+        raise HTTPException(500, f"proof render failed: {type(e).__name__}: {e}")
+
+
 # ── async report jobs ─────────────────────────────────────────────────────────
 # PDF generation boots Chromium/kaleido and renders many figures (~5-40s), holding
 # a worker the whole time so the rest of the API (the live tape polls constantly)

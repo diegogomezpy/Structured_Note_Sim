@@ -22,6 +22,8 @@ from app.charts import (
 
 from __future__ import annotations
 
+from contextvars import ContextVar
+
 import numpy as np
 import pandas as pd
 import plotly.express as px
@@ -78,24 +80,40 @@ CHART_OPTION_DEFAULTS: dict = {
     "band_opacity":  1.0,         # multiplier on percentile-band alphas
     "line_width":    1.0,         # multiplier on series line widths
 }
-_CHART_OPTS: dict = dict(CHART_OPTION_DEFAULTS)
+# Held in a ContextVar, not a module dict. FastAPI runs sync endpoints in a
+# threadpool, so two branded reports building at once would otherwise trade
+# palettes mid-render and each emit some of the other brand's figures. A lock
+# would serialise them instead, which is worse: a fast preview would queue
+# behind a slow full report. A ContextVar gives each caller its own view with no
+# contention at all.
+_CHART_OPTS_VAR: ContextVar[dict] = ContextVar("chart_opts", default=CHART_OPTION_DEFAULTS)
 
 
-def set_chart_options(opts: dict | None) -> None:
+def _opts() -> dict:
+    return _CHART_OPTS_VAR.get()
+
+
+def set_chart_options(opts: dict | None):
     """Install brand chart options (see CHART_OPTION_DEFAULTS). Unknown/None
-    values fall back to the default, so a partial dict is fine."""
+    values fall back to the default, so a partial dict is fine.
+
+    Returns the token to hand back to `reset_chart_options`, so nested or
+    concurrent renders unwind to whatever was in force before rather than
+    stamping everyone back to the stock look.
+    """
     merged = dict(CHART_OPTION_DEFAULTS)
     for k, v in (opts or {}).items():
         if k in merged and v not in (None, ""):
             merged[k] = v
-    _CHART_OPTS.clear()
-    _CHART_OPTS.update(merged)
+    return _CHART_OPTS_VAR.set(merged)
 
 
-def reset_chart_options() -> None:
-    """Restore the stock look (call after a branded render)."""
-    _CHART_OPTS.clear()
-    _CHART_OPTS.update(CHART_OPTION_DEFAULTS)
+def reset_chart_options(token=None) -> None:
+    """Restore what was in force before the matching `set_chart_options`."""
+    if token is not None:
+        _CHART_OPTS_VAR.reset(token)
+    else:
+        _CHART_OPTS_VAR.set(dict(CHART_OPTION_DEFAULTS))
 
 
 def _scale_rgba_alpha(color: str, factor: float) -> str:
@@ -115,8 +133,8 @@ def _apply_trace_options(fig: go.Figure) -> None:
     """Apply the trace-level options that can't be expressed in the layout:
     percentile-band alpha and series line width. Done centrally here so every
     builder inherits it without touching 19 functions."""
-    band = float(_CHART_OPTS.get("band_opacity") or 1.0)
-    lw = float(_CHART_OPTS.get("line_width") or 1.0)
+    band = float(_opts().get("band_opacity") or 1.0)
+    lw = float(_opts().get("line_width") or 1.0)
     if band == 1.0 and lw == 1.0:
         return
     for tr in fig.data:
@@ -141,10 +159,10 @@ def _apply_theme(fig: go.Figure) -> go.Figure:
     """
     Shared clean theme for every figure: background, IBM Plex Sans font, text
     and gridline colours, no Plotly logo. Preserves all existing traces, barrier
-    lines, markers and titles. Reads _CHART_OPTS so a brand can restyle every
+    lines, markers and titles. Reads the active chart options so a brand can restyle every
     chart from its config (defaults reproduce the original look exactly).
     """
-    o = _CHART_OPTS
+    o = _opts()
     bg, grid, axis = o["bg_color"], o["grid_color"], o["axis_color"]
     label, text = o["label_color"], o["text_color"]
     fs = float(o["font_size"] or 12.0)

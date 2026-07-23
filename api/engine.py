@@ -1800,11 +1800,11 @@ def build_report_pdf(terms: NoteTerms, *, branding: dict | None = None, **kw) ->
     """Install the brand's chart options for the duration of the build (every
     figure builder ends with charts._apply_theme, which reads them), then always
     restore the stock look so the SPA's own figures are unaffected."""
-    charts.set_chart_options(_chart_options_from_branding(branding))
+    token = charts.set_chart_options(_chart_options_from_branding(branding))
     try:
         return _build_report_pdf(terms, branding=branding, **kw)
     finally:
-        charts.reset_chart_options()
+        charts.reset_chart_options(token)
 
 
 def _build_report_pdf(terms: NoteTerms, *, sections: list[str] | None = None, lang: str = "en",

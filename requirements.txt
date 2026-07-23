@@ -36,3 +36,8 @@ redis>=5,<7
 # PyMuPDF (fitz) is NOT a runtime dep — it's only used by scripts/verify_pdf.py
 # to rasterise PDFs for eyeballing. Install it ad hoc for verification:
 #   pip install "PyMuPDF>=1.27,<2"
+
+# PDF rasteriser for the PDF Studio's live proof (api/proof.py) — turns rendered
+# report pages into PNGs. BSD/Apache-licensed with manylinux wheels, unlike
+# PyMuPDF above (AGPL), which is why the proof path does not reuse it.
+pypdfium2>=5,<6

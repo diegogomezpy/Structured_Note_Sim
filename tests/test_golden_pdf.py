@@ -92,33 +92,26 @@ def _render(theme: str, kind: str = "phoenix", *, real_figures: bool = False) ->
     terms = gf.note_terms(kind)
     results = gf.results(terms)
 
-    if not real_figures:
-        # Stub INSIDE the rasteriser, honouring the caller's width/height: the
-        # figures dict cannot hold raw bytes because _fig_to_png does
-        # go.Figure(fig) on whatever it is handed.
-        pdf_report._fig_to_png = (
-            lambda fig, width=900, height=500, **kw: gf.stub_png(width, height))
     pdf_report._fetch_image_bytes = lambda *a, **k: None
 
-    # Every figure key the report may read. Values are opaque sentinels — the
-    # stubbed rasteriser never looks at them, it only needs presence so each
-    # figure-bearing block renders its chrome.
-    figures = {k: object() for k in
-               ("irr_dist", "wof_fan", "outcome", "sample",
-                "corr", "corr_input", "corr_realized", "corr_diff")}
-    figures["asset_fans"] = []
-
-    return pdf_report._build_pdf_report(
-        terms=terms,
-        results=results,
-        asset_names=results["asset_names"],
-        figures=figures,
-        lang="en",
-        branding=gf.branding(theme),
-        logo_urls=None,
-        issuer_logo_url=None,
-        logo_tickers={name: sym for sym, name in terms.tickers.items()},
-    )
+    # The same ContextVar hook the proof endpoint uses, so the golden exercises
+    # the real stub path rather than a test-only monkeypatch.
+    token = None if real_figures else pdf_report._FIG_STUB.set(gf.stub_png)
+    try:
+        return pdf_report._build_pdf_report(
+            terms=terms,
+            results=results,
+            asset_names=results["asset_names"],
+            figures=gf.figures(),
+            lang="en",
+            branding=gf.branding(theme),
+            logo_urls=None,
+            issuer_logo_url=None,
+            logo_tickers={name: sym for sym, name in terms.tickers.items()},
+        )
+    finally:
+        if token is not None:
+            pdf_report._FIG_STUB.reset(token)
 
 
 def _load_baseline() -> dict:
@@ -181,11 +174,7 @@ def test_stub_figures_preserve_pagination():
     if not os.environ.get("GOLDEN_REAL_FIGURES"):
         pytest.skip("set GOLDEN_REAL_FIGURES=1 to check stub vs real pagination")
 
-    import importlib
-    import pdf_report
-
     stub_pages = len(_rasterise(_render("hexagon")))
-    importlib.reload(pdf_report)  # restore the genuine _fig_to_png
     real_pages = len(_rasterise(_render("hexagon", real_figures=True)))
     assert stub_pages == real_pages, (
         f"stubbed render paginates differently: {stub_pages} vs {real_pages} "

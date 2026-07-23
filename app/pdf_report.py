@@ -68,8 +68,16 @@ import tempfile
 import urllib.request
 import warnings
 import numpy as np
+from contextvars import ContextVar
 from pathlib import Path
 from fpdf import FPDF
+
+# When set, `_fig_to_png` returns `stub(width, height)` instead of rasterising
+# through Kaleido. The proof/preview endpoint installs it to render the document
+# chrome in a fraction of a second; a real report never sets it. A ContextVar
+# rather than a module flag so one caller's preview can never strip the charts
+# out of another caller's real PDF.
+_FIG_STUB: ContextVar = ContextVar("fig_stub", default=None)
 
 # Visual-identity layer — now lives in the reusable `reportkit` package (the
 # theme engine is domain-agnostic). The chamfer primitives are re-exported under
@@ -2215,6 +2223,17 @@ def _fig_to_png(fig, width: int = 900, height: int = 500,
     diagnose after the fact. The most common cause is a missing Chrome for
     Kaleido v1 on a headless deploy; we retry once after fetching one.
     """
+    # Proof/preview mode: hand back a flat placeholder at the size the caller
+    # asked for, without touching Plotly or Kaleido. It has to happen HERE, not
+    # by putting bytes in the `figures` dict, because the next line wraps
+    # whatever it was given in go.Figure(). The size must be honoured: figure()
+    # derives its placement height from the image's aspect and only then tests
+    # whether the block still fits, so a wrong aspect shifts every later page
+    # break and the proof stops matching the real document's pagination.
+    _stub = _FIG_STUB.get()
+    if _stub is not None:
+        return _stub(width, height)
+
     import plotly.io as pio
     import plotly.graph_objects as go
     fig = go.Figure(fig)
