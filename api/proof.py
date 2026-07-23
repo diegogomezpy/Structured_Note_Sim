@@ -56,6 +56,16 @@ from .engine import _chart_options_from_branding   # noqa: E402
 _CACHE: "OrderedDict[str, list[str]]" = OrderedDict()
 _MAX_CACHE = 6
 
+# Rasterised CHART pngs, keyed on everything that determines the pixels: the
+# figure itself, the requested size and the three brand colours `_theme_figure`
+# recolours with. This is what makes real charts affordable in a live preview.
+# A chart costs ~2s of Chrome IPC no matter its resolution, so a 16-figure
+# document is ~30s cold — but only chart-affecting edits invalidate these
+# entries, so changing a chamfer, a logo or the cover art re-renders the whole
+# document in ~0.3s with every chart served from here.
+_FIG_CACHE: "OrderedDict[str, bytes]" = OrderedDict()
+_MAX_FIG_CACHE = 96
+
 MAX_PAGES = 40
 DEFAULT_SCALE = 1.4      # ~100 dpi — legible at the Studio's page width
 MAX_SCALE = 3.0
@@ -86,32 +96,83 @@ def _rasterise(pdf_bytes: bytes, scale: float, pages: list[int] | None) -> list[
     return out
 
 
+def _placeholder_hook(fig, width, height, *_colors):
+    """Fast mode: a flat block at the requested size, no Plotly, no Chrome."""
+    return fixture.stub_png(width, height)
+
+
+def _memoised_hook(fig, width, height, *colors):
+    """Real mode: the genuine rasteriser, but each distinct chart drawn once.
+
+    The key covers everything that changes the pixels — the figure's own JSON
+    (which already carries the brand's chart options, since every builder ends
+    in `charts._apply_theme`) plus the size and the three colours
+    `_theme_figure` recolours with. So editing anything that is not a chart
+    setting leaves every entry valid.
+    """
+    import plotly.graph_objects as go
+
+    try:
+        key = _digest(go.Figure(fig).to_json(), width, height, colors)
+    except Exception:
+        return None                      # unhashable figure → just render it
+
+    hit = _FIG_CACHE.get(key)
+    if hit is not None:
+        _FIG_CACHE.move_to_end(key)
+        return hit
+
+    # Re-enter the real rasteriser with the hook lifted, or this recurses.
+    token = pdf_report._FIG_HOOK.set(None)
+    try:
+        png = pdf_report._fig_to_png(fig, width, height, *colors)
+    finally:
+        pdf_report._FIG_HOOK.reset(token)
+
+    if png:
+        _FIG_CACHE[key] = png
+        while len(_FIG_CACHE) > _MAX_FIG_CACHE:
+            _FIG_CACHE.popitem(last=False)
+    return png
+
+
 def render_proof(*, branding: dict | None = None, terms: dict | None = None,
                  sections: list[str] | None = None, lang: str = "en",
                  kind: str = "phoenix", scale: float = DEFAULT_SCALE,
-                 pages: list[int] | None = None) -> dict:
-    """Render a proof and return `{pages: [b64 png], page_count, cached}`.
+                 pages: list[int] | None = None,
+                 figures: str = "stub") -> dict:
+    """Render a proof and return `{pages: [b64 png], page_count, cached, figures}`.
 
     `terms` is the live note from the app when there is one; without it the
     fixture's note stands in, so the Studio works before anything is simulated.
+
+    `figures='real'` draws the actual charts. They are the slow part — ~2s each
+    — so the caller is expected to show a stubbed render first and upgrade to
+    this one when it lands. Repeat renders are fast because the chart cache
+    survives any edit that is not a chart setting.
     """
     scale = max(0.3, min(float(scale or DEFAULT_SCALE), MAX_SCALE))
+    real = figures == "real"
     note = NoteTerms.from_dict(terms) if terms else fixture.note_terms(kind)
-    key = _digest(branding, terms, sections, lang, kind, scale, pages)
+    key = _digest(branding, terms, sections, lang, kind, scale, pages, figures)
 
     if key in _CACHE:
         _CACHE.move_to_end(key)
-        return {"pages": _CACHE[key], "page_count": len(_CACHE[key]), "cached": True}
+        return {"pages": _CACHE[key], "page_count": len(_CACHE[key]),
+                "cached": True, "figures": figures}
 
     results = fixture.results(note)
     opts_token = charts.set_chart_options(_chart_options_from_branding(branding))
-    stub_token = pdf_report._FIG_STUB.set(fixture.stub_png)
+    # Chart options must be installed BEFORE the figures are built: every
+    # builder ends in charts._apply_theme(), which reads them.
+    figs = fixture.real_figures(note, results, lang) if real else fixture.figures(note)
+    hook_token = pdf_report._FIG_HOOK.set(_memoised_hook if real else _placeholder_hook)
     try:
         pdf_bytes = pdf_report._build_pdf_report(
             terms=note,
             results=results,
             asset_names=results["asset_names"],
-            figures=fixture.figures(),
+            figures=figs,
             lang=lang,
             branding=branding,
             include_sections=set(sections) if sections else None,
@@ -120,11 +181,11 @@ def render_proof(*, branding: dict | None = None, terms: dict | None = None,
             logo_tickers={name: sym for sym, name in note.tickers.items()},
         )
     finally:
-        pdf_report._FIG_STUB.reset(stub_token)
+        pdf_report._FIG_HOOK.reset(hook_token)
         charts.reset_chart_options(opts_token)
 
     imgs = _rasterise(pdf_bytes, scale, pages)
     _CACHE[key] = imgs
     while len(_CACHE) > _MAX_CACHE:
         _CACHE.popitem(last=False)
-    return {"pages": imgs, "page_count": len(imgs), "cached": False}
+    return {"pages": imgs, "page_count": len(imgs), "cached": False, "figures": figures}

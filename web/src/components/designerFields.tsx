@@ -76,6 +76,47 @@ export function Card({ id, title, desc, children, tight, defaultOpen = true }: {
   )
 }
 
+/** A number input you can actually empty.
+
+    A plain controlled `type="number"` bound to a number can never be blank: the
+    moment you select-all and delete, the value round-trips back through the
+    parent and the old digits reappear, so you have to edit around whatever is
+    already there. This keeps the raw text locally while the field has focus, so
+    it may be empty or half-typed ("0.", "-", ""), and only commits values that
+    parse. Clamping waits for blur — clamping per keystroke turns typing "0.5"
+    into "0" the instant the "0" lands. Leaving the field empty restores the
+    previous value rather than writing a bogus one. */
+export function NumberInput({ value, onChange, min, max, step, placeholder, style }: {
+  value: number | undefined
+  onChange: (v: number) => void
+  min?: number; max?: number; step?: number
+  placeholder?: string
+  style?: React.CSSProperties
+}) {
+  const [draft, setDraft] = useState<string | null>(null)
+  const clamp = (n: number) =>
+    Math.min(max ?? Number.POSITIVE_INFINITY, Math.max(min ?? Number.NEGATIVE_INFINITY, n))
+
+  return (
+    <input
+      type="number" min={min} max={max} step={step} placeholder={placeholder}
+      value={draft ?? (value == null || Number.isNaN(value) ? '' : String(value))}
+      onChange={(e) => {
+        const raw = e.target.value
+        setDraft(raw)
+        const n = Number(raw)
+        if (raw !== '' && Number.isFinite(n)) onChange(n)   // unclamped while typing
+      }}
+      onBlur={() => {
+        const n = Number(draft)
+        if (draft !== null && draft !== '' && Number.isFinite(n)) onChange(clamp(n))
+        setDraft(null)                                     // fall back to the committed value
+      }}
+      style={{ ...inputStyle, ...style }}
+    />
+  )
+}
+
 export function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <label style={{ display: 'block' }}>

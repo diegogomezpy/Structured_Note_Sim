@@ -528,6 +528,7 @@ export interface ProofRequest {
   lang?: string
   kind?: string
   scale?: number
+  figures?: string
   pages?: number[] | null
 }
 

@@ -7,10 +7,7 @@ import { Segmented } from './fields'
 import ReportImages from './ReportImages'
 import BrandConfigBar from './BrandConfigBar'
 import { Card, ColorWell, Field, TextInput, UploadTile, grid, inputStyle } from './designerFields'
-import {
-  resolveSpec, buildTokens, writeSpec, specBase, diffSpec,
-  BUILTIN_THEME_NAMES,
-} from '../lib/reportTheme'
+import { resolveSpec, buildTokens, writeSpec, specBase, diffSpec } from '../lib/reportTheme'
 import { COVER_METRIC_KEYS, COVER_METRIC_MAX, type BrandingStudio } from '../lib/useBrandingStudio'
 import type { Branding, NoteTerms } from '../api/types'
 
@@ -21,52 +18,32 @@ import type { Branding, NoteTerms } from '../api/types'
    primitives live in designerFields.tsx so the Build tab can reuse them. */
 
 
-/* Theme lineage: which built-in this brand's report inherits from, and how far
-   it has drifted. Edits are stored as `{base, ...overrides}`, so this reads back
-   the override count and can drop any surface — or all of them — back to the
-   built-in. A config with no discoverable lineage (a hand-authored inline spec)
-   says so rather than pretending to inherit. */
+/* How far this config's theme has drifted from whatever it was authored on.
+
+   Deliberately NOT a theme picker. The report's visual identity comes from the
+   branding config — it is a property of the firm, not a style you shop for in
+   the editor — so there is nothing here to choose from and no preset list. This
+   only reports what your own edits have changed and lets you undo them, which
+   is possible because edits are stored as `{base, ...overrides}` rather than as
+   a frozen snapshot. */
 function ThemeLineage({ brand, set }: {
   brand: Branding
   set: <K extends keyof Branding>(k: K, v: Branding[K]) => void
 }) {
   const { t } = useI18n()
   const base = specBase(brand.report_theme)
-  const overrides = base
-    ? diffSpec(resolveSpec(base), resolveSpec(brand.report_theme))
-    : {}
-  const surfaces = Object.keys(overrides)
-  const label = (n: string) =>
-    n === 'mercator' ? t('brand_theme_mercator')
-      : n === 'cadiem' || n === 'hexagon' ? t('brand_theme_hexagon') : n
+  if (!base) return null
+  const surfaces = Object.keys(diffSpec(resolveSpec(base), resolveSpec(brand.report_theme)))
+  if (!surfaces.length) return null
 
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 14 }}>
-      <label style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-        <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-muted)' }}>{t('brand_theme_base')}</span>
-        <select value={base ?? ''} style={{ ...inputStyle, width: 'auto', minWidth: 150 }}
-          onChange={(e) => set('report_theme', e.target.value as never)}>
-          {!base && <option value="">{t('brand_theme_custom')}</option>}
-          {BUILTIN_THEME_NAMES.map((n) => <option key={n} value={n}>{label(n)}</option>)}
-        </select>
-      </label>
-
-      {base ? (
-        surfaces.length ? (
-          <>
-            <span style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>
-              {t('brand_theme_edited').replace('{n}', String(surfaces.length))}
-              <span style={{ color: 'var(--text-faint)' }}> — {surfaces.join(', ')}</span>
-            </span>
-            <button type="button" className="btn btn--ghost" style={{ padding: '4px 9px', fontSize: 12 }}
-              onClick={() => set('report_theme', base as never)}>{t('brand_theme_reset')}</button>
-          </>
-        ) : (
-          <span style={{ fontSize: 11.5, color: 'var(--text-faint)' }}>{t('brand_theme_pristine')}</span>
-        )
-      ) : (
-        <span style={{ fontSize: 11.5, color: 'var(--text-faint)' }}>{t('brand_theme_standalone')}</span>
-      )}
+      <span style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>
+        {t('brand_theme_edited').replace('{n}', String(surfaces.length))}
+        <span style={{ color: 'var(--text-faint)' }}> — {surfaces.join(', ')}</span>
+      </span>
+      <button type="button" className="btn btn--ghost" style={{ padding: '4px 9px', fontSize: 12 }}
+        onClick={() => set('report_theme', base as never)}>{t('brand_theme_reset')}</button>
     </div>
   )
 }

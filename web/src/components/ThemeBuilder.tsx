@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { Segmented } from './fields'
+import { NumberInput } from './designerFields'
 import {
   resolveColor, rgbToHex, type Tokens,
 } from '../lib/reportTheme'
@@ -59,8 +60,8 @@ function FillControl({ value, tokens, onChange }: { value: unknown; tokens: Toke
           {type === 'linear' && (
             <label style={{ ...row, fontSize: 11.5, color: 'var(--text-muted)' }}>
               Angle
-              <input type="number" value={Number(fill.angle ?? 90)} onChange={(e) => onChange({ ...fill, angle: Number(e.target.value) })}
-                style={{ width: 64, fontSize: 12, padding: '4px 6px', borderRadius: 7, border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--text)' }} />°
+              <NumberInput value={Number(fill.angle ?? 90)} step={5} min={0} max={360}
+                onChange={(v) => onChange({ ...fill, angle: v })} style={{ width: 64, fontSize: 12, padding: '4px 6px', borderRadius: 7 }} />°
             </label>
           )}
           {stops.map((s, i) => (
@@ -108,11 +109,11 @@ function WatermarkControl({ value, onChange }: { value: unknown; onChange: (v: u
       {on && !isBuiltIn && (
         <>
           <label style={{ ...row, fontSize: 11.5, color: 'var(--text-muted)' }}>Opacity
-            <input type="number" min={0} max={1} step={0.01} value={num('opacity', 0.13)}
-              onChange={(e) => onChange({ ...obj, opacity: Math.max(0, Math.min(1, Number(e.target.value) || 0)) })} style={numStyle} /></label>
+            <NumberInput value={num('opacity', 0.13)} min={0} max={1} step={0.01}
+              onChange={(v) => onChange({ ...obj, opacity: v })} style={numStyle} /></label>
           <label style={{ ...row, fontSize: 11.5, color: 'var(--text-muted)' }}>Size
-            <input type="number" min={0.1} max={1} step={0.02} value={num('scale', 0.58)}
-              onChange={(e) => onChange({ ...obj, scale: Math.max(0.1, Math.min(1, Number(e.target.value) || 0.58)) })} style={numStyle} />× panel height</label>
+            <NumberInput value={num('scale', 0.58)} min={0.1} max={1} step={0.02}
+              onChange={(v) => onChange({ ...obj, scale: v })} style={numStyle} />× panel height</label>
           <div><span style={lbl}>Anchor</span>
             <Segmented value={(obj.anchor as string) ?? 'right'} ariaLabel="Watermark anchor"
               options={[{ value: 'left', label: 'Left' }, { value: 'center', label: 'Centre' }, { value: 'right', label: 'Right' }]}
@@ -141,17 +142,13 @@ function ShapeControl({ value, onChange }: { value: unknown; onChange: (v: unkno
         }} />
       {kind === 'chamfer' && (
         <label style={{ ...row, fontSize: 11.5, color: 'var(--text-muted)' }}>Cut
-          <input type="number" step={0.5} min={0} max={12}
-            value={Number(shape.c ?? 5)}
-            onChange={(e) => onChange({ ...shape, c: Math.max(0, Math.min(12, Number(e.target.value) || 0)) })}
-            style={{ width: 64, fontSize: 12, padding: '4px 6px', borderRadius: 7, border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--text)' }} />mm</label>
+          <NumberInput value={Number(shape.c ?? 5)} step={0.5} min={0} max={12}
+            onChange={(v) => onChange({ ...shape, c: v })} style={{ width: 64, fontSize: 12, padding: '4px 6px', borderRadius: 7 }} />mm</label>
       )}
       {kind === 'rounded' && (
         <label style={{ ...row, fontSize: 11.5, color: 'var(--text-muted)' }}>Radius
-          <input type="number" step={0.5} min={0} max={12}
-            value={Number(shape.radius ?? 3)}
-            onChange={(e) => onChange({ ...shape, radius: Math.max(0, Math.min(12, Number(e.target.value) || 0)) })}
-            style={{ width: 64, fontSize: 12, padding: '4px 6px', borderRadius: 7, border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--text)' }} />mm</label>
+          <NumberInput value={Number(shape.radius ?? 3)} step={0.5} min={0} max={12}
+            onChange={(v) => onChange({ ...shape, radius: v })} style={{ width: 64, fontSize: 12, padding: '4px 6px', borderRadius: 7 }} />mm</label>
       )}
     </div>
   )
@@ -223,7 +220,7 @@ export default function ThemeBuilder({ spec, tokens, onChange }: { spec: Spec; t
         </label>
         <div><span style={lbl}>Empty-space decoration</span>
           <Segmented value={((spec.void as Any)?.decoration as string) || 'none'} ariaLabel="Void decoration"
-            options={[{ value: 'hexCluster', label: 'Hexes' }, { value: 'accentKeyline', label: 'Keyline' }, { value: 'none', label: 'None' }]}
+            options={[{ value: 'watermark', label: 'Watermark' }, { value: 'accentKeyline', label: 'Keyline' }, { value: 'none', label: 'None' }]}
             onChange={(v) => upd(['void', 'decoration'], v)} />
         </div>
       </Group>

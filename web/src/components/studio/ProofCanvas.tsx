@@ -28,9 +28,15 @@ import type { Branding, NoteTerms } from '../../api/types'
 */
 
 const A4 = 297 / 210          // page aspect, for the placeholder boxes
-const DEBOUNCE_MS = 400
 
-type Status = 'idle' | 'loading' | 'ok' | 'error'
+/* Long enough to sit through a burst of input. A number spinner clicked
+   repeatedly, a colour dragged, a chamfer nudged 0.5mm at a time — each of
+   those should produce ONE render when you stop, not one per step. 700ms is
+   past the gap between deliberate clicks but still feels immediate when you
+   change one thing and look up. */
+const DEBOUNCE_MS = 700
+
+type Status = 'idle' | 'chrome' | 'charts' | 'ok' | 'error'
 
 export default function ProofCanvas({ brand, terms, lang, zoom }: {
   brand: Branding
@@ -56,15 +62,32 @@ export default function ProofCanvas({ brand, terms, lang, zoom }: {
       abortRef.current?.abort()
       const ac = new AbortController()
       abortRef.current = ac
-      setStatus('loading')
       const t0 = performance.now()
-      api.reportProof({ branding: brand, terms, lang, scale: 1.4 }, ac.signal)
+      const show = (r: { pages: string[] }) =>
+        setPages(r.pages.map((b64) => `data:image/png;base64,${b64}`))
+
+      // Two passes. The first stubs the charts and lands in ~0.3s, so the
+      // layout, type and colour are on screen almost immediately. The second
+      // draws the real charts and swaps them in — Kaleido costs ~2s per figure,
+      // so waiting for it before showing anything would make every edit feel
+      // broken. Page geometry is identical between the two (the stub is drawn
+      // at each figure's true size), so the swap does not reflow.
+      setStatus('chrome')
+      api.reportProof({ branding: brand, terms, lang, scale: 1.4, figures: 'stub' }, ac.signal)
         .then((r) => {
           if (ac.signal.aborted) return
-          setPages(r.pages.map((b64) => `data:image/png;base64,${b64}`))
+          show(r)
+          setMs(Math.round(performance.now() - t0))
+          setStatus('charts')
+          setError('')
+          return api.reportProof(
+            { branding: brand, terms, lang, scale: 1.4, figures: 'real' }, ac.signal)
+        })
+        .then((r) => {
+          if (!r || ac.signal.aborted) return
+          show(r)
           setMs(Math.round(performance.now() - t0))
           setStatus('ok')
-          setError('')
         })
         .catch((e: Error) => {
           if (ac.signal.aborted || e.name === 'AbortError') return
@@ -78,20 +101,21 @@ export default function ProofCanvas({ brand, terms, lang, zoom }: {
 
   useEffect(() => () => abortRef.current?.abort(), [])
 
-  const stale = status === 'loading' && pages.length > 0
+  const busy = status === 'chrome' || status === 'charts'
+  const stale = status === 'chrome' && pages.length > 0
   const width = Math.round(520 * zoom)
 
   return (
     <div className="proof">
       <div className="proof__bar">
-        <span className={`proof__dot proof__dot--${status}`} aria-hidden />
+        <span className={`proof__dot proof__dot--${busy ? 'loading' : status}`} aria-hidden />
         <span className="proof__state">
-          {status === 'loading' ? t('proof_rendering')
+          {status === 'chrome' ? t('proof_rendering')
             : status === 'error' ? t('proof_failed')
-              : status === 'ok' ? t('proof_pages').replace('{n}', String(pages.length)) + ` · ${ms}ms`
-                : t('proof_idle')}
+              : status === 'idle' ? t('proof_idle')
+                : t('proof_pages').replace('{n}', String(pages.length)) + ` · ${ms}ms`}
         </span>
-        <span className="proof__note">{t('proof_figures_note')}</span>
+        {status === 'charts' && <span className="proof__note">{t('proof_drawing_charts')}</span>}
       </div>
 
       {status === 'error' && (

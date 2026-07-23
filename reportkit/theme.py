@@ -788,6 +788,16 @@ class SpecTheme(ReportTheme):
                 pdf._void_photo_idx += 1
                 return
         deco = self._s("void").get("decoration", "hexCluster")
+        # An uploaded mark is the brand-neutral filler. The hex cluster below is
+        # CADIEM's own language and is only reachable when a config asks for it
+        # by name, so a generic brand never sprouts hexagons it did not choose.
+        if deco == "watermark" or (deco == "hexCluster" and getattr(pdf, "watermark_bytes", None)
+                                   and getattr(pdf, "watermark_enabled", True)):
+            sc = min(gap * 0.62, 60.0)
+            if sc >= 12:
+                _watermark(pdf, x0 + (x1 - x0 - sc) / 2, floor - sc, sc, sc,
+                           {"opacity": 0.10, "scale": 0.9, "anchor": "center"})
+            return
         try:
             if deco == "hexCluster":
                 HEX_VEXT = 1.45
@@ -894,6 +904,11 @@ class SpecTheme(ReportTheme):
 
     def cover_left_void_fill(self, pdf, x0, sc, bottom) -> None:
         dec = self._s("cover_left_void").get("decoration", "hexCluster")
+        if dec == "watermark" or (dec == "hexCluster" and getattr(pdf, "watermark_bytes", None)
+                                  and getattr(pdf, "watermark_enabled", True)):
+            _watermark(pdf, x0, bottom - sc, sc, sc,
+                       {"opacity": 0.11, "scale": 0.9, "anchor": "center"})
+            return
         if dec == "hexCluster":
             _watermark(pdf, x0, bottom - sc, sc, sc, "hexCluster",
                        cluster=(x0 - sc * 0.2, bottom - sc, sc, pdf.primary_color, 1, 0.13))

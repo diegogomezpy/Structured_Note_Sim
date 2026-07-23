@@ -80,10 +80,20 @@ export default function NoteTimeline({ terms }: { terms: NoteTerms }) {
   const stepped = hasStepDown(terms)
   const sched = stepped ? autocallSchedule(terms) : null
   const minAc = sched ? Math.min(...sched) : acLevel
+  // The step-down barrier, drawn so each observation SITS AT its own level.
+  // The level for observation i is what that observation is tested against, so
+  // the line has to already be at sched[i] when it reaches the dot — it steps
+  // between observations, not on top of them. Drawing `H (to the dot) then V`
+  // put every dot on the PREVIOUS period's level, which showed the whole
+  // step-down starting one period late.
   let stepPath = ''
   if (sched) {
-    stepPath = `M ${X0} ${mapY(acLevel).toFixed(1)}`
-    fracs.forEach((f, i) => { stepPath += ` H ${mapX(f).toFixed(1)} V ${mapY(sched[i]).toFixed(1)}` })
+    stepPath = `M ${X0} ${mapY(sched[0]).toFixed(1)}`
+    fracs.forEach((f, i) => {
+      stepPath += ` H ${mapX(f).toFixed(1)}`
+      if (i + 1 < sched.length) stepPath += ` V ${mapY(sched[i + 1]).toFixed(1)}`
+    })
+    stepPath += ` H ${X1}`      // hold the final level out to maturity
   }
 
   const acDesc = t(stepped ? 'diag_lgd_autocall_step' : 'diag_lgd_autocall', { lvl: stepped ? `${pctTrim(acLevel)} → ${pctTrim(minAc)}` : pctTrim(acLevel), p: `P${start}` })

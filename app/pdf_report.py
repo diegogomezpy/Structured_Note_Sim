@@ -72,12 +72,15 @@ from contextvars import ContextVar
 from pathlib import Path
 from fpdf import FPDF
 
-# When set, `_fig_to_png` returns `stub(width, height)` instead of rasterising
-# through Kaleido. The proof/preview endpoint installs it to render the document
-# chrome in a fraction of a second; a real report never sets it. A ContextVar
-# rather than a module flag so one caller's preview can never strip the charts
-# out of another caller's real PDF.
-_FIG_STUB: ContextVar = ContextVar("fig_stub", default=None)
+# An optional interception point for figure rasterisation, called as
+# `hook(fig, width, height, primary, accent, secondary)`. Returning bytes short-
+# circuits Kaleido; returning None falls through to the normal render. The
+# proof/preview endpoint installs one to serve placeholders (fast mode) or to
+# memoise real renders (a chart costs ~2s of Chrome IPC, so repeating one across
+# previews is the single biggest cost worth avoiding). A real report sets
+# nothing. It is a ContextVar rather than a module flag so one caller's preview
+# can never strip the charts out of another caller's PDF.
+_FIG_HOOK: ContextVar = ContextVar("fig_hook", default=None)
 
 # Visual-identity layer — now lives in the reusable `reportkit` package (the
 # theme engine is domain-agnostic). The chamfer primitives are re-exported under
@@ -2223,16 +2226,17 @@ def _fig_to_png(fig, width: int = 900, height: int = 500,
     diagnose after the fact. The most common cause is a missing Chrome for
     Kaleido v1 on a headless deploy; we retry once after fetching one.
     """
-    # Proof/preview mode: hand back a flat placeholder at the size the caller
-    # asked for, without touching Plotly or Kaleido. It has to happen HERE, not
-    # by putting bytes in the `figures` dict, because the next line wraps
-    # whatever it was given in go.Figure(). The size must be honoured: figure()
-    # derives its placement height from the image's aspect and only then tests
-    # whether the block still fits, so a wrong aspect shifts every later page
-    # break and the proof stops matching the real document's pagination.
-    _stub = _FIG_STUB.get()
-    if _stub is not None:
-        return _stub(width, height)
+    # Proof/preview interception. It has to happen HERE, not by putting bytes in
+    # the `figures` dict, because the next line wraps whatever it was given in
+    # go.Figure(). A placeholder must honour the requested size: figure() derives
+    # its placement height from the image's aspect and only then tests whether
+    # the block still fits, so a wrong aspect shifts every later page break and
+    # the proof stops matching the real document's pagination.
+    _hook = _FIG_HOOK.get()
+    if _hook is not None:
+        _out = _hook(fig, width, height, primary_color, accent_color, secondary_color)
+        if _out is not None:
+            return _out
 
     import plotly.io as pio
     import plotly.graph_objects as go

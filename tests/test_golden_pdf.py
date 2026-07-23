@@ -95,14 +95,15 @@ def _render(theme: str, kind: str = "phoenix", *, real_figures: bool = False) ->
     pdf_report._fetch_image_bytes = lambda *a, **k: None
 
     # The same ContextVar hook the proof endpoint uses, so the golden exercises
-    # the real stub path rather than a test-only monkeypatch.
-    token = None if real_figures else pdf_report._FIG_STUB.set(gf.stub_png)
+    # the real interception path rather than a test-only monkeypatch.
+    token = None if real_figures else pdf_report._FIG_HOOK.set(
+        lambda fig, w, h, *colors: gf.stub_png(w, h))
     try:
         return pdf_report._build_pdf_report(
             terms=terms,
             results=results,
             asset_names=results["asset_names"],
-            figures=gf.figures(),
+            figures=gf.figures(terms),
             lang="en",
             branding=gf.branding(theme),
             logo_urls=None,
@@ -111,7 +112,7 @@ def _render(theme: str, kind: str = "phoenix", *, real_figures: bool = False) ->
         )
     finally:
         if token is not None:
-            pdf_report._FIG_STUB.reset(token)
+            pdf_report._FIG_HOOK.reset(token)
 
 
 def _load_baseline() -> dict:

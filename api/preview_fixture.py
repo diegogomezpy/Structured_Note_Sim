@@ -132,7 +132,58 @@ FIGURE_KEYS = ("irr_dist", "wof_fan", "outcome", "sample",
                "corr", "corr_input", "corr_realized", "corr_diff")
 
 
-def figures() -> dict:
+def figures(terms=None) -> dict:
+    """Placeholder figure set.
+
+    `terms` matters: the report draws one per-asset fan chart per underlying, so
+    without them a stubbed proof paginates one page shorter than the real
+    document and the fast preview quietly stops predicting page breaks.
+    """
     d: dict = {k: object() for k in FIGURE_KEYS}
     d["asset_fans"] = []
+    names = list(terms.tickers.values()) if terms is not None else []
+    d["individual"] = [(n, object()) for n in names]
     return d
+
+
+def real_figures(terms, results: dict, lang: str = "en") -> dict:
+    """Genuine Plotly figures built from the fixture, mirroring what
+    `api/engine.py` assembles for a real report.
+
+    Used by the proof's real-chart mode. Deliberately the same builders the
+    report calls, so the brand's chart options apply exactly as they will in the
+    delivered PDF — the whole point being that nothing about the proof is a
+    separate implementation.
+    """
+    import charts
+    import translations
+
+    tr = translations.Translator(lang)
+    names = results["asset_names"]
+    t_grid = results["t_grid_years"]
+    wof = results["worst_of_paths"]
+    obs = [(f"{i + 1}", t) for i, t in enumerate(results["obs_times"])]
+    participation = getattr(terms, "note_type", "") == "participation"
+
+    figs: dict = {
+        "outcome": (charts.build_redemption_distribution(results["nominal_payoffs"], terms, tr)
+                    if participation else
+                    charts.build_outcome_breakdown(
+                        results["prob_autocall_by_period"], results["prob_maturity"],
+                        results["prob_knock_in_total"], tr)),
+        "irr_dist": charts.build_irr_distribution(
+            results["annualized_returns"], results["total_returns"],
+            results["autocall_events"], results["expected_irr"], terms.coupon_pa, tr),
+        "wof_fan": charts.build_wof_fan(
+            wof, t_grid, terms.knock_in_barrier, obs, tr,
+            autocall_barrier=terms.autocall_barrier, participation=participation),
+        "sample": charts.build_sample_paths(
+            wof, t_grid, results["autocall_period"], results["knock_in_mask"],
+            terms.knock_in_barrier, terms.autocall_barrier, obs, tr),
+        "corr": charts.build_corr_heatmap(results["corr_SS"], names, tr("corr_input")),
+        "individual": [(n, charts.build_fan_chart(
+            np.asarray(wof) * (1.0 + 0.02 * i), n, t_grid, obs, tr))
+            for i, n in enumerate(names)],
+    }
+    figs["asset_fans"] = []
+    return figs

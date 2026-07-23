@@ -821,6 +821,7 @@ class ProofRequest(BaseModel):
     kind: str = "phoenix"                                # fixture family when terms is None
     scale: float = Field(1.4, ge=0.3, le=3.0)
     pages: list[int] | None = None                       # viewport window; None = all
+    figures: str = "stub"                                # 'stub' (fast) | 'real' (draws charts)
 
 
 @app.post("/api/report/proof")
@@ -838,7 +839,7 @@ def report_proof(req: ProofRequest):
         return render_proof(
             branding=req.branding, terms=req.terms,
             sections=req.sections or None, lang=req.lang,
-            kind=req.kind, scale=req.scale, pages=req.pages)
+            kind=req.kind, scale=req.scale, pages=req.pages, figures=req.figures)
     except Exception as e:
         raise HTTPException(500, f"proof render failed: {type(e).__name__}: {e}")
 
