@@ -1,0 +1,13 @@
+{
+  "firm_name": "Golden Mercator Advisors",
+  "report_title": "Structured Note Analysis",
+  "website": "mercator.example",
+  "primary_color": "#1f3a5f",
+  "accent_color": "#3f9c8f",
+  "section_rule_color": "#3f9c8f",
+  "panel_color": "#eef2f7",
+  "sidebar_bar_color": "#3f9c8f",
+  "footer_note": "Golden Mercator Advisors · fixture",
+  "disclaimer_body": "Synthetic fixture exercising the default Mercator theme: the editorial chapter opener, number chips, thin accent keylines and airy void treatment. Not a real product.",
+  "cover_metrics": ["coupon_pa", "maturity", "knock_in_barrier"]
+}

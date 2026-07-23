@@ -145,7 +145,13 @@ The report's *look* is a swappable **theme**, separate from its *content*. `repo
 - **Palette-driven tokens.** `build_tokens(primary, accent, section_rule, panel, sidebar_bar) -> ThemeTokens` derives `ink/lime/teal/amber/panel/sidebar_bar/…` from the resolved brand palette (single source for the derivation that `_NotePDF.__init__` used to inline). The brand-neutral constants (`AMBER`, `RULE_SOFT`, `TEXT`, …) and the chamfer-hexagon shape primitives also live here and are re-imported into `pdf_report.py` under their original `_NAMES`.
 - **Themes.** `HexagonTheme` (`"hexagon"` / `"cadiem"`) is CADIEM's original chamfer-hexagon language, moved **verbatim**. `MercatorTheme` (`"mercator"`) is the website-inspired language (rounded number-chips, a light editorial chapter opener with a big ghosted numeral, thin accent keylines, airy voids — no chamfers/hexagons).
 - **Selection.** `branding["report_theme"]` → `resolve_theme()` → registry; unknown/absent falls back to `DEFAULT_THEME`, which is **`"mercator"`** (so a generic un-themed brand gets the clean airy report). **CADIEM must set `"report_theme": "cadiem"` in its branding config** to keep the hexagon look — the deployed CADIEM config carries this key (it is otherwise gitignored). The web branding form exposes the picker (`brand_theme` in `ReportPanel.tsx`).
-- **Byte-identity contract.** `HexagonTheme` must reproduce the pre-refactor CADIEM output pixel-for-pixel. `scratchpad/golden.py` is a hermetic (no Chrome, figures stubbed) golden pixel-diff harness used to prove it — regenerate a baseline and `check` after any change to a hexagon-theme drawing routine.
+- **Byte-identity contract.** A change to a drawing routine must not move pixels it did not intend to. `tests/test_golden_pdf.py` proves it: a hermetic harness (no network, no Chrome — figures are stubbed *inside* `_fig_to_png` at the caller's exact pixel size so pagination is unchanged) that renders the full report under three brand fixtures — `mercator` (default), `hexagon` (resolves the built-in CADIEM theme) and `custom` (an inline SpecTheme with linear/radial gradients) — and diffs per-page SHA-256 digests against `tests/golden/hashes.json`.
+
+```bash
+python -m pytest tests/test_golden_pdf.py -q
+```
+
+  Inputs come from `tests/golden_fixture.py`: a seeded RNG builds a `results` dict shaped like the one `api/engine.py` stores, so the golden guards the *drawing* code and does not go red when the quant library legitimately changes a number. The brand fixtures are synthetic — the real CADIEM config and its brand fonts are gitignored licensed assets and must never enter the repo — but they drive the same code paths. On failure the run writes both renders to a temp dir and prints the path; review image by image, then re-baseline with `GOLDEN_UPDATE=1`. Runs in CI (`golden-pdf` job) and skips cleanly wherever the PDF stack is absent.
 
 ## PDF attribution / provenance metadata
 

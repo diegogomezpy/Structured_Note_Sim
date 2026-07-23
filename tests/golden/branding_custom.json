@@ -1,0 +1,52 @@
+{
+  "firm_name": "Golden Gradient Partners",
+  "report_title": "Structured Note Analysis",
+  "website": "gradient.example",
+  "primary_color": "#2d1b52",
+  "accent_color": "#e0a458",
+  "section_rule_color": "#8f7ae6",
+  "panel_color": "#f2eef8",
+  "sidebar_bar_color": "#e0a458",
+  "chart_secondary_color": "#4ec9b0",
+  "cover_overlay_color": "#150c2b",
+  "cover_overlay_opacity": 0.62,
+  "footer_note": "Golden Gradient Partners · fixture",
+  "disclaimer_body": "Synthetic fixture exercising the declarative SpecTheme engine: linear and radial gradient fills, an inline watermark spec, chamfer geometry overrides and an editorial chapter divider. Not a real product.",
+  "report_theme": {
+    "name": "GoldenGradient",
+    "header": { "rule": { "color": "primary", "weight": 0.7, "y": 16.5 } },
+    "secondary_head": {
+      "chip": {
+        "size": 12,
+        "shape": { "kind": "chamfer", "c": 3.0, "q": 1.0, "r": 2.6 },
+        "fill": { "type": "linear", "angle": 45, "stops": [[0, "accent"], [1, "primary"]] },
+        "number_color": "white"
+      },
+      "kicker_color": "primary",
+      "title_color": "ink",
+      "rule_color": "rule_soft",
+      "rule_weight": 0.4
+    },
+    "divider": {
+      "style": "banner",
+      "height": 30,
+      "shape": { "kind": "chamfer", "c": 5.0, "q": 1.4, "r": 3.6 },
+      "fill": { "type": "linear", "angle": 90, "stops": [[0, "ink"], [1, { "mix": ["ink", "accent", 0.35] }]] },
+      "watermark": { "opacity": 0.14, "scale": 0.62, "anchor": "right" },
+      "number": { "size": 26, "color": "accent", "x": 9 },
+      "vline": true,
+      "vline_color": { "mix": ["ink", "white", 0.3] },
+      "kicker_color": "accent",
+      "heading_color": "white",
+      "heading_size": 16
+    },
+    "cover_masthead": {
+      "shape": { "kind": "chamfer", "c": 7.0, "q": 2.0, "r": 4.8 },
+      "fill": { "type": "radial", "stops": [[0, { "mix": ["ink", "accent", 0.28] }], [1, "ink"]] },
+      "watermark": { "opacity": 0.12, "scale": 0.55, "anchor": "right" }
+    },
+    "cover": {
+      "fill": { "type": "linear", "angle": 160, "stops": [[0, "primary"], [1, { "mix": ["primary", "black", 0.45] }]] }
+    }
+  }
+}
