@@ -27,6 +27,9 @@ import NavMenu, { type NavItem } from './components/NavMenu'
 import BrandMark from './components/BrandMark'
 import Icon from './components/Icon'
 import { useTour, mainTour } from './components/Tour'
+import StudioPage from './components/studio/StudioPage'
+import { useBrandingStudio } from './lib/useBrandingStudio'
+import { useHashRoute, useNavigate } from './lib/useHashRoute'
 
 type Status = 'idle' | 'running' | 'error'
 
@@ -67,6 +70,14 @@ export default function App() {
   const [status, setStatus] = useState<Status>('idle')
   const [errorMsg, setErrorMsg] = useState('')
   const [tab, setTab] = useState('mc')
+  // The branding studio is owned at the top so it OUTLIVES any one screen. It
+  // used to be created inside ReportView, which unmounts whenever you switch
+  // view — so a trip to Monte Carlo and back silently discarded every unsaved
+  // brand edit. The PDF Studio route needs the same state, which makes App the
+  // only sensible owner.
+  const studio = useBrandingStudio()
+  const route = useHashRoute()
+  const navigate = useNavigate()
   // Sub-view per view, lifted out of the panels so the rail's NavMenu can drive
   // them (and each view remembers where you were when you come back).
   const [subs, setSubs] = useState<Record<string, string>>({ mc: 'summary', bt: 'outcomes', report: 'build' })
@@ -75,6 +86,7 @@ export default function App() {
   // keep whatever scroll position you had and may not see that anything changed.
   const resultsRef = useRef<HTMLDivElement>(null)
   const selectNav = useCallback((id: string, sub?: string) => {
+    if (id === 'studio') { navigate('/studio'); return }
     setTab(id)
     if (sub) setSubs((p) => ({ ...p, [id]: sub }))
     // Two frames: one for React to commit the new view, one for layout to settle
@@ -84,7 +96,7 @@ export default function App() {
       const reduced = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
       resultsRef.current?.scrollIntoView({ behavior: reduced ? 'auto' : 'smooth', block: 'start' })
     }))
-  }, [])
+  }, [navigate])
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [diagramOpen, setDiagramOpen] = useState(true)
   // Backtest is fetched lazily on first open of its tab (only depends on terms).
@@ -290,11 +302,17 @@ export default function App() {
     { id: 'compare', label: t('tab_compare') },
     { id: 'report', label: t('tab_report'), icon: 'chart', subs: [
       { id: 'build', label: t('rep_sub_build') },
-      { id: 'design', label: t('rep_sub_design') },
       { id: 'batch', label: t('rep_sub_batch') },
     ] },
+    // Not a view of the analytics shell — picking it leaves for #/studio.
+    { id: 'studio', label: t('tab_studio') },
   ]
   const tabs = navItems.map((n) => ({ id: n.id, label: n.label }))
+
+  // The Studio is a page, not a tab: it takes the whole viewport, with no rail,
+  // ticker or note-structure panel competing with the proof. Every hook above
+  // has already run, so returning here breaks no rule of hooks.
+  if (route === '/studio') return <StudioPage studio={studio} terms={terms} />
 
   return (
     <div className="ground">
@@ -454,6 +472,7 @@ export default function App() {
 
           {tab === 'report' && terms && (
             <ReportView terms={terms} opts={opts} variantB={variantB} pathImages={pathImages} configs={configs}
+                        studio={studio}
                         sub={subs.report ?? 'build'} onSubChange={(s) => setSubs((p) => ({ ...p, report: s }))} />
           )}
         </main>

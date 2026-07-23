@@ -402,6 +402,10 @@ export const S: Dict = {
   tab_live:         { en: 'Current performance', es: 'Rendimiento actual' },
   tab_compare:      { en: 'Compare', es: 'Comparar' },
   tab_report:       { en: 'Report', es: 'Informe' },
+  tab_studio:       { en: 'PDF Studio', es: 'Estudio PDF' },
+  studio_title:     { en: 'PDF Studio', es: 'Estudio PDF' },
+  studio_back:      { en: 'Back', es: 'Volver' },
+  studio_no_note:   { en: 'Load a note to design its report.', es: 'Carga una nota para diseñar su informe.' },
   tab_batch:        { en: 'Batch', es: 'Lote' },
   // A/B comparison view
   cmp_setup_title:  { en: 'Compare with a variant (A vs B)', es: 'Comparar con una variante (A vs B)' },
