@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { api } from '../api/client'
 import { useI18n } from '../i18n/I18nProvider'
 import { Section } from './fields'
+import NoteFeatures from './NoteFeatures'
 import type { NoteTerms } from '../api/types'
 
 /** The systematic prose description of the note, or the author's override.
@@ -33,23 +34,29 @@ export default function NoteDescription({ terms }: { terms: NoteTerms }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dep, lang, override])
 
-  if (!text) return null
-  const paras = text.split('\n\n').filter(Boolean)
+  const paras = text ? text.split('\n\n').filter(Boolean) : []
 
   return (
     <Section title={t('note_desc_section')}>
-      <div className="fade-up" style={{ display: 'flex', gap: 16, paddingTop: 2 }}>
-        <div style={{ width: 2, borderRadius: 2, background: 'var(--accent)', flexShrink: 0 }} />
-        <div style={{ maxWidth: 680 }}>
-          {paras.map((para, i) => (
-            <p key={i} style={{
-              margin: i === paras.length - 1 ? 0 : '0 0 11px',
-              fontSize: 13, lineHeight: 1.7, color: 'var(--text-muted)',
-              textAlign: 'justify', hyphens: 'auto',
-            }}>{para}</p>
-          ))}
+      {/* The features table first — a quick scan of the note's terms, the same
+          fields as the PDF's Note Terms table — then the prose below it. The
+          table comes from the terms directly, so it shows even before (or if)
+          the server-generated description arrives. */}
+      <NoteFeatures terms={terms} />
+      {paras.length > 0 && (
+        <div className="fade-up" style={{ display: 'flex', gap: 16, marginTop: 18 }}>
+          <div style={{ width: 2, borderRadius: 2, background: 'var(--accent)', flexShrink: 0 }} />
+          <div style={{ maxWidth: 680 }}>
+            {paras.map((para, i) => (
+              <p key={i} style={{
+                margin: i === paras.length - 1 ? 0 : '0 0 11px',
+                fontSize: 13, lineHeight: 1.7, color: 'var(--text-muted)',
+                textAlign: 'justify', hyphens: 'auto',
+              }}>{para}</p>
+            ))}
+          </div>
         </div>
-      </div>
+      )}
     </Section>
   )
 }

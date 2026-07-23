@@ -2,9 +2,9 @@
 
 The description is a template, so it must read correctly for every feature
 combination rather than for the four notes anyone happened to look at. These
-assertions encode the rules that keep it prose rather than a feature list:
-six paragraphs always, no labelled fragments, and — the regression that
-prompted the rewrite — a feature is only ever named when the note uses it.
+assertions encode the rules that keep it terse prose rather than a feature
+list: three paragraphs always, no labelled fragments, and — the regression the
+rewrite exists to prevent — a feature is only ever named when the note uses it.
 
 Runs against every config in note_configs/ in both languages.
 """
@@ -44,8 +44,16 @@ if not CASES:
 
 
 @pytest.mark.parametrize("name,terms,lang", CASES, ids=IDS)
-def test_six_paragraphs(name, terms, lang):
-    assert len(describe_note(terms, lang).split("\n\n")) == 6
+def test_three_paragraphs(name, terms, lang):
+    """Terse by contract: exactly three paragraphs, no more."""
+    assert len(describe_note(terms, lang).split("\n\n")) == 3
+
+
+@pytest.mark.parametrize("name,terms,lang", CASES, ids=IDS)
+def test_is_terse(name, terms, lang):
+    """Half a page at most. The old six-paragraph prose ran ~4400 chars; the
+    ceiling here is deliberately well under that so it can never creep back."""
+    assert len(describe_note(terms, lang)) <= 2200
 
 
 @pytest.mark.parametrize("name,terms,lang", CASES, ids=IDS)
@@ -67,9 +75,10 @@ def test_features_named_only_when_used(name, terms, lang):
         assert "Zenith" not in txt
     if not (getattr(terms, "autocall_step_down", 0) or 0) > 0:
         # the declining-barrier clause and its floor must be absent entirely
-        assert "falls" not in txt or "points at each date" not in txt
-        assert "baja" not in txt or "puntos en cada" not in txt
-        assert "its floor of" not in txt and "su suelo del" not in txt
+        if lang == "en":
+            assert "steps down" not in txt and "floor of" not in txt
+        else:
+            assert "puntos en cada fecha" not in txt and "suelo del" not in txt
     if not terms.memory and terms.n_obs > 1 and terms.coupon_pa > 0 \
             and not getattr(terms, "coupon_at_autocall_only", False):
         assert ("memory effect" if lang == "en" else "efecto memoria") not in txt
@@ -77,8 +86,8 @@ def test_features_named_only_when_used(name, terms, lang):
 
 @pytest.mark.parametrize("name,terms,lang", CASES, ids=IDS)
 def test_autocall_level_is_always_stated(name, terms, lang):
-    """The old template never printed the autocall level at all — the whole
-    point of a note with a 100% barrier went unsaid."""
+    """The autocall level is the whole point of a note with a 100% barrier —
+    it must be printed, not left unsaid."""
     txt = describe_note(terms, lang)
     if not (getattr(terms, "autocall_step_down", 0) or 0) > 0 \
             and terms.autocall_start_period <= terms.n_obs:
@@ -87,13 +96,12 @@ def test_autocall_level_is_always_stated(name, terms, lang):
 
 @pytest.mark.parametrize("name,terms,lang", CASES, ids=IDS)
 def test_paragraph_ownership(name, terms, lang):
-    """Each fact has exactly one home, so nothing is said twice."""
+    """Each fact has exactly one home, so nothing is said twice. Capital, the
+    Knock-in and the European nature all belong to the third paragraph."""
     paras = describe_note(terms, lang).split("\n\n")
-    # the European/single-day nature of the barrier belongs to P5
-    assert not re.search(r"European|europea", paras[1])
-    # the coupon-at-the-call fact belongs to P4's settlement sentence
-    if not getattr(terms, "coupon_at_autocall_only", False):
-        assert not re.search(r"redeems early|amortiza anticipadamente", paras[2])
+    for i in (0, 1):
+        assert not re.search(r"European|europea", paras[i])
+        assert "Knock-in" not in paras[i]
 
 
 @pytest.mark.parametrize("name,terms,lang", CASES, ids=IDS)

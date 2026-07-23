@@ -9,6 +9,7 @@ import ParticipationWhatIf from './ParticipationWhatIf'
 import CliquetProfiles from './CliquetProfiles'
 import PathExplorer from './PathExplorer'
 import PathInspector, { type PathImage } from './PathInspector'
+import OutcomeWaterfall from './OutcomeWaterfall'
 import { AutocallByPeriodTable, CalibrationTable } from './MCTables'
 import Tabs from './Tabs'
 import TickerLogo from './TickerLogo'
@@ -53,7 +54,13 @@ export default function MonteCarloPanel({ result, terms, sub, onSubChange, onPat
       {sub === 'summary' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }} className="stagger">
           <Panel title={isPart ? t('redemption_distribution') : t('outcomes')} right={`${summary.n_paths.toLocaleString()} ${t('paths').toLowerCase()} · ${summary.engine}`} pad={14}>
-            <div style={{ height: isPart ? CHART_H : 210 }}><Figure fig={figures.outcome} name={isPart ? 'redemption_distribution' : 'outcome_breakdown'} /></div>
+            {/* Phoenix outcomes read as a proportional stacked bar + legend — the
+                same treatment as the backtest — not a cramped Plotly chart.
+                Participation has a genuine redemption histogram, so it keeps the
+                figure. */}
+            {isPart
+              ? <div style={{ height: CHART_H }}><Figure fig={figures.outcome} name="redemption_distribution" /></div>
+              : <OutcomeWaterfall summary={summary} />}
           </Panel>
           {isCliquet ? (
             <Panel title={t('cliquet_title')} right={t('cliquet_right')} pad={14}>

@@ -90,6 +90,43 @@ export function participationSummary(terms: NoteTerms, tr: (k: string) => string
   return segs.join(' · ')
 }
 
+/** Key/value rows for the note-features table — the web mirror of
+    app/pdf_report.py:_term_rows, so the "at a glance" table on the page shows the
+    same fields as the PDF's Note Terms table. Only fields the note actually uses
+    add a row (step-down, floor, premium-at-call, issue date), same as the PDF. */
+export function noteTermRows(t: NoteTerms, tr: (k: string) => string): [string, string][] {
+  if (t.note_type === 'participation' || (t.capital_guarantee ?? 0) > 0) {
+    const rows: [string, string][] = [
+      [tr('maturity'), maturityLabel(t.maturity)],
+      [tr('participation_profile'), participationSummary(t, tr)],
+      [tr('protection_level'), pct(t.protection_level ?? 1, 1)],
+    ]
+    if (t.issue_date) rows.push([tr('issue_date'), t.issue_date])
+    return rows
+  }
+  const cper = couponRate(t)
+  const bask = (k: string) => tr(`basket_${k}`)
+  const rows: [string, string][] = [
+    [tr('maturity'), `${maturityLabel(t.maturity)} · ${nObs(t)} ${tr('obs_abbr')} · ${tr(`freq_${t.payment_freq}`)}`],
+    [tr('coupon_pa'), cper > 0 ? `${pct(t.coupon_pa, 2)} · ${pct(cper, 2)}/${tr('per_period')}` : pct(t.coupon_pa, 2)],
+    [tr('coupon_barrier'), t.coupon_barrier > 0 ? pct(t.coupon_barrier, 1) : tr('nd_unconditional')],
+    [tr('memory'), t.memory ? tr('yes') : tr('no')],
+    [tr('autocall_barrier'), pct(t.autocall_barrier, 1)],
+    [tr('autocall_start'), `P${t.autocall_start_period}`],
+    [tr('knock_in_barrier'), pct(t.knock_in_barrier, 1)],
+    [tr('coupon_basket'), bask(t.coupon_basket)],
+    [tr('autocall_basket'), bask(t.autocall_basket)],
+    [tr('one_star'), t.one_star_level != null ? pct(t.one_star_level, 0) : tr('nd_off')],
+  ]
+  if ((t.autocall_step_down ?? 0) > 0) {
+    rows.push([tr('ac_step_down'), pct(t.autocall_step_down as number, 1)])
+    if (t.autocall_floor != null) rows.push([tr('ac_floor'), pct(t.autocall_floor, 0)])
+  }
+  if (t.coupon_at_autocall_only) rows.push([tr('premium_at_call'), tr('yes')])
+  if (t.issue_date) rows.push([tr('issue_date'), t.issue_date])
+  return rows
+}
+
 /** One-line plain-language summary of the coupon schedule, e.g.
     "4 × Quarterly · 10.0% coupon p.a. · +2.50%/period · memory coupons".
     Routes to `participationSummary` for Participation notes (payoff, not ladder).
