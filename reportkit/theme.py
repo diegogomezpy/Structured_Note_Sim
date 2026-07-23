@@ -591,6 +591,16 @@ def paint_shape(pdf, x, y, w, h, shape, fill, opacity: float = 1.0) -> None:
     else:
         fx, fy, tx, ty = _grad_endpoints(x, y, w, h, fill.get("angle", 90))
         grad = LinearGradient(fx, fy, tx, ty, colors)
+    # `opacity` has to be honoured here too. It was applied only on the solid
+    # branch, so a gradient painted with an opacity came out fully opaque — which
+    # is what made a gradient cover tint hide the cover photo completely instead
+    # of sitting over it.
+    if opacity != 1.0:
+        with pdf.local_context(fill_opacity=opacity):
+            with pdf.use_pattern(grad):
+                with pdf.new_path() as p:
+                    _shape_into(p, kind, geom, x, y, w, h)
+        return
     with pdf.use_pattern(grad):
         with pdf.new_path() as p:
             _shape_into(p, kind, geom, x, y, w, h)
