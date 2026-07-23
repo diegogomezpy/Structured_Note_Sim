@@ -72,6 +72,10 @@ export const api = {
       `signal` matters: brand edits fire faster than a render completes, so an
       in-flight proof is aborted when a newer one supersedes it. Without that,
       responses can land out of order and the canvas settles on a stale page. */
+  /** The note description, generated server-side from the terms — see
+      /api/note/describe for why this is not computed in the browser. */
+  describeNote: (terms: NoteTerms, lang: string, issuer?: string | null) =>
+    jpost<{ text: string }>('/api/note/describe', { terms, lang, issuer: issuer ?? null }),
   reportProof: (body: ProofRequest, signal?: AbortSignal) =>
     jpost<ProofResult>('/api/report/proof', body, signal),
   brandingList: () => jget<{ file: string; firm_name: string }[]>('/api/branding'),

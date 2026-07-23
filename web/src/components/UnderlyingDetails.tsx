@@ -1,9 +1,8 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { api } from '../api/client'
 import { useI18n } from '../i18n/I18nProvider'
 import Icon from './Icon'
 import TickerLogo, { LogoImg } from './TickerLogo'
-import { noteDescription } from '../lib/noteDescription'
 import type { AnalystSplit, NoteTerms, Sentiment, UnderlyingMetric, UnderlyingOverride } from '../api/types'
 
 const SENTIMENTS: Sentiment[] = ['buy', 'hold', 'sell']
@@ -18,6 +17,17 @@ export default function UnderlyingDetails({ terms, onChange }: {
 }) {
   const { t, lang } = useI18n()
   const [busy, setBusy] = useState(false)
+  // The systematic description, generated server-side (one generator — see
+  // NoteDescription.tsx). Used as the textarea placeholder and as the source
+  // for "use the generated text".
+  const [generated, setGenerated] = useState('')
+  const termsDep = JSON.stringify(terms)
+  useEffect(() => {
+    let live = true
+    api.describeNote(terms, lang).then((r) => { if (live) setGenerated(r.text) }).catch(() => {})
+    return () => { live = false }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [termsDep, lang])
   const fileRefs = useRef<Record<string, HTMLInputElement | null>>({})
 
   const ov = (name: string): UnderlyingOverride => terms.underlyings?.[name] ?? {}
@@ -88,11 +98,11 @@ export default function UnderlyingDetails({ terms, onChange }: {
         <label style={{ fontSize: 12, color: 'var(--text-muted)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
           <span>{t('note_desc_label')}</span>
           <button className="btn btn--ghost" style={{ padding: '2px 9px', fontSize: 11 }}
-                  onClick={() => onChange({ ...terms, note_description: noteDescription(terms, lang) })}>
+                  onClick={() => generated && onChange({ ...terms, note_description: generated })}>
             {t('note_desc_use_generated')}
           </button>
         </label>
-        <textarea style={{ ...ta, minHeight: 96 }} value={terms.note_description ?? ''} placeholder={noteDescription(terms, lang)}
+        <textarea style={{ ...ta, minHeight: 96 }} value={terms.note_description ?? ''} placeholder={generated}
                   onChange={(e) => onChange({ ...terms, note_description: e.target.value })} />
         <div style={{ fontSize: 11, color: 'var(--text-faint)', marginTop: 5 }}>{t('note_desc_hint')}</div>
       </div>

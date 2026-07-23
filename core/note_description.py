@@ -127,212 +127,22 @@ def _describe_participation(terms, lang, names, multi) -> str:
     return head + up + dn
 
 
-def _basket_word(kind: str, lang: str, multi: bool) -> str:
-    """How a basket rule reads in prose."""
-    if not multi:
-        return "el Subyacente" if lang == "es" else "the Underlying"
-    if lang == "es":
-        return {"worst_of": "el peor de los Subyacentes",
-                "best_of": "el mejor de los Subyacentes",
-                "average": "el promedio de los Subyacentes"}.get(kind, "el peor de los Subyacentes")
-    return {"worst_of": "the worst-performing Underlying",
-            "best_of": "the best-performing Underlying",
-            "average": "the average of the Underlyings"}.get(kind, "the worst-performing Underlying")
+def describe_note(terms, lang: str = "en", issuer: str | None = None) -> str:
+    """Generate the prose note description from `terms` (en/es).
 
+    Phoenix notes get the six-paragraph scheme in `core/phoenix_prose.py`;
+    participation notes keep their own single-paragraph payoff profile.
 
-def _phoenix_features(terms, lang: str, multi: bool) -> list[str]:
-    """One short paragraph per ACTIVE feature: what the mechanic IS, then this
-    note's numbers. Only features the note actually uses are described, so the
-    prose never explains something the reader cannot see in the terms."""
-    out: list[str] = []
-    pct = _pct
-    es = lang == "es"
+    Routing mirrors `price_note` exactly (core/note.py): a positive
+    `capital_guarantee` routes to the participation payoff regardless of
+    `note_type`, so the prose must follow or a note is described as one thing
+    and priced as another.
+    """
+    from core.phoenix_prose import describe_phoenix
 
-    # ── basket rule ────────────────────────────────────────────────────────
-    if multi:
-        cb, ab = terms.coupon_basket, terms.autocall_basket
-        cw, aw = _basket_word(cb, lang, True), _basket_word(ab, lang, True)
-        if es:
-            same = ("Cesta. Todas las condiciones se miden sobre "
-                    f"{cw}: basta con que ese Subyacente incumpla un nivel para que la condición "
-                    "no se cumpla, por muy bien que se comporten los demás.")
-            diff = (f"Cesta. El cupón se mide sobre {cw} y la cancelación anticipada sobre {aw}.")
-        else:
-            same = ("Basket. Every condition is measured on "
-                    f"{cw}: it only takes that one Underlying to miss a level for the condition to "
-                    "fail, however well the others perform.")
-            diff = (f"Basket. The coupon is measured on {cw}, while early redemption is measured on {aw}.")
-        out.append(same if cb == ab else diff)
-
-    # ── step-down autocall ─────────────────────────────────────────────────
-    step = getattr(terms, "autocall_step_down", 0.0) or 0.0
-    if step > 0:
-        sched = terms.autocall_barrier_schedule()
-        first, last = sched[terms.autocall_start_period - 1], sched[-1]
-        floor = terms.autocall_floor
-        if es:
-            txt = ("Step-down (barrera decreciente). La barrera de cancelación anticipada no es fija: "
-                   f"empieza en el {pct(first)} en la primera observación con posibilidad de cancelación y baja "
-                   f"{pct(step)} en cada observación posterior")
-            txt += f", con un suelo del {pct(floor)}." if floor is not None else "."
-            txt += (f" Al final del plazo la Nota puede cancelarse con el Subyacente en el {pct(last)}, "
-                    "de modo que cuanto más dura la Nota, más fácil le resulta cancelarse.")
-        else:
-            txt = ("Step-down (declining barrier). The early-redemption barrier is not fixed: it starts at "
-                   f"{pct(first)} on the first callable observation and falls {pct(step)} at each observation "
-                   "thereafter")
-            txt += f", subject to a {pct(floor)} floor." if floor is not None else "."
-            txt += (f" By the end of the term the Note can redeem with the Underlying at {pct(last)}, so the "
-                    "longer the Note runs the easier it becomes for it to redeem.")
-        out.append(txt)
-
-    # ── premium paid only at redemption ────────────────────────────────────
-    if getattr(terms, "coupon_at_autocall_only", False):
-        out.append(
-            "Prima a la cancelación. La Nota no paga cupones periódicos: la prima se acumula en cada "
-            "observación y se abona en un único pago cuando la Nota se cancela anticipadamente o vence."
-            if es else
-            "Premium at redemption. The Note pays no periodic coupons: the premium accrues at each "
-            "observation and is paid as a single lump sum when the Note redeems early or matures.")
-
-    # ── One Star ───────────────────────────────────────────────────────────
-    lvl = terms.one_star_level
-    if lvl is not None and multi:
-        acts_es, acts_en = [], []
-        if terms.one_star_coupon:
-            acts_es.append("pagar el cupón"); acts_en.append("pay the coupon")
-        if terms.one_star_autocall:
-            acts_es.append("activar la cancelación anticipada"); acts_en.append("trigger early redemption")
-        if es:
-            txt = ("One Star. Una excepción a la regla del peor de: en lugar de exigir que TODOS los "
-                   f"Subyacentes cumplan, basta con que UNO SOLO esté en o por encima del {pct(lvl)} de su "
-                   "nivel inicial. ")
-            txt += (f"Ese único Subyacente basta para {' y '.join(acts_es)}, y para devolver el capital a la "
-                    "par al vencimiento aunque el peor haya perforado la Barrera de Knock-in."
-                    if acts_es else
-                    "Se aplica únicamente a la redención final: devuelve el capital a la par al vencimiento "
-                    "aunque el peor Subyacente haya perforado la Barrera de Knock-in, sin afectar al cupón "
-                    "ni a la cancelación anticipada.")
-        else:
-            txt = ("One Star. An exception to the worst-of rule: instead of requiring EVERY Underlying to "
-                   f"qualify, a SINGLE Underlying at or above {pct(lvl)} of its initial level is enough. ")
-            txt += (f"That one Underlying suffices to {' and '.join(acts_en)}, and to repay capital at par at "
-                    "maturity even if the worst has breached the Knock-in Barrier."
-                    if acts_en else
-                    "It applies to final redemption only: it repays capital at par at maturity even if the "
-                    "worst Underlying has breached the Knock-in Barrier, without affecting the coupon or "
-                    "early-redemption conditions.")
-        out.append(txt)
-
-    # ── Zenith ─────────────────────────────────────────────────────────────
-    if getattr(terms, "zenith", False):
-        rate = _pct(terms.participation_rate or 1.0)
-        cap = terms.upside_cap
-        wof = _basket_word("worst_of", lang, multi)
-        if es:
-            capw = "sin límite" if cap is None else f"limitada a +{_pct(cap)}"
-            out.append(
-                "Zenith. Convierte una Nota de ingresos en una que además participa de la subida. "
-                "Siempre que la Nota se cancele anticipadamente, o venza con el Nivel Final en o por encima "
-                f"de su nivel inicial, el inversor recibe —además del cupón y del capital— una participación "
-                f"del {rate} en la revalorización de {wof} ({capw}). Si la Nota termina por debajo de la par, "
-                "Zenith no aplica y rige la protección habitual.")
-        else:
-            capw = "uncapped" if cap is None else f"capped at +{_pct(cap)}"
-            out.append(
-                "Zenith. Turns an income Note into one that also participates in the upside. Whenever the "
-                "Note redeems early, or matures with the Final Level at or above its initial level, the "
-                f"investor receives — on top of the coupon and capital — {rate} participation in the rise of "
-                f"{wof} ({capw}). If the Note finishes below par, Zenith does not apply and the usual "
-                "protection governs.")
-
-    # ── partial principal protection ───────────────────────────────────────
-    pp = getattr(terms, "principal_protection", 1.0)
-    if pp is not None and abs(pp - 1.0) > 1e-9:
-        out.append(
-            f"Protección del principal. Si la Nota llega a vencimiento sin haber perforado la Barrera de "
-            f"Knock-in, el capital se redime al {pct(pp)} en lugar de la par."
-            if es else
-            f"Principal protection. If the Note reaches maturity without breaching the Knock-in Barrier, "
-            f"capital redeems at {pct(pp)} rather than at par.")
-
-    return out
-
-
-def describe_note(terms, lang: str = "en") -> str:
-    """Generate the prose note description from `terms` (en/es)."""
     names = list((terms.tickers or {}).values())
     multi = len(names) > 1
-    if getattr(terms, "note_type", "") == "participation":
+    cg = getattr(terms, "capital_guarantee", None)
+    if getattr(terms, "note_type", "") == "participation" or (cg is not None and cg > 0):
         return _describe_participation(terms, lang, names, multi)
-    freq = _freq_word(terms.payment_freq, lang)
-    dur = _fmt_duration(terms.maturity, lang)
-    cpn = _pct(terms.coupon_pa)
-    cb = _pct(terms.coupon_barrier)
-    ki = _pct(terms.knock_in_barrier)
-    start = max(1, int(terms.autocall_start_period))
-    joined = _join_names(names, lang)
-    os_lvl = terms.one_star_level
-
-    if lang == "es":
-        each = "cada Subyacente" if multi else "el Subyacente"
-        anyu = "alguno de los Subyacentes" if multi else "el Subyacente"
-        subj = "los Subyacentes" if multi else "el Subyacente"
-        p = (
-            f"Esta Inversión (la Nota) genera unos Ingresos con posibilidad de cancelación "
-            f"anticipada y está vinculada al rendimiento de {joined}, {subj}. "
-            f"Tiene una duración máxima de {dur} y genera un Ingreso equivalente al {cpn} p.a., "
-            f"siempre y cuando el precio de cierre de {each} sea igual o superior al {cb} de su "
-            f"nivel de Strike en cada observación {freq}. "
-            f"Si el precio de cierre de {anyu} se encuentra por debajo del {cb} de su nivel de "
-            f"Strike en cualquier Fecha de Observación {freq} el cupón de dicha observación {freq} "
-            f"no es pagado. "
-        )
-        if terms.memory:
-            p += (
-                f"Sin embargo, los cupones no pagados pueden ser pagados en una futura observación "
-                f"{freq} si el precio de cierre de {each} se encuentra por encima de la Barrera de "
-                f"Cupón en la Fecha de Observación {freq} relevante (efecto memoria). "
-            )
-        p += (
-            f"La Nota tiene también la posibilidad de vencer anticipadamente a partir de la "
-            f"observación {start} y en cada Fecha de Observación {freq} en adelante, siempre y cuando "
-            f"el precio de cierre de {each} sea igual o superior al nivel de Autocall de dicha Fecha "
-            f"de Observación {freq}. "
-        )
-        p += (
-            f"El Capital se encuentra en riesgo si la Nota no ha vencido anticipadamente y el Nivel "
-            f"Final de {anyu} se encuentra por debajo del {ki} de su nivel de Strike inicial en la "
-            f"Fecha de Observación Final."
-        )
-        return "\n\n".join([p] + _phoenix_features(terms, lang, multi))
-
-        return p
-
-    # English
-    each = "each Underlying" if multi else "the Underlying"
-    anyu = "any Underlying" if multi else "the Underlying"
-    subj = "the Underlyings" if multi else "the Underlying"
-    p = (
-        f"This Investment (the Note) generates Income with the possibility of early redemption and is "
-        f"linked to the performance of {joined}, {subj}. "
-        f"It has a maximum duration of {dur} and pays Income equivalent to {cpn} p.a., provided that the "
-        f"closing price of {each} is at or above {cb} of its Strike level on each {freq} observation. "
-        f"If the closing price of {anyu} is below {cb} of its Strike level on any {freq} Observation "
-        f"Date, the coupon for that {freq} observation is not paid. "
-    )
-    if terms.memory:
-        p += (
-            f"However, unpaid coupons may be paid on a future {freq} observation if the closing price of "
-            f"{each} is above the Coupon Barrier on the relevant {freq} Observation Date (memory effect). "
-        )
-    p += (
-        f"The Note may also redeem early from observation {start} and on each {freq} Observation Date "
-        f"thereafter, provided that the closing price of {each} is at or above the Autocall level of that "
-        f"{freq} Observation Date. "
-    )
-    p += (
-        f"Capital is at risk if the Note has not redeemed early and the Final Level of {anyu} is below "
-        f"{ki} of its initial Strike level on the Final Observation Date."
-    )
-    return "\n\n".join([p] + _phoenix_features(terms, lang, multi))
+    return describe_phoenix(terms, lang, issuer)

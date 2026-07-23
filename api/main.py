@@ -811,6 +811,31 @@ def report(req: ReportRequest, request: Request):
                     headers={"Content-Disposition": f'attachment; filename="{filename}"'})
 
 
+class DescribeNoteRequest(BaseModel):
+    terms: dict
+    lang: str = "en"
+    issuer: str | None = None
+
+
+@app.post("/api/note/describe")
+def describe_note_api(req: DescribeNoteRequest):
+    """The systematic note description, generated from the terms.
+
+    Served rather than reimplemented in the front end. The description used to
+    exist twice — once in core/note_description.py for the PDF and once in TS
+    for the web — and the two drifted: they disagreed on percentage formatting
+    and on whether a tenor reads in years or months, so the same note was
+    described differently in the app and in the document a client received.
+    One generator, one answer.
+    """
+    from core.note_description import describe_note
+    try:
+        terms = NoteTerms.from_dict(req.terms)
+    except Exception as e:
+        raise HTTPException(422, f"invalid terms: {e}")
+    return {"text": describe_note(terms, req.lang, req.issuer)}
+
+
 class ProofRequest(BaseModel):
     """A PDF Studio proof render. Everything is optional: with no note the
     fixture stands in, so the Studio works before anything has been simulated."""
