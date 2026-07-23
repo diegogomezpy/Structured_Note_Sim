@@ -44,16 +44,26 @@ if not CASES:
 
 
 @pytest.mark.parametrize("name,terms,lang", CASES, ids=IDS)
-def test_three_paragraphs(name, terms, lang):
-    """Terse by contract: exactly three paragraphs, no more."""
-    assert len(describe_note(terms, lang).split("\n\n")) == 3
+def test_two_paragraphs(name, terms, lang):
+    """Terse by contract: exactly two paragraphs — mechanics, then capital."""
+    assert len(describe_note(terms, lang).split("\n\n")) == 2
 
 
 @pytest.mark.parametrize("name,terms,lang", CASES, ids=IDS)
 def test_is_terse(name, terms, lang):
-    """Half a page at most. The old six-paragraph prose ran ~4400 chars; the
-    ceiling here is deliberately well under that so it can never creep back."""
-    assert len(describe_note(terms, lang)) <= 2200
+    """The features table carries the numbers, so the prose stays short. The
+    original six-paragraph version ran ~4400 chars; this ceiling is set well
+    under it so verbosity can never creep back."""
+    assert len(describe_note(terms, lang)) <= 1100
+
+
+@pytest.mark.parametrize("name,terms,lang", CASES, ids=IDS)
+def test_spanish_says_autocancelar_not_amortizar(name, terms, lang):
+    """`amortizar` is repayment of principal, not an issuer call — the app's own
+    labels say "autocancelación", and the prose must agree."""
+    if lang != "es":
+        return
+    assert "amortiz" not in describe_note(terms, lang).lower()
 
 
 @pytest.mark.parametrize("name,terms,lang", CASES, ids=IDS)
@@ -97,11 +107,10 @@ def test_autocall_level_is_always_stated(name, terms, lang):
 @pytest.mark.parametrize("name,terms,lang", CASES, ids=IDS)
 def test_paragraph_ownership(name, terms, lang):
     """Each fact has exactly one home, so nothing is said twice. Capital, the
-    Knock-in and the European nature all belong to the third paragraph."""
+    Knock-in and the European nature all belong to the second paragraph."""
     paras = describe_note(terms, lang).split("\n\n")
-    for i in (0, 1):
-        assert not re.search(r"European|europea", paras[i])
-        assert "Knock-in" not in paras[i]
+    assert not re.search(r"European|europea", paras[0])
+    assert "Knock-in" not in paras[0]
 
 
 @pytest.mark.parametrize("name,terms,lang", CASES, ids=IDS)

@@ -108,19 +108,34 @@ export function noteTermRows(t: NoteTerms, tr: (k: string) => string): [string, 
   const bask = (k: string) => tr(`basket_${k}`)
   const rows: [string, string][] = [
     [tr('maturity'), `${maturityLabel(t.maturity)} · ${nObs(t)} ${tr('obs_abbr')} · ${tr(`freq_${t.payment_freq}`)}`],
-    [tr('coupon_pa'), cper > 0 ? `${pct(t.coupon_pa, 2)} · ${pct(cper, 2)}/${tr('per_period')}` : pct(t.coupon_pa, 2)],
-    [tr('coupon_barrier'), t.coupon_barrier > 0 ? pct(t.coupon_barrier, 1) : tr('nd_unconditional')],
-    [tr('memory'), t.memory ? tr('yes') : tr('no')],
-    [tr('autocall_barrier'), pct(t.autocall_barrier, 1)],
-    [tr('autocall_start'), `P${t.autocall_start_period}`],
-    [tr('knock_in_barrier'), pct(t.knock_in_barrier, 1)],
-    [tr('coupon_basket'), bask(t.coupon_basket)],
-    [tr('autocall_basket'), bask(t.autocall_basket)],
-    [tr('one_star'), t.one_star_level != null ? pct(t.one_star_level, 0) : tr('nd_off')],
   ]
+  // Coupon terms only mean anything on a note that pays one.
+  if (t.coupon_pa > 0) {
+    rows.push([tr('coupon_pa'), `${pct(t.coupon_pa, 2)} · ${pct(cper, 2)}/${tr('per_period')}`])
+    rows.push([tr('coupon_barrier'), t.coupon_barrier > 0 ? pct(t.coupon_barrier, 1) : tr('nd_unconditional')])
+    rows.push([tr('memory'), t.memory ? tr('yes') : tr('no')])
+    rows.push([tr('coupon_basket'), bask(t.coupon_basket)])
+  }
+  rows.push([tr('autocall_barrier'), pct(t.autocall_barrier, 1)])
+  rows.push([tr('autocall_start'), `P${t.autocall_start_period}`])
   if ((t.autocall_step_down ?? 0) > 0) {
     rows.push([tr('ac_step_down'), pct(t.autocall_step_down as number, 1)])
     if (t.autocall_floor != null) rows.push([tr('ac_floor'), pct(t.autocall_floor, 0)])
+  }
+  rows.push([tr('autocall_basket'), bask(t.autocall_basket)])
+  rows.push([tr('knock_in_barrier'), pct(t.knock_in_barrier, 1)])
+  if (t.principal_protection != null && Math.abs(t.principal_protection - 1) > 1e-9)
+    rows.push([tr('principal_protection'), pct(t.principal_protection, 1)])
+  // Optional features appear ONLY when the note actually uses them — a row
+  // reading "One-Star · Off" is noise, not information.
+  if (t.one_star_level != null) {
+    rows.push([tr('one_star_level'), pct(t.one_star_level, 0)])
+    if (t.one_star_coupon) rows.push([tr('one_star_coupon'), tr('yes')])
+    if (t.one_star_autocall) rows.push([tr('one_star_autocall'), tr('yes')])
+  }
+  if (t.zenith) {
+    const capTxt = t.upside_cap != null ? ` · ${tr('upside_cap').toLowerCase()} ${pct(t.upside_cap, 0)}` : ''
+    rows.push([tr('zenith'), `${pct(t.participation_rate ?? 1, 0)}${capTxt}`])
   }
   if (t.coupon_at_autocall_only) rows.push([tr('premium_at_call'), tr('yes')])
   if (t.issue_date) rows.push([tr('issue_date'), t.issue_date])

@@ -318,8 +318,8 @@ export const S: Dict = {
   // Note-features table (NoteDescription "at a glance") — mirrors the PDF's Note Terms table.
   nd_features:      { en: 'At a glance', es: 'De un vistazo' },
   nd_unconditional: { en: 'Unconditional', es: 'Incondicional' },
-  nd_off:           { en: 'Off', es: 'Desactivado' },
   obs_abbr:         { en: 'obs', es: 'obs' },
+  principal_protection: { en: 'Principal protection', es: 'Protección del principal' },
   ac_step_down:     { en: 'Step-down', es: 'Reducción (step-down)' },
   ac_floor:         { en: 'Step-down floor', es: 'Suelo del step-down' },
   participation_profile: { en: 'Payoff profile', es: 'Perfil de pago' },

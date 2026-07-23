@@ -1,19 +1,23 @@
-"""Phoenix note description — three tight paragraphs, generated from terms.
+"""Phoenix note description — two short paragraphs, generated from terms.
 
-Terse by design. The prose answers what an investor asks — what am I linked to
-and for how long, what do I earn and when does it end early, what happens to my
-capital — in three short paragraphs and no more. It is meant to be read in under
-a minute and to fit in half a page; it is not a term sheet.
+Deliberately terse. The features table beside it carries the numbers, so the
+prose only has to say how the note WORKS: what it is linked to, what it pays
+and when it autocalls (paragraph one), and what happens to capital (paragraph
+two). Anything that reads as a recital, an aside or a worked example is cut.
 
-The rule that shapes everything here: **an optional feature is ONE clause folded
-into the sentence that owns its mechanic — it never adds a sentence of its own,
-and never a labelled fragment.** A step-down becomes a relative clause on the
-autocall level; One Star becomes a limb on the test it touches; Zenith becomes a
-clause on the redemption. There are no worked examples and no recitals.
+Two rules shape it:
 
-Bilingual (en/es). The description is served from the API — there is no second
-implementation in the front end. `tests/test_note_description.py` guards the
-rules across every config in both languages.
+* **An optional feature is ONE clause folded into the sentence that owns its
+  mechanic** — never a sentence of its own, never a labelled fragment, and
+  never mentioned at all when the note does not use it.
+* **Spanish says `autocancelar` / `autocancelación`, never `amortizar`** — the
+  latter means repayment of principal, not an issuer call, and the app's own
+  labels ("Barrera de autocancelación") already use the right word. Redemption
+  is `devolver`.
+
+Bilingual (en/es). Served from the API — there is no second implementation in
+the front end. `tests/test_note_description.py` guards these rules across every
+config in both languages.
 """
 from __future__ import annotations
 
@@ -191,32 +195,30 @@ class Ctx:
         return self.basket("worst_of")
 
 
-# ── the three paragraphs ─────────────────────────────────────────────────────
-# Each optional feature is one clause inside these; none adds a sentence of its
-# own, and none opens a paragraph with a labelled fragment.
+# ── the two paragraphs ───────────────────────────────────────────────────────
 
 def _ac_level(c: Ctx) -> str:
     """The Autocall level as a short noun phrase. A step-down lives HERE, as a
     relative clause on the level — never as a sentence of its own."""
     if not c.declines:
         lvl = pct(c.ac[c.start - 1], c.lang)
-        return (f"el nivel de Autocall del {lvl} del Nivel Inicial" if c.es
-                else f"the Autocall level of {lvl} of strike")
+        return (f"el nivel de Autocall del {lvl}" if c.es
+                else f"the Autocall level of {lvl}")
     start = pct(c.ac_elig[0], c.lang)
     step = pct(c.step, c.lang).rstrip("%")
     if c.floor_idx:
         tail = (f" hasta un suelo del {pct(c.floor, c.lang)}" if c.es
                 else f" to a floor of {pct(c.floor, c.lang)}")
     elif c.zero_idx:
-        tail = (" hasta cero, tras lo cual la amortización es automática" if c.es
-                else " to zero, after which a call becomes automatic")
+        tail = (" hasta cero, tras lo cual la autocancelación es automática" if c.es
+                else " to zero, after which the autocall becomes automatic")
     else:
         tail = (f" hasta el {pct(c.ac[-1], c.lang)} en la fecha final" if c.es
                 else f" to {pct(c.ac[-1], c.lang)} at the final date")
-    return (f"el nivel de Autocall, que parte del {start} del Nivel Inicial y baja "
-            f"{step} puntos en cada fecha{tail}" if c.es else
-            f"the Autocall level, which starts at {start} of strike and steps down "
-            f"{step} points each date{tail}")
+    return (f"el nivel de Autocall, que parte del {start} y baja {step} puntos en cada "
+            f"fecha{tail}" if c.es else
+            f"the Autocall level, which starts at {start} and steps down {step} points "
+            f"each date{tail}")
 
 
 def _prot(c: Ctx) -> str:
@@ -227,177 +229,146 @@ def _prot(c: Ctx) -> str:
             else f"at {pct(c.prot, c.lang)} of nominal")
 
 
-def _t1_what(c: Ctx) -> str:
-    """What it is linked to, how long it runs, when it can be called."""
+def _t1_mechanics(c: Ctx) -> str:
+    """What it is linked to, how long it runs, what it pays, when it autocalls."""
+    # exposure
     if not c.multi:
-        base = (f"Esta Nota está vinculada a {c.joined}; con un único Subyacente, cada "
-                f"condición se mide sobre su nivel de cierre." if c.es else
-                f"This Note is linked to {c.joined}; with a single Underlying every "
-                f"condition is measured on its closing level.")
+        s = (f"Vinculada a {c.joined}; todas las condiciones se miden sobre su nivel de "
+             f"cierre." if c.es else
+             f"Linked to {c.joined}; every condition is measured on its closing level.")
     elif c.cbask == c.abask:
-        base = (f"Esta Nota está vinculada a {c.joined}, y cada condición se mide sobre "
-                f"{c.worst}." if c.es else
-                f"This Note is linked to {c.joined}, and every condition is measured on "
-                f"{c.worst}.")
+        s = (f"Vinculada a {c.joined}; todas las condiciones se miden sobre {c.worst}."
+             if c.es else
+             f"Linked to {c.joined}; every condition is measured on {c.worst}.")
     else:
-        base = (f"Esta Nota está vinculada a {c.joined}: el cupón se mide sobre "
-                f"{c.basket(c.cbask)}, la amortización anticipada sobre {c.basket(c.abask)} "
-                f"y el capital sobre {c.worst}." if c.es else
-                f"This Note is linked to {c.joined}: the coupon is measured on "
-                f"{c.basket(c.cbask)}, early redemption on {c.basket(c.abask)} and capital "
-                f"on {c.worst}.")
+        s = (f"Vinculada a {c.joined}: el cupón sobre {c.basket(c.cbask)}, la "
+             f"autocancelación sobre {c.basket(c.abask)} y el capital sobre {c.worst}."
+             if c.es else
+             f"Linked to {c.joined}: the coupon on {c.basket(c.cbask)}, the autocall on "
+             f"{c.basket(c.abask)} and capital on {c.worst}.")
 
+    # calendar (+ when it first becomes callable)
+    call_from = ""
+    if c.callable_ and c.start > 1:
+        call_from = (f", autocancelable desde la {ord_word(c.start, c.lang)}" if c.es
+                     else f", callable from the {ord_word(c.start, c.lang)}")
     if c.n_obs == 1:
-        cal = (f" Dura {duration(c.t.maturity, c.lang)} y se observa una sola vez, al "
-               f"vencimiento." if c.es else
-               f" It runs {duration(c.t.maturity, c.lang)} and is observed once, at "
-               f"maturity.")
-    elif c.callable_:
-        cal = (f" Dura un máximo de {duration(c.t.maturity, c.lang)}, observada con "
-               f"periodicidad {c.freq} en {num_word(c.n_obs, c.lang)} fechas y amortizable "
-               f"desde la {ord_word(c.start, c.lang)}." if c.es else
-               f" It runs a maximum of {duration(c.t.maturity, c.lang)}, observed {c.freq} "
-               f"across {num_word(c.n_obs, c.lang)} dates and callable from the "
-               f"{ord_word(c.start, c.lang)}.")
+        s += (f" Dura {duration(c.t.maturity, c.lang)}, con una sola observación al "
+              f"vencimiento." if c.es else
+              f" It runs {duration(c.t.maturity, c.lang)}, with a single observation at "
+              f"maturity.")
     else:
-        cal = (f" Dura {duration(c.t.maturity, c.lang)}, observada con periodicidad "
-               f"{c.freq} en {num_word(c.n_obs, c.lang)} fechas." if c.es else
-               f" It runs {duration(c.t.maturity, c.lang)}, observed {c.freq} across "
-               f"{num_word(c.n_obs, c.lang)} dates.")
-    return base + cal
+        s += (f" Dura {duration(c.t.maturity, c.lang)}, con observación {c.freq} en "
+              f"{num_word(c.n_obs, c.lang)} fechas{call_from}." if c.es else
+              f" It runs {duration(c.t.maturity, c.lang)}, observed {c.freq} across "
+              f"{num_word(c.n_obs, c.lang)} dates{call_from}.")
 
-
-def _t2_income(c: Ctx) -> str:
-    """What is earned, on what condition, and when the Note ends early."""
     # income
     if c.cao:
-        inc = (f"No paga renta periódica: una prima del {pct(c.per, c.lang)} del nominal se "
-               f"devenga en cada observación y se abona en un único pago solo si la Nota se "
-               f"amortiza anticipadamente; mantenida hasta el vencimiento no paga prima." if c.es else
-               f"It pays no periodic income: a premium of {pct(c.per, c.lang)} of nominal "
-               f"accrues at each observation and is paid as a single sum only if the Note is "
-               f"called; held to maturity it pays no premium.")
-    elif c.t.coupon_pa <= 0:
-        inc = ("No paga cupón; toda su rentabilidad procede de la amortización." if c.es
-               else "It pays no coupon; its whole return comes from redemption.")
-    else:
+        s += (f" No paga cupón periódico: una prima del {pct(c.per, c.lang)} se devenga en "
+              f"cada observación y solo se abona si la Nota se autocancela." if c.es else
+              f" It pays no periodic coupon: a {pct(c.per, c.lang)} premium accrues each "
+              f"observation and is paid only if the Note autocalls.")
+    elif c.t.coupon_pa > 0:
         if c.cb > 0:
             oslimb = ""
             if c.os_live and c.os_coupon:
-                oslimb = (f", o si algún Subyacente cierra en o por encima del {pct(c.os, c.lang)}"
-                          if c.es else
-                          f", or if any single Underlying is at or above {pct(c.os, c.lang)}")
-            cond = (f" siempre que {c.basket(c.cbask)} cierre en o por encima de la Barrera "
-                    f"de Cupón del {pct(c.cb, c.lang)} del Nivel Inicial{oslimb}" if c.es else
-                    f" whenever {c.basket(c.cbask)} closes at or above the Coupon Barrier of "
-                    f"{pct(c.cb, c.lang)} of strike{oslimb}")
+                oslimb = (f", o algún Subyacente el {pct(c.os, c.lang)}" if c.es
+                          else f", or any one Underlying is at {pct(c.os, c.lang)}")
+            cond = (f" cuando {c.basket(c.cbask)} cierre en o por encima de la Barrera de "
+                    f"Cupón del {pct(c.cb, c.lang)}{oslimb}" if c.es else
+                    f" when {c.basket(c.cbask)} closes at or above the Coupon Barrier of "
+                    f"{pct(c.cb, c.lang)}{oslimb}")
         else:
-            cond = (" en todas las fechas, sin condición" if c.es
-                    else " at every date, unconditionally")
+            cond = " en todas las fechas" if c.es else " at every date"
         mem = ""
         if c.n_obs > 1 and c.cb > 0:
-            mem = ((" Un cupón no pagado se difiere y se libera en la siguiente fecha que "
-                    "cumpla la condición (efecto memoria)." if c.es else
-                    " A missed coupon carries over and is released on the next date that "
-                    "qualifies (memory effect).") if c.memory else
-                   (" Un cupón no pagado se pierde, sin memoria." if c.es else
-                    " A missed coupon is lost, with no memory."))
-        inc = (f"Paga un cupón del {pct(c.t.coupon_pa, c.lang)} anual —{pct(c.per, c.lang)} "
-               f"por observación—{cond}.{mem}" if c.es else
-               f"It pays {pct(c.t.coupon_pa, c.lang)} p.a. — {pct(c.per, c.lang)} per "
-               f"observation —{cond}.{mem}")
+            mem = ((", y un cupón no pagado se acumula (efecto memoria)" if c.es
+                    else ", and a missed coupon carries over (memory effect)") if c.memory
+                   else (", sin memoria" if c.es else ", with no memory"))
+        s += (f" Paga un {pct(c.t.coupon_pa, c.lang)} anual ({pct(c.per, c.lang)} por "
+              f"observación){cond}{mem}." if c.es else
+              f" It pays {pct(c.t.coupon_pa, c.lang)} p.a. ({pct(c.per, c.lang)} per "
+              f"observation){cond}{mem}.")
+    else:
+        s += (" No paga cupón." if c.es else " It pays no coupon.")
 
-    # early redemption
+    # autocall
     if not c.callable_:
-        ac = (" No puede amortizarse anticipadamente y agota su plazo." if c.es
-              else " It cannot be called early and runs its full term.")
+        s += (" No es autocancelable y agota su plazo." if c.es
+              else " It cannot autocall and runs its full term.")
     elif c.soft:
-        ac = (f" En cada fecha puede amortizarse anticipadamente a la par —más cualquier "
-              f"cupón entonces debido—; cuanto más se acerque {c.basket(c.abask)} a "
-              f"{_ac_level(c)}, más probable es." if c.es else
-              f" On each date it may redeem early at par — plus any coupon then due — the "
-              f"likelier the closer {c.basket(c.abask)} sits to {_ac_level(c)}.")
+        s += (f" Se autocancela a la par, con el cupón que corresponda, con probabilidad "
+              f"creciente conforme {c.basket(c.abask)} se acerca a {_ac_level(c)}." if c.es else
+              f" It autocalls at par, with any coupon then due, more likely the closer "
+              f"{c.basket(c.abask)} sits to {_ac_level(c)}.")
     else:
         oslimb = ""
         if c.os_live and c.os_autocall:
-            oslimb = (f", o si algún Subyacente cierra en o por encima del {pct(c.os, c.lang)} "
-                      f"de su Nivel Inicial" if c.es else
-                      f", or if any single Underlying is at or above {pct(c.os, c.lang)} of "
-                      f"its strike")
-        ac = (f" En cada fecha la Nota se amortiza anticipadamente a la par —más cualquier "
-              f"cupón entonces debido— si {c.basket(c.abask)} cierra en o por encima de "
-              f"{_ac_level(c)}{oslimb}." if c.es else
-              f" On each date the Note redeems early at par — plus any coupon then due — if "
-              f"{c.basket(c.abask)} closes at or above {_ac_level(c)}{oslimb}.")
-    return inc + ac
+            oslimb = (f", o algún Subyacente el {pct(c.os, c.lang)}" if c.es
+                      else f", or any one Underlying reaches {pct(c.os, c.lang)}")
+        s += (f" Se autocancela a la par, con el cupón que corresponda, en cuanto "
+              f"{c.basket(c.abask)} cierre en o por encima de {_ac_level(c)}{oslimb}."
+              if c.es else
+              f" It autocalls at par, with any coupon then due, once {c.basket(c.abask)} "
+              f"closes at or above {_ac_level(c)}{oslimb}.")
+    return s
 
 
-def _t3_capital(c: Ctx, issuer: str | None) -> str:
-    """What happens to capital, whether there is upside, and whose credit backs it."""
+def _t2_capital(c: Ctx, issuer: str | None) -> str:
+    """What happens to capital, whether there is upside, whose credit backs it."""
     iss = issuer or ("el Emisor" if c.es else "the Issuer")
     prot = _prot(c)
 
     if c.ki <= 0:
-        cap = (f"El capital no está en riesgo de mercado: una Nota no amortizada devuelve el "
-               f"capital {prot} al vencimiento." if c.es else
-               f"Capital is not at market risk: an uncalled Note repays capital {prot} at "
-               f"maturity.")
+        s = (f"El capital no está en riesgo de mercado: una Nota no autocancelada devuelve "
+             f"el capital {prot} al vencimiento." if c.es else
+             f"Capital is not at market risk: a Note that is not autocalled repays capital "
+             f"{prot} at maturity.")
     else:
-        ex = max(0.05, round((c.ki - 0.15) * 20) / 20)
         rescue = ""
         if c.os_live and c.rescue_live and not c.os_dominates:
-            rescue = (f" —salvo que algún Subyacente cierre en o por encima del "
-                      f"{pct(c.os, c.lang)} de su Nivel Inicial, la excepción One Star, que "
-                      f"devuelve el capital pese a la perforación—" if c.es else
-                      f" — unless a single Underlying closes at or above {pct(c.os, c.lang)} "
-                      f"of strike, the One Star exception, which returns capital despite the "
-                      f"breach —")
-        cap = (f"El capital vuelve íntegro salvo que {c.worst} cierre por debajo de la "
-               f"Barrera de Knock-in del {pct(c.ki, c.lang)} del Nivel Inicial en la Fecha "
-               f"de Observación Final{rescue}. Es una prueba europea: solo cuenta el cierre "
-               f"de ese día. Por debajo, la Nota amortiza ese nivel uno a uno —una pérdida "
-               f"del {pct(1 - ex, c.lang)} si {c.worst} cierra al {pct(ex, c.lang)}—; en la "
-               f"barrera o por encima devuelve el capital {prot}." if c.es else
-               f"Capital comes back in full unless {c.worst} closes below the Knock-in "
-               f"Barrier of {pct(c.ki, c.lang)} of strike on the Final Observation "
-               f"Date{rescue}. The test is European — only that day's close counts. Below it "
-               f"the Note repays that level one-for-one — a {pct(1 - ex, c.lang)} loss if "
-               f"{c.worst} closes at {pct(ex, c.lang)} — and at or above it repays capital "
-               f"{prot}.")
+            rescue = (f", salvo que algún Subyacente cierre en o por encima del "
+                      f"{pct(c.os, c.lang)} (excepción One Star)" if c.es else
+                      f", unless any one Underlying closes at or above {pct(c.os, c.lang)} "
+                      f"(the One Star exception)")
+        s = (f"El capital vuelve {prot} salvo que {c.worst} cierre por debajo de la Barrera "
+             f"de Knock-in del {pct(c.ki, c.lang)} en la fecha final{rescue} —prueba europea: "
+             f"solo cuenta ese cierre—; por debajo, la Nota devuelve ese nivel uno a uno."
+             if c.es else
+             f"Capital comes back {prot} unless {c.worst} closes below the Knock-in Barrier "
+             f"of {pct(c.ki, c.lang)} on the final date{rescue} — a European test, so only "
+             f"that close counts. Below it the Note repays that level one-for-one.")
 
     if c.zenith:
         cp = ("sin tope" if c.es else "with no cap") if c.cap is None else (
-            f"con un tope del {pct(c.cap, c.lang)} del nominal" if c.es
-            else f"capped at {pct(c.cap, c.lang)} of nominal")
-        up = (f" Por la característica Zenith, cada amortización con capital devuelto añade "
-              f"además el {pct(c.rate, c.lang)} de cuanto la cesta relevante exceda de su "
-              f"Nivel Inicial ({cp})." if c.es else
-              f" Through the Zenith feature, each capital-returning redemption also adds "
-              f"{pct(c.rate, c.lang)} of any amount by which the relevant basket stands "
-              f"above strike ({cp}).")
+            f"con un tope del {pct(c.cap, c.lang)}" if c.es
+            else f"capped at {pct(c.cap, c.lang)}")
+        s += (f" Por la característica Zenith, toda devolución de capital añade el "
+              f"{pct(c.rate, c.lang)} de cuanto la cesta exceda su Nivel Inicial ({cp})."
+              if c.es else
+              f" Through the Zenith feature, any return of capital also adds "
+              f"{pct(c.rate, c.lang)} of whatever the basket stands above strike ({cp}).")
     elif c.cao:
-        up = (f" No hay participación al alza: lo máximo que puede pagar es el "
-              f"{pct(c.max_coupons, c.lang)} del nominal, y solo si se amortiza." if c.es else
-              f" There is no upside participation: the most it can pay is "
-              f"{pct(c.max_coupons, c.lang)} of nominal, and only if it is called.")
+        s += (f" No hay participación al alza: como máximo paga el "
+              f"{pct(c.max_coupons, c.lang)}, y solo si se autocancela." if c.es else
+              f" There is no upside participation: it pays at most "
+              f"{pct(c.max_coupons, c.lang)}, and only if it autocalls.")
     elif c.t.coupon_pa > 0:
-        up = (f" No hay participación al alza: la rentabilidad es el flujo de cupones, como "
-              f"máximo el {pct(c.max_coupons, c.lang)} del nominal en agregado." if c.es else
-              f" There is no upside participation: the return is the coupon stream, at most "
-              f"{pct(c.max_coupons, c.lang)} of nominal in aggregate.")
-    else:
-        up = (" No hay participación al alza." if c.es
-              else " There is no upside participation.")
+        s += (f" La rentabilidad se limita a los cupones, como máximo el "
+              f"{pct(c.max_coupons, c.lang)} del nominal." if c.es else
+              f" The return is limited to the coupons, at most "
+              f"{pct(c.max_coupons, c.lang)} of nominal.")
 
-    credit = (f" Todos los importes dependen de la solvencia de {iss}." if c.es
-              else f" All amounts depend on {iss}'s ability to pay.")
-    return cap + up + credit
+    s += (f" Todos los importes dependen de la solvencia de {iss}." if c.es
+          else f" All amounts depend on {iss}'s ability to pay.")
+    return s
 
 
 def describe_phoenix(terms, lang: str = "en", issuer: str | None = None) -> str:
-    """The three paragraphs, joined by a blank line."""
+    """The two paragraphs, joined by a blank line."""
     c = Ctx(terms, lang)
-    out = "\n\n".join([_t1_what(c), _t2_income(c), _t3_capital(c, issuer)])
+    out = "\n\n".join([_t1_mechanics(c), _t2_capital(c, issuer)])
     if lang == "es":
         # Spanish contracts "de el"→"del" / "a el"→"al"; the noun phrases are
         # assembled from pieces, so fix the joins once at the end.
