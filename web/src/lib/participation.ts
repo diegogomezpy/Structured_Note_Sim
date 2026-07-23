@@ -3,22 +3,24 @@
    the picture always matches what the engine prices. Keep the two in sync. */
 import type { NoteTerms } from '../api/types'
 
-const clamp = (x: number, lo: number, hi: number) => Math.min(Math.max(x, lo), hi)
-
 /** Redemption (fraction of notional) for a final basket level `B`. */
 export function participationRedemption(B: number, t: NoteTerms): number {
   const strike = t.participation_strike ?? 1
   const rate = t.participation_rate ?? 1
   const prot = t.protection_level ?? 0
-  const cap = t.upside_cap != null ? 1 + t.upside_cap : Infinity
+  // upside_cap caps the UNDERLYING move that participates (min(B − strike, cap)),
+  // not the redemption — participation is applied after the cap, so the ceiling
+  // is 1 + rate·cap and the participating gain tops out at the same underlying
+  // level whatever the rate. Matches core/note.py:_participation_redemption.
+  const cap = t.upside_cap != null ? t.upside_cap : Infinity
   const pu = t.participation_upside ?? 'linear'
   const pd = t.participation_downside ?? 'full'
 
-  if (pd === 'bear') return clamp(1 + rate * Math.max(0, strike - B), prot, cap)
+  if (pd === 'bear') return Math.max(prot, 1 + rate * Math.min(Math.max(0, strike - B), cap))
 
-  const linR = Math.min(1 + rate * (B - strike), cap)
+  const linR = 1 + rate * Math.min(B - strike, cap)
   let Rup: number
-  if (pu === 'digital') Rup = Math.min(1 + (t.digital_payout ?? 0), cap)
+  if (pu === 'digital') Rup = 1 + (t.digital_payout ?? 0)
   else if (pu === 'shark_fin' && t.knockout_level != null) Rup = B >= t.knockout_level ? (t.knockout_payout ?? 1) : linR
   else Rup = linR
 

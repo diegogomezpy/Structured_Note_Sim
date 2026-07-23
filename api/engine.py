@@ -928,7 +928,9 @@ def run_backtest_api(terms: NoteTerms, *, history_years: float | None = None,
         out_summary["best_redemption"]   = _f(float(R.max()))
         out_summary["worst_redemption"]  = _f(float(R.min()))
 
-        cap_lv = (1.0 + terms.upside_cap) if terms.upside_cap is not None else None
+        # Max redemption = 1 + rate·upside_cap (the cap is on the underlying move).
+        cap_lv = (1.0 + float(terms.participation_rate) * terms.upside_cap) \
+            if terms.upside_cap is not None else None
         L_loss, L_par = tr("bt_band_loss"), tr("bt_band_par")
         L_gain, L_cap = tr("bt_band_gain"), tr("bt_band_capped")
         def _band(r):

@@ -83,7 +83,7 @@ def _describe_participation(terms, lang, names, multi) -> str:
             body = (f"La Nota participa al {_p(rate)} de la caída por debajo del strike del {_p(strike)}, "
                     f"con un suelo del {_p(prot)}; por encima del strike el capital se redime al {_p(prot)}.")
             if cap is not None:
-                body += f" La redención está limitada al {_p(1 + cap)}."
+                body += f" La redención está limitada al {_p(1 + rate * cap)}."
             return head + body
         if pu == "digital":
             up = (f"Si el nivel final está en o por encima del strike del {_p(strike)}, la Nota paga un importe fijo del {_p(1 + terms.digital_payout)}.")
@@ -92,7 +92,7 @@ def _describe_participation(terms, lang, names, multi) -> str:
                   f"si el nivel final supera el knock-out, la Nota se redime al {_p(terms.knockout_payout)}.")
         else:
             up = f"Por encima del strike del {_p(strike)} se participa al {_p(rate)} de la subida"
-            up += f", con un tope del {_p(1 + cap)}." if cap is not None else "."
+            up += f", con un tope del {_p(1 + rate * cap)}." if cap is not None else "."
         dn = {
             "full": f" Si el nivel final está por debajo del strike, el capital se redime al {_p(min(prot, 1.0))}.",
             "buffer": f" El capital está protegido hasta el nivel de protección del {_p(prot)}; por debajo, las pérdidas son 1:1.",
@@ -109,7 +109,7 @@ def _describe_participation(terms, lang, names, multi) -> str:
         body = (f"The Note participates at {_p(rate)} of the fall below the {_p(strike)} strike, floored at {_p(prot)}; "
                 f"above the strike capital is redeemed at {_p(prot)}.")
         if cap is not None:
-            body += f" Redemption is capped at {_p(1 + cap)}."
+            body += f" Redemption is capped at {_p(1 + rate * cap)}."
         return head + body
     if pu == "digital":
         up = f"If the final level is at or above the {_p(strike)} strike, the Note pays a fixed {_p(1 + terms.digital_payout)}."
@@ -118,7 +118,7 @@ def _describe_participation(terms, lang, names, multi) -> str:
               f"if the final level is above the knock-out, the Note redeems at {_p(terms.knockout_payout)}.")
     else:
         up = f"Above the {_p(strike)} strike you participate at {_p(rate)} of the rise"
-        up += f", capped at {_p(1 + cap)}." if cap is not None else "."
+        up += f", capped at {_p(1 + rate * cap)}." if cap is not None else "."
     dn = {
         "full": f" If the final level is below the strike, capital is redeemed at {_p(min(prot, 1.0))}.",
         "buffer": f" Capital is protected down to the {_p(prot)} protection level; below it, losses apply one-for-one.",

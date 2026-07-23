@@ -804,7 +804,9 @@ def build_redemption_distribution(nominal_payoffs, terms, tr: Translator) -> go.
                            font=dict(size=10, color=color))
     _ref(100.0, "#6b7280", tr("lbl_par"))
     if terms.upside_cap is not None and not getattr(terms, "participation_periodic", False):
-        _ref((1.0 + terms.upside_cap) * 100.0, "#9ca3af", tr("lbl_cap"))
+        # Max redemption = 1 + rate·upside_cap (the cap is on the underlying move).
+        _rate = float(getattr(terms, "participation_rate", 1.0) or 1.0)
+        _ref((1.0 + _rate * terms.upside_cap) * 100.0, "#9ca3af", tr("lbl_cap"))
 
     fig.update_layout(
         title=tr("redemption_dist"),

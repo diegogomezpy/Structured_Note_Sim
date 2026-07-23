@@ -72,7 +72,8 @@ export default function BacktestPanel({ result, terms, range, onApplyRange, sub,
   const { summary, issues, figures } = result
   const isPart = summary.note_type === 'participation'
   const periodic = !!summary.participation_periodic
-  const cap = terms.upside_cap != null ? 1 + terms.upside_cap : null
+  // Max redemption = 1 + rate·upside_cap (the cap is on the underlying move).
+  const cap = terms.upside_cap != null ? 1 + (terms.participation_rate ?? 1) * terms.upside_cap : null
   const bandLabel = (b: Band) => t(`bt_band_${b}` as const)
   const rangeDirty = (start || null) !== range.start || (end || null) !== range.end
   // ISO date strings compare lexically — a start after the end is invalid, so we

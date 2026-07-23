@@ -539,9 +539,9 @@ def _participation_redemption(B: np.ndarray, terms: "NoteTerms") -> np.ndarray:
     style is composed with one upside style around the participation strike:
 
         Upside  (B >= strike):
-          linear     R = 1 + rate·(B − strike)                    [capped]
-          shark_fin  R = 1 + rate·(B − strike) up to knockout_level, then it
-                     drops to a flat knockout_payout above it        [capped]
+          linear     R = 1 + rate·min(B − strike, cap)
+          shark_fin  R = 1 + rate·min(B − strike, cap) up to knockout_level, then
+                     it drops to a flat knockout_payout above it
           digital    R = 1 + digital_payout   (fixed, if B >= strike)
 
         Downside (B < strike), with prot = protection_level:
@@ -551,20 +551,26 @@ def _participation_redemption(B: np.ndarray, terms: "NoteTerms") -> np.ndarray:
 
         bear (a downside style that also defines the upside): participate as B
           falls below the strike, floored at prot above it —
-              R = clip(1 + rate·max(0, strike − B), prot, cap)
+              R = max(prot, 1 + rate·min(max(0, strike − B), cap))
 
-    ``upside_cap`` (→ cap = 1 + upside_cap) limits the upside only; None = uncapped.
+    ``upside_cap`` caps the UNDERLYING move that participates (min(B − strike,
+    upside_cap)), NOT the redemption: participation is applied AFTER the cap, so
+    the participating gain tops out at the same underlying level (strike +
+    upside_cap) whatever ``participation_rate`` is, and the maximum redemption is
+    1 + rate·upside_cap. None = uncapped. A digital pays a fixed amount and does
+    not participate in the move, so the cap does not enter.
     """
     B = np.asarray(B, dtype=float)
     strike = float(terms.participation_strike)
     rate   = float(terms.participation_rate)
     prot   = float(terms.protection_level) if terms.protection_level is not None else 0.0
-    cap    = (1.0 + terms.upside_cap) if terms.upside_cap is not None else np.inf
+    cap    = float(terms.upside_cap) if terms.upside_cap is not None else np.inf
     up_style, dn_style = terms.participation_upside, terms.participation_downside
 
-    # Bear: reverse note — upside style does not apply.
+    # Bear: reverse note — upside style does not apply. Participate on the capped
+    # DOWN move (strike − B), floored at prot.
     if dn_style == "bear":
-        return np.clip(1.0 + rate * np.maximum(0.0, strike - B), prot, cap)
+        return np.maximum(prot, 1.0 + rate * np.minimum(np.maximum(0.0, strike - B), cap))
 
     # Upside leg (B >= strike). digital_payout / knockout_payout are None-guarded to
     # match the null-safe TS mirror (web/src/lib/participation.ts): a config that
@@ -572,14 +578,14 @@ def _participation_redemption(B: np.ndarray, terms: "NoteTerms") -> np.ndarray:
     digital_payout  = float(terms.digital_payout) if terms.digital_payout is not None else 0.0
     knockout_payout = float(terms.knockout_payout) if terms.knockout_payout is not None else 1.0
     if up_style == "digital":
-        R_up = np.full_like(B, min(1.0 + digital_payout, cap))
+        R_up = np.full_like(B, 1.0 + digital_payout)
     elif up_style == "shark_fin" and terms.knockout_level is not None:
         # Participate strike..knock-out; at/above the knock-out the note drops to a
         # fixed redemption (knockout_payout — the level it drops to).
-        lin_R = np.minimum(1.0 + rate * (B - strike), cap)
+        lin_R = 1.0 + rate * np.minimum(B - strike, cap)
         R_up = np.where(B >= float(terms.knockout_level), knockout_payout, lin_R)
     else:  # linear (or shark_fin with no knock-out level set yet)
-        R_up = np.minimum(1.0 + rate * (B - strike), cap)
+        R_up = 1.0 + rate * np.minimum(B - strike, cap)
 
     # Downside leg (B < strike)
     if dn_style == "buffer":
@@ -605,10 +611,16 @@ def participation_barrier_levels(terms) -> dict:
     periodic = bool(g("participation_periodic", False))
     prot = g("protection_level")
     up_cap = g("upside_cap")
+    rate = float(g("participation_rate", 1.0) or 1.0)
+    up_style = g("participation_upside", "linear") or "linear"
     floor = (min(float(prot), 1.0)
              if (not periodic and prot is not None and g("participation_downside") != "bear")
              else None)
-    cap = (1.0 + up_cap) if (not periodic and up_cap is not None) else None
+    # The redemption cap sits at 1 + rate·upside_cap — participation is applied to
+    # the capped underlying move, so the ceiling scales with the rate. A digital's
+    # payoff is flat (no move participation), so there's no separate cap line.
+    cap = (1.0 + rate * float(up_cap)
+           if (not periodic and up_cap is not None and up_style != "digital") else None)
     return {"floor": floor, "cap": cap}
 
 
@@ -646,7 +658,10 @@ def _participation_stats(R: np.ndarray, terms: "NoteTerms", B: np.ndarray | None
     + the what-if table). R = per-path redemption; B = final basket (for the
     knock-out probability and the up/down capture ratios vs the direct underlying)."""
     R = np.asarray(R, dtype=float)
-    cap_lv = (1.0 + terms.upside_cap) if terms.upside_cap is not None else None
+    # Max redemption = 1 + rate·upside_cap (the cap is on the underlying move, so
+    # the redemption ceiling scales with the participation rate).
+    cap_lv = (1.0 + float(terms.participation_rate) * terms.upside_cap) \
+        if terms.upside_cap is not None else None
     ko = None
     if (B is not None and terms.participation_upside == "shark_fin"
             and terms.knockout_level is not None):
