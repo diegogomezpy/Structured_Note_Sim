@@ -10,21 +10,26 @@ import type { NoteTerms } from '../api/types'
 export default function NoteDescription({ terms }: { terms: NoteTerms }) {
   const { t, lang } = useI18n()
   const text = (terms.note_description?.trim()) || noteDescription(terms, lang)
-  const idx = text.indexOf('. ')
-  const lead = idx >= 0 ? text.slice(0, idx + 1) : text
-  const rest = idx >= 0 ? text.slice(idx + 2) : ''
+  // The generator emits the opening summary, then one paragraph per active
+  // feature (step-down, One Star, Zenith, …). The first sentence is pulled out
+  // as the lede; everything after it keeps its paragraph breaks.
+  const [head, ...features] = text.split('\n\n')
+  const idx = head.indexOf('. ')
+  const lead = idx >= 0 ? head.slice(0, idx + 1) : head
+  const rest = idx >= 0 ? head.slice(idx + 2) : ''
+  const paras = [rest, ...features].filter(Boolean)
 
   return (
     <Section title={t('note_desc_section')}>
       <div className="fade-up" style={{ display: 'flex', gap: 16, paddingTop: 2 }}>
         <div style={{ width: 2, borderRadius: 2, background: 'var(--accent)', flexShrink: 0 }} />
         <div style={{ maxWidth: 680 }}>
-          <p style={{ margin: rest ? '0 0 9px' : 0, fontFamily: 'var(--font-serif)', fontSize: 15.5, fontWeight: 600, lineHeight: 1.5, letterSpacing: '-0.01em', color: 'var(--text)' }}>
+          <p style={{ margin: paras.length ? '0 0 9px' : 0, fontFamily: 'var(--font-serif)', fontSize: 15.5, fontWeight: 600, lineHeight: 1.5, letterSpacing: '-0.01em', color: 'var(--text)' }}>
             {lead}
           </p>
-          {rest && (
-            <p style={{ margin: 0, fontSize: 13, lineHeight: 1.7, color: 'var(--text-muted)' }}>{rest}</p>
-          )}
+          {paras.map((para, i) => (
+            <p key={i} style={{ margin: i === paras.length - 1 ? 0 : '0 0 9px', fontSize: 13, lineHeight: 1.7, color: 'var(--text-muted)' }}>{para}</p>
+          ))}
         </div>
       </div>
     </Section>

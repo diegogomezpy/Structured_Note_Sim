@@ -4092,7 +4092,12 @@ def _build_pdf_report(
             _nd = (getattr(terms, "note_description", "") or "").strip() or describe_note(terms, lang)
             pdf.set_font(pdf._font_family, "", 9.5)
             pdf.set_text_color(*pdf.body_ink)
-            pdf.multi_cell(usable, 5.0, pdf._safe(_nd), align="J")
+            # One paragraph per feature (step-down, One Star, Zenith, …) — the
+            # generator separates them with a blank line.
+            for _i, _para in enumerate([x for x in _nd.split("\n\n") if x.strip()]):
+                if _i:
+                    pdf.ln(1.6)
+                pdf.multi_cell(usable, 5.0, pdf._safe(_para.strip()), align="J")
             pdf.ln(3)
         if _show_diag:
             pdf.subsection(_t("note_diagram", lang))
