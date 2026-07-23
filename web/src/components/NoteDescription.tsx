@@ -28,7 +28,7 @@ export default function NoteDescription({ terms }: { terms: NoteTerms }) {
             {lead}
           </p>
           {paras.map((para, i) => (
-            <p key={i} style={{ margin: i === paras.length - 1 ? 0 : '0 0 9px', fontSize: 13, lineHeight: 1.7, color: 'var(--text-muted)' }}>{para}</p>
+            <p key={i} style={{ margin: i === paras.length - 1 ? 0 : '0 0 10px', fontSize: 13, lineHeight: 1.7, color: 'var(--text-muted)', textAlign: 'justify', hyphens: 'auto' }}>{para}</p>
           ))}
         </div>
       </div>

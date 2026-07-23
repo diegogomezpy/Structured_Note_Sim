@@ -2620,14 +2620,51 @@ def _draw_logo_fit(pdf, logo_b, x: float, y: float, max_h: float, max_w: float,
         pass
 
 
+def _cover_fill(pdf: _NotePDF):
+    """The active theme's `cover.fill`, or None when it declares nothing."""
+    spec = getattr(getattr(pdf, "theme", None), "spec", None)
+    if isinstance(spec, dict):
+        return (spec.get("cover") or {}).get("fill")
+    return None
+
+
+def _paint_cover_overlay(pdf: _NotePDF, W: float, H: float) -> None:
+    """Tint a full-bleed photo.
+
+    A cover photo is drawn opaque over the whole page, so it completely hides
+    the background painted underneath — which meant that setting a gradient AND
+    a cover photo silently threw the gradient away. The tint that sits on top of
+    the photo therefore carries it: when the theme's cover fill is a gradient,
+    the overlay IS that gradient at the configured opacity, so the two settings
+    compose instead of one cancelling the other.
+
+    An explicit `cover_overlay_color` still wins as a flat tint — brands that
+    pinned one (CADIEM among them) keep exactly the cover they had.
+    """
+    op = getattr(pdf, "cover_overlay_opacity", 0.0)
+    if not op or op <= 0:
+        return
+    fill = _cover_fill(pdf)
+    if not getattr(pdf, "cover_overlay_color_set", False) and \
+            isinstance(fill, dict) and fill.get("type") in ("linear", "radial"):
+        try:
+            paint_shape(pdf, 0, 0, W, H, {"kind": "square"}, fill, opacity=op)
+            return
+        except Exception:
+            pass
+    pdf.set_fill_color(*getattr(pdf, "cover_overlay_color", pdf.primary_color))
+    try:
+        with pdf.local_context(fill_opacity=op):
+            pdf.rect(0, 0, W, H, style="F")
+    except Exception:
+        pass
+
+
 def _paint_cover_bg(pdf: _NotePDF, W: float, H: float) -> None:
     """Fill a full-bleed page with the theme's cover background — a solid brand
     colour by default, or a gradient when the active theme spec sets
     `cover.fill`. Falls back to solid primary if anything is off."""
-    fill = None
-    spec = getattr(getattr(pdf, "theme", None), "spec", None)
-    if isinstance(spec, dict):
-        fill = (spec.get("cover") or {}).get("fill")
+    fill = _cover_fill(pdf)
     try:
         if fill and fill.get("type") in ("linear", "radial"):
             paint_shape(pdf, 0, 0, W, H, {"kind": "square"}, fill)
@@ -2670,14 +2707,7 @@ def _front_cover_page(pdf: _NotePDF, terms, lang: str, report_title: str, websit
             pdf.image(io.BytesIO(_cov), x=0, y=0, w=W, h=H)
         except Exception:
             pass
-        _op = getattr(pdf, "cover_overlay_opacity", 0.0)
-        if _op and _op > 0:
-            pdf.set_fill_color(*getattr(pdf, "cover_overlay_color", pdf.primary_color))
-            try:
-                with pdf.local_context(fill_opacity=_op):
-                    pdf.rect(0, 0, W, H, style="F")
-            except Exception:
-                pass
+        _paint_cover_overlay(pdf, W, H)
 
     ml = pdf.l_margin
     inner = W - 2 * ml
@@ -2808,14 +2838,7 @@ def _full_bleed_disclaimer(pdf: _NotePDF, lang: str, text: str, website: str = "
             pdf.image(io.BytesIO(_bk), x=0, y=0, w=W, h=H)
         except Exception:
             pass
-        _op = getattr(pdf, "cover_overlay_opacity", 0.0)
-        if _op and _op > 0:
-            pdf.set_fill_color(*getattr(pdf, "cover_overlay_color", pdf.primary_color))
-            try:
-                with pdf.local_context(fill_opacity=_op):
-                    pdf.rect(0, 0, W, H, style="F")
-            except Exception:
-                pass
+        _paint_cover_overlay(pdf, W, H)
 
     logo_b = getattr(pdf, "cover_logo_bytes", None) or pdf.firm_logo_bytes
     _draw_logo_fit(pdf, logo_b, pdf.l_margin, 15, 12.0, 58.0, cover=True)
@@ -4050,6 +4073,10 @@ def _build_pdf_report(
                 _fbseen.add(_img); _fb.append(_img)
         pdf.filler_image_list = _fb
     pdf.cover_overlay_color = _branding_color(branding, "cover_overlay_color", primary_color)
+    # Whether the brand PINNED an overlay colour, as opposed to falling back to
+    # primary. Only an unpinned overlay defers to a gradient cover fill, so a
+    # config that chose its tint keeps it.
+    pdf.cover_overlay_color_set = bool((branding or {}).get("cover_overlay_color"))
     try:
         pdf.cover_overlay_opacity = float(_b.get("cover_overlay_opacity", 0.55))
     except Exception:
