@@ -460,6 +460,14 @@ export interface Branding {
   logo_base64?: string
   cover_logo_base64?: string      // white knockout logo for the cover
   cover_sigil_base64?: string     // emblem/sigil shown on the cover (≠ wordmark)
+  // Cover logo / emblem placement — all % of page (blank = theme default)
+  cover_logo_x_pct?: number       // logo top-left X, % of page width
+  cover_logo_y_pct?: number       // logo top-left Y, % of page height
+  cover_logo_size_pct?: number    // logo max width, % of page width
+  cover_sigil_x_pct?: number      // emblem top-left X, % of page width
+  cover_sigil_y_pct?: number      // emblem top-left Y, % of page height
+  cover_sigil_size_pct?: number   // emblem width, % of page width
+  cover_sigil_opacity?: number    // 0..1 emblem opacity
   watermark_base64?: string       // faint watermark image drawn into chamfer panels (replaces the built-in hex cluster)
   watermark_enabled?: boolean
   watermark_opacity?: number

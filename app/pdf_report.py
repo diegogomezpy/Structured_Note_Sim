@@ -144,6 +144,10 @@ _KNOWN_BRANDING_KEYS = {
     "disclaimer_body",      # NEW — overrides the full disclaimer body text
     "cover_logo_base64",    # NEW — white knockout logo for the full-bleed cover
     "cover_sigil_base64",   # NEW — optional emblem/sigil shown on the cover (≠ wordmark)
+    # NEW — cover logo / emblem placement, all % of page (absent ⇒ theme default):
+    "cover_logo_x_pct", "cover_logo_y_pct", "cover_logo_size_pct",
+    "cover_sigil_x_pct", "cover_sigil_y_pct", "cover_sigil_size_pct",
+    "cover_sigil_opacity",  # 0..1 opacity of the cover emblem (absent ⇒ 0.22)
     "watermark_base64",     # NEW — faint watermark image drawn into chamfer panels (replaces the hex cluster)
     "watermark_enabled",    # NEW — use the loaded watermark image; False falls back to the hex cluster
     "cover_metrics",        # which key-term chips the cover footer band shows (read at _b.get below)
@@ -2725,18 +2729,36 @@ def _front_cover_page(pdf: _NotePDF, terms, lang: str, report_title: str, websit
     sig_b = getattr(pdf, "cover_sigil_bytes", None)
     if sig_b:
         try:
-            sw = W * 0.58
+            # Size / position / opacity are brand-overridable (% of page); absent
+            # values reproduce the original top-right bleed at 0.22 opacity.
+            _ssz = getattr(pdf, "cover_sigil_size_pct", None)
+            sw = W * (_ssz / 100.0) if _ssz is not None else W * 0.58
             sh = sw * _logo_aspect(sig_b, default=1.0)
-            with pdf.local_context(fill_opacity=0.22):
-                pdf.image(io.BytesIO(sig_b), x=W - sw * 0.62, y=-sh * 0.30,
-                          w=sw, h=sh)
+            _sx = getattr(pdf, "cover_sigil_x_pct", None)
+            _sy = getattr(pdf, "cover_sigil_y_pct", None)
+            sx = W * (_sx / 100.0) if _sx is not None else (W - sw * 0.62)
+            sy = H * (_sy / 100.0) if _sy is not None else (-sh * 0.30)
+            _sop = getattr(pdf, "cover_sigil_opacity", None)
+            op = _sop if _sop is not None else 0.22
+            with pdf.local_context(fill_opacity=op):
+                pdf.image(io.BytesIO(sig_b), x=sx, y=sy, w=sw, h=sh)
         except Exception:
             pass
 
     # Logo (white wordmark) top-left. A brand may supply a white knockout logo
-    # (`cover_logo_base64`); otherwise the normal logo is used.
+    # (`cover_logo_base64`); otherwise the normal logo is used. Position (% of
+    # page) and size (% of page width) are brand-overridable; the size % is the
+    # max WIDTH, with the max height kept at the original 16:90 box ratio so the
+    # default reproduces the original 16×90 mm fit box exactly.
     logo_b = getattr(pdf, "cover_logo_bytes", None) or pdf.firm_logo_bytes
-    _draw_logo_fit(pdf, logo_b, ml, H * 0.07, 16.0, 90.0, cover=True)
+    _lsz = getattr(pdf, "cover_logo_size_pct", None)
+    _max_w = W * (_lsz / 100.0) if _lsz is not None else 90.0
+    _max_h = _max_w * (16.0 / 90.0)
+    _lx = getattr(pdf, "cover_logo_x_pct", None)
+    _ly = getattr(pdf, "cover_logo_y_pct", None)
+    _logo_x = W * (_lx / 100.0) if _lx is not None else ml
+    _logo_y = H * (_ly / 100.0) if _ly is not None else H * 0.07
+    _draw_logo_fit(pdf, logo_b, _logo_x, _logo_y, _max_h, _max_w, cover=True)
 
     # Hero block, left-aligned in the lower-middle of the page.
     eb = (report_title or _t("report_eyebrow", lang)).upper()
@@ -4082,6 +4104,21 @@ def _build_pdf_report(
     # explicit empty list → show none (the whole strip can be turned off).
     _cm = _b.get("cover_metrics")
     pdf.cover_metrics = list(_cm) if isinstance(_cm, (list, tuple)) else None
+    # Cover logo / emblem placement — all % of page (None ⇒ theme default). Read
+    # here and applied in `_front_cover_page`; absent values reproduce the
+    # original fixed placement byte-for-byte.
+    def _opt_num(key):
+        try:
+            return float(_b.get(key))
+        except (TypeError, ValueError):
+            return None
+    pdf.cover_logo_x_pct     = _opt_num("cover_logo_x_pct")
+    pdf.cover_logo_y_pct     = _opt_num("cover_logo_y_pct")
+    pdf.cover_logo_size_pct  = _opt_num("cover_logo_size_pct")
+    pdf.cover_sigil_x_pct    = _opt_num("cover_sigil_x_pct")
+    pdf.cover_sigil_y_pct    = _opt_num("cover_sigil_y_pct")
+    pdf.cover_sigil_size_pct = _opt_num("cover_sigil_size_pct")
+    pdf.cover_sigil_opacity  = _opt_num("cover_sigil_opacity")
 
     # ── 0. Front cover (toggleable, default on) ────────────────────────────
     if _inc("cover"):

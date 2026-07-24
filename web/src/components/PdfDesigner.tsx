@@ -121,6 +121,27 @@ export default function PdfDesigner({ studio, terms }: {
         <Card id="cover" title={t('brand_cover')}>
           {/* Shared with the Build tab — images are usually chosen per report. */}
           <ReportImages studio={studio} terms={terms} compact />
+
+          {/* Cover logo & emblem placement — position/size as % of the page.
+              Blank = the theme's default placement. */}
+          <div style={{ marginTop: 16 }}>
+            <div style={{ fontSize: 11.5, color: 'var(--text-muted)', marginBottom: 2 }}>{t('cover_placement')}</div>
+            <div style={{ fontSize: 11, color: 'var(--text-faint)', marginBottom: 8, lineHeight: 1.5 }}>{t('cover_placement_hint')}</div>
+            <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-muted)', margin: '2px 0 6px' }}>{t('brand_alt_logo')}</div>
+            <div style={grid(110)}>
+              <Field label={t('place_x')}><NumberInput value={b.cover_logo_x_pct as number | undefined} min={-20} max={100} step={1} placeholder="auto" onChange={(v) => set('cover_logo_x_pct', v as never)} /></Field>
+              <Field label={t('place_y')}><NumberInput value={b.cover_logo_y_pct as number | undefined} min={-20} max={100} step={1} placeholder="auto" onChange={(v) => set('cover_logo_y_pct', v as never)} /></Field>
+              <Field label={t('place_size')}><NumberInput value={b.cover_logo_size_pct as number | undefined} min={5} max={100} step={1} placeholder="43" onChange={(v) => set('cover_logo_size_pct', v as never)} /></Field>
+            </div>
+            <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-muted)', margin: '12px 0 6px' }}>{t('brand_cover_sigil')}</div>
+            <div style={grid(110)}>
+              <Field label={t('place_x')}><NumberInput value={b.cover_sigil_x_pct as number | undefined} min={-40} max={100} step={1} placeholder="auto" onChange={(v) => set('cover_sigil_x_pct', v as never)} /></Field>
+              <Field label={t('place_y')}><NumberInput value={b.cover_sigil_y_pct as number | undefined} min={-40} max={100} step={1} placeholder="auto" onChange={(v) => set('cover_sigil_y_pct', v as never)} /></Field>
+              <Field label={t('place_size')}><NumberInput value={b.cover_sigil_size_pct as number | undefined} min={5} max={120} step={1} placeholder="58" onChange={(v) => set('cover_sigil_size_pct', v as never)} /></Field>
+              <Field label={t('place_opacity')}><NumberInput value={b.cover_sigil_opacity as number | undefined} min={0} max={1} step={0.01} placeholder="0.22" onChange={(v) => set('cover_sigil_opacity', v as never)} /></Field>
+            </div>
+          </div>
+
           <div style={{ marginTop: 16 }}>
             <div style={{ fontSize: 11.5, color: 'var(--text-muted)', marginBottom: 2 }}>{t('cover_metrics')}</div>
             <div style={{ fontSize: 11, color: 'var(--text-faint)', marginBottom: 8, lineHeight: 1.5 }}>{t('cover_metrics_hint')}</div>
