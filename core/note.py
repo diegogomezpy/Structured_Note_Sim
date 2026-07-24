@@ -302,7 +302,9 @@ class NoteTerms:
     # Systematic, terms-driven prose blurb (core.note_description). "" = auto-generate;
     # a non-empty value is a user override, mirroring issuer/underlying descriptions.
     note_description:       str         = ""
-    issuer:                 str         = ""      # display-only: e.g. "BBVA", "HSBC"
+    issuer:                 str         = ""      # display NAME, e.g. "Banco Santander"
+    issuer_id:              str         = ""      # lookup identifier used to FIND the
+    # issuer's info + logo (e.g. "santander", "BBVA"); falls back to `issuer` when empty.
     # ── Issuer information (display-only; powers the PDF "Issuer Information" section) ──
     issuer_description:     str         = ""      # short prose blurb about the issuer
     issuer_rating_sp:       str         = ""      # S&P credit rating, e.g. "A+"
@@ -400,6 +402,7 @@ class NoteTerms:
         return {
             "name":                   self.name,
             "issuer":                 self.issuer,
+            "issuer_id":              self.issuer_id,
             "maturity":               self.maturity,
             "payment_freq":           self.payment_freq,
             "coupon_pa":              self.coupon_pa,

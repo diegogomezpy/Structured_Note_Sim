@@ -6,6 +6,7 @@ export function blankNote(): NoteTerms {
   return {
     name: 'New note',
     issuer: '',
+    issuer_id: '',
     maturity: 1.0,
     payment_freq: 'quarterly',
     coupon_pa: 0.10,

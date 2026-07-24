@@ -3984,13 +3984,21 @@ def _build_pdf_report(
     contact      = _b.get("contact", "") or ""
     footer_note  = _brand_text(_b.get("footer_note"), lang)
 
-    issuer  = getattr(terms, "issuer", "") or ""
+    # Issuer split: `issuer` is the display NAME (falls back to the identifier so a
+    # note that filled only the id still shows something); `issuer_lookup` is the
+    # identifier used to FIND the logo. Legacy configs set only `issuer`, so both
+    # resolve to it and behaviour is unchanged.
+    _iss_name = (getattr(terms, "issuer", "") or "").strip()
+    _iss_id   = (getattr(terms, "issuer_id", "") or "").strip()
+    issuer        = _iss_name or _iss_id
+    issuer_lookup = _iss_id or _iss_name
     # Issuer logo: a user-uploaded image wins (normalised to an embeddable PNG);
-    # otherwise try a local branding/ticker_logos/{issuer}.png, else the favicon URL.
+    # otherwise try a local branding/ticker_logos/{identifier}.png, else the favicon
+    # URL — both keyed on the lookup identifier, not the display name.
     if issuer_logo_override:
         issuer_logo_bytes = _to_embeddable_png(issuer_logo_override)
     else:
-        issuer_logo_bytes = _load_ticker_logo(issuer, issuer_logo_url) if (issuer or issuer_logo_url) else None
+        issuer_logo_bytes = _load_ticker_logo(issuer_lookup, issuer_logo_url) if (issuer_lookup or issuer_logo_url) else None
 
     doc_ref = f"{report_title or _t('series_title', lang)} | {terms.name}"
     pdf = _NotePDF(

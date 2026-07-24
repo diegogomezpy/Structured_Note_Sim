@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useTheme } from '../theme/ThemeProvider'
-import { maturityLabel } from '../lib/terms'
+import { maturityLabel, issuerLookup, issuerName } from '../lib/terms'
 import { useI18n } from '../i18n/I18nProvider'
 import Icon from './Icon'
 import BrandMark from './BrandMark'
@@ -45,7 +45,7 @@ export default function Header({ terms, run }: { terms: NoteTerms | null; run: R
           <>
             <span style={{ width: 1, height: 30, background: 'var(--border)', flexShrink: 0 }} />
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
-              {terms.issuer && <IssuerLogo issuer={terms.issuer} size={26} />}
+              {issuerName(terms) && <IssuerLogo issuer={issuerLookup(terms)} size={26} />}
               <div style={{ minWidth: 0 }}>
                 {terms.name && (
                   <div style={{ fontFamily: 'var(--font-serif)', fontSize: 14.5, fontWeight: 600, lineHeight: 1.15, letterSpacing: '-0.01em', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>

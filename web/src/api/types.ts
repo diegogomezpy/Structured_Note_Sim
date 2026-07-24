@@ -17,7 +17,8 @@ export type Basket = 'worst_of' | 'best_of' | 'average'
 
 export interface NoteTerms {
   name: string
-  issuer: string
+  issuer: string        // display NAME, e.g. "Banco Santander"
+  issuer_id?: string    // lookup identifier used to FIND issuer info + logo; falls back to `issuer`
   maturity: number
   payment_freq: 'monthly' | 'quarterly' | 'semi-annual' | 'annual'
   coupon_pa: number

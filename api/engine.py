@@ -1924,7 +1924,10 @@ def _build_report_pdf(terms: NoteTerms, *, sections: list[str] | None = None, la
 
     logo_urls     = {nm: underlyings.logo_for(sym) for sym, nm in tickers.items()}
     logo_tickers  = {nm: sym for sym, nm in tickers.items()}
-    issuer_logo   = underlyings.issuer_logo_for(getattr(terms, "issuer", "") or "")
+    # The issuer LOGO is resolved from the lookup identifier (issuer_id), falling
+    # back to the display name; the name itself is only ever shown as text.
+    _iss_lookup   = (getattr(terms, "issuer_id", "") or "").strip() or (getattr(terms, "issuer", "") or "")
+    issuer_logo   = underlyings.issuer_logo_for(_iss_lookup)
     # User-uploaded custom underlying logos (terms.underlyings[name].logo data-URLs).
     logo_overrides = {nm: b for nm, ov in (terms.underlyings or {}).items()
                       if isinstance(ov, dict) and (b := _decode_data_url(ov.get("logo")))}

@@ -369,12 +369,13 @@ export function ToggleField({
 }
 
 export function TextField({
-  label, value, onChange, placeholder,
-}: { label: string; value: string; onChange: (v: string) => void; placeholder?: string }) {
+  label, value, onChange, placeholder, hint,
+}: { label: string; value: string; onChange: (v: string) => void; placeholder?: string; hint?: string }) {
   return (
     <div style={{ marginBottom: 14 }}>
       <label style={labelStyle}>{label}</label>
       <input type="text" value={value} placeholder={placeholder} onChange={(e) => onChange(e.target.value)} />
+      {hint && <span style={{ display: 'block', fontSize: 10.5, color: 'var(--text-faint)', marginTop: 4, lineHeight: 1.4 }}>{hint}</span>}
     </div>
   )
 }

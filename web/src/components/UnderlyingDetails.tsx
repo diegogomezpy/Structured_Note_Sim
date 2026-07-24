@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { api } from '../api/client'
 import { useI18n } from '../i18n/I18nProvider'
+import { issuerLookup } from '../lib/terms'
 import Icon from './Icon'
 import TickerLogo, { LogoImg } from './TickerLogo'
 import type { AnalystSplit, NoteTerms, Sentiment, UnderlyingMetric, UnderlyingOverride } from '../api/types'
@@ -54,7 +55,7 @@ export default function UnderlyingDetails({ terms, onChange }: {
       const syms = Object.keys(terms.tickers ?? {})
       // Descriptions + analyst consensus in one pass (independent Yahoo calls).
       const [r, metrics] = await Promise.all([
-        api.describe(terms.issuer || null, syms, lang),
+        api.describe(issuerLookup(terms) || null, syms, lang),
         api.underlyingMetrics(terms.tickers ?? {}, lang).catch(() => [] as UnderlyingMetric[]),
       ])
       const analystByName = new Map(metrics.map((m) => [m.name, m.analyst]))

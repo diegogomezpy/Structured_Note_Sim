@@ -41,6 +41,13 @@ export function tickerList(t: NoteTerms): string[] {
   return Object.values(t.tickers ?? {})
 }
 
+/** The issuer split: `issuer_id` is what the app uses to FIND the issuer's info
+    and logo; `issuer` is the display name. Either falls back to the other so a
+    note that fills only one field still works (and legacy configs, which have
+    only `issuer`, keep behaving exactly as before). */
+export const issuerLookup = (t: NoteTerms): string => (t.issuer_id?.trim() || t.issuer?.trim() || '')
+export const issuerName = (t: NoteTerms): string => (t.issuer?.trim() || t.issuer_id?.trim() || '')
+
 /** Per-observation autocall barrier levels (mirrors core.note.autocall_barrier_schedule).
     Constant at autocall_barrier unless autocall_step_down > 0, in which case it
     declines each period from autocall_start_period, floored at autocall_floor. */

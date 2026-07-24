@@ -313,7 +313,9 @@ export default function SettingsOverlay({
       <Group n={5} title={t('sec_metadata')}>
         <Grid>
           <TextField label={t('note_name')} value={terms.name ?? ''} onChange={(v) => set('name', v)} />
-          <TextField label={t('issuer_name')} value={terms.issuer ?? ''} onChange={(v) => set('issuer', v)} placeholder="e.g. BBVA, HSBC" />
+          <TextField label={t('issuer_name')} value={terms.issuer ?? ''} onChange={(v) => set('issuer', v)} placeholder="e.g. Banco Santander" />
+          <TextField label={t('issuer_id')} value={(terms.issuer_id as string) ?? ''} onChange={(v) => set('issuer_id', v)}
+            placeholder="e.g. santander" hint={t('issuer_id_hint')} />
           <div>
             <label style={{ fontSize: 12, color: 'var(--text-muted)', display: 'block', marginBottom: 6 }}>{t('issue_date')}</label>
             <input type="date" value={terms.issue_date ?? ''} onChange={(e) => set('issue_date', e.target.value || null)} />

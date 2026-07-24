@@ -4,6 +4,7 @@ import { useI18n } from '../i18n/I18nProvider'
 import Icon from './Icon'
 import { Section } from './fields'
 import { IssuerLogo } from './TickerLogo'
+import { issuerLookup, issuerName } from '../lib/terms'
 import type { NoteTerms } from '../api/types'
 
 /** A single agency rating chip (S&P / Moody's / Fitch). */
@@ -29,7 +30,9 @@ export default function IssuerCard({ terms }: { terms: NoteTerms }) {
   const [expanded, setExpanded] = useState(false)
   const [fetched, setFetched] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
-  const issuer = terms.issuer || ''
+  // The identifier finds the info + logo; the name is what shows.
+  const lookup = issuerLookup(terms)
+  const display = issuerName(terms)
   const curated = terms.issuer_description || ''
   // Cache the in-flight key so we don't refetch on unrelated term edits.
   const lastKey = useRef('')
@@ -39,20 +42,20 @@ export default function IssuerCard({ terms }: { terms: NoteTerms }) {
   // profile is ready the instant the section is opened.
   useEffect(() => {
     setExpanded(false)
-    if (!issuer || curated) { setFetched(null); return }
-    const key = `${issuer}|${lang}`
+    if (!lookup || curated) { setFetched(null); return }
+    const key = `${lookup}|${lang}`
     if (key === lastKey.current) return
     lastKey.current = key
     let cancelled = false
     setLoading(true)
-    api.describe(issuer, [], lang)
+    api.describe(lookup, [], lang)
       .then((r) => { if (!cancelled) setFetched(r.issuer_description || null) })
       .catch(() => { if (!cancelled) setFetched(null) })
       .finally(() => { if (!cancelled) setLoading(false) })
     return () => { cancelled = true }
-  }, [issuer, curated, lang])
+  }, [lookup, curated, lang])
 
-  if (!issuer) return null
+  if (!display) return null
 
   const ratings: [string, string][] = [
     [t('rating_sp'), terms.issuer_rating_sp],
@@ -72,8 +75,8 @@ export default function IssuerCard({ terms }: { terms: NoteTerms }) {
     <Section title={t('issuer_section')}>
       <div className="card" style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 14 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
-          <IssuerLogo issuer={issuer} size={34} />
-          <span style={{ fontSize: 15, fontWeight: 600 }}>{issuer}</span>
+          <IssuerLogo issuer={lookup} size={34} />
+          <span style={{ fontSize: 15, fontWeight: 600 }}>{display}</span>
           {ratings.length > 0 && (
             <div style={{ display: 'flex', gap: 7, marginLeft: 'auto', flexWrap: 'wrap' }}>
               {ratings.map(([l, v]) => <Rating key={l} label={l} value={v} />)}
