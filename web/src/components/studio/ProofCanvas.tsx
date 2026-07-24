@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { api } from '../../api/client'
 import { useI18n } from '../../i18n/I18nProvider'
+import { ACTIVE_SECTIONS_EVENT, loadActiveSections } from '../../lib/reportSections'
 import Icon from '../Icon'
 import type { Branding, NoteTerms } from '../../api/types'
 
@@ -55,11 +56,22 @@ export default function ProofCanvas({ brand, terms, lang, zoom, realCharts = tru
   const [ms, setMs] = useState(0)
   const abortRef = useRef<AbortController | null>(null)
 
+  // The section selection made in the Report panel, so the proof previews EXACTLY
+  // the pages that will be printed rather than the whole document. Read on mount
+  // and kept live via the same-tab event the Report panel fires on every toggle.
+  // null / empty ⇒ the whole report (the endpoint treats an empty list as "all").
+  const [sections, setSections] = useState<string[] | null>(() => loadActiveSections())
+  useEffect(() => {
+    const onChange = () => setSections(loadActiveSections())
+    window.addEventListener(ACTIVE_SECTIONS_EVENT, onChange)
+    return () => window.removeEventListener(ACTIVE_SECTIONS_EVENT, onChange)
+  }, [])
+
   // Re-render whenever anything the PDF reads changes. Serialising the brand is
   // the honest dependency: it is what the server is handed, so any field that
   // affects the document — including ones no control has yet — triggers a
   // refresh without needing to be enumerated here.
-  const dep = JSON.stringify([brand, terms?.name, terms?.tickers, lang, realCharts])
+  const dep = JSON.stringify([brand, terms?.name, terms?.tickers, lang, realCharts, sections])
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -77,7 +89,7 @@ export default function ProofCanvas({ brand, terms, lang, zoom, realCharts = tru
       // broken. Page geometry is identical between the two (the stub is drawn
       // at each figure's true size), so the swap does not reflow.
       setStatus('chrome')
-      api.reportProof({ branding: brand, terms, lang, scale: 1.4, figures: 'stub' }, ac.signal)
+      api.reportProof({ branding: brand, terms, lang, scale: 1.4, figures: 'stub', sections: sections ?? undefined }, ac.signal)
         .then((r) => {
           if (ac.signal.aborted) return
           show(r)
@@ -88,7 +100,7 @@ export default function ProofCanvas({ brand, terms, lang, zoom, realCharts = tru
           if (!realCharts) { setStatus('ok'); return null }
           setStatus('charts')
           return api.reportProof(
-            { branding: brand, terms, lang, scale: 1.4, figures: 'real' }, ac.signal)
+            { branding: brand, terms, lang, scale: 1.4, figures: 'real', sections: sections ?? undefined }, ac.signal)
         })
         .then((r) => {
           if (!r || ac.signal.aborted) return

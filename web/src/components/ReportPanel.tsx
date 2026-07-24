@@ -11,7 +11,7 @@ import type { Branding, NoteTerms } from '../api/types'
 import type { BrandingStudio } from '../lib/useBrandingStudio'
 import type { RunOpts } from './SetupRail'
 import { TREE, PRESET_ORDER, presetKeys, savePresetOverride, resetPresetOverride,
-         isPresetCustomised, type Preset, type Group } from '../lib/reportSections'
+         isPresetCustomised, saveActiveSections, type Preset, type Group } from '../lib/reportSections'
 
 type Status = 'idle' | 'running' | 'done' | 'error'
 
@@ -128,6 +128,11 @@ export default function ReportPanel({ terms, opts, variantB, pathImages, brand, 
     if (preset !== 'custom') return
     try { localStorage.setItem(CUSTOM_LS, JSON.stringify([...sel])) } catch { /* ignore */ }
   }, [sel, preset])
+
+  // Mirror the live selection to the shared store the PDF Studio proof reads, so
+  // the preview shows exactly the pages that will be printed (any preset, not
+  // just custom).
+  useEffect(() => { saveActiveSections([...sel]) }, [sel])
 
   const generate = async () => {
     setStatus('running'); setError('')

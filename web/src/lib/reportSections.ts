@@ -98,6 +98,27 @@ export function resetPresetOverride(p: string): void {
 }
 export const isPresetCustomised = (p: string): boolean => p in loadPresetOverrides()
 
+// ── active report-section selection (shared with the PDF Studio proof) ───────
+// The Report panel mirrors its live section selection here on every change; the
+// Studio's live proof reads it so the preview shows exactly the pages that will
+// be printed. Distinct from the persisted "custom" selection (which only tracks
+// the custom preset) — this always reflects the current selection, whatever the
+// active preset.
+const ACTIVE_LS = 'mercator_report_sections_active'
+export const ACTIVE_SECTIONS_EVENT = 'report-sections-change'
+export function saveActiveSections(keys: string[]): void {
+  try {
+    localStorage.setItem(ACTIVE_LS, JSON.stringify(keys))
+    // Same-tab notification: the `storage` event only fires across tabs, so a
+    // proof mounted alongside the toggles (Report → Designer sub-tab) needs this.
+    window.dispatchEvent(new CustomEvent(ACTIVE_SECTIONS_EVENT, { detail: keys }))
+  } catch { /* ignore */ }
+}
+export function loadActiveSections(): string[] | null {
+  try { const r = localStorage.getItem(ACTIVE_LS); return r ? (JSON.parse(r) as string[]) : null }
+  catch { return null }
+}
+
 /** Groups available for a note — the live group only when it has an issue date. */
 export function groupsFor(hasLive: boolean): Group[] {
   return TREE.filter((g) => g.key !== 'live' || hasLive)
