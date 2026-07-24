@@ -468,13 +468,17 @@ export interface Branding {
   cover_sigil_y_pct?: number      // emblem top-left Y, % of page height
   cover_sigil_size_pct?: number   // emblem width, % of page width
   cover_sigil_opacity?: number    // 0..1 emblem opacity
-  watermark_base64?: string       // faint watermark image drawn into chamfer panels (replaces the built-in hex cluster)
-  watermark_enabled?: boolean
-  watermark_opacity?: number
-  watermark_scale?: number
-  watermark_inset?: number
-  watermark_anchor?: string
-  watermark_places?: string[]     // use the uploaded watermark image; false → fall back to the hex cluster
+  // Watermark — one faint brand mark behind text on up to four surfaces. The
+  // uploaded image is the mark (else the theme's own, e.g. CADIEM hexagons);
+  // opacity/scale/anchor apply the same on every surface; `watermark_places` is
+  // the single on/off gate (a surface list; empty = off, absent = all).
+  watermark_base64?: string       // the watermark image (absent → theme's own mark)
+  watermark_opacity?: number      // 0..1
+  watermark_scale?: number        // 0.05..1, fraction of the panel height
+  watermark_anchor?: string       // 'left' | 'center' | 'right'
+  watermark_places?: string[]     // surfaces that show it: masthead|divider|void|cover
+  watermark_enabled?: boolean     // legacy: false drops the image → the hex fallback
+  watermark_inset?: number        // legacy: honoured by resolve_watermark, no longer in the UI
   cover_image_base64?: string     // full-bleed cover background photo
   back_image_base64?: string      // full-bleed photo for the disclaimer back page
   filler_images_base64?: string[] // pool of report photos: cover/back fallback + void-filler bands cycle through it

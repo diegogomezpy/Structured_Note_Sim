@@ -302,53 +302,10 @@ export function chamferPadMm(cMm?: number): number {
   return Math.max(9, (cMm ?? 0) + 1.5)
 }
 
-// The hex-cluster watermark — a faithful transcription of reportkit/theme.py's
-// _hex_cluster. Three chamfer-hexagons per variant; each hex OVERRIDES the
-// default chamfer proportions with c=0.2s, q=0.06s, r=0.2s (theme.py:206/209).
-const HEX_LAYOUTS: ReadonlyArray<ReadonlyArray<readonly [number, number, number, boolean]>> = [
-  [[0, 0, 1.0, false], [0.72, 0.46, 0.62, true], [0.30, 0.92, 0.44, false]],
-  [[0, 0.30, 0.82, false], [0.58, 0, 1.0, false], [0.94, 0.66, 0.5, true]],
-  [[0, 0, 0.7, true], [0.46, 0.36, 1.0, false], [1.04, 0.10, 0.5, false]],
-]
-
-export interface HexShape { d: string; bx: number; by: number; filled: boolean; strokeW: number }
-
-/** The 3 chamfer-hexagon paths (in `scale` units, translate by bx/by) for a
-    cluster variant — mirrors _hex_cluster's per-hex geometry. */
-export function hexClusterPaths(scale: number, variant: number): HexShape[] {
-  const layout = HEX_LAYOUTS[(((variant | 0) % 3) + 3) % 3]
-  return layout.map(([dx, dy, sz, filled]) => {
-    const s = scale * sz
-    return {
-      d: chamferPath(s, s, 0.20 * s, 0.06 * s, 0.20 * s),
-      bx: scale * dx, by: scale * dy,
-      filled, strokeW: Math.max(0.25, 0.02 * s),
-    }
-  })
-}
-
-// ── watermark spec (mirrors reportkit/theme.py wm_spec) ─────────────────────
-export const WM_DEFAULTS = { opacity: 0.13, scale: 0.58, anchor: 'right' as const, inset: null as number | null }
-export interface WmSpec { source: string; opacity: number; scale: number; anchor: string; inset: number | null }
-
-/** Normalize a surface's `watermark` value → spec, or null for "no watermark".
-    `"hexCluster"` is a value a CONFIG authors (CADIEM's), not a generic option. */
-export function wmSpec(v: unknown): WmSpec | null {
-  if (v == null || v === false || v === 'none') return null
-  if (v === true) return { ...WM_DEFAULTS, source: 'image' }
-  if (typeof v === 'string') return { ...WM_DEFAULTS, source: v }
-  if (typeof v === 'object') {
-    const o = v as Partial<WmSpec>
-    return {
-      source: o.source ?? 'image',
-      opacity: o.opacity ?? WM_DEFAULTS.opacity,
-      scale: o.scale ?? WM_DEFAULTS.scale,
-      anchor: o.anchor ?? WM_DEFAULTS.anchor,
-      inset: o.inset ?? WM_DEFAULTS.inset,
-    }
-  }
-  return null
-}
+// (The client-side watermark/hex-cluster mirror was removed: the Studio proof
+// renders the REAL PDF server-side, so there is no browser watermark render to
+// keep in parity. The watermark is one server-resolved config — see
+// reportkit/theme.py resolve_watermark.)
 
 /** Gradient axis endpoints (objectBoundingBox 0..1) for an SVG linearGradient
     from a Python fill angle (90 = top→bottom, 0 = left→right). */

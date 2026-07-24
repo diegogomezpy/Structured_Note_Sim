@@ -217,17 +217,12 @@ export default function PdfDesigner({ studio, terms }: {
         </Card>
 
         <Card id="watermark" title={t('brand_watermark')} desc={t('brand_watermark_hint')}>
-          <div style={{ display: 'flex', alignItems: 'flex-end', gap: 16, flexWrap: 'wrap' }}>
-            <UploadTile label={t('brand_watermark_img')} src={b.watermark_base64 as string} dark
-              onPick={(f) => studio.onImage('watermark_base64', f)} onClear={() => set('watermark_base64', '')} />
-            <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12.5, color: 'var(--text-muted)', cursor: 'pointer', paddingBottom: 6 }}>
-              <input type="checkbox" checked={b.watermark_enabled !== false}
-                onChange={(e) => set('watermark_enabled', e.target.checked as never)} style={{ width: 'auto' }} />
-              {t('brand_watermark_toggle')}
-            </label>
-          </div>
+          {/* The watermark: an uploaded image, else the theme's own mark
+              (e.g. CADIEM's hexagons). One appearance, applied identically on
+              every surface; the "Show on" toggles are the only on/off. */}
+          <UploadTile label={t('brand_watermark_img')} src={b.watermark_base64 as string} dark
+            onPick={(f) => studio.onImage('watermark_base64', f)} onClear={() => set('watermark_base64', '')} />
 
-          {/* Appearance — one place, applied wherever the mark is drawn. */}
           <div style={{ ...grid(150), marginTop: 14 }}>
             <Field label={t('wm_opacity')}>
               <NumberInput value={b.watermark_opacity as number | undefined} min={0} max={1} step={0.01}
@@ -236,10 +231,6 @@ export default function PdfDesigner({ studio, terms }: {
             <Field label={t('wm_scale')}>
               <NumberInput value={b.watermark_scale as number | undefined} min={0.05} max={1} step={0.02}
                 placeholder="0.58" onChange={(v) => set('watermark_scale', v as never)} />
-            </Field>
-            <Field label={t('wm_inset')}>
-              <NumberInput value={b.watermark_inset as number | undefined} min={0} max={100} step={1}
-                placeholder="auto" onChange={(v) => set('watermark_inset', v as never)} />
             </Field>
           </div>
 
@@ -250,7 +241,7 @@ export default function PdfDesigner({ studio, terms }: {
               onChange={(v) => set('watermark_anchor', v as never)} />
           </div>
 
-          {/* Where it appears. Empty = wherever the theme draws one. */}
+          {/* The ONE gate. Uncheck every surface to turn the watermark off. */}
           <div style={{ marginTop: 14 }}>
             <span style={{ display: 'block', fontSize: 11, fontWeight: 600, color: 'var(--text-muted)', marginBottom: 6 }}>{t('wm_places')}</span>
             <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap' }}>
@@ -267,6 +258,7 @@ export default function PdfDesigner({ studio, terms }: {
                 )
               })}
             </div>
+            <span style={{ display: 'block', fontSize: 10.5, color: 'var(--text-faint)', marginTop: 6, lineHeight: 1.4 }}>{t('wm_places_hint')}</span>
           </div>
         </Card>
 

@@ -89,7 +89,7 @@ _FIG_HOOK: ContextVar = ContextVar("fig_hook", default=None)
 from reportkit.theme import (  # noqa: E402
     _dev_rgb, _chamfer_outline, _chamfer_dims,
     _fill_chamfer, _stroke_chamfer, _hex_cluster,
-    build_tokens, resolve_theme, paint_shape, resolve_color,
+    build_tokens, resolve_theme, paint_shape, resolve_color, resolve_watermark,
     AMBER as _AMBER, AMBER_DARK as _AMBER_DARK, MUTED as _MUTED,
     BODY_INK as _BODY_INK, RULE_SOFT as _RULE_SOFT, FOOTNOTE_GREY as _FOOTNOTE_GREY,
 )
@@ -148,8 +148,11 @@ _KNOWN_BRANDING_KEYS = {
     "cover_logo_x_pct", "cover_logo_y_pct", "cover_logo_size_pct",
     "cover_sigil_x_pct", "cover_sigil_y_pct", "cover_sigil_size_pct",
     "cover_sigil_opacity",  # 0..1 opacity of the cover emblem (absent ⇒ 0.22)
-    "watermark_base64",     # NEW — faint watermark image drawn into chamfer panels (replaces the hex cluster)
-    "watermark_enabled",    # NEW — use the loaded watermark image; False falls back to the hex cluster
+    "watermark",            # NEW — unified watermark: {image_base64, opacity, scale, anchor, surfaces}
+    # Legacy flat watermark_* keys — still honoured by resolve_watermark so older
+    # configs load without a spurious "unrecognised keys" warning:
+    "watermark_base64", "watermark_enabled", "watermark_opacity", "watermark_scale",
+    "watermark_inset", "watermark_anchor", "watermark_places",
     "cover_metrics",        # which key-term chips the cover footer band shows (read at _b.get below)
     "cover_image_base64",   # NEW — optional full-bleed cover background photo
     "back_image_base64",    # NEW — optional full-bleed photo for the disclaimer back page
@@ -4080,27 +4083,19 @@ def _build_pdf_report(
     pdf.cover_logo_bytes  = _decode_b64_img(_b.get("cover_logo_base64"))
     pdf.cover_logo_aspect = _logo_aspect(pdf.cover_logo_bytes, default=pdf.firm_logo_aspect)
     pdf.cover_sigil_bytes = _decode_b64_img(_b.get("cover_sigil_base64"))
-    # Loadable watermark image (read by reportkit's _watermark; falls back to the
-    # drawn hex cluster when absent, so themed output is unchanged without one).
-    pdf.watermark_bytes   = _decode_b64_img(_b.get("watermark_base64"))
-    # Watermark appearance is configured ONCE at brand level and applies wherever
-    # the mark is drawn — the theme spec no longer carries its look, only whether
-    # a surface opts out. `watermark_places` gates the surfaces; absent/empty
-    # means "everywhere the theme draws one".
-    def _wm_num(key, lo, hi):
-        try:
-            return max(lo, min(hi, float(_b.get(key))))
-        except (TypeError, ValueError):
-            return None
-    pdf.watermark_opacity = _wm_num("watermark_opacity", 0.0, 1.0)
-    pdf.watermark_scale   = _wm_num("watermark_scale", 0.05, 1.0)
-    pdf.watermark_inset   = _wm_num("watermark_inset", 0.0, 100.0)
-    _anchor = str(_b.get("watermark_anchor") or "").strip().lower()
-    pdf.watermark_anchor  = _anchor if _anchor in ("left", "center", "right") else None
-    _places = _b.get("watermark_places")
-    pdf.watermark_places  = ([str(x) for x in _places]
-                             if isinstance(_places, (list, tuple)) and _places else None)
-    pdf.watermark_enabled = _b.get("watermark_enabled", True) is not False
+    # ── Watermark — ONE resolved config (image + appearance + surfaces). ──────
+    # A single faint brand mark drawn behind text on up to four surfaces: an
+    # uploaded image (any brand) or the theme's own hex cluster (CADIEM's). The
+    # image comes from the nested `watermark.image_base64` or the legacy flat
+    # `watermark_base64`; a legacy `watermark_enabled: false` drops it so the hex
+    # fallback shows. resolve_watermark() reads the appearance + the single
+    # `surfaces` gate, honouring the legacy flat `watermark_*` knobs so old
+    # configs render identically. Every surface reads this one config.
+    _wm_cfg = _b.get("watermark") if isinstance(_b.get("watermark"), dict) else {}
+    _wm_img_b64 = _wm_cfg.get("image_base64") or _b.get("watermark_base64")
+    if _b.get("watermark_enabled", True) is False:
+        _wm_img_b64 = None
+    pdf.watermark = resolve_watermark(_b, _decode_b64_img(_wm_img_b64))
     # Cover face: explicit `cover_image_base64`, else slot 0. Slot 0 may be a
     # deliberate blank (None) — the user chose "No image" for the cover — which
     # is honoured: the cover shows the themed background, no photo.
