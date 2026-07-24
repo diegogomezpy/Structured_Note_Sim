@@ -176,11 +176,17 @@ export default function ThemeBuilder({ spec, tokens, onChange }: { spec: Spec; t
       <Group title="Running header" note="The rule and accent tick at the top of every interior page.">
         <Row label="Rule colour"><ColorWell value={(header.rule as Any)?.color} tokens={tokens} onChange={(v) => upd(['header', 'rule', 'color'], v)} /></Row>
         <Row label="Accent tick">
-          <label style={{ ...row, fontSize: 12.5, color: 'var(--text-muted)', cursor: 'pointer' }}>
-            <input type="checkbox" checked={!!header.tick} style={{ width: 'auto' }}
-              onChange={(e) => upd(['header', 'tick'], e.target.checked ? { color: 'lime', w: 15, h: 0.8, y: 16.1, radius: 0.4 } : null)} />
-            Show the tick
-          </label>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+            <label style={{ ...row, fontSize: 12.5, color: 'var(--text-muted)', cursor: 'pointer' }}>
+              <input type="checkbox" checked={!!header.tick} style={{ width: 'auto' }}
+                onChange={(e) => upd(['header', 'tick'], e.target.checked ? { color: 'lime', w: 15, h: 0.8, y: 16.1, radius: 0.4 } : null)} />
+              Show the tick
+            </label>
+            {!!header.tick && (
+              <ColorWell value={(header.tick as Any)?.color} tokens={tokens}
+                onChange={(v) => upd(['header', 'tick', 'color'], v)} />
+            )}
+          </div>
         </Row>
       </Group>
 

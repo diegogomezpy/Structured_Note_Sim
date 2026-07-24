@@ -2979,16 +2979,14 @@ def _cover_page(
     pdf.set_draw_color(*pdf.primary_color); pdf.set_line_width(0.7)
     pdf.line(x0, 23.5, pdf.w - pdf.r_margin, 23.5)
 
-    # ── Masthead — dark chamfer panel (+ KPI strip only when analytics exist) ──
-    # The analytical KPIs (IRR / autocall / knock-in / mean historical IRR) are
-    # only shown when the report carries Monte-Carlo or backtest output. For a
-    # client / terms-only report there is no analysis and the would-be KPIs are
-    # just the key terms already in the rail — so drop the strip and use a
-    # compact masthead instead of leaving a big empty band.
+    # ── Masthead — a compact dark chamfer panel (eyebrow + title + subtitle) ──
+    # It used to carry an analytical KPI strip (IRR / autocall / knock-in / …)
+    # along its bottom edge, but that band was fragile — long values and wrapped
+    # labels collided, and it duplicated the hero metrics that already lead the
+    # Monte-Carlo section — so it was removed. The masthead is now always compact.
     _has_mc = len(results.get("annualized_returns", [])) > 0
-    _show_kpis = _has_mc or bool(bt_summary)
     y_m, pad = 28.5, 9.0
-    MH = 58.0 if _show_kpis else 34.0
+    MH = 34.0
     pdf.theme.cover_masthead(pdf, x0, y_m, W, MH)
     pdf._eyebrow(x0 + pad, y_m + 7, eyebrow, pdf.lime,
                  size=8.0, tracking=0.9, w=W - 2 * pad)
@@ -3019,45 +3017,6 @@ def _cover_page(
     pdf.set_xy(x0 + pad, _sub_y)
     pdf._sf(9.5, "regular"); pdf.set_text_color(*INK_SUB)
     pdf.cell(W - 2 * pad, 5, _safe(_sub))
-
-    # KPI strip — analytical only (Monte Carlo and/or backtest). Skipped for a
-    # client / terms-only report (compact masthead), where these would just echo
-    # the key-terms rail.
-    if _show_kpis:
-        if _has_mc and getattr(terms, "note_type", "") == "participation":
-            kpis = [(_t("expected_redemption", lang), f"{results.get('expected_nominal_payout', 1):.2%}"),
-                    (_t("expected_irr", lang),        f"{results.get('expected_irr', 0):.2%}"),
-                    (_t("p_below_par", lang),         f"{results.get('prob_knock_in_total', 0):.2%}"),
-                    (_t("p_above_par", lang),         f"{results.get('prob_above_par', 0):.1%}")]
-        elif _has_mc:
-            kpis = [(_t("expected_irr", lang),  f"{results.get('expected_irr', 0):.2%}"),
-                    (_t("prob_autocall", lang), f"{results.get('prob_autocall', 0):.1%}"),
-                    (_t("prob_knock_in", lang), f"{results.get('prob_knock_in_total', 0):.2%}")]
-            if bt_summary:
-                kpis.append((_t("mean_hist_irr", lang), f"{bt_summary.get('mean_irr', 0):.2%}"))
-            else:
-                kpis.append((_t("expected_total_return", lang),
-                             f"{results.get('expected_total_return', 0):.2%}"))
-        else:  # backtest only
-            kpis = [(_t("mean_hist_irr", lang),  f"{bt_summary.get('mean_irr', 0):.2%}"),
-                    (_t("p_autocall", lang),     f"{bt_summary.get('prob_called', 0):.1%}"),
-                    (_t("prob_knock_in", lang),  f"{bt_summary.get('prob_knock_in', 0):.2%}"),
-                    (_t("coupon_pa", lang),      f"{terms.coupon_pa * 100:.2f}%")]
-
-        strip_y = y_m + MH - 24
-        pdf.set_fill_color(*_blend(pdf.ink, _WHITE, 0.18))
-        pdf.rect(x0 + pad, strip_y, W - 2 * pad, 0.3, style="F")
-        kw = (W - 2 * pad) / len(kpis)
-        for i, (lbl, val) in enumerate(kpis):
-            cx = x0 + pad + i * kw
-            pdf.set_fill_color(*pdf.lime)
-            pdf.rect(cx, strip_y + 4, 0.8, 14, style="F")
-            pdf.set_xy(cx + 3, strip_y + 4)
-            pdf._sf(6.3, "body_bold"); pdf.set_text_color(*INK_SUB)
-            pdf.multi_cell(kw - 4, 3.1, _safe(lbl.upper()), align="L")
-            pdf.set_xy(cx + 3, strip_y + 12)
-            pdf._sf(13.5, "bold"); pdf.set_text_color(*_WHITE)
-            pdf.cell(kw - 4, 7, _safe(val))
 
     # ── Body: two vertical stacks (left ≈ 100mm, right rail ≈ 70mm) ─────────
     Lw, Rx, Rw = 100.0, x0 + 108.0, W - 108.0
@@ -4038,17 +3997,23 @@ def _build_pdf_report(
             print(f"[PDF cover] image skipped: {_e}")
             return None
     # `filler_images_base64` is an optional POOL of report photos (the multi-pick
-    # cover-photo library). The cover/back faces fall back to it, and the
-    # egregious-void filler bands cycle through it for variety. Decode + dedupe by
-    # content so the same image isn't embedded twice.
+    # cover-photo library). Its slots are POSITIONAL: 0 = cover, 1 = back, the
+    # rest = void-filler bands. A slot can be a deliberate BLANK (an empty-string
+    # sentinel from the picker's "No image" placeholder) meaning "no photo here,
+    # themed background instead" — so we keep positions: a blank/failed decode
+    # becomes None and HOLDS its slot rather than letting the next photo shift up
+    # into the cover/back role. Real images are deduped by content.
     _pool_raw = _b.get("filler_images_base64") or []
     if isinstance(_pool_raw, str):            # tolerate a single string
         _pool_raw = [_pool_raw]
-    _pool, _seen = [], set()
+    _slots, _seen = [], set()
     for _item in _pool_raw:
         _img = _decode_b64_img(_item)
-        if _img and _img not in _seen:
-            _seen.add(_img); _pool.append(_img)
+        if _img is None:
+            _slots.append(None)               # blank slot — keep the position
+        elif _img not in _seen:
+            _seen.add(_img); _slots.append(_img)
+        # else: a real image repeated — drop the duplicate
     pdf.cover_logo_bytes  = _decode_b64_img(_b.get("cover_logo_base64"))
     pdf.cover_logo_aspect = _logo_aspect(pdf.cover_logo_bytes, default=pdf.firm_logo_aspect)
     pdf.cover_sigil_bytes = _decode_b64_img(_b.get("cover_sigil_base64"))
@@ -4073,22 +4038,29 @@ def _build_pdf_report(
     pdf.watermark_places  = ([str(x) for x in _places]
                              if isinstance(_places, (list, tuple)) and _places else None)
     pdf.watermark_enabled = _b.get("watermark_enabled", True) is not False
-    # Cover face: explicit `cover_image_base64`, else the first pooled photo.
-    pdf.cover_image_bytes = _decode_b64_img(_b.get("cover_image_base64")) or (_pool[0] if _pool else None)
-    # Back (disclaimer) face: explicit `back_image_base64`, else the SECOND pooled
-    # photo (so front/back differ when a pool is given), else the cover photo.
-    pdf.back_image_bytes  = (_decode_b64_img(_b.get("back_image_base64"))
-                             or (_pool[1] if len(_pool) > 1 else None)
-                             or pdf.cover_image_bytes)
-    # Void-filler pool: the report-BODY photos only. When a pool is given, its
-    # first two slots are the cover and back faces (the picker labels them
-    # "Portada" / "Contra"); the void bands must draw from the REMAINDER, or the
-    # cover photo reappears inside the report. Exclude by content — which also
-    # drops a pooled image that an explicit cover/back field happens to point at.
-    # If nothing is left (a 1- or 2-image brand, all consumed by cover/back),
-    # fall back to those photos so there is still a filler band.
+    # Cover face: explicit `cover_image_base64`, else slot 0. Slot 0 may be a
+    # deliberate blank (None) — the user chose "No image" for the cover — which
+    # is honoured: the cover shows the themed background, no photo.
+    _explicit_cover = _decode_b64_img(_b.get("cover_image_base64"))
+    pdf.cover_image_bytes = _explicit_cover if _explicit_cover else (_slots[0] if _slots else None)
+    # Back (disclaimer) face: explicit field, else slot 1 (which may be a
+    # deliberate blank → honoured as no back photo). Only when there is NO back
+    # slot at all does it fall back to the cover photo, so a 1-image brand still
+    # gets a back photo without silently overriding an explicit "No image".
+    _explicit_back = _decode_b64_img(_b.get("back_image_base64"))
+    if _explicit_back:
+        pdf.back_image_bytes = _explicit_back
+    elif len(_slots) > 1:
+        pdf.back_image_bytes = _slots[1]      # may be None → deliberate blank
+    else:
+        pdf.back_image_bytes = pdf.cover_image_bytes
+    # Void-filler pool: the report-BODY photos only — every real image in the
+    # slots that isn't already the cover or back face (blanks drop out via the
+    # `img` truthiness test). This keeps the cover/back photos from reappearing
+    # inside the report. If nothing is left (a 1- or 2-image brand, all consumed
+    # by cover/back), fall back to those photos so there is still a filler band.
     _used = {b for b in (pdf.cover_image_bytes, pdf.back_image_bytes) if b}
-    _fillers = [img for img in _pool if img not in _used]
+    _fillers = [img for img in _slots if img and img not in _used]
     if _fillers:
         pdf.filler_image_list = _fillers
     else:

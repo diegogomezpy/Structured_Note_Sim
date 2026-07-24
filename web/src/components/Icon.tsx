@@ -1,4 +1,4 @@
-export type Name = 'sun' | 'moon' | 'play' | 'refresh' | 'chart' | 'spinner' | 'x' | 'plus' | 'info' | 'check' | 'upload' | 'download' | 'save'
+export type Name = 'sun' | 'moon' | 'play' | 'refresh' | 'chart' | 'spinner' | 'x' | 'plus' | 'info' | 'check' | 'upload' | 'download' | 'save' | 'ban'
 
 const PATHS: Record<Name, string> = {
   sun: 'M12 4V2M12 22v-2M4 12H2m20 0h-2M6.3 6.3 4.9 4.9m14.2 14.2-1.4-1.4M6.3 17.7l-1.4 1.4M19.1 4.9l-1.4 1.4M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8Z',
@@ -15,6 +15,8 @@ const PATHS: Record<Name, string> = {
   download: 'M12 4v12m0 0 5-5m-5 5-5-5M4 17v2a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-2',
   // floppy-disk save
   save: 'M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2ZM17 21v-8H7v8M7 3v5h8',
+  // no-entry / no-image — circle with a diagonal slash
+  ban: 'M12 3a9 9 0 1 0 0 18 9 9 0 1 0 0-18ZM5.6 5.6l12.8 12.8',
 }
 
 export default function Icon({ name, size = 16 }: { name: Name; size?: number }) {

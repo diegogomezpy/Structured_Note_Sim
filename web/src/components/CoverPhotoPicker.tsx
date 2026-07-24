@@ -153,21 +153,40 @@ export default function CoverPhotoPicker({ terms, selected, onChange, max }: {
         {selected.length > 1 && <span style={{ fontSize: 10, color: 'var(--text-faint)' }}>{t('cover_lib_reorder')}</span>}
       </div>
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7 }}>
-        {selected.map((u, i) => (
-          <div key={i} {...dragProps(i)}
-               style={{ position: 'relative', width: 78, aspectRatio: '16 / 10', borderRadius: 7, overflow: 'hidden',
-                        border: dragIdx === i ? '1px dashed var(--accent)' : '1px solid var(--border)',
-                        cursor: 'grab', opacity: dragIdx === i ? 0.4 : 1 }}>
-            <img src={u} alt="" draggable={false} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
-            <span style={{ position: 'absolute', top: 2, left: 3, fontSize: 9.5, fontWeight: 700, color: '#fff', textShadow: '0 1px 2px rgba(0,0,0,.7)' }}>
-              {i === 0 ? t('cover_role_cover') : i === 1 ? t('cover_role_back') : `#${i + 1}`}
-            </span>
-            <button onClick={() => onChange(selected.filter((_, j) => j !== i))} aria-label={t('det_reset_logo')}
-                    style={{ position: 'absolute', top: 2, right: 2, width: 16, height: 16, padding: 0, borderRadius: '50%', border: 'none', cursor: 'pointer', background: 'rgba(15,18,16,.65)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              <Icon name="x" size={10} />
-            </button>
-          </div>
-        ))}
+        {selected.map((u, i) => {
+          const role = i === 0 ? t('cover_role_cover') : i === 1 ? t('cover_role_back') : `#${i + 1}`
+          const blank = u === ''      // deliberate "No image" placeholder for this slot
+          return (
+            <div key={i} {...dragProps(i)}
+                 style={{ position: 'relative', width: 78, aspectRatio: '16 / 10', borderRadius: 7, overflow: 'hidden',
+                          border: dragIdx === i ? '1px dashed var(--accent)' : blank ? '1px dashed var(--border)' : '1px solid var(--border)',
+                          background: blank ? 'var(--surface-2)' : undefined,
+                          cursor: 'grab', opacity: dragIdx === i ? 0.4 : 1 }}>
+              {blank ? (
+                <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', gap: 2, alignItems: 'center', justifyContent: 'center', color: 'var(--text-faint)' }}>
+                  <Icon name="ban" size={15} />
+                  <span style={{ fontSize: 8.5, fontWeight: 600, letterSpacing: 0.2 }}>{t('cover_no_image')}</span>
+                </div>
+              ) : (
+                <img src={u} alt="" draggable={false} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+              )}
+              <span style={{ position: 'absolute', top: 2, left: 3, fontSize: 9.5, fontWeight: 700, color: blank ? 'var(--text-muted)' : '#fff', textShadow: blank ? 'none' : '0 1px 2px rgba(0,0,0,.7)' }}>
+                {role}
+              </span>
+              {!blank && (
+                <button onClick={() => onChange(selected.map((v, j) => (j === i ? '' : v)))}
+                        title={t('cover_set_no_image')} aria-label={t('cover_set_no_image')}
+                        style={{ position: 'absolute', bottom: 2, left: 2, width: 16, height: 16, padding: 0, borderRadius: '50%', border: 'none', cursor: 'pointer', background: 'rgba(15,18,16,.65)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <Icon name="ban" size={9} />
+                </button>
+              )}
+              <button onClick={() => onChange(selected.filter((_, j) => j !== i))} aria-label={t('det_reset_logo')}
+                      style={{ position: 'absolute', top: 2, right: 2, width: 16, height: 16, padding: 0, borderRadius: '50%', border: 'none', cursor: 'pointer', background: 'rgba(15,18,16,.65)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <Icon name="x" size={10} />
+              </button>
+            </div>
+          )
+        })}
       </div>
     </div>
   )

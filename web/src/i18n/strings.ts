@@ -854,6 +854,8 @@ export const S: Dict = {
   cover_folder_hint: { en: 'Connect a local folder and its images are auto-detected here to add to the report.', es: 'Conecta una carpeta local y sus imágenes se detectan aquí para añadirlas al informe.' },
   cover_role_cover: { en: 'Cover', es: 'Portada' },
   cover_role_back:  { en: 'Back', es: 'Contra' },
+  cover_no_image:   { en: 'No image', es: 'Sin imagen' },
+  cover_set_no_image: { en: 'Set to no image (themed background)', es: 'Sin imagen (fondo del tema)' },
   cover_lib_sector: { en: 'Industry', es: 'Industria' },
   cover_lib_refresh: { en: 'Refresh', es: 'Actualizar' },
   cover_lib_empty:  { en: 'No photos found — try another industry.', es: 'No se encontraron fotos — prueba otra industria.' },
