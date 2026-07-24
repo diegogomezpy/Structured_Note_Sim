@@ -48,7 +48,7 @@ import golden_fixture as gf  # noqa: E402  (after importorskip; tests/ is on sys
 
 BASELINE = Path(__file__).resolve().parent / "golden" / "hashes.json"
 DPI = 110
-THEMES = ["mercator", "hexagon", "custom"]
+THEMES = ["mercator", "hexagon", "custom", "hexcluster"]
 
 
 # ── rasteriser ───────────────────────────────────────────────────────────────

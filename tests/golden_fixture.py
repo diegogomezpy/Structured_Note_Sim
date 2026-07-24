@@ -27,14 +27,28 @@ FIXTURES = Path(__file__).resolve().parent / "golden"
 
 
 def branding(theme: str) -> dict:
-    """Load a committed brand fixture and attach generated imagery."""
-    cfg = json.loads((FIXTURES / f"branding_{theme}.json").read_text())
+    """Load a committed brand fixture and attach generated imagery.
+
+    ``theme="hexcluster"`` is a synthetic variant of the hexagon/cadiem theme
+    with NO uploaded watermark image and no filler-photo pool. It exercises the
+    drawn hex-cluster fallback — CADIEM's real image-less production look — on
+    the masthead / divider / empty-space surfaces. The other fixtures always
+    attach a watermark image, so without this case the whole image-less mark
+    path is unguarded and a refactor could silently break the deployed report.
+    """
+    hexcluster = theme == "hexcluster"
+    cfg = json.loads((FIXTURES / f"branding_{'hexagon' if hexcluster else theme}.json").read_text())
     cfg["logo_base64"] = _swatch(320, 96, (18, 62, 64), "LOGO")
     cfg["cover_logo_base64"] = _swatch(560, 120, (255, 255, 255), "COVER")
     cfg["cover_image_base64"] = _noise(900, 600, 11)
     cfg["back_image_base64"] = _noise(900, 600, 29)
-    cfg["filler_images_base64"] = [_noise(700, 460, 41), _noise(700, 460, 53)]
-    cfg["watermark_base64"] = _swatch(300, 300, (255, 255, 255), "WM")
+    if hexcluster:
+        # No watermark image → the drawn hex cluster renders; no filler pool → the
+        # empty-space band draws the cluster rather than a cover photo.
+        cfg["filler_images_base64"] = []
+    else:
+        cfg["filler_images_base64"] = [_noise(700, 460, 41), _noise(700, 460, 53)]
+        cfg["watermark_base64"] = _swatch(300, 300, (255, 255, 255), "WM")
     return cfg
 
 
