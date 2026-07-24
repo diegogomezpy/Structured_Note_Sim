@@ -3403,10 +3403,11 @@ def _cover_page(
     _void_top = max(ly, _yc[0]) + 8.0
     _left_filled = False
     try:
-        # Prefer a pooled image OTHER than the front cover's (index 0) so the
-        # summary's vertical photo and the cover don't show the same shot.
+        # `filler_image_list` is already the report-body photos (cover/back
+        # excluded), so the first one differs from the cover by construction —
+        # the summary's vertical photo and the cover won't show the same shot.
         _pool = getattr(pdf, "filler_image_list", None) or []
-        _vimg = (_pool[1] if len(_pool) > 1 else (_pool[0] if _pool else None))
+        _vimg = _pool[0] if _pool else None
         if ly + 45 < _yc[0] and _vimg is not None:
             _left_filled = _cover_left_photo(pdf, x0, ly + 6.0, Lw, _bottom, _vimg)
         # Sigil watermark — only in a void below BOTH stacks (rare on client
@@ -4079,10 +4080,17 @@ def _build_pdf_report(
     pdf.back_image_bytes  = (_decode_b64_img(_b.get("back_image_base64"))
                              or (_pool[1] if len(_pool) > 1 else None)
                              or pdf.cover_image_bytes)
-    # Void-filler pool: the explicit pool when given, else the cover/back photos
-    # (deduped, non-null) so single-image brands still get a filler band.
-    if _pool:
-        pdf.filler_image_list = _pool
+    # Void-filler pool: the report-BODY photos only. When a pool is given, its
+    # first two slots are the cover and back faces (the picker labels them
+    # "Portada" / "Contra"); the void bands must draw from the REMAINDER, or the
+    # cover photo reappears inside the report. Exclude by content — which also
+    # drops a pooled image that an explicit cover/back field happens to point at.
+    # If nothing is left (a 1- or 2-image brand, all consumed by cover/back),
+    # fall back to those photos so there is still a filler band.
+    _used = {b for b in (pdf.cover_image_bytes, pdf.back_image_bytes) if b}
+    _fillers = [img for img in _pool if img not in _used]
+    if _fillers:
+        pdf.filler_image_list = _fillers
     else:
         _fb, _fbseen = [], set()
         for _img in (pdf.cover_image_bytes, pdf.back_image_bytes):

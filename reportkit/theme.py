@@ -587,7 +587,15 @@ def paint_shape(pdf, x, y, w, h, shape, fill, opacity: float = 1.0) -> None:
         colors = colors * 2
     if ftype == "radial":
         cx, cy = x + w / 2.0, y + h / 2.0
-        grad = RadialGradient(cx, cy, 0, cx, cy, max(w, h) / 2.0, colors)
+        # Radius must reach the CORNERS, not the edge midpoints. `max(w,h)/2`
+        # only reaches the nearer edges, so on a non-square shape the four
+        # corners fall outside the outer circle and — since fpdf2's radial
+        # shading doesn't paint past it (extend_after defaults False) — are left
+        # unfilled, showing whatever's behind. Half the diagonal circumscribes
+        # the rectangle (this is CSS's default `farthest-corner`); extend_after
+        # then guards the corner that sits exactly on the boundary.
+        r = math.hypot(w, h) / 2.0
+        grad = RadialGradient(cx, cy, 0, cx, cy, r, colors, extend_after=True)
     else:
         fx, fy, tx, ty = _grad_endpoints(x, y, w, h, fill.get("angle", 90))
         grad = LinearGradient(fx, fy, tx, ty, colors)
