@@ -3001,14 +3001,16 @@ def _cover_page(
     pdf.set_draw_color(*pdf.primary_color); pdf.set_line_width(0.7)
     pdf.line(x0, 23.5, pdf.w - pdf.r_margin, 23.5)
 
-    # ── Masthead — a compact dark chamfer panel (eyebrow + title + subtitle) ──
-    # It used to carry an analytical KPI strip (IRR / autocall / knock-in / …)
-    # along its bottom edge, but that band was fragile — long values and wrapped
-    # labels collided, and it duplicated the hero metrics that already lead the
-    # Monte-Carlo section — so it was removed. The masthead is now always compact.
+    # ── Masthead — dark chamfer panel with a KPI strip when analytics exist ──
+    # The analytical KPIs (IRR / autocall / knock-in / mean historical IRR) show
+    # whenever the report carries Monte-Carlo or backtest output; a client /
+    # terms-only report has no analysis, so the masthead stays compact. The
+    # theme's decorative accent bar along the bottom edge is deliberately NOT
+    # drawn here (see the mercator spec) — the strip is the KPIs alone.
     _has_mc = len(results.get("annualized_returns", [])) > 0
+    _show_kpis = _has_mc or bool(bt_summary)
     y_m, pad = 28.5, 9.0
-    MH = 34.0
+    MH = 58.0 if _show_kpis else 34.0
     pdf.theme.cover_masthead(pdf, x0, y_m, W, MH)
     pdf._eyebrow(x0 + pad, y_m + 7, eyebrow, pdf.lime,
                  size=8.0, tracking=0.9, w=W - 2 * pad)
@@ -3039,6 +3041,45 @@ def _cover_page(
     pdf.set_xy(x0 + pad, _sub_y)
     pdf._sf(9.5, "regular"); pdf.set_text_color(*INK_SUB)
     pdf.cell(W - 2 * pad, 5, _safe(_sub))
+
+    # KPI strip — analytical only (Monte Carlo and/or backtest). Skipped for a
+    # client / terms-only report (compact masthead), where these would just echo
+    # the key-terms rail.
+    if _show_kpis:
+        if _has_mc and getattr(terms, "note_type", "") == "participation":
+            kpis = [(_t("expected_redemption", lang), f"{results.get('expected_nominal_payout', 1):.2%}"),
+                    (_t("expected_irr", lang),        f"{results.get('expected_irr', 0):.2%}"),
+                    (_t("p_below_par", lang),         f"{results.get('prob_knock_in_total', 0):.2%}"),
+                    (_t("p_above_par", lang),         f"{results.get('prob_above_par', 0):.1%}")]
+        elif _has_mc:
+            kpis = [(_t("expected_irr", lang),  f"{results.get('expected_irr', 0):.2%}"),
+                    (_t("prob_autocall", lang), f"{results.get('prob_autocall', 0):.1%}"),
+                    (_t("prob_knock_in", lang), f"{results.get('prob_knock_in_total', 0):.2%}")]
+            if bt_summary:
+                kpis.append((_t("mean_hist_irr", lang), f"{bt_summary.get('mean_irr', 0):.2%}"))
+            else:
+                kpis.append((_t("expected_total_return", lang),
+                             f"{results.get('expected_total_return', 0):.2%}"))
+        else:  # backtest only
+            kpis = [(_t("mean_hist_irr", lang),  f"{bt_summary.get('mean_irr', 0):.2%}"),
+                    (_t("p_autocall", lang),     f"{bt_summary.get('prob_called', 0):.1%}"),
+                    (_t("prob_knock_in", lang),  f"{bt_summary.get('prob_knock_in', 0):.2%}"),
+                    (_t("coupon_pa", lang),      f"{terms.coupon_pa * 100:.2f}%")]
+
+        strip_y = y_m + MH - 24
+        pdf.set_fill_color(*_blend(pdf.ink, _WHITE, 0.18))
+        pdf.rect(x0 + pad, strip_y, W - 2 * pad, 0.3, style="F")
+        kw = (W - 2 * pad) / len(kpis)
+        for i, (lbl, val) in enumerate(kpis):
+            cx = x0 + pad + i * kw
+            pdf.set_fill_color(*pdf.lime)
+            pdf.rect(cx, strip_y + 4, 0.8, 14, style="F")
+            pdf.set_xy(cx + 3, strip_y + 4)
+            pdf._sf(6.3, "body_bold"); pdf.set_text_color(*INK_SUB)
+            pdf.multi_cell(kw - 4, 3.1, _safe(lbl.upper()), align="L")
+            pdf.set_xy(cx + 3, strip_y + 12)
+            pdf._sf(13.5, "bold"); pdf.set_text_color(*_WHITE)
+            pdf.cell(kw - 4, 7, _safe(val))
 
     # ── Body: two vertical stacks (left ≈ 100mm, right rail ≈ 70mm) ─────────
     Lw, Rx, Rw = 100.0, x0 + 108.0, W - 108.0

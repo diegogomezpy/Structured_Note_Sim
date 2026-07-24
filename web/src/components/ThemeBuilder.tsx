@@ -95,12 +95,12 @@ function ShapeControl({ value, onChange }: { value: unknown; onChange: (v: unkno
         }} />
       {kind === 'chamfer' && (
         <label style={{ ...row, fontSize: 11.5, color: 'var(--text-muted)' }}>Cut
-          <NumberInput value={Number(shape.c ?? 5)} step={0.5} min={0} max={12}
+          <NumberInput value={Number(shape.c ?? 5)} step={0.5} min={0} max={40}
             onChange={(v) => onChange({ ...shape, c: v })} style={{ width: 64, fontSize: 12, padding: '4px 6px', borderRadius: 7 }} />mm</label>
       )}
       {kind === 'rounded' && (
         <label style={{ ...row, fontSize: 11.5, color: 'var(--text-muted)' }}>Radius
-          <NumberInput value={Number(shape.radius ?? 3)} step={0.5} min={0} max={12}
+          <NumberInput value={Number(shape.radius ?? 3)} step={0.5} min={0} max={40}
             onChange={(v) => onChange({ ...shape, radius: v })} style={{ width: 64, fontSize: 12, padding: '4px 6px', borderRadius: 7 }} />mm</label>
       )}
     </div>

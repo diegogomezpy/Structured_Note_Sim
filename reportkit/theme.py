@@ -920,13 +920,9 @@ class SpecTheme(ReportTheme):
                     cm.get("fill", {"type": "solid", "color": "ink"}))
         _watermark(pdf, x0, y_m, W, MH, cm.get("watermark"), surface="masthead",
                    cluster=(x0 + W - 42, y_m - 6, 30, WHITE, 0, 0.12))
-        ar = cm.get("accent_rule")
-        if ar:
-            inset = ar.get("inset", 4)
-            pdf.set_fill_color(*resolve_color(ar.get("color", "lime"), pdf))
-            pdf.rect(x0 + inset, y_m + MH - ar.get("y_from_bottom", 1.6),
-                     W - 2 * inset, ar.get("h", 1.2), style="F",
-                     round_corners=True, corner_radius=ar.get("radius", 0.5))
+        # No `accent_rule`: the coloured bar it drew along the masthead's bottom
+        # edge read as a stray solid border (especially over a gradient fill) and
+        # was unwanted. The spec key is ignored if a saved theme still carries it.
 
     def cover_left_void_fill(self, pdf, x0, sc, bottom) -> None:
         dec = self._s("cover_left_void").get("decoration", "hexCluster")
@@ -987,9 +983,7 @@ MERCATOR_SPEC = {
     "void": {"decoration": "accentKeyline",
              "photo": {"tint_opacity": 0.28, "wash_opacity": 0.32, "top_rule": 1.2}},
     "cover_masthead": {"shape": {"kind": "rounded", "radius": 3.0},
-                       "fill": {"type": "solid", "color": "ink"},
-                       "accent_rule": {"color": "lime", "inset": 4, "h": 1.2,
-                                       "y_from_bottom": 1.6, "radius": 0.5}},
+                       "fill": {"type": "solid", "color": "ink"}},
     "cover_left_void": {"decoration": "accentKeyline"},
 }
 
