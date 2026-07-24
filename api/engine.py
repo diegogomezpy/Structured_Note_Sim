@@ -14,6 +14,7 @@ from __future__ import annotations
 import base64
 import json
 import os
+import re
 import sys
 import uuid
 import time
@@ -1779,22 +1780,58 @@ def _decode_data_url_png(data_url: str | None) -> bytes | None:
         return None
 
 
+_CHART_HEX_RE = re.compile(r"^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$")
+
+
+def _valid_chart_color(c):
+    """A colour Plotly will accept, else None. The Designer sends hex from its
+    colour wells, but a half-typed value ('0F1E36', '#f', '') or a stray series
+    entry would otherwise reach Plotly and raise mid-render — turning the whole
+    proof/report into a 500. Accept hex and rgb()/hsl() functional notation;
+    anything else falls back to the theme default rather than crashing."""
+    if not isinstance(c, str):
+        return None
+    s = c.strip()
+    if _CHART_HEX_RE.match(s):
+        return s
+    if s.lower().startswith(("rgb(", "rgba(", "hsl(", "hsla(")):
+        return s
+    return None
+
+
+def _num_or_none(v):
+    try:
+        return float(v)
+    except (TypeError, ValueError):
+        return None
+
+
 def _chart_options_from_branding(branding: dict | None) -> dict:
-    """Map the branding config's `chart_*` keys onto charts.set_chart_options()."""
+    """Map the branding config's `chart_*` keys onto charts.set_chart_options().
+
+    Every value is validated: a malformed colour or non-numeric size becomes
+    None (→ the theme default) instead of being passed through to Plotly, which
+    would raise while a figure is being built and 500 the whole render. This is
+    the single parse point for both the report and the Studio proof.
+    """
     b = branding or {}
     pal = b.get("chart_series_colors")
     if isinstance(pal, str):
         pal = [c.strip() for c in pal.split(",") if c.strip()]
+    if isinstance(pal, (list, tuple)):
+        pal = [c for c in (_valid_chart_color(x) for x in pal) if c]
+    else:
+        pal = None
     return {
-        "bg_color":      b.get("chart_bg_color"),
-        "grid_color":    b.get("chart_grid_color"),
-        "axis_color":    b.get("chart_axis_color"),
-        "label_color":   b.get("chart_label_color"),
-        "text_color":    b.get("chart_text_color"),
-        "font_size":     b.get("chart_font_size"),
+        "bg_color":      _valid_chart_color(b.get("chart_bg_color")),
+        "grid_color":    _valid_chart_color(b.get("chart_grid_color")),
+        "axis_color":    _valid_chart_color(b.get("chart_axis_color")),
+        "label_color":   _valid_chart_color(b.get("chart_label_color")),
+        "text_color":    _valid_chart_color(b.get("chart_text_color")),
+        "font_size":     _num_or_none(b.get("chart_font_size")),
         "series_colors": pal or None,
-        "band_opacity":  b.get("chart_band_opacity"),
-        "line_width":    b.get("chart_line_width"),
+        "band_opacity":  _num_or_none(b.get("chart_band_opacity")),
+        "line_width":    _num_or_none(b.get("chart_line_width")),
     }
 
 
