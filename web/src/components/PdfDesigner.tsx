@@ -1,6 +1,6 @@
+import { useState } from 'react'
 import { useI18n } from '../i18n/I18nProvider'
 import Icon from './Icon'
-import BrandPreview from './BrandPreview'
 import ProofCanvas from './studio/ProofCanvas'
 import ThemeBuilder from './ThemeBuilder'
 import { Segmented } from './fields'
@@ -83,16 +83,17 @@ function ThemeLineage({ brand, set }: {
   )
 }
 
-export default function PdfDesigner({ studio, terms, preview = 'proof', onPreviewChange = () => {} }: {
+export default function PdfDesigner({ studio, terms }: {
   studio: BrandingStudio
   terms: NoteTerms
-  preview?: 'proof' | 'mock'
-  onPreviewChange?: (v: 'proof' | 'mock') => void
 }) {
   const { t, lang } = useI18n()
   const b = studio.brand
   const set = studio.setBrandField
-  const noteName = terms?.name
+  // Preview mode: Real runs the full render (genuine charts, ~slow); Fast stops
+  // at the stub pass (~0.5s) for quick layout/colour work. This used to switch
+  // to a hand-drawn DOM mock that constantly drifted from the PDF — deleted.
+  const [realCharts, setRealCharts] = useState(true)
   // The report's default multi-series colourway (charts.py `_SERIES_COLORS`).
   const DEFAULT_SERIES = ['#2563eb', '#1a2e4a', '#60a5fa', '#0891b2', '#7c3aed', '#0d9488']
   const seriesColors = (b.chart_series_colors as string[] | undefined) ?? DEFAULT_SERIES
@@ -112,6 +113,28 @@ export default function PdfDesigner({ studio, terms, preview = 'proof', onPrevie
           </div>
           <div style={{ marginTop: 12 }}>
             <UploadTile label={t('brand_logo')} src={b.logo_base64} onPick={(f) => studio.onImage('logo_base64', f)} onClear={() => set('logo_base64', '')} />
+          </div>
+        </Card>
+
+        {/* Cover sits high — it's the most-edited, most-visible surface. Its
+            colour/gradient lives in Report theme → "Cover page background". */}
+        <Card id="cover" title={t('brand_cover')}>
+          {/* Shared with the Build tab — images are usually chosen per report. */}
+          <ReportImages studio={studio} terms={terms} compact />
+          <div style={{ marginTop: 16 }}>
+            <div style={{ fontSize: 11.5, color: 'var(--text-muted)', marginBottom: 2 }}>{t('cover_metrics')}</div>
+            <div style={{ fontSize: 11, color: 'var(--text-faint)', marginBottom: 8, lineHeight: 1.5 }}>{t('cover_metrics_hint')}</div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7 }}>
+              {COVER_METRIC_KEYS.map((k) => {
+                const on = studio.coverMetricsSel.includes(k)
+                const over = on && studio.coverMetricsSel.indexOf(k) >= COVER_METRIC_MAX
+                return (
+                  <button key={k} type="button" className="preset-pill" data-on={on}
+                    title={over ? t('cover_metrics_over') : undefined} style={over ? { opacity: 0.45 } : undefined}
+                    onClick={() => studio.toggleCoverMetric(k)}>{studio.metricLabel(k)}</button>
+                )
+              })}
+            </div>
           </div>
         </Card>
 
@@ -222,26 +245,6 @@ export default function PdfDesigner({ studio, terms, preview = 'proof', onPrevie
           <div style={{ fontSize: 11, color: 'var(--text-faint)', marginTop: 8 }}>{t('brand_font_hint')}</div>
         </Card>
 
-        <Card id="cover" title={t('brand_cover')}>
-          {/* Shared with the Build tab — images are usually chosen per report. */}
-          <ReportImages studio={studio} terms={terms} compact />
-          <div style={{ marginTop: 16 }}>
-            <div style={{ fontSize: 11.5, color: 'var(--text-muted)', marginBottom: 2 }}>{t('cover_metrics')}</div>
-            <div style={{ fontSize: 11, color: 'var(--text-faint)', marginBottom: 8, lineHeight: 1.5 }}>{t('cover_metrics_hint')}</div>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7 }}>
-              {COVER_METRIC_KEYS.map((k) => {
-                const on = studio.coverMetricsSel.includes(k)
-                const over = on && studio.coverMetricsSel.indexOf(k) >= COVER_METRIC_MAX
-                return (
-                  <button key={k} type="button" className="preset-pill" data-on={on}
-                    title={over ? t('cover_metrics_over') : undefined} style={over ? { opacity: 0.45 } : undefined}
-                    onClick={() => studio.toggleCoverMetric(k)}>{studio.metricLabel(k)}</button>
-                )
-              })}
-            </div>
-          </div>
-        </Card>
-
         <Card id="watermark" title={t('brand_watermark')} desc={t('brand_watermark_hint')}>
           <div style={{ display: 'flex', alignItems: 'flex-end', gap: 16, flexWrap: 'wrap' }}>
             <UploadTile label={t('brand_watermark_img')} src={b.watermark_base64 as string} dark
@@ -308,31 +311,24 @@ export default function PdfDesigner({ studio, terms, preview = 'proof', onPrevie
       </div>
 
       {/* ── right: the preview column ──────────────────────────────────────
-          Two implementations live here for now. `proof` renders the real PDF
-          server-side and is the one that cannot drift; `mock` is the original
-          hand-drawn DOM approximation, kept until the proof's latency has been
-          measured on the deploy rather than a dev machine. */}
+          The proof IS the PDF (server-rendered), so it cannot drift. Real vs
+          Fast only decides whether the genuine (slow) charts are drawn. */}
       <div className="brand-preview-col" style={{ position: 'sticky', top: 12, display: 'flex', flexDirection: 'column', gap: 8, maxHeight: 'calc(100vh - 24px)' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           <div style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: '0.07em', textTransform: 'uppercase', color: 'var(--text-faint)', whiteSpace: 'nowrap' }}>
-            {preview === 'proof' ? t('proof_title') : t('brand_preview')}
+            {t('proof_title')}
           </div>
           <div style={{ flex: 1, minWidth: 0, maxWidth: 190, marginLeft: 'auto' }}>
-            <Segmented value={preview} ariaLabel={t('proof_mode')}
-              options={[{ value: 'proof', label: t('proof_mode_real') }, { value: 'mock', label: t('proof_mode_fast') }]}
-              onChange={(v) => onPreviewChange(v as 'proof' | 'mock')} />
+            <Segmented value={realCharts ? 'real' : 'fast'} ariaLabel={t('proof_mode')}
+              options={[{ value: 'real', label: t('proof_mode_real') }, { value: 'fast', label: t('proof_mode_fast') }]}
+              onChange={(v) => setRealCharts(v === 'real')} />
           </div>
         </div>
         <div style={{ overflowY: 'auto', overflowX: 'hidden', flex: 1, borderRadius: 12, paddingRight: 2 }}>
-          {preview === 'proof' ? (
-            <ProofCanvas brand={b} terms={terms} lang={lang} zoom={0.78} />
-          ) : (
-            <BrandPreview brand={b} noteName={noteName} terms={terms} reportFonts={studio.reportFonts}
-                          coverMetrics={studio.coverMetricsSel} metricLabel={studio.metricLabel} />
-          )}
+          <ProofCanvas brand={b} terms={terms} lang={lang} zoom={0.78} realCharts={realCharts} />
         </div>
         <div style={{ fontSize: 10.5, color: 'var(--text-faint)', lineHeight: 1.45 }}>
-          {preview === 'proof' ? t('proof_hint') : t('brand_preview_hint')}
+          {realCharts ? t('proof_hint') : t('proof_hint_fast')}
         </div>
       </div>
     </div>

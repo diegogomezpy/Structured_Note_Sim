@@ -38,11 +38,15 @@ const DEBOUNCE_MS = 700
 
 type Status = 'idle' | 'chrome' | 'charts' | 'ok' | 'error'
 
-export default function ProofCanvas({ brand, terms, lang, zoom }: {
+export default function ProofCanvas({ brand, terms, lang, zoom, realCharts = true }: {
   brand: Branding
   terms: NoteTerms | null
   lang: string
   zoom: number
+  // Fast mode (realCharts=false) stops after the stub pass — the ~2s-per-figure
+  // Kaleido render is skipped, so layout/colour edits settle in ~0.5s. Real mode
+  // runs the second pass and swaps the genuine charts in.
+  realCharts?: boolean
 }) {
   const { t } = useI18n()
   const [pages, setPages] = useState<string[]>([])
@@ -55,7 +59,7 @@ export default function ProofCanvas({ brand, terms, lang, zoom }: {
   // the honest dependency: it is what the server is handed, so any field that
   // affects the document — including ones no control has yet — triggers a
   // refresh without needing to be enumerated here.
-  const dep = JSON.stringify([brand, terms?.name, terms?.tickers, lang])
+  const dep = JSON.stringify([brand, terms?.name, terms?.tickers, lang, realCharts])
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -78,8 +82,11 @@ export default function ProofCanvas({ brand, terms, lang, zoom }: {
           if (ac.signal.aborted) return
           show(r)
           setMs(Math.round(performance.now() - t0))
-          setStatus('charts')
           setError('')
+          // Fast mode stops here — the stub pass is the whole render, so an edit
+          // settles in ~0.5s. Real mode goes on to draw the genuine charts.
+          if (!realCharts) { setStatus('ok'); return null }
+          setStatus('charts')
           return api.reportProof(
             { branding: brand, terms, lang, scale: 1.4, figures: 'real' }, ac.signal)
         })

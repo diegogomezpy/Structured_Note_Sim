@@ -19,11 +19,11 @@ export default function ReportImages({ studio, terms, compact }: {
 
   return (
     <div>
+      {/* No dedicated cover / back-page photo tiles: the photo library below is
+          the single place to choose them — its first pick is the cover, its
+          second the back page (see pdf_report.py). Two competing controls is
+          exactly what let a cover photo override the themed background. */}
       <div style={grid()}>
-        <UploadTile label={t('brand_cover_image')} src={b.cover_image_base64 as string} dark
-          onPick={(f) => studio.onImage('cover_image_base64', f)} onClear={() => set('cover_image_base64', '')} />
-        <UploadTile label={t('brand_back_image')} src={b.back_image_base64 as string} dark
-          onPick={(f) => studio.onImage('back_image_base64', f)} onClear={() => set('back_image_base64', '')} />
         <UploadTile label={t('brand_alt_logo')} src={b.cover_logo_base64} dark
           onPick={(f) => studio.onImage('cover_logo_base64', f)} onClear={() => set('cover_logo_base64', '')} />
         <UploadTile label={t('brand_cover_sigil')} src={b.cover_sigil_base64} dark
