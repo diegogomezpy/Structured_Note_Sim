@@ -66,6 +66,38 @@ def test_spanish_says_autocancelar_not_amortizar(name, terms, lang):
     assert "amortiz" not in describe_note(terms, lang).lower()
 
 
+# Spelled-out cardinals/ordinals that the description must never contain — the
+# counts read as digits ("18 dates", "3rd", not "eighteen dates", "third").
+# "one"/"una" are excluded (articles, and EN "one-for-one").
+_WORDS = {
+    "en": (r"\b(two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|"
+           r"fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|first|second|"
+           r"third|fourth|fifth|sixth|seventh|eighth|ninth|tenth|eleventh|twelfth|"
+           r"thirteenth|fourteenth|fifteenth|sixteenth|seventeenth|eighteenth|"
+           r"nineteenth|twentieth)\b"),
+    "es": (r"\b(dos|tres|cuatro|cinco|seis|siete|ocho|nueve|diez|once|doce|trece|"
+           r"catorce|quince|dieciséis|diecisiete|dieciocho|diecinueve|veinte|primera|"
+           r"segunda|tercera|cuarta|quinta|sexta|séptima|octava|novena|décima|"
+           r"undécima|duodécima|decimotercera|decimocuarta|decimoquinta|decimosexta|"
+           r"decimoséptima|decimoctava|decimonovena|vigésima)\b"),
+}
+
+
+@pytest.mark.parametrize("name,terms,lang", CASES, ids=IDS)
+def test_counts_are_digits_not_words(name, terms, lang):
+    """Every count and ordinal renders as a figure, not a spelled-out word."""
+    hit = re.findall(_WORDS[lang], describe_note(terms, lang), re.I)
+    assert not hit, f"spelled-out number word(s): {hit}"
+
+
+def test_number_helpers_are_numeric():
+    """Guard the helpers directly, so the rule holds beyond the sampled configs."""
+    from core.phoenix_prose import num_word, ord_word
+    assert num_word(3, "es") == "3" and num_word(18, "en") == "18"
+    assert ord_word(1, "en") == "1st" and ord_word(3, "en") == "3rd"
+    assert ord_word(3, "es") == "3.ª" and ord_word(11, "en") == "11th"
+
+
 @pytest.mark.parametrize("name,terms,lang", CASES, ids=IDS)
 def test_no_label_fragments(name, terms, lang):
     """The failure mode this rewrite exists to kill: a paragraph that opens

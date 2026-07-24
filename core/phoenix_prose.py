@@ -29,33 +29,15 @@ def pct(x: float, lang: str = "en") -> str:
     return (s.replace(".", ",") if lang == "es" else s) + "%"
 
 
-_NUM_EN = ["zero", "one", "two", "three", "four", "five", "six", "seven", "eight",
-           "nine", "ten", "eleven", "twelve", "thirteen", "fourteen", "fifteen",
-           "sixteen", "seventeen", "eighteen", "nineteen", "twenty"]
-_NUM_ES = ["cero", "una", "dos", "tres", "cuatro", "cinco", "seis", "siete", "ocho",
-           "nueve", "diez", "once", "doce", "trece", "catorce", "quince", "dieciséis",
-           "diecisiete", "dieciocho", "diecinueve", "veinte"]
-_ORD_EN = ["", "first", "second", "third", "fourth", "fifth", "sixth", "seventh",
-           "eighth", "ninth", "tenth", "eleventh", "twelfth", "thirteenth",
-           "fourteenth", "fifteenth", "sixteenth", "seventeenth", "eighteenth",
-           "nineteenth", "twentieth"]
-_ORD_ES = ["", "primera", "segunda", "tercera", "cuarta", "quinta", "sexta", "séptima",
-           "octava", "novena", "décima", "undécima", "duodécima", "decimotercera",
-           "decimocuarta", "decimoquinta", "decimosexta", "decimoséptima",
-           "decimoctava", "decimonovena", "vigésima"]
-
-
 def num_word(n: int, lang: str) -> str:
-    """Counts up to twenty read as words; above that, digits."""
-    if 0 <= n <= 20:
-        return (_NUM_ES if lang == "es" else _NUM_EN)[n]
+    """Counts are rendered as digits, never spelled out — the descriptions read
+    as figures ("18 dates", not "eighteen dates"). The lang argument is kept for
+    a stable signature across the call sites."""
     return str(n)
 
 
 def ord_word(n: int, lang: str) -> str:
-    """Ordinals up to twentieth as words; above that, 24th / 24.ª."""
-    if 1 <= n <= 20:
-        return (_ORD_ES if lang == "es" else _ORD_EN)[n]
+    """Ordinals as digits too: 3.ª (es) / 3rd (en), never "tercera"/"third"."""
     if lang == "es":
         return f"{n}.ª"
     suf = "th" if 11 <= n % 100 <= 13 else {1: "st", 2: "nd", 3: "rd"}.get(n % 10, "th")
@@ -355,10 +337,10 @@ def _t2_capital(c: Ctx, issuer: str | None) -> str:
               f" There is no upside participation: it pays at most "
               f"{pct(c.max_coupons, c.lang)}, and only if it autocalls.")
     elif c.t.coupon_pa > 0:
-        s += (f" La rentabilidad se limita a los cupones, como máximo el "
-              f"{pct(c.max_coupons, c.lang)} del nominal." if c.es else
-              f" The return is limited to the coupons, at most "
-              f"{pct(c.max_coupons, c.lang)} of nominal.")
+        s += (f" Los cupones son toda la rentabilidad, con un máximo del "
+              f"{pct(c.max_coupons, c.lang)} del nominal en total." if c.es else
+              f" The coupons are the entire return, capped at "
+              f"{pct(c.max_coupons, c.lang)} of nominal in total.")
 
     s += (f" Todos los importes dependen de la solvencia de {iss}." if c.es
           else f" All amounts depend on {iss}'s ability to pay.")
