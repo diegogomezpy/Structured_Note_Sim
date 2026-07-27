@@ -61,10 +61,9 @@ The project covers the full quantitative workflow:
 │   ├── package.json
 │   └── vite.config.ts         #   dev server proxies /api → http://localhost:8010
 │
-├── note_configs/             # 16 ready-to-use JSON term sheets (load in the app)
-│                             #   HSBC ×2, BBVA, Citi, Santander ×3, Barclays, BNP Paribas,
-│                             #   Julius Baer, 2 Participation (cliquet + growth),
-│                             #   4 Silex thematic (consumer / services / One-Star / Zenith)
+├── note_configs/             # sample JSON term sheets (load in the app)
+│                             #   Blue Chip / Broad Market / New Tech / Old Tech,
+│                             #   Nota de Technológicas Chinas, Note de EV Chinas
 ├── tests/                    # pytest quant-core suite (run by CI)
 │   ├── conftest.py
 │   └── test_note.py          #   payoff-engine coverage (Phoenix, One-Star, Zenith, Participation)
@@ -273,26 +272,16 @@ The `NoteTerms` dataclass captures the full specification of a note. A single en
 
 ### Reference Term Sheets
 
-Sixteen term sheets are included as ready-to-use JSON configs (load any of them on the setup page):
+A few sample term sheets are included as ready-to-use JSON configs (load any of them on the setup page):
 
-| File | Issuer | Type | Underlyings | Tenor | Coupon | KI |
-|------|--------|------|-------------|-------|--------|-----|
-| `hsbc_xs3376563584.json` | HSBC | Phoenix Memory | GS / JPM / MS | 24M monthly | 10% p.a. | 55% European |
-| `bbva_xs3378405743.json` | BBVA | Phoenix One Star | NVDA / PLTR / TSLA | 18M quarterly | 15% p.a. | 50% European |
-| `citi_xs3096699163.json` | Citi | Growth autocall (step-down) | GOOGL / AMZN / AAPL | 2Y quarterly | 12% p.a. premium | 53.7% European |
-| `santander_xs3242406752.json` | Santander | Phoenix Memory | C / GLE.PA / MS | 2Y quarterly | 10.6% p.a. | 50% European |
-| `santander_xs3242417106.json` | Santander | Phoenix Memory | C / GLE.PA / MS | 2Y quarterly | 10.6% p.a. | 50% European |
-| `santander_C_GLE.PA_MS.json` | Santander | Phoenix Memory | C / GLE.PA / MS | 2Y quarterly | 12.35% p.a. | 50% European |
-| `hsbc_xs3287776739.json` | HSBC | Phoenix Memory (single asset) | AMD | 18M quarterly | 18% p.a. | 55.5% European |
-| `barclays_xs3305367727.json` | Barclays | Reverse Convertible | ORCL / ADBE | 1Y monthly | 15.25% p.a. guaranteed | 50% European |
-| `bnp_paribas_pr00529720.json` | BNP Paribas | Phoenix One Star | DELL / IBM / MSFT | 1Y quarterly | 16% p.a. | 50% European |
-| `julius_baer_pr00529635.json` | Julius Baer | Phoenix Memory | DELL / IBM / MSFT | 1Y quarterly | 28% p.a. | 50% European |
-| `silex_autocall_consumo_wmt_mo_pm.json` | Silex (indic.) | Phoenix Memory | WMT / MO / PM | 2Y quarterly | 10.6% p.a. | 60% European |
-| `silex_autocall_servicios_nee_vz_etr.json` | Silex (indic.) | Phoenix Memory | NEE / VZ / ETR | 2Y quarterly | 10.5% p.a. | 60% European |
-| `silex_autocall_onestar_nflx_googl_meta.json` | Silex (indic.) | Phoenix One Star | NFLX / GOOGL / META | 2Y quarterly | 12.05% p.a. | 60% European |
-| `silex_autocall_zenith_wmt_tgt_dg.json` | Silex (indic.) | Zenith Phoenix | WMT / TGT / DG | 2Y quarterly | 11.7% p.a. | 70% European |
-| `participation_growth_spx_sx5e.json` | Generic Bank | Participation (full × linear) | SPX / SX5E | 3Y | — (130% up, +60% cap) | none |
-| `participation_cliquet_sx5e.json` | Generic Bank | Participation (cliquet) | SX5E | 3Y annual | — (annual, 8% cap) | none |
+| File | Type | Underlyings | Tenor | Coupon | KI |
+|------|------|-------------|-------|--------|-----|
+| `Blue Chip Autocall.json` | Phoenix | JPM / MSFT / PG | 2.5Y quarterly | 10% p.a. | 55% European |
+| `Broad Market Note.json` | Phoenix | SPY / IWM / FEZ | ~3Y semi-annual | 8% p.a. | 55% European |
+| `New Tech Note.json` | Phoenix | META / GOOGL | 12M quarterly | 14% p.a. | 60% European |
+| `Old Tech Note.json` | Phoenix | CSCO / DELL / NOK | 2Y quarterly | 40% p.a. | 50% European |
+| `Nota de Technologicas Chinas.json` | Phoenix | JD / BABA / BIDU | 18M quarterly | 14% p.a. | 50% European |
+| `Note de EV Chinas.json` | Phoenix | 1211.HK / XPEV | 18M monthly | 14.5% p.a. | 50% European |
 
 The Citi note demonstrates the step-down barrier (100% declining 3%/period from obs 3, floored at 88%) with a 12% p.a. premium paid only at autocall. The Barclays note pays a guaranteed coupon every month (`coupon_barrier = 0.0`). The BNP One Star note lifts coupon, autocall **and** final redemption when any single underlying ≥ 100% (`one_star_coupon` / `one_star_autocall` both on), whereas the BBVA and Silex One Star notes apply the overlay to the final-redemption rescue only. The four `silex_*` notes are thematic indicative baskets — defensive consumer (WMT/MO/PM), utilities & telecom (NEE/VZ/ETR), big-tech with a One Star overlay (NFLX/GOOGL/META), and a **Zenith** consumer note (WMT/TGT/DG) where an in-the-money worst-of adds uncapped upside participation on redemption. The two `participation_*` notes exercise the maturity-only Participation family: capital-protected growth (par floor × 130% linear upside capped at +60%) and an annual cliquet (100% floor, 8% per-period cap).
 
@@ -373,7 +362,7 @@ print(f"P(knock-in):   {output['prob_knock_in_total']:.2%}")
 ### Load a note from JSON
 
 ```python
-terms = NoteTerms.from_json(open("hsbc_xs3376563584.json").read())
+terms = NoteTerms.from_json(open("note_configs/Blue Chip Autocall.json").read())
 ```
 
 ### Historical Backtest

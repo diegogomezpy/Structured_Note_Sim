@@ -144,7 +144,7 @@ def render_pages(pdf_path: str, out_prefix: str, dpi: int = 120) -> list[str]:
 
 
 def main():
-    cfg_path = ROOT / "note_configs" / "hsbc_xs3287776739.json"
+    cfg_path = ROOT / "note_configs" / "Blue Chip Autocall.json"
     terms = NoteTerms.from_json(cfg_path.read_text())
 
     branding = json.loads((ROOT / "branding" / "branding_example.json").read_text())

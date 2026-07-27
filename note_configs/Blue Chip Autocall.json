@@ -1,0 +1,74 @@
+{
+  "name": "Blue Chip Autocall",
+  "issuer": "Santander",
+  "maturity": 2.5,
+  "payment_freq": "quarterly",
+  "coupon_pa": 0.1,
+  "coupon_barrier": 0.55,
+  "autocall_barrier": 1,
+  "autocall_start_period": 1,
+  "knock_in_barrier": 0.55,
+  "principal_protection": 1,
+  "memory": true,
+  "coupon_basket": "worst_of",
+  "autocall_basket": "worst_of",
+  "one_star_level": null,
+  "one_star_coupon": false,
+  "one_star_autocall": false,
+  "call_steepness": null,
+  "autocall_step_down": 0.05,
+  "autocall_floor": 0.75,
+  "coupon_at_autocall_only": false,
+  "zenith": false,
+  "note_type": "phoenix",
+  "participation_downside": "full",
+  "participation_upside": "linear",
+  "participation_basket": "worst_of",
+  "protection_level": 1,
+  "participation_rate": 1,
+  "participation_strike": 1,
+  "knockout_level": null,
+  "knockout_payout": 1,
+  "digital_payout": 0,
+  "participation_periodic": false,
+  "period_cap": null,
+  "capital_guarantee": 0,
+  "upside_cap": null,
+  "note_description": "",
+  "issuer_description": "Banco Santander, S.A. ofrece diversos productos y servicios financieros a particulares, pequeñas y medianas empresas, grandes corporaciones y entidades públicas en todo el mundo. La compañía opera a través de cinco segmentos: banca minorista y comercial, banca de consumo digital, banca corporativa y de inversión, gestión patrimonial y seguros, y pagos. Ofrece depósitos a la vista y a plazo, fondos mutuos y cuentas corrientes y de ahorro; hipotecas, financiación al consumo, préstamos y diversas soluciones de financiación; y financiación de proyectos, mercados de capitales de deuda, banca de transacciones globales y servicios de finanzas corporativas. La empresa también ofrece tarjetas de crédito y débito, préstamos inmobiliarios, microfinanzas y préstamos para automóviles; servicios de banca corporativa y de inversión; asesoramiento en fusiones y adquisiciones; servicios de gestión de patrimonio, activos y riesgos; y pagos digitales y soluciones tecnológicas. Además, participa en las actividades de titulización, arrendamiento, gestión de carteras, comercio electrónico, transporte aéreo, alquiler de aeronaves, software, consultoría, gestión de fondos y inversiones, energías renovables, alquiler de vehículos, seguros, publicidad, marketing, telemercadeo, automoción, agricultura, factoring, corretaje e inversión de valores, gestión de fondos de pensiones, intermediación comercial, fondos de capital riesgo, alquiler, restauración, producción de electricidad, TI, Internet y asesoramiento financiero y otras actividades; gestión y otras actividades inmobiliarias; y compra y venta de vehículos. Además, la empresa ofrece servicios de banca móvil y en línea. Banco Santander, S.A. se conocía anteriormente como Banco Santander Central Hispano SA y cambió su nombre a Banco Santander, S.A. en febrero de 2007. La empresa fue constituida en 1856 y tiene su sede en Madrid, España.",
+  "issuer_rating_sp": "A+",
+  "issuer_rating_moody": "A1",
+  "issuer_rating_fitch": "A+",
+  "tickers": {
+    "JPM": "JPMorgan Chase & Co",
+    "MSFT": "Microsoft Corp",
+    "PG": "Procter & Gamble Co"
+  },
+  "issue_date": "2026-07-24",
+  "underlyings": {
+    "JPMorgan Chase & Co": {
+      "description": "JPMorgan Chase & Co. opera como un holding bancario y financiero en los Estados Unidos, el resto de América del Norte, Europa, Medio Oriente, África, Asia Pacífico, América Latina y el Caribe. Opera en tres segmentos: banca comunitaria y de consumo, banca comercial y de inversión y gestión de activos y patrimonio. La empresa ofrece productos de depósito, inversión y préstamo, y gestión de efectivo; actividades de originación y servicio de hipotecas; hipotecas residenciales y préstamos sobre el valor líquido de la vivienda; y tarjetas de crédito, soluciones de pago, servicios de viajes, ofertas comerciales, beneficios de estilo de vida, préstamos para automóviles y arrendamientos a consumidores y pequeñas empresas a través de sucursales bancarias, cajeros automáticos y banca digital y telefónica. También ofrece productos y servicios de banca de inversión, creación de mercado, financiación, custodia y valores; asesoramiento sobre estrategia y estructura corporativa, obtención de capital en el mercado de acciones y deuda, y servicios de originación y sindicación de préstamos; efectivo e instrumentos derivados, soluciones de gestión de riesgos, corretaje principal, compensación e investigación; y servicios de fondos, servicios de liquidez y comercio, y productos de soluciones de datos para grandes corporaciones, instituciones financieras, comerciantes, nuevas empresas, pequeñas y medianas empresas, gobiernos locales, municipios, organizaciones sin fines de lucro y clientes de bienes raíces comerciales. Además, la empresa ofrece soluciones de gestión de inversiones multiactivos en renta variable, renta fija, alternativas y fondos del mercado monetario a clientes institucionales e inversores minoristas; productos y servicios de jubilación, planificación patrimonial, préstamos, depósitos y productos de gestión de inversiones para clientes de alto patrimonio; y procesamiento de transacciones financieras. JPMorgan Chase & Co. fue fundada en 1799 y tiene su sede en Nueva York, Nueva York.",
+      "analyst": {
+        "buy": 54.5,
+        "hold": 45.5,
+        "sell": 0
+      }
+    },
+    "Microsoft Corp": {
+      "description": "Microsoft Corporation desarrolla y brinda soporte a software, servicios, dispositivos y soluciones en todo el mundo. El segmento de Productividad y Procesos de Negocio ofrece Microsoft 365 comercial, movilidad empresarial + seguridad, windows comercial, power BI, exchange, sharepoint, equipos de Microsoft, seguridad y cumplimiento, y copiloto; Productos comerciales de Microsoft 365, como servicios comerciales con licencia de oficina y locales de Windows; Productos de consumo y servicios en la nube de Microsoft 365, incluidas suscripciones de consumo de Microsoft 365, licencias de oficina locales y otros servicios de consumo; LinkedIn; productos dinámicos y servicios en la nube, como Dynamics 365, aplicaciones basadas en la nube y aplicaciones ERP y CRM locales. Su segmento de Nube Inteligente ofrece productos de Servidor y servicios en la nube que incluyen Azure y otros servicios en la nube, GitHub, Nuance Healthcare, ofertas de escritorio virtual y otros servicios en la nube; productos de servidor, incluidos SQL y Windows Server, licencias de acceso de cliente relacionadas con Visual Studio y System Center, y otras ofertas locales; Servicios empresariales y de socios, como soporte empresarial y servicios profesionales de matices, soluciones industriales, red de socios de Microsoft y experiencia de aprendizaje. El segmento de Computación personal proporciona ventanas y dispositivos, como licencias y dispositivos OEM de Windows y accesorios de superficie y PC; servicios y soluciones de juegos, como hardware, contenido y servicios de Xbox, contenido propio y de terceros, Xbox Game Pass, suscripciones y juegos en la nube, publicidad y otros servicios en la nube; Servicios de búsqueda y publicidad de noticias. Vende sus productos a través de fabricantes de equipos originales, distribuidores y revendedores; y tiendas minoristas y en línea. La empresa mantiene una colaboración estratégica con Mayo Clinic, Inc. para el desarrollo de un modelo de IA de vanguardia para la atención sanitaria; y Global Objects, Inc. para construir un modelo mundial de IA generativa basado en la recuperación. La empresa fue fundada en 1975 y tiene su sede en Redmond, Washington.",
+      "analyst": {
+        "buy": 94.5,
+        "hold": 4.1,
+        "sell": 1.4
+      }
+    },
+    "Procter & Gamble Co": {
+      "description": "Procter & Gamble Company ofrece productos de consumo envasados ​​de marca en todo el mundo. Opera a través de la Belleza; Aseo; Cuidado de la salud; Telas y cuidado del hogar; y segmentos de cuidado del bebé, femenino y familiar. La empresa ofrece acondicionadores, champús, productos para el peinado y tratamientos bajo las marcas Head & Shoulders, Herbal Essences, Pantene y Rejoice; antitranspirantes, desodorantes y productos de limpieza personal de las marcas Native, Old Spice, Safeguard y Secret; y humectantes, limpiadores y tratamientos faciales bajo las marcas Olay y SK-II. También ofrece hojas, maquinillas de afeitar, productos de afeitado, electrodomésticos y otros productos de aseo bajo las marcas Braun, Gillette y Venus. Además, la empresa ofrece cepillos de dientes, pastas de dientes y otros productos para el cuidado bucal bajo las marcas Crest y Oral-B; y productos gastrointestinales, para aliviar el dolor, diagnóstico rápido, respiratorios, vitaminas/minerales/suplementos y otros productos para el cuidado de la salud personal bajo las marcas Metamucil, Neurobion, Pepto-Bismol y Vicks. Además, ofrece mejoradores de telas y aditivos y detergentes para ropa bajo las marcas Ariel, Downy, Gain y Tide; y cuidado del aire y de los platos, profesional de P&G y cuidado de superficies bajo las marcas Cascade, Dawn, Fairy, Febreze, Mr. Clean y Swiffer. Además, la empresa ofrece toallitas húmedas para bebés y pañales y pantalones con cinta adhesiva bajo las marcas Luvs y Pampers; productos para el cuidado menstrual y la incontinencia de adultos de las marcas Always, Always Discreet y Tampax; y toallas de papel, pañuelos y papel higiénico de las marcas Bounty, Charmin y Puffs. Vende sus productos a través de comerciantes masivos, canales sociales y de comercio electrónico, tiendas de comestibles y de belleza especializadas, tiendas de clubes de membresía, farmacias y grandes almacenes, distribuidores, mayoristas, tiendas libres de impuestos y de alta frecuencia en aeropuertos, farmacias, tiendas de electrónica y canales profesionales, así como directamente a los consumidores. Procter & Gamble Company fue fundada en 1837 y tiene su sede en Cincinnati, Ohio.",
+      "analyst": {
+        "buy": 57.1,
+        "hold": 39.3,
+        "sell": 3.6
+      }
+    }
+  }
+}
