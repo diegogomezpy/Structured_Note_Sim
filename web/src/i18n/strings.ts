@@ -476,6 +476,7 @@ export const S: Dict = {
   cmp_duplicate_a:  { en: 'Duplicate Note A', es: 'Duplicar Nota A' },
   cmp_load_b:       { en: 'Load a saved note as B', es: 'Cargar una nota guardada como B' },
   cmp_edit_b:       { en: 'Edit Note B', es: 'Editar Nota B' },
+  cmp_upload_b:     { en: 'Upload as B', es: 'Subir como B' },
   cmp_run:          { en: 'Run comparison', es: 'Ejecutar comparación' },
   cmp_rerun:        { en: 'Re-run comparison', es: 'Volver a comparar' },
   cmp_stale:        { en: 'Terms changed since this comparison — re-run to refresh.', es: 'Los términos cambiaron desde esta comparación — vuelve a ejecutar para actualizar.' },

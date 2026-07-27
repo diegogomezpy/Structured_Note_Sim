@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import { api } from '../api/client'
 import { useI18n } from '../i18n/I18nProvider'
 import type { BacktestResult, CompareResult, ConfigMeta, LiveResult, NoteTerms } from '../api/types'
@@ -9,7 +9,9 @@ import Icon from './Icon'
 import NoteTimeline from './NoteTimeline'
 import SettingsOverlay from './SettingsOverlay'
 import ErrorState from './ErrorState'
+import FolderConnect from './FolderConnect'
 import { Select } from './fields'
+import { useLocalFolder } from '../lib/localFolder'
 import { pct, pctSigned, num } from '../lib/format'
 import { noteSummary } from '../lib/terms'
 
@@ -86,15 +88,46 @@ export default function ComparePanel({ terms, opts, cppAvailable, configs, varia
   const sig = useMemo(() => JSON.stringify({ a: terms, b: variantB, o: opts }), [terms, variantB, opts])
   const stale = !!result && ranSig !== '' && ranSig !== sig
 
+  // The user's own folder of note configs — SAME persisted handle as the setup
+  // rail (keyed 'note-configs'), so whatever they can load as A is loadable as B.
+  // Without this the picker only offered the handful of examples bundled in the
+  // repo, which is not where anyone's real notes live.
+  const local = useLocalFolder('note-configs')
+  const fileRef = useRef<HTMLInputElement>(null)
+
   const dupA = () => {
     setVariantB({ ...structuredClone(terms), name: `${terms.name || t('cmp_note_b')} (B)` })
     setResult(null); setBt(null); setLive(null)
   }
-  const loadB = async (file: string) => {
+  /** Adopt a loaded note as B and drop any results priced against the old one. */
+  const adoptB = (t: NoteTerms) => {
+    setVariantB(t); setResult(null); setBt(null); setLive(null)
+  }
+  /** Load B from the picker. Entries are either a repo-bundled example (the file
+      name) or one of the user's own folder notes (`local:<name>`), which arrives as
+      raw JSON and goes through the same parse endpoint the rail uses — so a legacy
+      or hand-written config is migrated by NoteTerms.from_dict, not trusted as-is. */
+  const loadB = async (value: string) => {
+    if (!value) return
+    setError('')
+    try {
+      if (value.startsWith('local:')) {
+        const f = local.files.find((x) => `local:${x.name}` === value)
+        if (!f) return
+        adoptB(await api.parseConfig(f.raw))
+      } else {
+        adoptB(await api.config(value))
+      }
+    } catch (e) { setError(String(e instanceof Error ? e.message : e)) }
+  }
+  /** One-off JSON upload — the fallback that works with no folder connected at
+      all (and on browsers without the File System Access API). */
+  const uploadB = async (file: File | undefined) => {
     if (!file) return
     setError('')
-    try { setVariantB(await api.config(file)); setResult(null); setBt(null); setLive(null) }
-    catch (e) { setError(String(e instanceof Error ? e.message : e)) }
+    try { adoptB(await api.parseConfig(JSON.parse(await file.text()))) }
+    catch { setError(t('upload_invalid')) }
+    if (fileRef.current) fileRef.current.value = ''
   }
 
   const runCompare = async () => {
@@ -198,9 +231,19 @@ export default function ComparePanel({ terms, opts, cppAvailable, configs, varia
             <button className="btn" onClick={dupA}><Icon name="upload" size={13} /> {t('cmp_duplicate_a')}</button>
             <div style={{ minWidth: 220 }}>
               <Select value={''} ariaLabel={t('cmp_load_b')} placeholder={t('cmp_load_b')}
-                      options={[{ value: '', label: t('cmp_load_b') }, ...configs.map((c) => ({ value: c.file, label: c.name }))]}
+                      options={[
+                        { value: '', label: t('cmp_load_b') },
+                        ...local.files.map((f) => ({ value: `local:${f.name}`, label: `${f.name} ${t('folder_tag')}` })),
+                        ...configs.map((c) => ({ value: c.file, label: c.name })),
+                      ]}
                       onChange={loadB} />
             </div>
+            <button className="btn" onClick={() => fileRef.current?.click()}
+                    title={t('upload_config_hint')} aria-label={t('cmp_upload_b')}>
+              <Icon name="upload" size={13} /> {t('cmp_upload_b')}
+            </button>
+            <input ref={fileRef} type="file" accept="application/json,.json" style={{ display: 'none' }}
+                   onChange={(e) => uploadB(e.target.files?.[0])} />
             {variantB && (
               <button className="btn" onClick={() => setEditingB(true)}><Icon name="chart" size={13} /> {t('cmp_edit_b')}</button>
             )}
@@ -210,6 +253,12 @@ export default function ComparePanel({ terms, opts, cppAvailable, configs, varia
               {result ? t('cmp_rerun') : t('cmp_run')}
             </button>
           </div>
+          {/* Same folder controls as the setup rail, on the same persisted handle:
+              connect / reconnect / refresh. Without this a user who granted access
+              from the rail could still land here with an empty picker, because each
+              panel holds its own copy of the folder state. */}
+          <FolderConnect fld={local} />
+
           {variantB && (
             <div style={{ fontSize: 12, color: 'var(--text-muted)', lineHeight: 1.5 }}>{noteSummary(variantB, t)}</div>
           )}
