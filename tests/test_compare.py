@@ -48,6 +48,15 @@ def test_share_blockers_name_the_offending_term(over, blocker):
     assert share_blockers(_terms(), _terms(**over)) == [blocker]
 
 
+def test_reordered_underlyings_still_share_paths():
+    """A basket is a SET. The same two underlyings listed in a different order is
+    the same note — worst-of / best-of / average all reduce across assets — so it
+    must not block a shared simulation."""
+    a = _terms(tickers={"SBUX": "Starbucks", "GE": "General Electric"})
+    b = _terms(tickers={"GE": "General Electric", "SBUX": "Starbucks"})
+    assert share_blockers(a, b) == []
+
+
 def test_seasoned_notes_need_the_same_issue_date():
     a = _terms(seasoned=True, issue_date="2024-01-15")
     b = _terms(seasoned=True, issue_date="2024-06-15")

@@ -155,6 +155,19 @@ export default function PdfDesigner({ studio, terms }: {
               })}
             </div>
           </div>
+
+          {/* How the cover + summary sub-lines name the underlyings. Symbols are
+              compact and unambiguous; full names read better to a client who
+              doesn't live on a terminal. The logo badges stay tickers either way
+              — they're sized for 4–5 characters. */}
+          <div style={{ marginTop: 16 }}>
+            <div style={{ fontSize: 11.5, color: 'var(--text-muted)', marginBottom: 2 }}>{t('underlying_labels')}</div>
+            <div style={{ fontSize: 11, color: 'var(--text-faint)', marginBottom: 8, lineHeight: 1.5 }}>{t('underlying_labels_hint')}</div>
+            <Segmented value={(b.underlying_labels as string) === 'name' ? 'name' : 'ticker'}
+                       options={[{ value: 'ticker', label: t('underlying_labels_ticker') },
+                                 { value: 'name', label: t('underlying_labels_name') }]}
+                       onChange={(v) => set('underlying_labels', v as never)} />
+          </div>
         </Card>
 
         <Card id="colors" title={t('brand_colors')} desc={t('brand_palette_hint')}>

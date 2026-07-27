@@ -166,6 +166,8 @@ _KNOWN_BRANDING_KEYS = {
     "chart_bg_color", "chart_grid_color", "chart_axis_color", "chart_label_color",
     "chart_text_color", "chart_font_size", "chart_series_colors",
     "chart_band_opacity", "chart_line_width",
+    "underlying_labels",    # NEW — "ticker" (default) or "name": how the cover and
+                            # summary sub-lines name the underlyings
     "report_theme",         # NEW — visual-identity theme name (pdf_theme.resolve_theme);
                             # e.g. "cadiem" (hexagon) or "mercator" (default). Absent
                             # / unknown falls back to the default theme.
@@ -2434,6 +2436,22 @@ def _position_rows(terms, lang: str) -> list[tuple[str, str]]:
     return rows
 
 
+def _underlying_labels(pdf, terms, asset_names=None, logo_tickers=None) -> list[str]:
+    """How to name the underlyings in running text — exchange SYMBOLS by default,
+    display NAMES when branding sets `underlying_labels: "name"`.
+
+    `terms.tickers` is {symbol: display name}, so both are already to hand. Two
+    call shapes: from the cover (terms only) and from the summary masthead, which
+    works in display names and carries a {name: symbol} map to get back."""
+    by_name = bool(getattr(pdf, "underlying_labels", "ticker") == "name")
+    if asset_names is not None:
+        if by_name:
+            return [str(nm) for nm in asset_names]
+        return [(logo_tickers or {}).get(nm) or str(nm)[:5].upper() for nm in asset_names]
+    tk = getattr(terms, "tickers", {}) or {}
+    return [str(v) for v in tk.values()] if by_name else [str(k) for k in tk.keys()]
+
+
 def _term_rows(terms, lang: str) -> list[tuple[str, str]]:
     if _is_participation(terms):
         return _participation_term_rows(terms, lang)
@@ -2806,8 +2824,8 @@ def _front_cover_page(pdf: _NotePDF, terms, lang: str, report_title: str, websit
     pdf.set_xy(ml, hero_y + 9)
     pdf.set_text_color(255, 255, 255)
     pdf.multi_cell(inner, _ts * 0.40, _name, align="L")
-    # Tickers sub-line (muted mint).
-    _tk = " / ".join(str(tk) for tk in (getattr(terms, "tickers", {}) or {}).keys())
+    # Underlyings sub-line (muted mint) — symbols or display names per branding.
+    _tk = " / ".join(_underlying_labels(pdf, terms))
     if _tk:
         pdf.ln(2)
         pdf.set_x(ml)
@@ -3064,8 +3082,7 @@ def _cover_page(
         pdf.set_xy(x0 + pad, y_m + 9.5)
         pdf.multi_cell(avail, 6.0, _name, align="L")
         _sub_y = pdf.get_y() + 1.5
-    _tk = " / ".join((logo_tickers or {}).get(nm) or str(nm)[:5].upper()
-                     for nm in (asset_names or []))
+    _tk = " / ".join(_underlying_labels(pdf, None, asset_names or [], logo_tickers))
     _sub = pdf.report_title or _t("series_title", lang)
     if _tk:
         _sub = f"{_sub}  ·  {_tk}"
@@ -4168,6 +4185,11 @@ def _build_pdf_report(
     # explicit empty list → show none (the whole strip can be turned off).
     _cm = _b.get("cover_metrics")
     pdf.cover_metrics = list(_cm) if isinstance(_cm, (list, tuple)) else None
+    # How the cover / summary sub-lines name the underlyings. "ticker" (the
+    # default, and the historical behaviour) prints the exchange symbols; "name"
+    # prints the display names from the note's `tickers` map. Anything else falls
+    # back to "ticker" so a stray value can't blank the line.
+    pdf.underlying_labels = "name" if _b.get("underlying_labels") == "name" else "ticker"
     # Cover logo / emblem placement — all % of page (None ⇒ theme default). Read
     # here and applied in `_front_cover_page`; absent values reproduce the
     # original fixed placement byte-for-byte.

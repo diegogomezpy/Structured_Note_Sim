@@ -857,27 +857,64 @@ def _pct_bar(values, edges, name, color, tr_fmt: str, *, denom: int | None = Non
         hovertemplate=f"{name}: {tr_fmt}<extra></extra>")
 
 
-def build_irr_compare(a_irrs, b_irrs, exp_a, exp_b, tr: Translator) -> go.Figure:
-    """Overlaid IRR-p.a. distributions for two notes (A vs B), each note's
-    expected IRR marked. Semi-transparent overlay so both shapes read at once."""
-    A = np.asarray(a_irrs, dtype=float) * 100.0
-    B = np.asarray(b_irrs, dtype=float) * 100.0
-    edges = _bin_edges(A, B)
-    fig = go.Figure()
-    for x, name, color in ((A, tr("cmp_note_a"), _CMP_A), (B, tr("cmp_note_b"), _CMP_B)):
-        fig.add_trace(_pct_bar(x, edges, name, color, "%{x:.1f}%"))
-    for x, color in ((exp_a, _CMP_A), (exp_b, _CMP_B)):
-        if x is not None:
-            fig.add_vline(x=float(x) * 100.0, line=dict(color=color, width=1.5, dash="dash"))
+def _cmp_buckets(note) -> tuple[list[str], list[np.ndarray]]:
+    """The three economic outcomes, as boolean masks over a note's paths — the
+    same split `_build_irr_discrete` uses, so A/B reads like the Monte Carlo."""
+    irr = np.asarray(note["annualized_returns"], dtype=float)
+    ac = np.asarray(note.get("autocall_events", note.get("autocall_period")), dtype=int)
+    loss = irr < 0
+    called = (ac > 0) & ~loss
+    return ["chart_irr_bucket_autocall", "chart_irr_bucket_maturity", "chart_irr_bucket_loss"], \
+           [called, ~called & ~loss, loss]
+
+
+def build_irr_compare(note_a, note_b, tr: Translator) -> go.Figure:
+    """A vs B as a DISCRETE outcome breakdown, not overlaid histograms.
+
+    Same reasoning as `build_irr_distribution`: a structured note concentrates
+    almost all of its mass on a handful of outcomes, so a continuous histogram
+    collapses into one spike in an empty grid and reads as a render glitch. One
+    grouped pair of bars per outcome instead — panel 1 how likely it is under
+    each note, panel 2 what it pays under each."""
+    keys, masks_a = _cmp_buckets(note_a)
+    _, masks_b = _cmp_buckets(note_b)
+    labels = [tr(k) for k in keys]
+    na, nb = len(masks_a[0]), len(masks_b[0])
+    tot_a = np.asarray(note_a["total_returns"], dtype=float)
+    tot_b = np.asarray(note_b["total_returns"], dtype=float)
+
+    # Drop outcomes neither note ever reaches — no empty bars in an empty grid.
+    keep = [i for i in range(3) if masks_a[i].any() or masks_b[i].any()]
+    labels = [labels[i] for i in keep]
+    p_a = [float(masks_a[i].sum()) / na for i in keep]
+    p_b = [float(masks_b[i].sum()) / nb for i in keep]
+    r_a = [float(tot_a[masks_a[i]].mean()) if masks_a[i].any() else 0.0 for i in keep]
+    r_b = [float(tot_b[masks_b[i]].mean()) if masks_b[i].any() else 0.0 for i in keep]
+
+    fig = make_subplots(rows=1, cols=2, horizontal_spacing=0.16,
+                        subplot_titles=[tr("chart_disc_prob_panel"), tr("cmp_mean_return_panel")])
+    for col, (va, vb, fmt) in enumerate(((p_a, p_b, "{:.1%}"), (r_a, r_b, "{:+.1%}")), start=1):
+        for vals, name, color in ((va, tr("cmp_note_a"), _CMP_A), (vb, tr("cmp_note_b"), _CMP_B)):
+            fig.add_trace(go.Bar(
+                x=labels, y=vals, name=name, marker_color=color, marker_line_width=0,
+                text=[fmt.format(v) for v in vals], textposition="outside",
+                cliponaxis=False, textfont=dict(size=11),
+                legendgroup=name, showlegend=(col == 1),
+                hovertemplate=f"{name} · %{{x}}: %{{y:.1%}}<extra></extra>",
+            ), row=1, col=col)
+    fig.update_yaxes(tickformat=".0%", range=[0, 1.12], row=1, col=1)
+    _vals = r_a + r_b
+    lo, hi = min(0.0, min(_vals)), max(0.0, max(_vals))
+    pad = (hi - lo) * 0.22 or 0.05
+    fig.update_yaxes(tickformat=".0%", range=[lo - pad, hi + pad], row=1, col=2)
+    fig.update_xaxes(type="category")
     fig.update_layout(
-        title=tr("cmp_irr_dist"), barmode="overlay", bargap=0,
-        xaxis=dict(title=tr("cmp_irr_axis"), ticksuffix="%"),
-        yaxis=dict(title=tr("cmp_pct_paths"), ticksuffix="%"),
-        legend=dict(orientation="h", yanchor="top", y=-0.2, xanchor="center", x=0.5,
+        title=tr("cmp_irr_dist"), barmode="group", bargap=0.28, bargroupgap=0.08,
+        legend=dict(orientation="h", yanchor="top", y=-0.18, xanchor="center", x=0.5,
                     bgcolor="rgba(0,0,0,0)"),
     )
     _apply_theme(fig)
-    fig.update_layout(margin=dict(l=52, r=24, t=52, b=64))
+    fig.update_layout(margin=dict(l=52, r=24, t=62, b=62))
     return fig
 
 
@@ -915,10 +952,13 @@ def build_outcome_compare(note_a, note_b, terms_a, terms_b, tr: Translator) -> g
         redeemed = max(0.0, float(note.get("prob_maturity") or 0.0)
                        - float(note.get("prob_knock_in_total") or 0.0))
         ki = float(note.get("prob_knock_in_total") or 0.0)
+        # Deliberately far apart in hue AND lightness: a brand palette can push
+        # two "nearby" colours together until the legend is unreadable, which is
+        # exactly what a blue/green pair did here.
         for name, frac, color, grp in (
-            (tr("autocalled_early"), ac, "#2563eb", "ac"),
-            (tr("redeemed_at_par"), redeemed, "#16a34a", "par"),
-            (tr("knocked_in"), ki, "#dc2626", "ki"),
+            (tr("autocalled_early"), ac, "#1d4ed8", "ac"),      # deep blue
+            (tr("redeemed_at_par"), redeemed, "#0d9488", "par"),  # teal
+            (tr("knocked_in"), ki, "#dc2626", "ki"),             # red
         ):
             if frac <= 0.002:
                 continue
@@ -950,34 +990,44 @@ def build_outcome_compare(note_a, note_b, terms_a, terms_b, tr: Translator) -> g
 # quantity rather than a difference of two independent averages. These builders
 # visualise that difference; api/engine.py:_paired_stats computes the numbers.
 
-def build_paired_delta(delta, mean_delta, tr: Translator) -> go.Figure:
-    """Distribution of the per-path edge (B − A total return). The mass either
-    side of zero IS the win rate, so the sign split is coloured rather than
-    left to the reader."""
-    d = np.asarray(delta, dtype=float) * 100.0
-    edges = _bin_edges(d, n_bins=70)
-    pos, neg = d[d > 0], d[d <= 0]
-    fig = go.Figure()
-    # Both halves normalise against the FULL path count, so the two areas are
-    # directly comparable — that ratio is the win rate, and per-trace
-    # normalisation would inflate whichever side has fewer paths.
-    for x, name, color in ((neg, tr("cmp_a_wins"), _CMP_A), (pos, tr("cmp_b_wins"), _CMP_B)):
-        if not x.size:
-            continue
-        fig.add_trace(_pct_bar(x, edges, name, color, "%{x:.1f}%",
-                               denom=int(d.size), opacity=0.75))
-    fig.add_vline(x=0.0, line=dict(color=_GREY, width=1.5))
-    if mean_delta is not None:
-        fig.add_vline(x=float(mean_delta) * 100.0, line=dict(color="#111827", width=1.5, dash="dash"),
-                      annotation_text=tr("cmp_mean_edge"), annotation_position="top right")
+def build_paired_delta(note_a, note_b, tr: Translator) -> go.Figure:
+    """WHERE B's edge comes from: the mean per-path edge (B − A) within each of
+    A's outcomes, with how often B wins inside that outcome.
+
+    A histogram of the edge has the same failure as a histogram of the IRR — the
+    edge is near-constant on the paths that autocall, so the mass piles into one
+    or two spikes. Bucketing by outcome says the useful thing instead: whether B
+    is better in the good states, the bad ones, or across the board."""
+    keys, masks = _cmp_buckets(note_a)
+    ta = np.asarray(note_a["total_returns"], dtype=float)
+    tb = np.asarray(note_b["total_returns"], dtype=float)
+    d = tb - ta
+    keep = [i for i in range(3) if masks[i].any()]
+    labels = [tr(keys[i]) for i in keep]
+    edges = [float(d[masks[i]].mean()) for i in keep]
+    wins = [float((d[masks[i]] > 1e-12).mean()) for i in keep]
+    share = [float(masks[i].mean()) for i in keep]
+    # Colour by who the edge favours, so the direction reads before the number.
+    colors = [_CMP_B if e >= 0 else _CMP_A for e in edges]
+
+    fig = go.Figure(go.Bar(
+        x=labels, y=edges, marker_color=colors, marker_line_width=0, width=0.5,
+        text=[f"{e:+.2%}" for e in edges], textposition="outside",
+        cliponaxis=False, textfont=dict(size=12), showlegend=False,
+        customdata=np.column_stack([wins, share]),
+        hovertemplate=(f"%{{x}}<br>{tr('cmp_edge_hover')}: %{{y:+.2%}}"
+                       f"<br>{tr('cmp_win_rate')}: %{{customdata[0]:.0%}}"
+                       f"<br>{tr('cmp_share_hover')}: %{{customdata[1]:.0%}}<extra></extra>")))
+    fig.add_hline(y=0.0, line=dict(color=_GREY, width=1.2))
+    lo, hi = min(0.0, min(edges)), max(0.0, max(edges))
+    pad = (hi - lo) * 0.26 or 0.02
     fig.update_layout(
-        title=tr("cmp_delta_title"), barmode="overlay", bargap=0,
-        xaxis=dict(title=tr("cmp_delta_axis"), ticksuffix="%"),
-        yaxis=dict(title=tr("cmp_pct_paths"), ticksuffix="%"),
-        legend=dict(orientation="h", yanchor="top", y=-0.2, xanchor="center", x=0.5,
-                    bgcolor="rgba(0,0,0,0)"))
+        title=tr("cmp_delta_title"),
+        xaxis=dict(title=tr("cmp_outcome_axis"), type="category"),
+        yaxis=dict(title=tr("cmp_delta_axis"), tickformat=".0%", range=[lo - pad, hi + pad]),
+        bargap=0.4)
     _apply_theme(fig)
-    fig.update_layout(margin=dict(l=52, r=24, t=52, b=64))
+    fig.update_layout(margin=dict(l=58, r=24, t=52, b=56))
     return fig
 
 
@@ -993,8 +1043,14 @@ def build_paired_scatter(a_vals, b_vals, tr: Translator, *, max_points: int = 25
     # serialised payload several-fold versus full float64 repr.
     A = np.round(A[::stride][:max_points], 2)
     B = np.round(B[::stride][:max_points], 2)
-    lo = float(min(A.min(), B.min())); hi = float(max(A.max(), B.max()))
-    pad = max((hi - lo) * 0.04, 0.5)
+    # Clip to the 1st–99th percentile of the union. A handful of deep knock-in
+    # paths otherwise stretch the axes so far that the bulk of the cloud is a dot
+    # in the corner — the same failure the histograms had.
+    both = np.concatenate([A, B])
+    lo = float(np.percentile(both, 1)); hi = float(np.percentile(both, 99))
+    if hi - lo < 1e-9:
+        lo, hi = lo - 1.0, hi + 1.0
+    pad = max((hi - lo) * 0.06, 0.5)
     lo, hi = lo - pad, hi + pad
     fig = go.Figure()
     fig.add_trace(go.Scatter(
@@ -1082,7 +1138,8 @@ def build_wof_fan_compare(bands_a, bands_b, t_grid, knock_in, tr: Translator,
         legend=dict(orientation="h", yanchor="top", y=-0.2, xanchor="center", x=0.5,
                     bgcolor="rgba(0,0,0,0)"))
     _apply_theme(fig)
-    fig.update_layout(margin=dict(l=56, r=24, t=52, b=64))
+    # Rotated y-axis title needs more room than the shared default, or it clips.
+    fig.update_layout(margin=dict(l=76, r=24, t=52, b=64))
     return fig
 
 

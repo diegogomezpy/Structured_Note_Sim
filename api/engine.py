@@ -1013,9 +1013,7 @@ def run_compare(terms_a: NoteTerms, terms_b: NoteTerms, *, n_paths: int = 10000,
     side_b = {"summary": _mc_summary(sf_b, note_b, terms_b)}
 
     figures = {
-        "irr": _fig(charts.build_irr_compare(
-            note_a["annualized_returns"], note_b["annualized_returns"],
-            note_a["expected_irr"], note_b["expected_irr"], tr)),
+        "irr": _fig(charts.build_irr_compare(note_a, note_b, tr)),
         "outcome": _fig(charts.build_outcome_compare(note_a, note_b, terms_a, terms_b, tr)),
         "fan": _fig(charts.build_wof_fan_compare(
             sf_a["wof_bands"], sf_b["wof_bands"], sf_a["t_grid"],
@@ -1024,9 +1022,7 @@ def run_compare(terms_a: NoteTerms, terms_b: NoteTerms, *, n_paths: int = 10000,
     paired = None
     if shared:
         paired = _paired_stats(note_a, note_b, terms_a, terms_b)
-        figures["delta"] = _fig(charts.build_paired_delta(
-            np.asarray(note_b["total_returns"]) - np.asarray(note_a["total_returns"]),
-            paired["mean_edge"], tr))
+        figures["delta"] = _fig(charts.build_paired_delta(note_a, note_b, tr))
         figures["scatter"] = _fig(charts.build_paired_scatter(
             note_a["annualized_returns"], note_b["annualized_returns"], tr))
         figures["transition"] = _fig(charts.build_transition_heatmap(
@@ -2021,9 +2017,7 @@ def _compare_for_pdf(sf_a: dict, terms_a: NoteTerms, terms_b: NoteTerms, tr, *,
         "terms_b": terms_b,   # NoteTerms object (in-process) for the side-by-side terms table
     }
     figs = {
-        "irr": charts.build_irr_compare(
-            note_a["annualized_returns"], note_b["annualized_returns"],
-            note_a["expected_irr"], note_b["expected_irr"], tr),
+        "irr": charts.build_irr_compare(note_a, note_b, tr),
         "outcome": charts.build_outcome_compare(note_a, note_b, terms_a, terms_b, tr),
     }
     return data, figs

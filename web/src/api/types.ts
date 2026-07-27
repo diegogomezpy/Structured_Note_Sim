@@ -572,6 +572,7 @@ export interface Branding {
   back_image_base64?: string      // full-bleed photo for the disclaimer back page
   filler_images_base64?: string[] // pool of report photos: cover/back fallback + void-filler bands cycle through it
   cover_metrics?: string[]        // which KEY TERMS show on the at-a-glance cover rail (order = render order)
+  underlying_labels?: 'ticker' | 'name'   // how the cover/summary sub-lines name the underlyings
   cover_overlay_color?: string    // overlay colour over the cover/back photo
   cover_overlay_opacity?: string | number  // 0..1
   // Chart/graph styling — threaded into every figure via charts.set_chart_options

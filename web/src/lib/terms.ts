@@ -261,12 +261,19 @@ function fmtDiff(field: string, kind: DiffFmt, v: unknown, tr: (k: string) => st
 export function termDiffRows(a: NoteTerms, b: NoteTerms, tr: (k: string) => string):
     { label: string; a: string; b: string }[] {
   const norm = (v: unknown) => (v == null || v === '' || v === false || v === 0 ? null : v)
+  // A basket is a SET: the same underlyings listed in a different order is the
+  // same note, and the payoff agrees (worst-of / best-of / average all reduce
+  // across assets). JSON.stringify preserves insertion order, so compare a
+  // sorted key instead or a reordered map reads as a change that isn't one.
+  const basketKey = (v: unknown) =>
+    Object.entries((v ?? {}) as Record<string, string>)
+      .map(([sym, name]) => `${sym}=${name}`).sort().join('|')
   const rows: { label: string; a: string; b: string }[] = []
   for (const [field, labelKey, kind] of DIFF_FIELDS) {
     const va = (a as Record<string, unknown>)[field]
     const vb = (b as Record<string, unknown>)[field]
     const same = kind === 'tickers'
-      ? JSON.stringify(va ?? {}) === JSON.stringify(vb ?? {})
+      ? basketKey(va) === basketKey(vb)
       : JSON.stringify(norm(va)) === JSON.stringify(norm(vb))
     if (same) continue
     rows.push({ label: tr(labelKey), a: fmtDiff(field, kind, va, tr), b: fmtDiff(field, kind, vb, tr) })

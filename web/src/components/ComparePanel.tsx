@@ -7,6 +7,7 @@ import Panel from './Panel'
 import Figure from './Figure'
 import Icon from './Icon'
 import NoteTimeline from './NoteTimeline'
+import OutcomeWaterfall from './OutcomeWaterfall'
 import SettingsOverlay from './SettingsOverlay'
 import ErrorState from './ErrorState'
 import FolderConnect from './FolderConnect'
@@ -477,14 +478,29 @@ export default function ComparePanel({ terms, opts, cppAvailable, configs, varia
             </Panel>
           )}
 
-          <Panel title={t('cmp_charts_title')}>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 14 }}>
-              <div style={{ height: 300 }}><Figure fig={result.compare.figures.irr} name="compare_irr" /></div>
-              <div style={{ height: 300 }}><Figure fig={result.compare.figures.outcome} name="compare_outcome" /></div>
-              {result.compare.figures.fan && (
-                <div style={{ height: 300, gridColumn: '1 / -1' }}>
-                  <Figure fig={result.compare.figures.fan} name="compare_fan" />
+          {/* Outcomes read as the SAME proportional bar the Monte Carlo summary
+              uses — one per note, stacked. A Plotly legend of three brand-tinted
+              greens was illegible; this reuses the component that already
+              solved it (and the PDF keeps its own chart). */}
+          <Panel title={t('outcomes')}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
+              {([['a', terms.name], ['b', variantB?.name]] as const).map(([k, nm]) => (
+                <div key={k}>
+                  <div style={{ marginBottom: 8 }}>
+                    <NoteChip label={k === 'a' ? t('cmp_note_a') : t('cmp_note_b')}
+                              name={nm || '—'} color={k === 'a' ? CMP_A : CMP_B} />
+                  </div>
+                  <OutcomeWaterfall summary={result[k].summary} />
                 </div>
+              ))}
+            </div>
+          </Panel>
+
+          <Panel title={t('cmp_charts_title')}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+              <div style={{ height: 340 }}><Figure fig={result.compare.figures.irr} name="compare_irr" /></div>
+              {result.compare.figures.fan && (
+                <div style={{ height: 320 }}><Figure fig={result.compare.figures.fan} name="compare_fan" /></div>
               )}
             </div>
           </Panel>
