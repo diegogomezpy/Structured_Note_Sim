@@ -50,6 +50,34 @@ function Stat({ label, value, num: figure, dp = 1, signed, sub, subTone, help, c
   )
 }
 
+/** The position band — only for a note bought on the secondary market. What was
+    paid and when, then the three numbers that follow from it: income received
+    since settlement, the discount/premium still pulling to the redemption level,
+    and the total return on cost if the position closed there today. */
+function PositionBand({ s }: { s: NonNullable<LiveResult['summary']> }) {
+  const { t } = useI18n()
+  if (!s.secondary) return null
+  const tone = (d: number | null | undefined) => (d == null ? 'var(--text)' : d >= 0 ? 'var(--green)' : 'var(--red)')
+  return (
+    <Panel title={t('live_position')} pad={16}>
+      <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 12, display: 'flex', flexWrap: 'wrap', gap: '4px 18px' }}>
+        <span>{t('settlement_date')} <span className="mono" style={{ color: 'var(--text)' }}>{s.settlement_date}</span></span>
+        <span>{t('purchase_price')} <span className="mono" style={{ color: 'var(--text)' }}>{pct(s.purchase_price, 3)}</span></span>
+        {!!s.accrued_at_purchase && (
+          <span>{t('accrued_at_purchase')} <span className="mono" style={{ color: 'var(--text)' }}>{pct(s.accrued_at_purchase, 3)}</span></span>
+        )}
+        <span>{t('cost_basis')} <span className="mono" style={{ color: 'var(--text)' }}>{pct(s.cost_basis, 3)}</span></span>
+        <span>{t('live_held')} <span className="mono" style={{ color: 'var(--text)' }}>{num(monthsNum(s.holding_years ?? 0), 1)} {t('live_mo')}</span></span>
+      </div>
+      <div className="stagger" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: 14 }}>
+        <Stat label={t('live_income_since')} num={s.income_since} dp={2} help={t('live_tip_income_since')} />
+        <Stat label={t('live_pull_to_par')} num={s.pull_to_par} dp={2} signed subTone={tone(s.pull_to_par)} help={t('live_tip_pull_to_par')} />
+        <Stat label={t('live_return_on_cost')} num={s.return_on_cost} dp={2} signed subTone={tone(s.return_on_cost)} help={t('live_tip_return_on_cost')} />
+      </div>
+    </Panel>
+  )
+}
+
 /** Lifecycle timeline + optional gap warning — shared by the phoenix and
     participation live views. */
 function Lifecycle({ s }: { s: NonNullable<LiveResult['summary']> }) {
@@ -89,6 +117,7 @@ function ParticipationLive({ result }: { result: LiveResult }) {
     <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }} className="fade-up">
       <div style={{ fontSize: 12.5, color: 'var(--text-muted)' }}>{t('live_intro_part')}</div>
       <Lifecycle s={s} />
+      <PositionBand s={s} />
 
       {/* Headline: basket today + projected redemption */}
       <div className="stagger" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: 14 }}>
@@ -173,7 +202,8 @@ function ParticipationLive({ result }: { result: LiveResult }) {
                 {rows.map((r: LiveObsRow) => {
                   const m = STATUS_META[r.status]
                   return (
-                    <tr key={r.period} style={{ opacity: r.upcoming ? 0.55 : 1 }}>
+                    <tr key={r.period} style={{ opacity: r.upcoming || r.held === false ? 0.55 : 1 }}
+                        title={r.held === false ? t('live_before_purchase') : undefined}>
                       <td style={{ fontWeight: 600 }}>{r.period}</td>
                       <td style={{ color: 'var(--text-muted)' }}>{r.date ?? '—'}</td>
                       <td>
@@ -292,11 +322,16 @@ export default function LivePanel({ result }: { result: LiveResult; terms: NoteT
         </div>
       </Panel>
 
-      {/* Coupon KPIs */}
+      {/* Coupon KPIs. "Coupons paid" is what the NOTE has paid since issue; a
+          secondary holder's own income (and the IRR built on it) lives in the
+          position band below. */}
       <div className="stagger" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: 14 }}>
         <Stat label={t('live_coupons_paid')} num={s.total_coupons} dp={2} />
-        <Stat label={t('live_irr_to_date')} num={s.irr_to_date} dp={2} subTone={tone(s.irr_to_date)} />
+        <Stat label={t('live_irr_to_date')} num={s.irr_to_date} dp={2} subTone={tone(s.irr_to_date)}
+              sub={s.secondary ? t('live_since_settlement') : undefined} />
       </div>
+
+      <PositionBand s={s} />
 
       {(s.pending_coupons ?? 0) > 0 && (
         <div style={{ padding: '10px 14px', background: 'var(--surface-2)', borderRadius: 10, fontSize: 12.5, color: 'var(--text-muted)' }}>
@@ -330,8 +365,12 @@ export default function LivePanel({ result }: { result: LiveResult; terms: NoteT
             <tbody>
               {rows.map((r: LiveObsRow) => {
                 const m = STATUS_META[r.status]
+                // Periods fixed before settlement paid someone else — dimmed, and
+                // their coupon loses the "received" green.
+                const preOwned = r.held === false
                 return (
-                  <tr key={r.period} style={{ opacity: r.upcoming ? 0.55 : 1 }}>
+                  <tr key={r.period} style={{ opacity: r.upcoming || preOwned ? 0.55 : 1 }}
+                      title={preOwned ? t('live_before_purchase') : undefined}>
                     <td style={{ fontWeight: 600 }}>{r.period}</td>
                     <td style={{ color: 'var(--text-muted)' }}>{r.date ?? '—'}</td>
                     <td>
@@ -341,7 +380,7 @@ export default function LivePanel({ result }: { result: LiveResult; terms: NoteT
                       </span>
                     </td>
                     <td className="num" style={{ color: r.wof != null && r.wof < (s.knock_in_barrier ?? 0) ? 'var(--red)' : 'var(--text)' }}>{r.wof != null ? pct(r.wof, 1) : '—'}</td>
-                    <td className="num" style={{ color: r.coupon ? 'var(--green)' : 'var(--text-faint)' }}>{r.coupon ? pct(r.coupon, 2) : '—'}</td>
+                    <td className="num" style={{ color: r.coupon && !preOwned ? 'var(--green)' : 'var(--text-faint)' }}>{r.coupon ? pct(r.coupon, 2) : '—'}</td>
                     <td className="num">{r.cumulative != null ? pct(r.cumulative, 2) : '—'}</td>
                   </tr>
                 )

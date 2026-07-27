@@ -17,10 +17,13 @@ export function AutocallByPeriodTable({ summary, autocallStart }: { summary: Sim
         </tr></thead>
         <tbody>
           {summary.autocall_by_period.map((p, i) => {
-            const eligible = i + 1 >= autocallStart
+            // Rows are the periods this run PRICED; a seasoned run starts partway
+            // through the schedule, so shift onto the term sheet's numbering.
+            const period = i + 1 + (summary.period_offset ?? 0)
+            const eligible = period >= autocallStart
             return (
               <tr key={i}>
-                <td>P{i + 1}</td>
+                <td>P{period}</td>
                 <td className="num" style={{ color: 'var(--text-muted)' }}>{num(summary.obs_times[i] * 12, 1)}</td>
                 <td className="num">{pct(p, 2)}</td>
                 <td className="num" style={{ color: eligible ? 'var(--text)' : 'var(--text-faint)' }}>

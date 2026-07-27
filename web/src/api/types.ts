@@ -67,6 +67,17 @@ export interface NoteTerms {
   issuer_rating_fitch: string
   tickers: Record<string, string>
   issue_date: string | null
+  // Secondary-market position (defaults: bought at issue, at par). purchase_price
+  // is the CLEAN price as a fraction of nominal (0.95 = 95%); accrued_at_purchase
+  // is the coupon settled on top. Their sum is the cost basis every reported
+  // return is measured against — see core/note.py:_position_returns.
+  settlement_date?: string | null
+  purchase_price?: number
+  accrued_at_purchase?: number
+  // Price the note from where it stands rather than as if issued today: needs a
+  // past issue_date, and makes the Monte Carlo run today → the ORIGINAL maturity
+  // against the ORIGINAL fixings. See core/note.py.
+  seasoned?: boolean
   underlyings: Record<string, UnderlyingOverride> | null
   [k: string]: unknown
 }
@@ -95,6 +106,22 @@ export interface SimSummary {
   expected_nominal_payout: number | null
   loss_given_knock_in: number | null
   avg_time_to_autocall: number | null
+  // position: what a unit of nominal cost (1 = par) and P(negative return on it)
+  cost_basis?: number | null
+  prob_loss?: number | null
+  // seasoning. `period_offset` shifts DISPLAY labels only: autocall_by_period[i]
+  // and obs_times[i] describe term-sheet period `period_offset + i + 1`.
+  seasoned?: boolean
+  period_offset?: number
+  seasoning_reason?: 'no_issue_date' | 'not_issued' | 'no_fixing' | 'matured' | 'called'
+  periods_elapsed?: number
+  periods_remaining?: number
+  issue_date?: string
+  maturity_date?: string
+  remaining_years?: number | null
+  pending_coupons?: number
+  coupons_received?: number | null
+  start_level?: number | null    // worst-of today, vs the original fixings
   coupon_pa: number | null
   n_obs: number
   n_paths: number
@@ -216,6 +243,9 @@ export interface BacktestSummary {
   prob_above_par?: number | null
   prob_below_par?: number | null
   cvar5_redemption?: number | null
+  // position — every issue window is priced on the same cost basis
+  cost_basis?: number | null
+  prob_loss?: number | null
   note_type?: 'phoenix' | 'reverse_conv' | 'growth_autocall' | 'participation' | 'custom'
   participation_periodic?: boolean
 }
@@ -256,6 +286,7 @@ export interface ExplorerData {
   paths: ExplorerPath[]
   n_total: number
   note_type?: 'phoenix' | 'reverse_conv' | 'growth_autocall' | 'participation' | 'custom'
+  period_offset?: number     // seasoned runs: term-sheet period of obs_times[0] − 1
   obs_times: number[]
   barriers: { knock_in?: number | null; autocall?: number | null; coupon?: number | null
               participation?: PartBarriers }
@@ -292,6 +323,17 @@ export interface LiveSummary {
   alive: boolean
   coupon_at_autocall_only?: boolean
   next_premium?: number | null
+  // position — present on every live result; `secondary` is false for a plain
+  // subscription at par, where the rest is trivially par / the issue date.
+  secondary?: boolean
+  settlement_date?: string
+  purchase_price?: number | null
+  accrued_at_purchase?: number | null
+  cost_basis?: number | null
+  holding_years?: number | null
+  income_since?: number | null      // coupons received since settlement
+  pull_to_par?: number | null       // capital gain still to come, on cost
+  return_on_cost?: number | null    // total return on cost if it closed at that level now
   // participation
   note_type?: 'phoenix' | 'reverse_conv' | 'growth_autocall' | 'participation' | 'custom'
   participation_periodic?: boolean
@@ -328,6 +370,7 @@ export interface LiveObsRow {
   coupon?: number | null
   cumulative?: number | null
   upcoming: boolean
+  held?: boolean          // false = fixed before settlement, so a secondary buyer never got it
   // participation cliquet
   move?: number | null
   income?: number | null
@@ -429,7 +472,8 @@ export interface InspectResult {
   n_total: number
   n_matched: number
   ret_range: [number, number]
-  n_obs: number
+  n_obs: number              // observations in the PRICED window (shorter when seasoned)
+  period_offset?: number     // add to a window index for the term-sheet period number
   coupon_available: boolean
   note_type?: 'phoenix' | 'reverse_conv' | 'growth_autocall' | 'participation' | 'custom'
   participation_periodic?: boolean

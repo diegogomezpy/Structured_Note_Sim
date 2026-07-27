@@ -228,6 +228,14 @@ The `NoteTerms` dataclass captures the full specification of a note. A single en
 | `issuer_description` / `issuer_rating_sp` / `_moody` / `_fitch` | Optional issuer profile for the PDF "Issuer Information" section | `""` |
 | `tickers` | `{yf_symbol: display_name}` — stored in JSON config | `{}` |
 | `issue_date` | `"YYYY-MM-DD"` — enables Current Performance tab when set | `None` |
+| `settlement_date` | `"YYYY-MM-DD"` the position was bought (secondary market); `null` = held from issue | `None` |
+| `purchase_price` | Clean price paid, as a fraction of nominal (`0.95` = 95%) | 1.0 |
+| `accrued_at_purchase` | Accrued coupon settled on top of the clean price | 0.0 |
+| `seasoned` | Price the remaining life from today instead of a full tenor from scratch (needs a past `issue_date`) | False |
+
+**Secondary-market position.** `settlement_date`, `purchase_price` and `accrued_at_purchase` describe *your* position rather than the note. `purchase_price + accrued_at_purchase` is the **cost basis**, and every return the app reports — Monte Carlo, backtest and Current Performance — is measured against it instead of par, so a note bought at 95 shows the buyer's economics (par redemption alone is a +5.26% gain). Alongside the usual metrics you get `prob_loss`, the probability of ending below what you paid — which is *not* the knock-in rate once the price is away from par. `settlement_date` additionally tells the Current Performance tab where your holding period starts: coupons fixed before it went to the previous holder and are excluded from your income and IRR. The defaults are a primary subscription at par, so existing configs are unaffected.
+
+**Seasoning.** By default the Monte Carlo prices a hypothetical note *issued today* for the full tenor. Turn on `seasoned` and it instead prices what is left of the note you actually hold: the simulation runs from today to the **original** maturity, performance is measured against the **original fixings** (so a 60% knock-in still means 60% of where the note struck), only the observations still to come are evaluated, and any memory-coupon arrears are carried in. Coupons already paid are realised and sit outside the projection. Period labels keep the term sheet's numbering — a note six quarters in reports P7 onward, not P1. If the note has already matured or autocalled on realised prices, the run says so and falls back to pricing from issue. The historical backtest is unaffected: each of its issue windows is a full life by construction.
 
 **Participation-specific fields** (used only when `note_type="participation"`):
 

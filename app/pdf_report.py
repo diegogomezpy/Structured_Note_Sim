@@ -338,6 +338,12 @@ _LABELS: dict[str, dict[str, str]] = {
     "ac_floor":              {"en": "Autocall barrier floor",            "es": "Suelo de barrera autocall"},
     "premium_at_call":       {"en": "Premium paid only at autocall",     "es": "Prima pagada solo al autocall"},
     "issue_date":            {"en": "Issue date",                        "es": "Fecha de emisión"},
+    "settlement_date":       {"en": "Settlement date",                   "es": "Fecha de liquidación"},
+    "purchase_price":        {"en": "Purchase price",                    "es": "Precio de compra"},
+    "accrued_at_purchase":   {"en": "Accrued at purchase",               "es": "Cupón corrido"},
+    "cost_basis":            {"en": "Cost basis",                        "es": "Coste de la posición"},
+    "seasoned":              {"en": "Modelled horizon",                  "es": "Horizonte modelado"},
+    "seasoned_row":          {"en": "Remaining life only",               "es": "Solo la vida restante"},
     "issuer":                {"en": "Issuer",                            "es": "Emisor"},
     "expected_irr":          {"en": "Expected IRR p.a.",                 "es": "TIR esperada anual"},
     "expected_total_return": {"en": "Expected total return",             "es": "Retorno total esperado"},
@@ -2404,6 +2410,27 @@ def _participation_term_rows(terms, lang: str) -> list[tuple[str, str]]:
         rows.append((_t("participation_strike", lang), f"{strike:.1%}"))
     if getattr(terms, "issue_date", None):
         rows.append((_t("issue_date", lang), terms.issue_date))
+    rows.extend(_position_rows(terms, lang))
+    return rows
+
+
+def _position_rows(terms, lang: str) -> list[tuple[str, str]]:
+    """Term rows describing the POSITION rather than the note — present only for a
+    secondary-market purchase, so a plain subscription's table is unchanged (and
+    the golden PDF hashes with it). The web mirror is web/src/lib/terms.ts."""
+    rows: list[tuple[str, str]] = []
+    if getattr(terms, "is_secondary", False):
+        if getattr(terms, "settlement_date", None):
+            rows.append((_t("settlement_date", lang), terms.settlement_date))
+        rows.append((_t("purchase_price", lang), f"{float(terms.purchase_price or 1.0):.3%}"))
+        accrued = float(getattr(terms, "accrued_at_purchase", 0.0) or 0.0)
+        if accrued > 0:
+            rows.append((_t("accrued_at_purchase", lang), f"{accrued:.3%}"))
+            rows.append((_t("cost_basis", lang), f"{terms.cost_basis:.3%}"))
+    # Seasoning belongs on the term sheet's face: it is why the modelled horizon
+    # is shorter than the tenor printed above it.
+    if getattr(terms, "seasoned", False):
+        rows.append((_t("seasoned", lang), _t("seasoned_row", lang)))
     return rows
 
 
@@ -2434,6 +2461,7 @@ def _term_rows(terms, lang: str) -> list[tuple[str, str]]:
                      f"{_t('yes', lang)} ({terms.coupon_pa * 100:.2f}% {_t('pa_short', lang)})"))
     if getattr(terms, "issue_date", None):
         rows.append((_t("issue_date", lang), terms.issue_date))
+    rows.extend(_position_rows(terms, lang))
     return rows
 
 

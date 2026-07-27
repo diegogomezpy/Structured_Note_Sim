@@ -11,7 +11,7 @@ from dataclasses import replace
 import numpy as np
 import pytest
 
-from core.note import NoteTerms, price_note, _participation_redemption
+from core.note import NoteTerms, price_note, replay_note, _participation_redemption
 
 
 def _phoenix(**over) -> NoteTerms:
@@ -134,3 +134,170 @@ def test_participation_shark_fin_null_payout_no_crash():
     object.__setattr__(t, "knockout_payout", None)          # simulate a null config
     r = _participation_redemption(np.array([0.9, 1.1, 1.4]), t)
     assert r[2] == pytest.approx(1.0)                        # above KO → par, no crash
+
+
+# ── secondary-market position: returns measured on cost, not par ────────────────
+def test_cost_basis_defaults_to_par():
+    t = _phoenix()
+    assert t.cost_basis == pytest.approx(1.0)
+    assert t.is_secondary is False
+
+
+@pytest.mark.parametrize("over,cost,secondary", [
+    ({"purchase_price": 0.95},                              0.95,  True),
+    ({"purchase_price": 0.95, "accrued_at_purchase": 0.02}, 0.97,  True),
+    ({"settlement_date": "2025-06-01"},                     1.0,   True),   # at par, but bought later
+    ({"purchase_price": 1.03},                              1.03,  True),   # bought at a premium
+])
+def test_cost_basis_and_is_secondary(over, cost, secondary):
+    t = _phoenix(**over)
+    assert t.cost_basis == pytest.approx(cost)
+    assert t.is_secondary is secondary
+
+
+def test_purchase_price_rebases_returns():
+    """Same payoffs, different cost: the paths are untouched and only the return
+    denominator moves. Buying at 95 turns a par redemption into a +5.26% gain."""
+    perf = np.ones((2, 5, 1))
+    perf[1, :, 0] = 0.3                                   # crashes, knocked in
+    kw = dict(obs_steps=[2, 4], obs_times=[0.5, 1.0])
+    par = price_note(perf, _phoenix(), **kw)
+    sec = price_note(perf, _phoenix(purchase_price=0.95), **kw)
+
+    # The note itself is unchanged — same payoff, same call, same knock-in.
+    assert sec["nominal_payoffs"] == pytest.approx(par["nominal_payoffs"])
+    assert sec["prob_autocall"] == pytest.approx(par["prob_autocall"])
+    assert sec["prob_knock_in_total"] == pytest.approx(par["prob_knock_in_total"])
+    # Returns are on cost: (payoff − 0.95) / 0.95, annualised over the same t_held.
+    assert sec["cost_basis"] == pytest.approx(0.95)
+    assert sec["total_returns"] == pytest.approx([(1.05 - .95) / .95, (0.30 - .95) / .95])
+    assert sec["annualized_returns"] == pytest.approx([(1.05 - .95) / .95 / 0.5,
+                                                       (0.30 - .95) / .95 / 1.0])
+    assert par["cost_basis"] == pytest.approx(1.0)
+    assert par["total_returns"] == pytest.approx([0.05, -0.70])
+
+
+def test_prob_loss_is_not_the_knock_in_rate():
+    """P(loss) is about the POSITION, so a coupon can rescue a knocked-in path and a
+    discount can rescue a below-par redemption — neither shows up in P(knock-in)."""
+    t = _phoenix(coupon_pa=0.60, coupon_barrier=0.0)      # 30%/period, always paid
+    perf = np.ones((2, 5, 1))
+    perf[0, :, 0] = 0.90                                  # matures at 0.90, no knock-in
+    perf[1, 2, 0] = 0.90; perf[1, 4, 0] = 0.45            # knocks in, redeems at 0.45 + 0.60 coupons
+    at_par = price_note(perf, t, obs_steps=[2, 4], obs_times=[0.5, 1.0])
+    assert at_par["prob_knock_in_total"] == pytest.approx(0.5)
+    assert at_par["prob_loss"] == pytest.approx(0.0)      # 1.05 and 1.60 — both above par
+
+    # Bought at 1.20 (a premium): the same 1.05 path is now a loss on cost.
+    rich = price_note(perf, replace(t, purchase_price=1.20), obs_steps=[2, 4], obs_times=[0.5, 1.0])
+    assert rich["prob_knock_in_total"] == pytest.approx(0.5)   # unchanged — a note property
+    assert rich["prob_loss"] == pytest.approx(0.5)
+
+
+def test_participation_returns_on_cost():
+    t = _part(purchase_price=0.90)
+    perf = np.ones((2, 2, 1))
+    perf[0, 1, 0] = 1.20                                  # redeems at 1.20
+    perf[1, 1, 0] = 0.70                                  # full protection → par
+    note = price_note(perf, t, obs_steps=[1], obs_times=[1.0])
+    assert note["nominal_payoffs"] == pytest.approx([1.20, 1.00])
+    assert note["cost_basis"] == pytest.approx(0.90)
+    assert note["total_returns"] == pytest.approx([(1.2 - .9) / .9, (1.0 - .9) / .9])
+
+
+def test_position_fields_roundtrip():
+    t = _phoenix(settlement_date="2025-06-01", purchase_price=0.955,
+                 accrued_at_purchase=0.0125)
+    again = NoteTerms.from_dict(json.loads(json.dumps(t.to_dict())))
+    assert again.settlement_date == "2025-06-01"
+    assert again.purchase_price == pytest.approx(0.955)
+    assert again.accrued_at_purchase == pytest.approx(0.0125)
+    assert again.cost_basis == pytest.approx(0.9675)
+
+
+def test_zero_cost_basis_rejected():
+    with pytest.raises(ValueError, match="purchase_price"):
+        _phoenix(purchase_price=0.0)
+
+
+# ── seasoning: pricing only the remaining window of a partially-elapsed note ─────
+def _seasoned_kw(k, **over):
+    """price_note args for the last `4 - k` observations of a 4-period note."""
+    return {"obs_steps": list(range(k + 1, 5)),
+            "obs_times": [(j + 1) / 4 for j in range(k, 4)],
+            "periods_elapsed": k, **over}
+
+
+def _q(**over) -> NoteTerms:
+    """A 1y quarterly phoenix — 4 observations, so a window is easy to reason about."""
+    return _phoenix(payment_freq="quarterly", coupon_pa=0.08, **over)
+
+
+def test_seasoning_prices_only_the_remaining_window():
+    t = _q()
+    perf = np.ones((1, 5, 1)) * 0.8              # flat at 80%: coupons pay, no autocall
+    full = price_note(perf, t, obs_steps=[1, 2, 3, 4], obs_times=[.25, .5, .75, 1.0])
+    tail = price_note(perf, t, **_seasoned_kw(3))    # only P4 left
+    assert full["coupon_amounts"].shape[1] == 4
+    assert tail["coupon_amounts"].shape[1] == 1
+    assert tail["periods_elapsed"] == 3
+    # 4 coupons over the whole life vs the single one still to come.
+    assert full["coupon_payoffs"] == pytest.approx([0.08])
+    assert tail["coupon_payoffs"] == pytest.approx([0.02])
+
+
+def test_seasoning_counts_autocall_lockout_in_absolute_periods():
+    """A note locked out until P3 is callable at EVERY remaining observation once
+    the window opens at P3 — the lock-out is a term-sheet period, not an offset."""
+    t = _q(autocall_start_period=3, autocall_barrier=1.0)
+    perf = np.ones((1, 5, 1))                    # at the barrier throughout
+    fresh = price_note(perf, t, obs_steps=[1, 2, 3, 4], obs_times=[.25, .5, .75, 1.0])
+    assert fresh["autocall_period"] == pytest.approx([3])       # first callable period
+    tail = price_note(perf, t, **_seasoned_kw(2))              # window opens at P3
+    assert tail["autocall_period"] == pytest.approx([1])        # = absolute P3
+    # Opening at P1 of the window must NOT re-apply the lock-out from the window.
+    assert tail["prob_autocall"] == 1.0
+
+
+def test_seasoning_carries_memory_arrears():
+    """Arrears accrued before the window are released by the first coupon in it."""
+    t = _q(memory=True, coupon_barrier=0.7)
+    perf = np.ones((1, 5, 1)) * 0.8              # above the coupon barrier
+    clean = price_note(perf, t, **_seasoned_kw(2))
+    owed2 = price_note(perf, t, **_seasoned_kw(2, pending_coupons=2))
+    # P3 pays 1 coupon clean, 3 with two quarters of arrears; P4 pays 1 either way.
+    assert clean["coupon_amounts"][0].tolist() == pytest.approx([0.02, 0.02])
+    assert owed2["coupon_amounts"][0].tolist() == pytest.approx([0.06, 0.02])
+
+
+def test_seasoning_growth_premium_accrues_from_issue():
+    """coupon_at_autocall_only pays for every period SINCE ISSUE, so a seasoned
+    note called at its next observation still collects the full accrual."""
+    t = _q(coupon_at_autocall_only=True, autocall_barrier=1.0)
+    perf = np.ones((1, 5, 1))
+    tail = price_note(perf, t, **_seasoned_kw(2))   # calls at the window's P1 = absolute P3
+    assert tail["autocall_period"] == pytest.approx([1])
+    assert tail["coupon_payoffs"] == pytest.approx([0.06])      # 3 × 2%, not 1 × 2%
+
+
+def test_seasoning_uses_the_remaining_step_down_rungs():
+    t = _q(autocall_barrier=1.0, autocall_step_down=0.05, autocall_start_period=1)
+    perf = np.ones((1, 5, 1)) * 0.92             # below P1/P2 rungs, above P3's 0.90
+    fresh = price_note(perf, t, obs_steps=[1, 2, 3, 4], obs_times=[.25, .5, .75, 1.0])
+    assert fresh["autocall_period"] == pytest.approx([3])
+    tail = price_note(perf, t, **_seasoned_kw(2))   # window starts on the 0.90 rung
+    assert tail["autocall_period"] == pytest.approx([1])
+
+
+def test_seasoning_rejects_a_matured_note():
+    with pytest.raises(ValueError, match="already reached maturity"):
+        price_note(np.ones((1, 5, 1)), _q(), **_seasoned_kw(4))
+
+
+def test_replay_note_window_uses_absolute_periods():
+    t = _q(autocall_start_period=3, autocall_barrier=1.0, memory=True, coupon_barrier=0.7)
+    perf_obs = np.ones((2, 1)) * 0.8             # two observations, coupon-paying
+    r = replay_note(perf_obs, t, start_period=3, pending=1)
+    assert [row["period"] for row in r["rows"]] == [3, 4]
+    assert r["rows"][0]["coupon_amount"] == pytest.approx(0.04)   # 1 arrear + 1 current
+    assert r["autocall_period"] == 0                              # 80% never hits 100%

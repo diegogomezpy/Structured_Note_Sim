@@ -37,6 +37,13 @@ function Grid({ children }: { children: ReactNode }) {
   return <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', columnGap: 22 }}>{children}</div>
 }
 
+/** Today as YYYY-MM-DD in the user's own timezone — toISOString() would shift the
+    date backwards for anyone west of UTC. */
+const today = () => {
+  const d = new Date()
+  return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10)
+}
+
 /** Sub-group header inside a Group — so downside / upside / cliquet fields read as
     distinct clusters. */
 function PartHead({ children }: { children: string }) {
@@ -89,6 +96,14 @@ export default function SettingsOverlay({
   const upsideOpts = (['linear', 'shark_fin', 'digital'] as const).map((v) => ({ value: v, label: t(`pu_${v}`) }))
   // Label for the protection level shifts with the downside style.
   const protLabel = pd === 'airbag' ? t('knock_in_barrier') : t('protection_level')
+  // Secondary-market position. Derived rather than stored: the note IS a secondary
+  // purchase once it carries a settlement date or a price away from par — mirroring
+  // NoteTerms.is_secondary, so the form and the backend agree on one definition.
+  const secondary = !!terms.settlement_date || (terms.purchase_price ?? 1) !== 1
+                    || (terms.accrued_at_purchase ?? 0) !== 0
+  const costBasis = (terms.purchase_price ?? 1) + (terms.accrued_at_purchase ?? 0)
+  // Seasoning has nothing to season to without a note that has already been issued.
+  const issuedInPast = !!terms.issue_date && terms.issue_date <= today()
 
   return (
     <Modal title={t('setup_heading')} onClose={onClose}
@@ -310,7 +325,48 @@ export default function SettingsOverlay({
       </Group>
       </>)}
 
-      <Group n={5} title={t('sec_metadata')}>
+      {/* Secondary-market position — what THIS holder paid, and when. Off by
+          default (a note subscribed at par at issue), and applies to every note
+          type, so it sits outside the type-specific blocks above. */}
+      <Group n={5} title={t('sec_position')}>
+        <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 12, lineHeight: 1.5 }}>{t('position_hint')}</div>
+        <ToggleField label={t('bought_secondary')} tip={t('tip_bought_secondary')} checked={secondary}
+                     onChange={(v) => onChange({
+                       ...terms,
+                       settlement_date: v ? (terms.settlement_date || terms.issue_date || today()) : null,
+                       purchase_price: v ? (terms.purchase_price ?? 1) : 1,
+                       accrued_at_purchase: v ? (terms.accrued_at_purchase ?? 0) : 0,
+                     })} />
+        {secondary && (<>
+          <Grid>
+            <div>
+              <label style={{ fontSize: 12, color: 'var(--text-muted)', display: 'block', marginBottom: 6 }}>{t('settlement_date')}</label>
+              <input type="date" value={terms.settlement_date ?? ''} onChange={(e) => set('settlement_date', e.target.value || null)} />
+            </div>
+            <NumberField label={t('purchase_price')} tip={t('tip_purchase_price')} value={terms.purchase_price ?? 1} percent suffix="%" min={1} max={200} step={0.25}
+                         onChange={(v) => set('purchase_price', v)} />
+            <NumberField label={t('accrued_at_purchase')} tip={t('tip_accrued_at_purchase')} value={terms.accrued_at_purchase ?? 0} percent suffix="%" min={0} max={50} step={0.05}
+                         onChange={(v) => set('accrued_at_purchase', v)} />
+          </Grid>
+          <div style={{ fontSize: 11.5, color: 'var(--text-faint)', marginTop: 6, lineHeight: 1.5 }}>
+            {t('cost_basis_hint', { v: `${(costBasis * 100).toFixed(3).replace(/\.?0+$/, '')}%` })}
+          </div>
+        </>)}
+
+        {/* Seasoning — independent of the purchase price: it changes WHAT is
+            simulated (the remaining life, off the original fixings), not what the
+            position cost. Needs a past issue date to have anything to season to. */}
+        <div style={{ marginTop: 16, paddingTop: 14, borderTop: '1px solid var(--border)' }}>
+          <ToggleField label={t('seasoned')} tip={t('tip_seasoned')} checked={!!terms.seasoned}
+                       onChange={(v) => set('seasoned', v)} />
+          <div style={{ fontSize: 11.5, color: 'var(--text-faint)', marginTop: 4, lineHeight: 1.5 }}>
+            {!issuedInPast ? t('seasoned_needs_issue')
+              : terms.seasoned ? t('seasoned_on_hint') : t('seasoned_off_hint')}
+          </div>
+        </div>
+      </Group>
+
+      <Group n={6} title={t('sec_metadata')}>
         <Grid>
           <TextField label={t('note_name')} value={terms.name ?? ''} onChange={(v) => set('name', v)} />
           <TextField label={t('issuer_name')} value={terms.issuer ?? ''} onChange={(v) => set('issuer', v)} placeholder="e.g. Banco Santander" />
@@ -326,11 +382,11 @@ export default function SettingsOverlay({
         </Grid>
       </Group>
 
-      <Group n={6} title={t('sec_details')}>
+      <Group n={7} title={t('sec_details')}>
         <UnderlyingDetails terms={terms} onChange={onChange} />
       </Group>
 
-      <Group n={7} title={t('sec_engine')}>
+      <Group n={8} title={t('sec_engine')}>
         <Grid>
           <SelectField label={t('paths')} tip={t('tip_paths')} value={String(opts.n_paths)}
                        options={PATH_PRESETS.map((p) => ({ value: String(p), label: p.toLocaleString() }))}

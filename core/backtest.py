@@ -162,6 +162,10 @@ def run_backtest(
         "expected_nominal_payout": float(res["expected_nominal_payout"]),
         "loss_given_knock_in":   float(res["loss_given_knock_in"]),
         "prob_knock_in_total":   float(res["prob_knock_in_total"]),
+        # Position measures — the IRR column above is already on cost, so a
+        # secondary-market purchase price is reflected across every issue window.
+        "cost_basis":            float(res["cost_basis"]),
+        "prob_loss":             float(res["prob_loss"]),
         # Average time (years) to early redemption over the historical windows that
         # autocalled — None when none did. Same shared-engine measure as the MC run.
         "avg_time_to_autocall":  res["avg_time_to_autocall"],

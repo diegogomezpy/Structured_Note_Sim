@@ -97,6 +97,37 @@ export function participationSummary(terms: NoteTerms, tr: (k: string) => string
   return segs.join(' · ')
 }
 
+/** What the position cost per unit of nominal — clean price + accrued. Mirrors
+    NoteTerms.cost_basis; 1 = subscribed at par. */
+export function costBasis(t: NoteTerms): number {
+  return (t.purchase_price ?? 1) + (t.accrued_at_purchase ?? 0)
+}
+
+/** True when the note is held as a secondary-market position rather than a
+    subscription at issue. Mirrors NoteTerms.is_secondary. */
+export function isSecondary(t: NoteTerms): boolean {
+  return Math.abs(costBasis(t) - 1) > 1e-9 || !!t.settlement_date
+}
+
+/** Term rows describing the POSITION (not the note) — only present once the note
+    was actually bought on the secondary market, so a plain subscription's table
+    is unchanged. Shared by the phoenix and participation row builders. */
+function positionRows(t: NoteTerms, tr: (k: string) => string): [string, string][] {
+  const rows: [string, string][] = []
+  if (isSecondary(t)) {
+    if (t.settlement_date) rows.push([tr('settlement_date'), t.settlement_date])
+    rows.push([tr('purchase_price'), pct(t.purchase_price ?? 1, 3)])
+    if ((t.accrued_at_purchase ?? 0) > 0) {
+      rows.push([tr('accrued_at_purchase'), pct(t.accrued_at_purchase as number, 3)])
+      rows.push([tr('cost_basis'), pct(costBasis(t), 3)])
+    }
+  }
+  // Seasoning changes what the simulation covers, so it belongs on the term
+  // sheet's face — it is why the modelled horizon isn't the full tenor.
+  if (t.seasoned) rows.push([tr('seasoned'), tr('seasoned_row')])
+  return rows
+}
+
 /** Key/value rows for the note-features table — the web mirror of
     app/pdf_report.py:_term_rows, so the "at a glance" table on the page shows the
     same fields as the PDF's Note Terms table. Only fields the note actually uses
@@ -109,6 +140,7 @@ export function noteTermRows(t: NoteTerms, tr: (k: string) => string): [string, 
       [tr('protection_level'), pct(t.protection_level ?? 1, 1)],
     ]
     if (t.issue_date) rows.push([tr('issue_date'), t.issue_date])
+    rows.push(...positionRows(t, tr))
     return rows
   }
   const cper = couponRate(t)
@@ -146,6 +178,7 @@ export function noteTermRows(t: NoteTerms, tr: (k: string) => string): [string, 
   }
   if (t.coupon_at_autocall_only) rows.push([tr('premium_at_call'), tr('yes')])
   if (t.issue_date) rows.push([tr('issue_date'), t.issue_date])
+  rows.push(...positionRows(t, tr))
   return rows
 }
 

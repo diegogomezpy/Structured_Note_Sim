@@ -13,9 +13,51 @@ import OutcomeWaterfall from './OutcomeWaterfall'
 import { AutocallByPeriodTable, CalibrationTable } from './MCTables'
 import Tabs from './Tabs'
 import TickerLogo from './TickerLogo'
+import Icon from './Icon'
+import { pct, num } from '../lib/format'
+import { monthsNum } from '../lib/terms'
 import type { NoteTerms, SimResult } from '../api/types'
 
 const CHART_H = 320
+
+/** What the run actually priced, when that isn't "a note issued today". A seasoned
+    run covers only the remaining life against the original fixings, which changes
+    how every number below should be read — so it says so up front. Also carries the
+    fallback notice when seasoning was asked for but couldn't be applied. */
+function SeasoningBanner({ summary }: { summary: SimResult['summary'] }) {
+  const { t } = useI18n()
+  if (summary.seasoning_reason) {
+    return (
+      <div role="status" style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px',
+                                  background: 'var(--amber-weak)', border: '1px solid var(--amber)',
+                                  borderRadius: 11, fontSize: 12.5 }}>
+        <Icon name="info" size={15} /> {t(`season_no_${summary.seasoning_reason}`)}
+      </div>
+    )
+  }
+  if (!summary.seasoned) return null
+  const facts: [string, string][] = [
+    [t('season_priced'), t('season_periods', {
+      a: String((summary.period_offset ?? 0) + 1), b: String(summary.periods_remaining ?? 0) })],
+    [t('season_remaining'), `${num(monthsNum(summary.remaining_years ?? 0), 1)} ${t('live_mo')}`],
+    [t('season_start_level'), pct(summary.start_level, 1)],
+    ...(summary.coupons_received ? [[t('season_received'), pct(summary.coupons_received, 2)] as [string, string]] : []),
+    ...(summary.pending_coupons ? [[t('season_arrears'), String(summary.pending_coupons)] as [string, string]] : []),
+  ]
+  return (
+    <div style={{ padding: '12px 16px', background: 'var(--accent-weak)', border: '1px solid var(--accent)',
+                  borderRadius: 11 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12.5, fontWeight: 600, marginBottom: 8 }}>
+        <Icon name="info" size={15} /> {t('season_banner')}
+      </div>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 20px', fontSize: 12, color: 'var(--text-muted)' }}>
+        {facts.map(([k, v]) => (
+          <span key={k}>{k} <span className="mono" style={{ color: 'var(--text)' }}>{v}</span></span>
+        ))}
+      </div>
+    </div>
+  )
+}
 
 /** `sub` is owned by App so the rail's NavMenu can drive it; the local tab row
     below is only the phone fallback (the rail is hidden under 640px). */
@@ -45,6 +87,7 @@ export default function MonteCarloPanel({ result, terms, sub, onSubChange, onPat
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }} className="fade-up">
+      <SeasoningBanner summary={summary} />
       <HeroMetrics summary={summary} />
 
       <div className="nav-mobile-only" style={{ marginTop: 2 }}>

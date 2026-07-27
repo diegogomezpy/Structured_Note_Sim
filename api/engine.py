@@ -263,6 +263,9 @@ def sample_paths(run_id: str, *, sample: int = 400, seed: int = 7) -> dict | Non
         "n_total":  int(P),
         "note_type": _note_type,
         "obs_times": run.get("obs_times", []),
+        # Term-sheet period of the window's first observation − 1 (0 unless seasoned),
+        # so the explorer's markers and filters read P6… rather than P1….
+        "period_offset": int(run.get("period_offset", 0)),
         "barriers": barriers,
     }
 
@@ -315,14 +318,19 @@ def _path_filter_matches(autocall_events, knock_in, total_returns, coupon_amount
     return np.nonzero(mask)[0]
 
 
-def _build_path_marker_info(rows, autocall_q, n_obs, wof_levels, knock_in, terms, tr):
+def _build_path_marker_info(rows, autocall_q, n_obs, wof_levels, knock_in, terms, tr,
+                            period_offset: int = 0):
     """Per-observation legend entries for the inspector's worst-of chart (ported
-    from app.py:_build_path_marker_info). Each entry: {text, kind}."""
+    from app.py:_build_path_marker_info). Each entry: {text, kind}.
+
+    `n_obs` / `autocall_q` are indices within the priced WINDOW (all of the note's
+    life unless seasoned); `period_offset` shifts the displayed period numbers onto
+    the term sheet's own numbering."""
     info = []
     n_live = autocall_q if autocall_q > 0 else n_obs
     rate = terms.coupon_rate
     for i in range(n_live):
-        period      = i + 1
+        period      = i + 1 + period_offset
         row         = rows[i] if i < len(rows) else None
         amt         = float(row["coupon_amount"]) if row else 0.0
         pending     = int(row["pending_after"]) if row else 0
@@ -490,8 +498,11 @@ def inspect_run(run_id: str, *, lang: str = "en", filters: dict | None = None,
     obs_steps = list(run["obs_steps"])
     obs_times = list(run["obs_times"])
     asset_names = run["asset_names"]
-    n_obs   = terms.n_obs
-    obs_labels = [f"P{i + 1}" for i in range(n_obs)]
+    # A seasoned run priced only the tail of the note, so the window is shorter
+    # than the term sheet and its first column is period `k_off + 1`.
+    k_off   = int(run.get("period_offset", 0))
+    n_obs   = terms.n_obs - k_off
+    obs_labels = [f"P{k_off + i + 1}" for i in range(n_obs)]
 
     ac       = np.asarray(note["autocall_period"])
     ki_arr   = np.asarray(note["knock_in_triggered"], dtype=bool)
@@ -501,18 +512,23 @@ def inspect_run(run_id: str, *, lang: str = "en", filters: dict | None = None,
     ret_range = [float(total.min()), float(total.max())]
 
     f = filters or {}
+    # The client filters on the period numbers it DISPLAYS (term-sheet numbering);
+    # the per-path arrays are indexed within the priced window, so shift back.
+    def _to_window(ps):
+        return [int(p) - k_off for p in (ps or []) if int(p) - k_off >= 1] or None
     matches = _path_filter_matches(
         ac, ki_arr, total, coupon_m,
-        outcome=f.get("outcome", "any"), ac_periods=f.get("ac_periods"),
+        outcome=f.get("outcome", "any"), ac_periods=_to_window(f.get("ac_periods")),
         ki_choice=f.get("ki_choice", "any"),
         ret_lo=f.get("ret_lo"), ret_hi=f.get("ret_hi"),
-        coupon_periods=f.get("coupon_periods"))
+        coupon_periods=_to_window(f.get("coupon_periods")))
     M = int(len(matches))
 
     _note_type = getattr(terms, "note_type", "phoenix")
     _is_part = _note_type == "participation"
     base = {"n_total": int(P), "n_matched": M, "ret_range": ret_range,
-            "n_obs": int(n_obs), "coupon_available": (coupon_m is not None) and not _is_part,
+            "n_obs": int(n_obs), "period_offset": k_off,
+            "coupon_available": (coupon_m is not None) and not _is_part,
             "note_type": _note_type,
             "participation_periodic": bool(getattr(terms, "participation_periodic", False))}
     if M == 0:
@@ -539,9 +555,11 @@ def inspect_run(run_id: str, *, lang: str = "en", filters: dict | None = None,
     else:
         line_path = worst_path
         perf_obs    = asset_paths[obs_steps, :]
-        rows        = replay_note(perf_obs, terms)["rows"]
+        rows        = replay_note(perf_obs, terms, start_period=k_off + 1,
+                                  pending=int(run.get("pending_coupons", 0)))["rows"]
         wof_levels  = [float(worst_path[s]) for s in obs_steps]
-        marker_info = _build_path_marker_info(rows, autocall_q, n_obs, wof_levels, ki_pn, terms, tr)
+        marker_info = _build_path_marker_info(rows, autocall_q, n_obs, wof_levels, ki_pn,
+                                              terms, tr, period_offset=k_off)
         outcome = {"autocall_q": autocall_q,
                    "call_time": _f(obs_times[autocall_q - 1]) if autocall_q > 0 else None,
                    "knock_in": ki_pn, "worst_final": _f(float(worst_path[-1]))}
@@ -579,13 +597,110 @@ def _f(x) -> float | None:
 
 
 # ── simulation flow ────────────────────────────────────────────────────────────
-def _snap_obs(grid, anchor, N: int, terms: NoteTerms) -> tuple[list[int], list[float]]:
-    """Snap a note's observation calendar onto the trading-day `grid` → (step index
-    per observation, capped at N; time-in-years per observation). Shared by the
-    initial simulation and the A/B reprice so the two stay identical."""
-    obs_steps = [min(int(grid.searchsorted(d)), N) for d in terms.obs_calendar_dates(anchor)]
+def _snap_obs(grid, N: int, obs_dates) -> tuple[list[int], list[float]]:
+    """Snap observation dates onto the trading-day `grid` → (step index per
+    observation, capped at N; time-in-years from the start of the grid). Shared by
+    the initial simulation and the A/B reprice so the two stay identical."""
+    obs_steps = [min(int(grid.searchsorted(d)), N) for d in obs_dates]
     obs_times = [(grid[s] - grid[0]).days / 365.0 for s in obs_steps]
     return obs_steps, obs_times
+
+
+# ── seasoning: pricing a partially-elapsed note from where it stands ───────────
+# Reasons seasoning was asked for but could not be applied; the run falls back to
+# the from-issue simulation and reports the reason so the UI can explain itself.
+_SEASON_REASONS = ("no_issue_date", "not_issued", "no_fixing", "matured", "called")
+
+
+def _obs_dates(terms: NoteTerms, anchor, live: dict | None) -> list:
+    """The observation calendar this run prices — the remaining dates of a seasoned
+    note, otherwise the full schedule counted from `anchor`."""
+    return live["obs_dates"] if live else list(terms.obs_calendar_dates(anchor))
+
+
+def _season_kwargs(live: dict | None) -> dict:
+    """price_note's seasoning arguments for a resolved state (empty when the note
+    is priced from issue, so the call is byte-for-byte the old one)."""
+    if not live:
+        return {}
+    return {"periods_elapsed": live["periods_elapsed"],
+            "pending_coupons": live["pending_coupons"],
+            "start_basket":    live["start_basket"]}
+
+
+def _seasoning(terms: NoteTerms, anchor) -> dict | None:
+    """Resolve a seasoned note's state at `anchor` (the last trading day priced).
+
+    Returns None when the note isn't marked `seasoned`; ``{"ok": False, "reason":
+    …}`` when it is but can't be (see _SEASON_REASONS); otherwise the state the
+    simulation needs:
+
+      fixings          {asset name: original fixing price} — barriers are levels
+                       against THESE, which is the whole point of seasoning
+      issue_anchor     the trading day the note actually fixed on
+      maturity_date    the ORIGINAL maturity (issue + tenor), not today + tenor
+      obs_dates        only the observations still to come
+      periods_elapsed  how many already fixed  → price_note's window offset
+      pending_coupons  memory arrears carried in
+      coupons_received realised income so far (reporting only — it is NOT part of
+                       the forward payoff, which is what the MC prices)
+      start_basket     cliquet: basket at the last elapsed reset
+      perf_now         today's per-asset performance against the fixings
+    """
+    if not getattr(terms, "seasoned", False):
+        return None
+    if not terms.issue_date:
+        return {"ok": False, "reason": "no_issue_date"}
+    issue_ts = pd.Timestamp(terms.issue_date)
+    anchor = pd.Timestamp(anchor)
+    if issue_ts > anchor:
+        return {"ok": False, "reason": "not_issued"}
+
+    # The fixing predates the calibration window, so read the full history (the
+    # same cached pull the live tab uses) rather than the run's price slice.
+    full = _prices(dict(terms.tickers), years=None, field="close")
+    i0 = int(full.index.searchsorted(issue_ts))
+    if i0 >= len(full) or full.index[i0] > anchor:
+        return {"ok": False, "reason": "no_fixing"}
+    issue_anchor = full.index[i0]
+    S0_fix = full.iloc[i0].to_numpy(dtype=float)
+    fixings = {str(c): float(v) for c, v in zip(full.columns, S0_fix)}
+
+    obs_cal   = [pd.Timestamp(d) for d in terms.obs_calendar_dates(issue_anchor)]
+    remaining = [d for d in obs_cal if d > anchor]
+    k = len(obs_cal) - len(remaining)
+    if not remaining:
+        return {"ok": False, "reason": "matured"}
+
+    # Replay what already happened, off realised prices, for the arrears carried
+    # into the window (and to catch a note that has already been called away).
+    past_rows = [full.iloc[int(full.index.searchsorted(d))].to_numpy(dtype=float)
+                 for d in obs_cal[:k]]
+    perf_obs = (np.vstack(past_rows) / S0_fix) if past_rows else np.empty((0, len(S0_fix)))
+
+    pending, received, start_basket = 0, 0.0, 1.0
+    if getattr(terms, "note_type", "phoenix") == "participation":
+        if getattr(terms, "participation_periodic", False) and k:
+            start_basket = float(_basket(perf_obs[-1:], terms.participation_basket)[0])
+    else:
+        replay = replay_note(perf_obs, terms)
+        if replay["autocall_period"]:
+            return {"ok": False, "reason": "called"}
+        pending  = int(replay["pending_coupons"])
+        received = float(replay["total_coupons"])
+
+    return {
+        "ok": True,
+        "fixings":         fixings,
+        "issue_anchor":    issue_anchor,
+        "maturity_date":   issue_anchor + pd.DateOffset(months=round(terms.maturity * 12)),
+        "obs_dates":       remaining,
+        "periods_elapsed": k,
+        "pending_coupons": pending,
+        "coupons_received": received,
+        "start_basket":    start_basket,
+        "perf_now":        full.iloc[-1].to_numpy(dtype=float) / S0_fix,
+    }
 
 
 def _simulate_full(terms: NoteTerms, *, n_paths: int, seed: int, calib_years: float,
@@ -608,14 +723,19 @@ def _simulate_full(terms: NoteTerms, *, n_paths: int, seed: int, calib_years: fl
         if p.name in raw_last.index:
             p.S0 = float(raw_last[p.name])
 
-    # Trading-day grid to maturity.
+    # Trading-day grid to maturity. Unseasoned (the default) that is today +
+    # tenor, pricing the note as if issued today; seasoned it runs today → the
+    # ORIGINAL maturity, covering only the observations still to come.
     anchor   = prices_raw.index[-1]
+    seas     = _seasoning(terms, anchor)
+    live     = seas if (seas and seas.get("ok")) else None
     mat_date = pd.offsets.BDay().rollforward(
-        anchor + pd.DateOffset(months=round(terms.maturity * 12)))
+        live["maturity_date"] if live
+        else anchor + pd.DateOffset(months=round(terms.maturity * 12)))
     grid     = pd.bdate_range(anchor, mat_date)
     dt_grid  = np.diff(grid.values).astype("timedelta64[D]").astype(float) / 365.0
     N        = len(grid) - 1
-    obs_steps, obs_times = _snap_obs(grid, anchor, N, terms)
+    obs_steps, obs_times = _snap_obs(grid, N, _obs_dates(terms, anchor, live))
 
     # Pre-programmed dividend jumps (graceful if the pull fails).
     try:
@@ -640,18 +760,27 @@ def _simulate_full(terms: NoteTerms, *, n_paths: int, seed: int, calib_years: fl
 
     n_assets   = len(cal_result.params)
     sim_prices = np.stack(sim_results["S_paths"], axis=2)
-    S0_vec     = np.array([p.S0 for p in cal_result.params]).reshape(1, 1, n_assets)
+    # Performance is measured against the ORIGINAL fixings for a seasoned note, so
+    # the simulated paths open at today's level (e.g. 0.82) rather than at 1.0 and
+    # the term sheet's barriers keep their meaning. Unseasoned, the fixing IS
+    # today's price and the paths open at par exactly as before.
+    S0_vec     = np.array([(live["fixings"][p.name] if live else p.S0)
+                           for p in cal_result.params]).reshape(1, 1, n_assets)
     perf_paths = sim_prices / S0_vec
     wof_paths  = perf_paths.min(axis=2)
 
     note = price_note(perf_paths, terms, seed=seed + 1,
-                      obs_steps=obs_steps, obs_times=obs_times)
+                      obs_steps=obs_steps, obs_times=obs_times,
+                      **_season_kwargs(live))
 
     wof_bands   = np.percentile(wof_paths, _PCTS, axis=0)
     asset_bands = np.stack([np.percentile(sim_prices[:, :, i], _PCTS, axis=0)
                             for i in range(n_assets)])
     t_grid      = np.concatenate([[0.0], np.cumsum(dt_grid)])
-    obs_pairs   = [(f"P{i+1}", t) for i, t in enumerate(obs_times)]
+    # Chart/table period labels carry the TERM SHEET's numbering, so a seasoned run
+    # that starts at the 6th observation says P6, not P1.
+    k_off       = live["periods_elapsed"] if live else 0
+    obs_pairs   = [(f"P{k_off+i+1}", t) for i, t in enumerate(obs_times)]
     asset_names = list(tickers.values())
 
     return {
@@ -660,6 +789,9 @@ def _simulate_full(terms: NoteTerms, *, n_paths: int, seed: int, calib_years: fl
         "wof_bands": wof_bands, "asset_bands": asset_bands, "t_grid": t_grid,
         "obs_steps": obs_steps, "obs_times": obs_times, "obs_pairs": obs_pairs,
         "asset_names": asset_names, "eng_used": eng_used,
+        # Seasoning state: the resolved context when it applied, else the raw
+        # result (None, or an {"ok": False, "reason"} the summary reports).
+        "seasoning": seas, "live_season": live,
         # Grid internals so a second note (A/B compare) can be RE-PRICED on the very
         # same simulated paths — recomputing only its own observation schedule.
         "grid": grid, "anchor": anchor, "N": N, "seed": seed,
@@ -707,6 +839,35 @@ def _mc_figures(sf: dict, note: dict, terms: NoteTerms, tr) -> dict:
     }
 
 
+def _seasoning_summary(sf: dict, terms: NoteTerms) -> dict:
+    """The seasoning block of a run summary. `period_offset` is the key one: the
+    per-period arrays (autocall_by_period, obs_times) are aligned to the REMAINING
+    observations, so a display layer labels column i as period offset+i+1.
+
+    `seasoning_reason` is set when seasoning was requested but couldn't be applied
+    — the run fell back to pricing from issue and the UI should say why."""
+    live, raw = sf.get("live_season"), sf.get("seasoning")
+    if not live:
+        out = {"seasoned": False, "period_offset": 0}
+        if raw and not raw.get("ok"):
+            out["seasoning_reason"] = raw.get("reason")
+        return out
+    perf_now = np.asarray(live["perf_now"], dtype=float)
+    return {
+        "seasoned":          True,
+        "period_offset":     int(live["periods_elapsed"]),
+        "periods_elapsed":   int(live["periods_elapsed"]),
+        "periods_remaining": int(terms.n_obs - live["periods_elapsed"]),
+        "issue_date":        pd.Timestamp(live["issue_anchor"]).date().isoformat(),
+        "maturity_date":     pd.Timestamp(live["maturity_date"]).date().isoformat(),
+        "remaining_years":   _f(sf["obs_times"][-1]),
+        "pending_coupons":   int(live["pending_coupons"]),
+        "coupons_received":  _f(live["coupons_received"]),
+        # Where the note stands today, on the same scale as every barrier.
+        "start_level":       _f(float(perf_now.min())),
+    }
+
+
 def _mc_summary(sf: dict, note: dict, terms: NoteTerms) -> dict:
     """Assemble the JSON summary (payoff stats + calibration) for ONE note."""
     cal_result, obs_times = sf["cal_result"], sf["obs_times"]
@@ -716,6 +877,9 @@ def _mc_summary(sf: dict, note: dict, terms: NoteTerms) -> dict:
         "prob_autocall", "prob_knock_in_total", "expected_nominal_payout",
         "loss_given_knock_in", "prob_maturity", "prob_rescued",
         "prob_barrier_event", "avg_time_to_autocall",
+        # position measures — cost_basis is 1.0 unless the note was bought on the
+        # secondary market; prob_loss is P(negative return on that cost)
+        "cost_basis", "prob_loss",
         # participation-only (None on Phoenix → the client ignores them)
         "prob_above_par", "prob_below_par", "prob_at_cap", "prob_knocked_out",
         "expected_gain", "expected_redemption", "p5_redemption", "p95_redemption",
@@ -745,6 +909,7 @@ def _mc_summary(sf: dict, note: dict, terms: NoteTerms) -> dict:
     summary["autocall_by_period"] = [float(x) for x in
                                      note.get("prob_autocall_by_period", [])]
     summary["obs_times"] = [float(x) for x in obs_times]
+    summary.update(_seasoning_summary(sf, terms))
     # Calibrated Heston parameters per asset (+ Feller margin) for the calibration
     # table, and the Student-t copula dof.
     summary["t_dof"] = _f(cal_result.t_dof)
@@ -767,6 +932,10 @@ def _store_mc_run(sf: dict, note: dict, terms: NoteTerms) -> str:
         "t_grid":     sf["t_grid"],
         "asset_names": sf["asset_names"],
         "terms":      terms.to_dict(),
+        # Seasoning offset + carried arrears, so the explorer and the single-path
+        # inspector replay the same window the run priced.
+        "period_offset":   int(note.get("periods_elapsed", 0)),
+        "pending_coupons": int((sf.get("live_season") or {}).get("pending_coupons", 0)),
         "note":       {k: np.asarray(v) for k, v in note.items()
                        if isinstance(v, np.ndarray) and v.ndim <= 2},
     })
@@ -794,11 +963,33 @@ def _reprice_on_paths(sf: dict, terms: NoteTerms, *, seed: int) -> dict:
     the shared trading-day grid, then returns a fresh `sf`-shaped dict whose `note`
     and obs metadata are for `terms` but whose paths/bands/calibration are shared."""
     grid, anchor, N = sf["grid"], sf["anchor"], sf["N"]
-    obs_steps, obs_times = _snap_obs(grid, anchor, N, terms)
+    # B gets its OWN seasoning state — same fixings and grid (guaranteed by the
+    # shared-paths guard in run_compare), but its own observation calendar, elapsed
+    # count and arrears, since those follow from its own frequency and barriers.
+    seas = _seasoning(terms, anchor)
+    live = seas if (seas and seas.get("ok")) else None
+    obs_steps, obs_times = _snap_obs(grid, N, _obs_dates(terms, anchor, live))
     note = price_note(sf["perf_paths"], terms, seed=seed + 1,
-                      obs_steps=obs_steps, obs_times=obs_times)
+                      obs_steps=obs_steps, obs_times=obs_times,
+                      **_season_kwargs(live))
+    k_off = live["periods_elapsed"] if live else 0
     return {**sf, "note": note, "obs_steps": obs_steps, "obs_times": obs_times,
-            "obs_pairs": [(f"P{i+1}", t) for i, t in enumerate(obs_times)]}
+            "seasoning": seas, "live_season": live,
+            "obs_pairs": [(f"P{k_off+i+1}", t) for i, t in enumerate(obs_times)]}
+
+
+def _can_share_paths(terms_a: NoteTerms, terms_b: NoteTerms) -> bool:
+    """Whether an A/B compare can price both notes on ONE set of simulated paths.
+
+    They must live on the same trading-day grid AND the same performance scale.
+    Seasoning changes both — the grid runs to the ORIGINAL maturity and performance
+    is measured against the ORIGINAL fixings — so a seasoned B can only ride A's
+    paths when it seasons off the very same issue date. Otherwise B is simulated
+    independently (correct either way, just noisier to compare)."""
+    return (dict(terms_a.tickers) == dict(terms_b.tickers)
+            and abs(float(terms_a.maturity) - float(terms_b.maturity)) < 1e-9
+            and bool(terms_a.seasoned) == bool(terms_b.seasoned)
+            and (not terms_a.seasoned or terms_a.issue_date == terms_b.issue_date))
 
 
 def run_compare(terms_a: NoteTerms, terms_b: NoteTerms, *, n_paths: int = 10000,
@@ -813,8 +1004,7 @@ def run_compare(terms_a: NoteTerms, terms_b: NoteTerms, *, n_paths: int = 10000,
     tr = translations.Translator(lang)
     sf_a = _simulate_full(terms_a, n_paths=n_paths, seed=seed, calib_years=calib_years,
                           history_years=history_years, engine=engine)
-    shared = (dict(terms_a.tickers) == dict(terms_b.tickers)
-              and abs(float(terms_a.maturity) - float(terms_b.maturity)) < 1e-9)
+    shared = _can_share_paths(terms_a, terms_b)
     if shared:
         sf_b = _reprice_on_paths(sf_a, terms_b, seed=seed)
     else:
@@ -890,6 +1080,45 @@ def _backtest_outcome_labels(bt) -> "tuple[list[str], dict[str, str]]":
 
 def _ts(s: str | None):
     return pd.Timestamp(s) if s else None
+
+
+def _settlement_ts(terms: NoteTerms, issue_ts, today_ts):
+    """When the CURRENT holder's position started. `settlement_date` for a note
+    bought on the secondary market, otherwise the issue date. Clamped into
+    [issue, today] so a typo (settled before issue, or in the future) degrades to
+    a sane holding period rather than a negative one."""
+    s = _ts(getattr(terms, "settlement_date", None))
+    if s is None:
+        return issue_ts
+    return min(max(s, issue_ts), today_ts)
+
+
+def _position_summary(terms: NoteTerms, settle_ts, holding_years: float,
+                      cost_basis: float, income: float, redemption: float = 1.0) -> dict:
+    """The live tab's position block — what the holder paid, when, and where the
+    position stands ON THAT COST.
+
+    `income` is the coupon/locked-in income received SINCE settlement; `redemption`
+    is the level the note currently indicates it would redeem at (par for a live
+    phoenix, the projected redemption for a participation note). From those:
+      pull_to_par    — capital gain still to come if it redeems there, on cost
+      return_on_cost — total return on cost if the position closed at that level now
+
+    `secondary` is the display switch: False for a plain subscription at par, where
+    every field here is trivially par/issue-date and the UI shows the note's own
+    numbers instead."""
+    pull = (redemption - cost_basis) / cost_basis
+    return {
+        "secondary":        bool(terms.is_secondary),
+        "settlement_date":  settle_ts.date().isoformat(),
+        "purchase_price":   _f(terms.purchase_price),
+        "accrued_at_purchase": _f(terms.accrued_at_purchase),
+        "cost_basis":       _f(cost_basis),
+        "holding_years":    _f(holding_years),
+        "income_since":     _f(income),
+        "pull_to_par":      _f(pull),
+        "return_on_cost":   _f((income + redemption - cost_basis) / cost_basis),
+    }
 
 
 def run_backtest_api(terms: NoteTerms, *, history_years: float | None = None,
@@ -1168,7 +1397,8 @@ def _participation_live_result(terms, tr, asset_names, disp_to_sym, obs_labels,
                                live_prices, full_prices, S0, perf_today, worst_asset,
                                perf_obs, past_dates, obs_cal, obs_snapped, anchor_live,
                                issue_ts, today_ts, mat_ts, elapsed_years, remaining_years,
-                               pct_elapsed, history_gap_days, for_pdf):
+                               pct_elapsed, history_gap_days, for_pdf,
+                               settle_ts, holding_years, cost_basis):
     """Current-performance for a Participation note — see run_live_api. Reports the
     note against its own maturity payoff (basket today → redemption if settled now,
     distance to breakeven / floor / cap). Cliquet notes also accrue the per-period
@@ -1186,6 +1416,7 @@ def _participation_live_result(terms, tr, asset_names, disp_to_sym, obs_labels,
     reset_markers: list[dict] = []
     obs_rows: list[dict] = []
     accrued = 0.0
+    income_since = 0.0        # cliquet income locked in AFTER settlement
     current_income = 0.0
     if periodic:
         B_reset = _basket(perf_obs, pk) if n_past else np.empty(0)
@@ -1197,6 +1428,9 @@ def _participation_live_result(terms, tr, asset_names, disp_to_sym, obs_labels,
             prev = float(B_reset[j])
             accrued += inc
             running += inc
+            held = bool(past_dates[j] > settle_ts)
+            if held:
+                income_since += inc
             status = "part_gain" if inc > 1e-9 else ("part_loss" if inc < -1e-9 else "part_flat")
             reset_markers.append({"date": past_dates[j], "label": obs_labels[j],
                                   "move": level - 1.0, "income": inc})
@@ -1204,7 +1438,7 @@ def _participation_live_result(terms, tr, asset_names, disp_to_sym, obs_labels,
                              "date": past_dates[j].date().isoformat(),
                              "status": status, "move": round(level - 1.0, 6),
                              "income": round(inc, 6), "cumulative": round(running, 6),
-                             "upcoming": False})
+                             "upcoming": False, "held": held})
         # Running (unsettled) period, marked to today off the last reset basket.
         if n_past < terms.n_obs:
             cur_level = basket_today / prev if prev else 1.0
@@ -1213,12 +1447,13 @@ def _participation_live_result(terms, tr, asset_names, disp_to_sym, obs_labels,
                              "date": (obs_cal[n_past].date().isoformat() if n_past < len(obs_cal) else None),
                              "status": "running", "move": round(cur_level - 1.0, 6),
                              "income": round(current_income, 6),
-                             "cumulative": round(running + current_income, 6), "upcoming": False})
+                             "cumulative": round(running + current_income, 6),
+                             "upcoming": False, "held": True})
             for q in range(n_past + 1, terms.n_obs):
                 obs_rows.append({"period": obs_labels[q],
                                  "date": (obs_cal[q].date().isoformat() if q < len(obs_cal) else None),
                                  "status": "upcoming", "move": None, "income": None,
-                                 "cumulative": None, "upcoming": True})
+                                 "cumulative": None, "upcoming": True, "held": True})
         projected_redemption = max(1.0 + accrued + current_income, 0.0)
     else:
         projected_redemption = proj_now
@@ -1228,7 +1463,8 @@ def _participation_live_result(terms, tr, asset_names, disp_to_sym, obs_labels,
     fig = charts.build_participation_live_chart(
         live_prices, anchor_live, today_ts, mat_ts, pk, tr,
         floor=floor, cap=cap, breakeven=(breakeven if not periodic else None),
-        reset_markers=reset_markers or None, future_resets=future_resets or None)
+        reset_markers=reset_markers or None, future_resets=future_resets or None,
+        settlement_date=(settle_ts if terms.is_secondary else None))
 
     if for_pdf:
         # The PDF current-performance section is still phoenix-shaped; skip it for a
@@ -1267,6 +1503,12 @@ def _participation_live_result(terms, tr, asset_names, disp_to_sym, obs_labels,
         "n_reset_total":   int(terms.n_obs) if periodic else None,
         "period_cap":      _f(terms.period_cap) if periodic else None,
         "alive":           True,
+        # A participation note's "indicated redemption" is what it would pay if it
+        # settled today (par + accrued for a cliquet, the payoff curve otherwise) —
+        # that, not par, is what the purchase discount pulls to.
+        **_position_summary(terms, settle_ts, holding_years, cost_basis,
+                            income_since if periodic else 0.0,
+                            redemption=(1.0 if periodic else projected_redemption)),
     }
     return {
         "available": True,
@@ -1310,6 +1552,14 @@ def run_live_api(terms: NoteTerms, *, lang: str = "en", for_pdf: bool = False) -
     elapsed_years   = (today_ts - issue_ts).days / 365.25
     remaining_years = max(terms.maturity - elapsed_years, 0.0)
     pct_elapsed     = min(elapsed_years / terms.maturity, 1.0) if terms.maturity else 1.0
+
+    # Secondary-market position: the note may have been bought after issue, at a
+    # price away from par. Everything the note DID (barriers, coupons paid, the
+    # chart) still runs from the issue date — only the holder's economics are
+    # measured from settlement, on what they paid.
+    settle_ts = _settlement_ts(terms, issue_ts, today_ts)
+    holding_years = (today_ts - settle_ts).days / 365.25
+    cost_basis = float(terms.cost_basis)
 
     full_prices = _prices(tickers, years=None, field="close")
     issue_idx = int(full_prices.index.searchsorted(issue_ts))
@@ -1362,13 +1612,14 @@ def run_live_api(terms: NoteTerms, *, lang: str = "en", for_pdf: bool = False) -
             terms, tr, asset_names, disp_to_sym, obs_labels, live_prices, full_prices,
             S0, perf_today, worst_asset, perf_obs, past_dates, obs_cal, obs_snapped,
             anchor_live, issue_ts, today_ts, mat_ts, elapsed_years, remaining_years,
-            pct_elapsed, history_gap_days, for_pdf)
+            pct_elapsed, history_gap_days, for_pdf, settle_ts, holding_years, cost_basis)
 
     replay = replay_note(perf_obs, terms)
 
     obs_rows: list[dict] = []
     obs_markers: list[dict] = []
     running_total = 0.0
+    coupons_since = 0.0          # coupons this holder actually received
     for q, label in enumerate(obs_labels):
         snap = obs_snapped[q] if q < len(obs_snapped) else None
         if q >= len(replay["rows"]) or snap is None:
@@ -1379,12 +1630,19 @@ def run_live_api(terms: NoteTerms, *, lang: str = "en", for_pdf: bool = False) -
             obs_rows.append({
                 "period": label, "date": est, "status": "upcoming",
                 "wof": None, "coupon": None, "cumulative": None, "upcoming": True,
+                "held": True,
             })
             continue
 
         r = replay["rows"][q]
         obs_wof = float(perf_obs[q].min())
         running_total += r["coupon_amount"]
+        # A coupon belongs to whoever held the note on the payment date, so a
+        # secondary buyer receives only the ones fixed AFTER settlement — memory
+        # included (a memory coupon releases arrears in cash to the current holder).
+        held = bool(snap > settle_ts)
+        if held:
+            coupons_since += r["coupon_amount"]
         if r["autocalled"]:
             status = "autocalled"
         elif terms.coupon_at_autocall_only:
@@ -1398,6 +1656,7 @@ def run_live_api(terms: NoteTerms, *, lang: str = "en", for_pdf: bool = False) -
             "wof": round(obs_wof, 6),
             "coupon": _f(r["coupon_amount"]) if r["coupon_amount"] > 0 else None,
             "cumulative": round(running_total, 6), "upcoming": False,
+            "held": held,
         })
         _amt = float(r["coupon_amount"])
         _released = round(_amt / terms.coupon_rate) if (terms.coupon_rate and _amt > 0) else (1 if _amt > 0 else 0)
@@ -1411,9 +1670,12 @@ def run_live_api(terms: NoteTerms, *, lang: str = "en", for_pdf: bool = False) -
             break
 
     pending_coupons = int(replay["pending_coupons"])
-    total_coupons   = float(replay["total_coupons"])
-    irr_to_date     = total_coupons / max(elapsed_years, 1 / 252)
+    total_coupons   = float(replay["total_coupons"])   # what the NOTE has paid since issue
     n_replayed      = len(replay["rows"])
+    # Holder's economics: income received since settlement, on what was paid for
+    # the note, annualised over the holding period. For a primary subscription
+    # (cost 1.0, settled at issue) this is exactly coupons / elapsed years.
+    irr_to_date = coupons_since / cost_basis / max(holding_years, 1 / 252)
 
     # Future observation reference lines (calendar dates) — only while alive.
     if replay["autocall_period"]:
@@ -1430,7 +1692,8 @@ def run_live_api(terms: NoteTerms, *, lang: str = "en", for_pdf: bool = False) -
         knock_in_barrier=terms.knock_in_barrier,
         autocall_barrier=terms.autocall_barrier,
         coupon_barrier=terms.coupon_barrier, tr=tr,
-        autocall_schedule=live_sched)
+        autocall_schedule=live_sched,
+        settlement_date=(settle_ts if terms.is_secondary else None))
 
     if for_pdf:
         # PDF shapes (app/pdf_report.py): translated obs-table headers/values +
@@ -1491,6 +1754,11 @@ def run_live_api(terms: NoteTerms, *, lang: str = "en", for_pdf: bool = False) -
             "alive":           not bool(replay["autocall_period"]),
             "coupon_at_autocall_only": bool(terms.coupon_at_autocall_only),
             "next_premium":    _f(terms.coupon_rate * (n_replayed + 1)),
+            # A live phoenix indicates par: it redeems at 100% on an autocall and on
+            # any maturity that doesn't knock in, so par is the reference the
+            # discount/premium pulls to.
+            **_position_summary(terms, settle_ts, holding_years, cost_basis,
+                                coupons_since, redemption=1.0),
         },
         "assets": [
             {"name": nm, "symbol": disp_to_sym.get(nm, ""), "perf": _f(perf_today[i])}
@@ -1746,8 +2014,7 @@ def _compare_for_pdf(sf_a: dict, terms_a: NoteTerms, terms_b: NoteTerms, tr, *,
     """Compute the A/B comparison payload for the PDF: metrics diff + raw go.Figure
     overlays (kaleido renders these to PNG downstream). Reuses A's simulation `sf`
     and reprices B on the same paths when they share underlyings + maturity."""
-    shared = (dict(terms_a.tickers) == dict(terms_b.tickers)
-              and abs(float(terms_a.maturity) - float(terms_b.maturity)) < 1e-9)
+    shared = _can_share_paths(terms_a, terms_b)
     sf_b = (_reprice_on_paths(sf_a, terms_b, seed=seed) if shared else
             _simulate_full(terms_b, n_paths=n_paths, seed=seed, calib_years=calib_years,
                            history_years=history_years, engine=engine))

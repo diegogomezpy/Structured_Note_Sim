@@ -63,6 +63,35 @@ By default `call_steepness=None` → hard trigger: `autocall_prob()` returns exa
 
 Simple annualisation: `total_return / t_held`. **Not** compound. This matches how structured note coupons are quoted as simple p.a. rates. Expected IRR ≠ ratio of expected total return to expected time held (it's the mean of per-path ratios).
 
+### Secondary-market position (cost basis)
+
+A note can be held as a **position bought after issue at a price away from par**, described by three `NoteTerms` fields: `settlement_date`, `purchase_price` (the CLEAN price as a fraction of nominal) and `accrued_at_purchase` (coupon settled on top). `cost_basis` = `purchase_price + accrued_at_purchase` (a `@property`, never stored) and `is_secondary` is the display switch. The defaults — no settlement date, price 1.0, accrued 0.0 — are a primary subscription at par, so **every existing config prices exactly as before**.
+
+- **`core/note.py:_position_returns()` is the only place the cost basis enters the payoff.** It turns per-path `nominal_payoffs` into `(payoff − cost) / cost` and annualises that over the same `t_held`. All three payoff branches (Phoenix, participation, cliquet) call it, so the Monte Carlo and the backtest — which share `price_note` — can never disagree about a position. `price_note` also returns `cost_basis` and `prob_loss` (P(negative return **on cost**) — distinct from `prob_knock_in_total`, since coupons can carry a knocked-in path back into profit and a discount can rescue a below-par redemption).
+- **Payoffs, barriers and probabilities are untouched** — the cost basis only re-bases the return denominator. `prob_above_par` / `prob_below_par` / the participation breakeven stay measured against par, because they describe the *note*, not the holder.
+- **`settlement_date` only affects the live tab** (`api/engine.py:run_live_api` + `_participation_live_result` via `_settlement_ts` / `_position_summary`): coupons fixed at or before settlement went to the previous holder, so they are excluded from `income_since` and each observation row is tagged `held`. Holding time runs from settlement, and `irr_to_date` becomes income / cost / holding-years — which reduces exactly to the old formula for a par subscription. The band also reports `pull_to_par` and `return_on_cost`.
+- The cost basis is orthogonal to **seasoning** (below): one says what you paid, the other says what gets simulated.
+
+### Seasoning — pricing the remaining life
+
+`NoteTerms.seasoned` (**default `False`**) switches the Monte Carlo from "a hypothetical note issued today for the full tenor" — the historical behaviour of every config, and still the default — to "what is left of *this* note". It needs a past `issue_date`; the toggle lives in the setup overlay's Position card.
+
+**What changes when it's on** (`api/engine.py:_seasoning` resolves the state, `_simulate_full` applies it):
+
+- The grid runs **today → the ORIGINAL maturity** (issue + tenor), not today + tenor.
+- `perf_paths = sim_prices / S0_fix` where `S0_fix` is the **fixing at the issue anchor**, read from the full price history. So the paths open at today's level (e.g. 0.82) instead of 1.0 and the term sheet's barriers keep their meaning. This is the whole point — a knock-in at 60% must mean 60% of the original fixing.
+- Only the observations still to come are priced, with **`price_note(..., periods_elapsed=k, pending_coupons=p, start_basket=b)`**. Inside, `k` shifts every per-period quantity onto **absolute** term-sheet periods: autocall eligibility (`abs_periods >= autocall_start_period`), the step-down rungs (`autocall_barrier_schedule()[k:]`), and the growth-autocall accrual (`coupon_rate * (autocall_period + k)`). Memory arrears carried in are released by the first coupon that pays inside the window. `start_basket` is the cliquet's last elapsed reset level.
+- `replay_note(perf_obs, terms, start_period=…, pending=…)` replays a window the same way — it derives the arrears from realised prices, and the single-path inspector reuses it.
+- Coupons already paid are **realised, not part of the forward payoff**; the summary reports them as `coupons_received` for context only.
+
+**Indexing contract.** Every per-period array `price_note` returns (`coupon_amounts`, `prob_autocall_by_period`, `autocall_period`, …) is aligned to the *priced window*, all sharing width `len(obs_steps)`. The result carries `periods_elapsed`, and the run summary exposes it as **`period_offset`**: column *i* describes term-sheet period `period_offset + i + 1`. Display layers add the offset (`MCTables`, `OutcomeWaterfall`, `HeroMetrics`, `obs_pairs` labels, the inspector); `inspect_run` also shifts client-sent period filters back into window space.
+
+**Refusals.** Seasoning is silently skipped — the run falls back to from-issue and reports `seasoning_reason` — when there is no issue date, the issue date is in the future, price history doesn't reach the fixing, the note has matured, or it **already autocalled on realised prices** (nothing left to simulate).
+
+**A/B compare.** `_can_share_paths()` gates path sharing: seasoning changes both the grid and the performance scale, so B can only ride A's paths when both are seasoned off the same `issue_date`. Otherwise B is simulated independently.
+
+**Not seasoned:** the historical backtest (each issue window is a full life by construction) and the live tab (which reads realised prices, not simulation).
+
 ## Note JSON config format
 
 Configs live in `note_configs/`. Required fields for `NoteTerms.from_dict`:
@@ -82,11 +111,15 @@ Configs live in `note_configs/`. Required fields for `NoteTerms.from_dict`:
   "autocall_basket": "worst_of",
   "one_star_level": null,
   "tickers": {"TICKER": "DisplayName", ...},
-  "issue_date": "YYYY-MM-DD"
+  "issue_date": "YYYY-MM-DD",
+  "settlement_date": null,
+  "purchase_price": 1.0,
+  "accrued_at_purchase": 0.0,
+  "seasoned": false
 }
 ```
 
-`issue_date` is optional; when set and on/before today, the app shows a "Current Performance" tab. `call_steepness: null` means hard trigger.
+`issue_date` is optional; when set and on/before today, the app shows a "Current Performance" tab. `call_steepness: null` means hard trigger. The position fields are optional and default to a primary subscription at par — see [Secondary-market position](#secondary-market-position-cost-basis); `seasoned` defaults to off — see [Seasoning](#seasoning--pricing-the-remaining-life).
 
 ## Basket types and the One Star feature
 

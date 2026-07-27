@@ -1275,6 +1275,19 @@ def build_historical_wof_path(
 # Current Note Performance (live — from issue date to today)
 # ---------------------------------------------------------------------------
 
+def _add_settlement_line(fig, settlement_date, dates, tr) -> None:
+    """Mark where a secondary-market position settled. No-op when the caller
+    passes None (held from issue) or the date falls outside the plotted window."""
+    if settlement_date is None or len(dates) == 0:
+        return
+    s = pd.Timestamp(settlement_date)
+    if not (dates[0] <= s <= dates[-1]):
+        return
+    fig.add_vline(x=s.isoformat(), line_dash="dashdot", line_color="#7c3aed",
+                  line_width=2, annotation_text=tr("chart_settlement"),
+                  annotation_position="bottom left")
+
+
 def build_live_performance_chart(
     hist_prices:        pd.DataFrame,   # prices from issue_date to today
     issue_date:         pd.Timestamp,
@@ -1287,6 +1300,7 @@ def build_live_performance_chart(
     coupon_barrier:     float,
     tr:                 "Translator",
     autocall_schedule:  list[tuple] | None = None,
+    settlement_date:    pd.Timestamp | None = None,
 ) -> go.Figure:
     """
     Live performance chart from issue date to today.
@@ -1340,6 +1354,11 @@ def build_live_performance_chart(
         fig.add_vline(x=today.isoformat(), line_dash="solid", line_color="#2c3e50",
                       line_width=2,
                       annotation_text=tr("chart_today"), annotation_position="top left")
+
+    # Where the current holder bought in — only drawn for a secondary-market
+    # position (the caller passes None when the note was held from issue, since a
+    # settlement line on the issue date is just noise).
+    _add_settlement_line(fig, settlement_date, dates, tr)
 
     # Past observation markers — grouped by kind into one named legend entry each
     # (matching the path explorer), with memory payouts shown as a stack of dots.
@@ -1410,6 +1429,7 @@ def build_participation_live_chart(
     breakeven:      float | None = None,
     reset_markers:  list[dict] | None = None,   # cliquet: [{date,label,move,income}]
     future_resets:  list[tuple] | None = None,  # cliquet: [(label, calendar_date), ...]
+    settlement_date: pd.Timestamp | None = None,
 ) -> go.Figure:
     """Live chart for a Participation note: the participation BASKET since issue
     (the payoff reference), with the underlyings receding behind it, and the payoff
@@ -1458,6 +1478,8 @@ def build_participation_live_chart(
     if today >= dates[0]:
         fig.add_vline(x=today.isoformat(), line_dash="solid", line_color="#2c3e50",
                       line_width=2, annotation_text=tr("chart_today"), annotation_position="top left")
+
+    _add_settlement_line(fig, settlement_date, dates, tr)
 
     for m in (reset_markers or []):
         x_iso = pd.Timestamp(m["date"]).isoformat()

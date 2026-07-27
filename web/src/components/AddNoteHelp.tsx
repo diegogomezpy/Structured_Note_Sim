@@ -62,6 +62,11 @@ const FIELDS: FieldRow[] = [
   { k: 'upside_cap', en: 'Max gain above par (0.15 = +15%), or null', es: 'Ganancia máxima sobre par (0,15 = +15%), o null' },
   { k: 'issue_date', en: 'YYYY-MM-DD — enables Current performance', es: 'AAAA-MM-DD — activa Rendimiento actual' },
 
+  { g: 'Optional — secondary-market position', es: 'Opcional — posición en secundario' },
+  { k: 'settlement_date', en: 'YYYY-MM-DD you bought it (default: held from issue)', es: 'AAAA-MM-DD de la compra (def.: desde la emisión)' },
+  { k: 'purchase_price', en: 'Clean price paid, fraction of nominal (0.95 = 95%)', es: 'Precio limpio pagado, fracción del nominal (0,95 = 95%)' },
+  { k: 'accrued_at_purchase', en: 'Accrued coupon settled on top (0 = clean trade)', es: 'Cupón corrido liquidado además (0 = operación limpia)' },
+
   { g: 'Optional — issuer', es: 'Opcional — emisor' },
   { k: 'issuer', en: 'Issuing bank (display + favicon)', es: 'Banco emisor (visual + favicon)' },
   { k: 'issuer_description', en: 'Prose blurb (auto-filled from Yahoo if omitted)', es: 'Descripción (se rellena desde Yahoo si se omite)' },

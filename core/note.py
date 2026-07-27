@@ -312,6 +312,29 @@ class NoteTerms:
     issuer_rating_fitch:    str         = ""      # Fitch credit rating, e.g. "AA-"
     tickers:                dict | None  = None
     issue_date:             str  | None = None   # "YYYY-MM-DD" — enables Current Performance tab
+    # ── Secondary-market position (defaults = subscribed at issue, at par) ─────
+    # A note bought on the secondary market settles on `settlement_date` at
+    # `purchase_price` (the CLEAN price, as a fraction of nominal) plus
+    # `accrued_at_purchase` (coupon accrued since the last payment date, also a
+    # fraction of nominal). Together they are the position's COST BASIS, and every
+    # return the app reports — Monte Carlo, backtest, live — is measured against
+    # that cost instead of par, so a note bought at 95% shows the BUYER's
+    # economics rather than the original subscriber's. `settlement_date` further
+    # sets where the live tab starts counting coupons and holding time; it does
+    # not re-season the Monte Carlo, which always prices a note running from today
+    # (same convention as `issue_date`).
+    settlement_date:        str  | None = None   # "YYYY-MM-DD"; None = held from issue
+    purchase_price:         float       = 1.0    # clean price paid (1.0 = par)
+    accrued_at_purchase:    float       = 0.0    # accrued coupon paid at settlement
+    # ── Seasoning: price the note from where it actually stands ────────────────
+    # OFF by default, in which case the Monte Carlo prices a note issued TODAY at
+    # today's fixings for a full `maturity` (the historical behaviour of every
+    # config). Turned on — and only meaningful with a past `issue_date` — the
+    # simulation instead runs from today to the ORIGINAL maturity date, measures
+    # performance against the ORIGINAL fixings (so the barriers sit where the term
+    # sheet put them), prices only the observations still to come, and carries in
+    # any memory-coupon arrears. See api/engine.py:_seasoning.
+    seasoned:               bool        = False
     # ── Per-underlying display info (powers the PDF "Underlying Breakdown") ──
     # Keyed by DISPLAY NAME: {"Microsoft": {"description": "...", "sector": "..."}}.
     # 'description' mirrors issuer_description — JSON-preloaded, editable in the UI.
@@ -332,6 +355,11 @@ class NoteTerms:
             raise ValueError(
                 f"autocall_start_period must be >= 1 (1-indexed); got {self.autocall_start_period}"
             )
+        if self.cost_basis <= 0:
+            raise ValueError(
+                f"purchase_price + accrued_at_purchase must be > 0 (a fraction of "
+                f"nominal, 1.0 = par); got {self.cost_basis}"
+            )
 
     # ------------------------------------------------------------------
     # Derived properties
@@ -350,6 +378,23 @@ class NoteTerms:
     def coupon_rate(self) -> float:
         """Per-period coupon rate = coupon_pa / periods_per_year."""
         return self.coupon_pa / self.periods_per_year
+
+    @property
+    def cost_basis(self) -> float:
+        """Cash paid per unit of nominal — clean `purchase_price` + the accrued
+        coupon settled with it. 1.0 = bought at par (a primary subscription, and
+        the default), 0.95 = bought at 95% on the secondary market. This is the
+        denominator of every return the app reports; see price_note."""
+        p = 1.0 if self.purchase_price is None else float(self.purchase_price)
+        a = 0.0 if self.accrued_at_purchase is None else float(self.accrued_at_purchase)
+        return p + a
+
+    @property
+    def is_secondary(self) -> bool:
+        """True when this is a secondary-market position — bought away from par,
+        after issue, or both. Purely a display switch; the maths always runs
+        through `cost_basis`, which is 1.0 for a primary subscription."""
+        return abs(self.cost_basis - 1.0) > 1e-9 or bool(self.settlement_date)
 
     # ------------------------------------------------------------------
     # Schedule helpers
@@ -443,6 +488,10 @@ class NoteTerms:
             "issuer_rating_fitch":    self.issuer_rating_fitch,
             "tickers":                self.tickers,
             "issue_date":             self.issue_date,
+            "settlement_date":        self.settlement_date,
+            "purchase_price":         self.purchase_price,
+            "accrued_at_purchase":    self.accrued_at_purchase,
+            "seasoned":               self.seasoned,
             "underlyings":            self.underlyings,
         }
 
@@ -528,6 +577,32 @@ class NoteTerms:
 
     def to_json(self, indent: int = 2) -> str:
         return json.dumps(self.to_dict(), indent=indent)
+
+
+# ---------------------------------------------------------------------------
+# Position layer — returns measured on what the holder actually paid
+# ---------------------------------------------------------------------------
+
+def _position_returns(nominal_payoffs, t_held, terms: "NoteTerms"):
+    """Per-path (total return, simple annualised IRR, cost basis) MEASURED ON COST.
+
+    A note bought on the secondary market at `purchase_price` (+ accrued) costs
+    `terms.cost_basis` per unit of nominal, so the holder's return is
+    ``(payoff − cost) / cost`` — not ``payoff − 1``. At the default cost of 1.0
+    (a primary subscription at par) the two are identical, so every existing
+    config prices exactly as before.
+
+    ``t_held`` is the per-path holding time in years (or a scalar for a
+    maturity-only payoff); the IRR convention stays simple annualisation, as
+    documented on price_note.
+
+    This is the ONE place the cost basis enters the payoff, so the Monte Carlo
+    and the historical backtest — which share price_note — can never disagree.
+    """
+    cost = float(getattr(terms, "cost_basis", 1.0) or 1.0)
+    total_return = (np.asarray(nominal_payoffs, dtype=float) - cost) / cost
+    irr = total_return / np.maximum(t_held, 1.0 / 252.0)
+    return total_return, irr, cost
 
 
 
@@ -703,7 +778,8 @@ def _participation_stats(R: np.ndarray, terms: "NoteTerms", B: np.ndarray | None
     }
 
 
-def _participation_periodic_payoff(perf_paths, terms, obs_steps, t_maturity, n_obs) -> dict:
+def _participation_periodic_payoff(perf_paths, terms, obs_steps, t_maturity, n_obs,
+                                   start_basket: float = 1.0) -> dict:
     """Cliquet / ratchet participation: a series of back-to-back participation notes.
     Each reset period is a self-contained participation note on that period's move —
     the SAME downside × upside profile as a single-maturity note (full / buffer /
@@ -713,10 +789,11 @@ def _participation_periodic_payoff(perf_paths, terms, obs_steps, t_maturity, n_o
     airbag / bear) is summed; capital rolls at par. The per-period stream maps onto
     the coupon machinery so the path explorer and coupon stats work unchanged."""
     n_paths = perf_paths.shape[0]
-    # Basket level at each reset date; B_0 = 1.0 at inception. period_level is the
-    # basket's gross return over each reset interval (the reset strike is par).
+    # Basket level at each reset date; B_0 = 1.0 at inception, or the basket at the
+    # last elapsed reset for a seasoned note. period_level is the basket's gross
+    # return over each reset interval (the reset strike is par).
     B      = np.stack([_basket(perf_paths[:, s, :], terms.participation_basket) for s in obs_steps], axis=1)  # (n_paths, n_obs)
-    B_prev = np.concatenate([np.ones((n_paths, 1)), B[:, :-1]], axis=1)
+    B_prev = np.concatenate([np.full((n_paths, 1), float(start_basket)), B[:, :-1]], axis=1)
     level  = np.divide(B, B_prev, out=np.ones_like(B), where=(B_prev != 0))   # (n_paths, n_obs)
     # Evaluate each period with the full participation profile (cap = period_cap,
     # strike reset to par). One-period notes, so no periodic flag / maturity cap.
@@ -730,8 +807,7 @@ def _participation_periodic_payoff(perf_paths, terms, obs_steps, t_maturity, n_o
     period_move_p75    = np.percentile(level, 75, axis=0) - 1.0
     principal     = np.ones(n_paths)                     # capital rolls at par each period
     nominal       = np.maximum(principal + total_income, 0.0)
-    total_return  = nominal - 1.0
-    irr           = total_return / max(t_maturity, 1.0 / 252.0)
+    total_return, irr, cost_basis = _position_returns(nominal, t_maturity, terms)
     loss          = nominal < 1.0
     return {
         "nominal_payoffs":      nominal,
@@ -757,6 +833,8 @@ def _participation_periodic_payoff(perf_paths, terms, obs_steps, t_maturity, n_o
         "prob_rescued":             0.0,
         "loss_given_knock_in":      float(irr[loss].mean()) if loss.any() else float("nan"),
         "avg_time_to_autocall":     None,
+        "cost_basis":               cost_basis,
+        "prob_loss":                float((total_return < 0).mean()),
         "period_move_mean":         period_move_mean,
         "period_income_mean":       period_income_mean,
         "period_move_p25":          period_move_p25,
@@ -765,19 +843,24 @@ def _participation_periodic_payoff(perf_paths, terms, obs_steps, t_maturity, n_o
     }
 
 
-def _participation_payoff(perf_paths, terms, obs_steps, t_maturity, n_obs) -> dict:
+def _participation_payoff(perf_paths, terms, obs_steps, t_maturity, n_obs,
+                          start_basket: float = 1.0) -> dict:
     """price_note() branch for note_type == 'participation'. A pure maturity payoff:
     no coupons, no autocall, no periodic knock-in. Returns the same result schema as
     the Phoenix path so everything downstream (stats, plots, path explorer) is
-    unchanged; 'knock-in' here means redeemed below par (a capital loss)."""
+    unchanged; 'knock-in' here means redeemed below par (a capital loss).
+
+    A single-maturity note needs no seasoning state — its payoff reads the final
+    basket against the original fixings, which `perf_paths` already carries. Only
+    the cliquet does, via `start_basket` (the last elapsed reset level)."""
     if getattr(terms, "participation_periodic", False):
-        return _participation_periodic_payoff(perf_paths, terms, obs_steps, t_maturity, n_obs)
+        return _participation_periodic_payoff(perf_paths, terms, obs_steps, t_maturity,
+                                              n_obs, start_basket=start_basket)
     n_paths    = perf_paths.shape[0]
     final_step = obs_steps[-1]
     B          = _basket(perf_paths[:, final_step, :], terms.participation_basket)  # (n_paths,)
     R          = _participation_redemption(B, terms)
-    total_return = R - 1.0
-    irr        = total_return / max(t_maturity, 1.0 / 252.0)
+    total_return, irr, cost_basis = _position_returns(R, t_maturity, terms)
     loss       = R < 1.0                                    # redeemed below par
     zeros      = np.zeros(n_paths)
     return {
@@ -804,6 +887,8 @@ def _participation_payoff(perf_paths, terms, obs_steps, t_maturity, n_obs) -> di
         "prob_rescued":             0.0,
         "loss_given_knock_in":      float(irr[loss].mean()) if loss.any() else float("nan"),
         "avg_time_to_autocall":     None,
+        "cost_basis":               cost_basis,
+        "prob_loss":                float((total_return < 0).mean()),
         # Final basket per path — surfaced so the API can send a downsample to the
         # client, which recomputes redemption (via the TS mirror) for the payoff-
         # profile distribution overlay and the what-if sensitivity table.
@@ -822,6 +907,9 @@ def price_note(
     seed:       int | None = 42,
     obs_steps:  list[int]   | None = None,
     obs_times:  list[float] | None = None,
+    periods_elapsed: int   = 0,
+    pending_coupons: int   = 0,
+    start_basket:    float = 1.0,
 ) -> dict:
     """
     Evaluate Phoenix Memory Autocallable payoffs across all simulated paths.
@@ -831,9 +919,12 @@ def price_note(
     Parameters
     ----------
     perf_paths : np.ndarray  shape (n_paths, N+1, n_assets)
-        Per-asset performance paths (price / initial price).
+        Per-asset performance paths (price / initial FIXING).
         Produced by stacking sim_prices / S0_vector.
-        perf_paths[:, 0, :] should be all 1.0 (initial level).
+        For a note priced at issue, perf_paths[:, 0, :] is all 1.0. For a
+        SEASONED note it is today's performance against the original fixings —
+        the barriers are levels on this same scale either way, which is exactly
+        why the division uses the original fixing rather than today's price.
 
     terms : NoteTerms
         Product specification.
@@ -852,6 +943,24 @@ def price_note(
         (length n_obs), used for holding-period / IRR computation. When given,
         the maturity holding time is obs_times[-1] instead of terms.maturity.
         None (default) = terms.obs_times().
+
+    periods_elapsed : int
+        Observations that already fixed before the pricing date — 0 (default)
+        prices the note from issue. Anything higher prices only the REMAINING
+        window: `obs_steps` / `obs_times` and every per-period array returned are
+        that many periods shorter, while autocall eligibility, the step-down
+        barrier schedule and the growth-autocall accrual all keep counting in
+        ABSOLUTE periods, so a note at P5 of P12 behaves like P5 of P12 and not
+        like a fresh P1. See api/engine.py:_seasoning for how it is derived.
+
+    pending_coupons : int
+        Memory-coupon arrears carried into the window (unpaid observations before
+        the pricing date). The first coupon that pays inside the window releases
+        them, exactly as memory does within it. Ignored without `memory`.
+
+    start_basket : float
+        Cliquet only: the participation basket at the last elapsed reset, so the
+        first remaining period measures its move from there instead of from par.
 
     Returns
     -------
@@ -875,19 +984,42 @@ def price_note(
     This is consistent with the structured note market convention where
     coupons are quoted as simple p.a. rates.  For long-dated paths (2Y+)
     the simple IRR will exceed a compound (XIRR-style) IRR by a small amount.
+
+    Note on the cost basis
+    ----------------------
+    Returns are measured against ``terms.cost_basis`` — what the holder actually
+    paid — not against par.  That is 1.0 for a primary subscription (the
+    default, so nothing changes) and e.g. 0.95 for a note bought at 95% on the
+    secondary market, where the same payoff is a larger return.  See
+    _position_returns; it is the only place the cost basis enters, so the Monte
+    Carlo and the backtest treat a position identically.
     """
     n_paths, N_plus1, n_assets = perf_paths.shape
     N = N_plus1 - 1
-    n_obs = terms.n_obs
+    # Absolute period bookkeeping. `k` observations already fixed before the
+    # pricing date, so this call evaluates periods k+1 … n_obs_total. With the
+    # default k=0 every derived quantity below collapses to the original
+    # from-issue behaviour.
+    n_obs_total = terms.n_obs
+    k = max(0, int(periods_elapsed))
+    n_obs = n_obs_total - k
+    if n_obs < 1:
+        raise ValueError(
+            f"periods_elapsed={k} leaves no observations to price "
+            f"(the note has {n_obs_total}); it has already reached maturity."
+        )
     if obs_steps is None:
-        obs_steps = terms.obs_steps(N)
+        obs_steps = terms.obs_steps(N)[k:]
     if obs_times is None:
-        obs_times = terms.obs_times()
+        obs_times = terms.obs_times()[k:]
     if len(obs_steps) != n_obs or len(obs_times) != n_obs:
         raise ValueError(
-            f"obs_steps/obs_times must have length n_obs={n_obs}; "
+            f"obs_steps/obs_times must have length n_obs={n_obs} "
+            f"({n_obs_total} total − {k} elapsed); "
             f"got {len(obs_steps)}/{len(obs_times)}"
         )
+    # 1-indexed period number on the TERM SHEET for each column of this window.
+    abs_periods = np.arange(k + 1, n_obs_total + 1)                    # (n_obs,)
     t_maturity = float(obs_times[-1])   # = terms.maturity unless overridden
     rng = np.random.default_rng(seed)
 
@@ -900,7 +1032,8 @@ def price_note(
     # which from_dict already maps to note_type="participation" + protection_level.
     if (getattr(terms, "note_type", "") == "participation"
             or (terms.capital_guarantee is not None and terms.capital_guarantee > 0)):
-        return _participation_payoff(perf_paths, terms, obs_steps, t_maturity, n_obs)
+        return _participation_payoff(perf_paths, terms, obs_steps, t_maturity, n_obs,
+                                     start_basket=start_basket)
 
     # ------------------------------------------------------------------
     # Build ConditionRegistry from NoteTerms (backward-compatible factory)
@@ -952,15 +1085,16 @@ def price_note(
     # ------------------------------------------------------------------
     # Autocall trigger
     # ------------------------------------------------------------------
-    # Autocall mask: only eligible from autocall_start_period onward
-    autocall_eligible = np.zeros(n_obs, dtype=bool)
-    autocall_eligible[autocall_cond.start_period - 1:] = True  # 1-indexed → 0-indexed
+    # Autocall mask: only eligible from autocall_start_period onward, counted in
+    # ABSOLUTE periods — a seasoned note already past the lock-out is callable at
+    # every remaining observation.
+    autocall_eligible = abs_periods >= autocall_cond.start_period      # (n_obs,)
 
     # Autocall probabilities per period, using a (possibly step-down) per-period
     # barrier schedule. For the common constant-barrier case this reduces exactly
     # to a scalar comparison against autocall_barrier; the schedule generalises
     # it to growth autocalls.
-    autocall_levels = terms.autocall_barrier_schedule()          # (n_obs,)
+    autocall_levels = terms.autocall_barrier_schedule()[k:]      # (n_obs,) — remaining rungs
     if terms.call_steepness is None:
         autocall_probs = (autocall_basket_vals >= autocall_levels[np.newaxis, :]).astype(float)
     else:
@@ -1046,6 +1180,12 @@ def price_note(
         )
         pending_before = active_cumsum_shifted - last_paid_cumsum_shifted  # (n_paths, n_obs)
         pending_before = np.maximum(pending_before, 0)  # guard against rounding
+        # Arrears carried in from before the window (seasoned notes) stay
+        # outstanding until the first coupon inside it pays — group_shifted counts
+        # payments strictly before j, so it is 0 exactly on those cells, including
+        # the paying one itself (which therefore releases them). 0 by default.
+        if pending_coupons:
+            pending_before = pending_before + int(pending_coupons) * (group_shifted == 0)
 
         coupon_amounts = np.where(
             paid_mask,
@@ -1071,9 +1211,11 @@ def price_note(
     # accrues from inception at coupon_rate per period). Paths that reach maturity
     # without autocalling receive no premium.
     if terms.coupon_at_autocall_only:
+        # The premium accrues from ISSUE, so a seasoned note called at its next
+        # observation pays for every period since issue, not since the window start.
         total_coupons = np.where(
             any_autocalled,
-            terms.coupon_rate * autocall_period.astype(float),
+            terms.coupon_rate * (autocall_period.astype(float) + k),
             0.0,
         )
         # Keep the per-period coupon matrix consistent with the actual payoff:
@@ -1171,9 +1313,11 @@ def price_note(
     # so annualised return must use the same basis.
     # e.g. autocalled at 3M (t=0.25) with 2.5% coupon → IRR = 2.5%/0.25 = 10% p.a. ✓
     # Compound annualisation ((1+r)^(1/t)-1) overstates IRR for short tenors.
-    total_return   = nominal_payoffs - 1.0
-    # Guard against a degenerate near-zero holding time (QW5).
-    annualized_irr = total_return / np.maximum(t_held_arr, 1.0 / 252.0)
+    # Both are measured on the position's COST BASIS (par unless the note was
+    # bought on the secondary market); _position_returns also guards against a
+    # degenerate near-zero holding time (QW5).
+    total_return, annualized_irr, cost_basis = _position_returns(
+        nominal_payoffs, t_held_arr, terms)
 
     # ------------------------------------------------------------------
     # Summary statistics
@@ -1223,6 +1367,16 @@ def price_note(
         "prob_barrier_event":       float(be_total.mean()),   # incl. paths rescued by final condition
         "prob_rescued":             float((be_total & ~ki_total).mean()),
         "loss_given_knock_in":      lgki,
+        # Position measures. cost_basis echoes what the holder paid (1.0 = par);
+        # prob_loss is P(negative return ON COST) — distinct from prob_knock_in,
+        # since coupons can carry a knocked-in path back into profit, and a note
+        # bought at a discount can profit even on a below-par redemption.
+        "cost_basis":               cost_basis,
+        "prob_loss":                float((total_return < 0).mean()),
+        # Observations that fixed before this window (0 unless seasoned). Every
+        # per-period array above is indexed from period `periods_elapsed + 1`, so
+        # a display layer that labels periods must add this offset.
+        "periods_elapsed":          k,
         # Average time (years) to early redemption, over the paths that actually
         # autocalled (None when none do). Uses the real observation times.
         "avg_time_to_autocall": (
@@ -1236,7 +1390,8 @@ def price_note(
 # Observation replay for partially-elapsed (live) notes
 # ---------------------------------------------------------------------------
 
-def replay_note(perf_obs: np.ndarray, terms: NoteTerms) -> dict:
+def replay_note(perf_obs: np.ndarray, terms: NoteTerms, *,
+                start_period: int = 1, pending: int = 0) -> dict:
     """
     Replay the first k observation dates of a single note life.
 
@@ -1251,36 +1406,48 @@ def replay_note(perf_obs: np.ndarray, terms: NoteTerms) -> dict:
     Parameters
     ----------
     perf_obs : np.ndarray, shape (k, n_assets)
-        Per-asset performance (price / initial fixing) at the first k
-        observation dates that have already occurred, in order.
+        Per-asset performance (price / initial fixing) at k consecutive
+        observation dates, in order, starting at `start_period`.
 
     terms : NoteTerms
+
+    start_period : int
+        Term-sheet period number of the FIRST row (1-indexed). 1 (default)
+        replays from issue; a higher value replays a window of a seasoned note,
+        so autocall eligibility, the step-down schedule and the growth-autocall
+        accrual all key off the real period number.
+
+    pending : int
+        Memory arrears already outstanding when the window opens.
 
     Returns
     -------
     dict with keys:
         rows            : list of per-period dicts with keys
-                          period (1-indexed), coupon_met (bool),
+                          period (1-indexed, absolute), coupon_met (bool),
                           coupon_amount (float), pending_after (int),
                           autocalled (bool), autocall_level (float)
-        total_coupons   : float  total paid so far (incl. autocall premium for
-                          coupon_at_autocall_only notes)
+        total_coupons   : float  total paid over the window (incl. autocall
+                          premium for coupon_at_autocall_only notes)
         pending_coupons : int    memory coupons accrued and unpaid
-        autocall_period : int    0 = still alive, j = called at period j
+        autocall_period : int    0 = still alive, j = called at (absolute) period j
     """
     perf_obs = np.atleast_2d(np.asarray(perf_obs, dtype=float))
     k = perf_obs.shape[0]
-    if k > terms.n_obs:
-        raise ValueError(f"perf_obs has {k} rows but the note has only {terms.n_obs} observations.")
+    off = max(1, int(start_period)) - 1        # 0-based index of the first row
+    if k + off > terms.n_obs:
+        raise ValueError(
+            f"perf_obs has {k} rows starting at period {off + 1}, which runs past "
+            f"the note's {terms.n_obs} observations.")
 
     schedule = terms.autocall_barrier_schedule()
     rows: list[dict] = []
-    pending = 0
+    pending = max(0, int(pending))
     total   = 0.0
     called  = 0
 
-    for j in range(k):
-        slice_j   = perf_obs[j:j + 1, :]
+    for j in range(off, off + k):
+        slice_j   = perf_obs[j - off:j - off + 1, :]
         coupon_b  = float(_basket(slice_j, terms.coupon_basket)[0])
         ac_b      = float(_basket(slice_j, terms.autocall_basket)[0])
         # One Star overlay: any underlying >= one_star_level. Applies to the

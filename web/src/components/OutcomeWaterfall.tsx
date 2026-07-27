@@ -16,7 +16,7 @@ export default function OutcomeWaterfall({ summary }: { summary: SimSummary }) {
   const { t } = useI18n()
   const byPeriod = summary.autocall_by_period ?? []
   const acPeriods = byPeriod
-    .map((frac, i) => ({ period: i + 1, frac }))
+    .map((frac, i) => ({ period: i + 1 + (summary.period_offset ?? 0), frac }))
     .filter((s) => s.frac > 0.002)
 
   const matRedeemed = Math.max(0, (summary.prob_maturity ?? 0) - (summary.prob_knock_in_total ?? 0))

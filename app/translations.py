@@ -1127,6 +1127,7 @@ _STRINGS: dict[str, tuple[str, str]] = {
     "chart_coupon_barrier_lvl":  ("Coupon barrier ({lvl})",            "Barrera de cupón ({lvl})"),
     "chart_perf_vs_issue":       ("Performance vs Issue Date",         "Rendimiento vs Fecha de Emisión"),
     "chart_today":               ("Today",                             "Hoy"),
+    "chart_settlement":          ("Purchased",                         "Comprado"),
     # Participation live chart
     "chart_basket":              ("Basket",                            "Cesta"),
     "chart_basket_vs_issue":     ("Basket vs Issue Date",              "Cesta vs Fecha de Emisión"),

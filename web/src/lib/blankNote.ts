@@ -44,6 +44,10 @@ export function blankNote(): NoteTerms {
     note_description: '',
     tickers: { '^GSPC': 'S&P 500' },
     issue_date: null,
+    settlement_date: null,
+    purchase_price: 1.0,
+    accrued_at_purchase: 0,
+    seasoned: false,
     underlyings: {},
   }
 }
