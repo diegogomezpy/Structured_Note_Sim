@@ -1082,9 +1082,20 @@ def build_transition_heatmap(matrix, labels: list[str], tr: Translator) -> go.Fi
     — e.g. the cell that answers "of the paths where A knocked in, what did B do?"."""
     m = np.asarray(matrix, dtype=float)
     txt = [[f"{v:.1%}" if v >= 0.0005 else "" for v in row] for row in m]
+    # A tint of the A-series colour rather than white→navy: the low end is
+    # near-transparent so the page (light OR dark) shows through instead of a
+    # white slab, and the top stop stays light enough that the cell figure —
+    # which inherits the surface's text colour — reads on it either way. Both
+    # literals are in the web's SERIES_REMAP, so the ramp follows the theme.
     fig = go.Figure(go.Heatmap(
         z=m, x=labels, y=labels, text=txt, texttemplate="%{text}",
-        colorscale=[[0, _WHITE], [1, _NAVY]], zmin=0.0, showscale=False,
+        colorscale=[[0, "rgba(37,99,235,0.04)"], [1, "rgba(37,99,235,0.40)"]],
+        zmin=0.0, showscale=False, xgap=3, ygap=3,
+        # Explicit, or Plotly auto-contrasts each cell against a WHITE canvas and
+        # picks dark text — invisible once the page behind is dark. _NAVY is the
+        # ink/primary literal every surface already remaps: brand primary in the
+        # PDF, ink in light mode, the light text colour in dark mode.
+        textfont=dict(color=_NAVY, size=11),
         hovertemplate=(f"{tr('cmp_note_a')}: %{{y}}<br>{tr('cmp_note_b')}: %{{x}}"
                        "<br>%{z:.2%}<extra></extra>")))
     fig.update_layout(
@@ -1099,22 +1110,34 @@ def build_transition_heatmap(matrix, labels: list[str], tr: Translator) -> go.Fi
 
 
 def build_wof_fan_compare(bands_a, bands_b, t_grid, knock_in, tr: Translator,
-                          *, autocall_barrier=None) -> go.Figure:
-    """Worst-of envelopes for A and B on one axis — median line plus the 25–75
-    band each. Identical when the notes share underlyings (the paths ARE the
-    same), so this reads as context for the barriers rather than as a difference;
-    it earns its place when A and B run on different underlyings."""
+                          *, autocall_barrier=None, shared: bool = False,
+                          knock_in_b=None, autocall_barrier_b=None) -> go.Figure:
+    """Worst-of envelopes with each note's barriers drawn across them.
+
+    The envelope is a property of the SIMULATION, not of the note. When the paths
+    are shared, A's and B's are the same array — plotting both drew one curve
+    exactly on top of the other and stacked two translucent bands into an opaque
+    slab. So when `shared`, draw the market once (neutral) and let the barriers
+    carry the comparison: where each note's knock-in and autocall sit relative to
+    the same distribution IS the difference. Two envelopes only when the notes
+    ran different simulations, which is the case where they actually differ.
+    """
     t = np.asarray(t_grid, dtype=float) * 12.0        # months
     fig = go.Figure()
-    for bands, name, color in ((bands_a, tr("cmp_note_a"), _CMP_A),
-                               (bands_b, tr("cmp_note_b"), _CMP_B)):
+    # The shared envelope's band uses the blue-family rgba literal (→ viridian
+    # tint on the web, brand accent in the PDF): a literal grey rgba is in no
+    # remap table, so it stayed a flat slab of grey on a dark page.
+    series = ([(bands_a, tr("cmp_market_envelope"), _GREY, "rgba(37,99,235,0.08)")] if shared else
+              [(bands_a, tr("cmp_note_a"), _CMP_A, None),
+               (bands_b, tr("cmp_note_b"), _CMP_B, None)])
+    for bands, name, color, fill_override in series:
         if bands is None:
             continue
         # 4 dp on a 0–3 performance scale is well under a plotted pixel; full
         # float64 repr would triple the serialised size for no visible gain.
         b = np.round(np.asarray(bands, dtype=float), 4)   # (7, N+1) → [1,5,25,50,75,95,99]
         rgb = tuple(int(color[i:i + 2], 16) for i in (1, 3, 5))
-        fill = f"rgba({rgb[0]},{rgb[1]},{rgb[2]},0.13)"
+        fill = fill_override or f"rgba({rgb[0]},{rgb[1]},{rgb[2]},0.13)"
         fig.add_trace(go.Scatter(x=t, y=b[4], mode="lines", line=dict(width=0),
                                  showlegend=False, hoverinfo="skip"))
         fig.add_trace(go.Scatter(x=t, y=b[2], mode="lines", line=dict(width=0),
@@ -1123,12 +1146,27 @@ def build_wof_fan_compare(bands_a, bands_b, t_grid, knock_in, tr: Translator,
         fig.add_trace(go.Scatter(
             x=t, y=b[3], mode="lines", name=name, line=dict(color=color, width=2.2),
             hovertemplate=f"{name} · %{{x:.0f}}mo: %{{y:.1%}}<extra></extra>"))
-    fig.add_hline(y=float(knock_in), line_dash="dash", line_color=_RED,
-                  annotation_text=tr("chart_ki_barrier", lvl=f"{float(knock_in):.0%}"),
-                  annotation_position="bottom right")
-    if autocall_barrier is not None:
-        fig.add_hline(y=float(autocall_barrier), line_dash="dot", line_color=_GREY,
-                      annotation_text=tr("chart_autocall_barrier_lvl", lvl=f"{float(autocall_barrier):.0%}"),
+
+    # Barrier lines, tagged with the note they belong to whenever the two differ
+    # — labelling a single "Knock-in barrier 50%" while B's sits at 60% is worse
+    # than no label at all.
+    def _levels(a, b):
+        """[(level, suffix)] — one entry when they agree, one per note when not."""
+        if a is None:
+            return []
+        if b is None or abs(float(a) - float(b)) < 1e-9:
+            return [(float(a), "")]
+        return [(float(a), f" · {tr('cmp_note_a')}"), (float(b), f" · {tr('cmp_note_b')}")]
+
+    for lvl, tag in _levels(knock_in, knock_in_b):
+        # Above the line, not below: the lower of two knock-ins sits near the
+        # bottom of the range, and a label under it is clipped by the plot edge.
+        fig.add_hline(y=lvl, line_dash="dash", line_color=_RED,
+                      annotation_text=tr("chart_ki_barrier", lvl=f"{lvl:.0%}") + tag,
+                      annotation_position="top right")
+    for lvl, tag in _levels(autocall_barrier, autocall_barrier_b):
+        fig.add_hline(y=lvl, line_dash="dot", line_color=_GREY,
+                      annotation_text=tr("chart_autocall_barrier_lvl", lvl=f"{lvl:.0%}") + tag,
                       annotation_position="top right")
     fig.update_layout(
         title=tr("cmp_fan_title"),
@@ -1241,14 +1279,16 @@ def build_backtest_irr_scatter(
             bgcolor="rgba(255,255,255,0.65)",
         )
         if y0 <= 0 <= y1:               # only draw break-even if it's in view
+            # Left, not right: the outcome legend sits along the right edge and
+            # a right-anchored annotation prints on top of its first entries.
             fig.add_hline(y=0, line_dash="dash", line_color=_GREY,
                           annotation_text=tr("break_even"),
-                          annotation_position="right")
+                          annotation_position="top left")
     else:
         fig.add_hline(
             y=0, line_dash="dash", line_color=_GREY,
             annotation_text=tr("break_even"),
-            annotation_position="right",
+            annotation_position="top left",
         )
         fig.update_layout(yaxis=dict(tickformat=".1%"))
     return _apply_theme(fig)

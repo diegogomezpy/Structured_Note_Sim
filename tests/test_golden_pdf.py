@@ -109,6 +109,11 @@ def _render(theme: str, kind: str = "phoenix", *, real_figures: bool = False) ->
             logo_urls=None,
             issuer_logo_url=None,
             logo_tickers={name: sym for sym, name in terms.tickers.items()},
+            # The backtest / current-performance / comparison / underlying
+            # sections draw their own chrome — metric bands, logo-row tables,
+            # the A/B terms diff. They render only when handed data, so without
+            # these the golden guarded roughly half the document.
+            **gf.extras(terms, real=real_figures),
         )
     finally:
         if token is not None:

@@ -106,6 +106,11 @@ export const isPresetCustomised = (p: string): boolean => p in loadPresetOverrid
 // active preset.
 const ACTIVE_LS = 'mercator_report_sections_active'
 export const ACTIVE_SECTIONS_EVENT = 'report-sections-change'
+/** Synthetic key for the A/B comparison, which is its own toggle rather than a
+    tree item. Only ever travels in the active-sections list, so the proof knows
+    whether to preview a comparison section; the real report gates on the
+    presence of `compare_terms` instead. */
+export const COMPARE_KEY = 'compare_ab'
 export function saveActiveSections(keys: string[]): void {
   try {
     localStorage.setItem(ACTIVE_LS, JSON.stringify(keys))

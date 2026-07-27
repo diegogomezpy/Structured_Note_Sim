@@ -20,7 +20,7 @@ from pathlib import Path
 import numpy as np
 
 from api.preview_fixture import (  # noqa: F401  (re-exported for the tests)
-    SEED, N_PATHS, N_STEPS, note_terms, results, stub_png, figures,
+    SEED, N_PATHS, N_STEPS, note_terms, results, stub_png, figures, extras,
 )
 
 FIXTURES = Path(__file__).resolve().parent / "golden"

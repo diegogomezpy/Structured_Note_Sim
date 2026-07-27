@@ -1017,7 +1017,9 @@ def run_compare(terms_a: NoteTerms, terms_b: NoteTerms, *, n_paths: int = 10000,
         "outcome": _fig(charts.build_outcome_compare(note_a, note_b, terms_a, terms_b, tr)),
         "fan": _fig(charts.build_wof_fan_compare(
             sf_a["wof_bands"], sf_b["wof_bands"], sf_a["t_grid"],
-            terms_a.knock_in_barrier, tr, autocall_barrier=terms_a.autocall_barrier)),
+            terms_a.knock_in_barrier, tr, autocall_barrier=terms_a.autocall_barrier,
+            shared=shared, knock_in_b=terms_b.knock_in_barrier,
+            autocall_barrier_b=terms_b.autocall_barrier)),
     }
     paired = None
     if shared:

@@ -482,8 +482,11 @@ export const S: Dict = {
                       es: 'C\u00f3mo nombran los subyacentes la portada y el resumen. Las insignias con logo siguen mostrando t\u00edckers \u2014 est\u00e1n dimensionadas para pocos caracteres.' },
   underlying_labels_ticker: { en: 'Tickers', es: 'T\u00edckers' },
   underlying_labels_name: { en: 'Full names', es: 'Nombres completos' },
+  cmp_vs:           { en: 'vs', es: 'vs' },
   cmp_run:          { en: 'Run comparison', es: 'Ejecutar comparación' },
   cmp_rerun:        { en: 'Re-run comparison', es: 'Volver a comparar' },
+  cmp_rerun_bt:     { en: 'Re-run backtest', es: 'Repetir backtest' },
+  cmp_rerun_live:   { en: 'Re-run current performance', es: 'Repetir rendimiento actual' },
   cmp_stale:        { en: 'Terms changed since this comparison — re-run to refresh.', es: 'Los términos cambiaron desde esta comparación — vuelve a ejecutar para actualizar.' },
   cmp_shared_paths: { en: 'Both notes priced on ONE shared simulation — every difference is due to the terms, not RNG noise.', es: 'Ambas notas valoradas sobre UNA simulación compartida — toda diferencia se debe a los términos, no al ruido aleatorio.' },
   cmp_indep_paths:  { en: 'Priced on independent simulations, so part of every difference below is Monte Carlo noise rather than a term effect.', es: 'Valoradas en simulaciones independientes, así que parte de cada diferencia de abajo es ruido de Monte Carlo y no un efecto de los términos.' },
@@ -499,6 +502,8 @@ export const S: Dict = {
   cmp_verdict_b:    { en: 'Note B comes out ahead, winning on {w} of paths.', es: 'La Nota B queda por delante, ganando en el {w} de las trayectorias.' },
   cmp_verdict_tie:  { en: 'Too close to call — the average edge is smaller than its own margin of error.', es: 'Demasiado ajustado — la ventaja media es menor que su propio margen de error.' },
   cmp_win_rate:     { en: 'B wins', es: 'Gana B' },
+  // Basis-tagged: the MC win rate is on total return and the backtest's on IRR.
+  cmp_win_rate_tr:  { en: 'B wins on total return', es: 'Gana B en retorno total' },
   cmp_win_sub:      { en: 'A {a} · tie {tie}', es: 'A {a} · empate {tie}' },
   cmp_mean_edge_lbl: { en: 'Mean edge', es: 'Ventaja media' },
   cmp_median_edge:  { en: 'Median edge', es: 'Ventaja mediana' },
@@ -528,6 +533,7 @@ export const S: Dict = {
 
   // backtest head-to-head
   cmp_bt_win_rate:  { en: 'B wins', es: 'Gana B' },
+  cmp_bt_win_rate_irr: { en: 'B wins on IRR', es: 'Gana B en TIR' },
   cmp_bt_of_issues: { en: 'of {n} issue dates', es: 'de {n} fechas de emisión' },
   cmp_bt_mean_edge: { en: 'Mean IRR edge', es: 'Ventaja media de TIR' },
   cmp_bt_worst_edge: { en: 'Worst issue for B', es: 'Peor emisión para B' },

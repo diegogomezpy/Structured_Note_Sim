@@ -11,7 +11,8 @@ import type { Branding, NoteTerms } from '../api/types'
 import type { BrandingStudio } from '../lib/useBrandingStudio'
 import type { RunOpts } from './SetupRail'
 import { TREE, PRESET_ORDER, presetKeys, savePresetOverride, resetPresetOverride,
-         isPresetCustomised, saveActiveSections, type Preset, type Group } from '../lib/reportSections'
+         isPresetCustomised, saveActiveSections, COMPARE_KEY,
+         type Preset, type Group } from '../lib/reportSections'
 
 type Status = 'idle' | 'running' | 'done' | 'error'
 
@@ -132,7 +133,12 @@ export default function ReportPanel({ terms, opts, variantB, pathImages, brand, 
   // Mirror the live selection to the shared store the PDF Studio proof reads, so
   // the preview shows exactly the pages that will be printed (any preset, not
   // just custom).
-  useEffect(() => { saveActiveSections([...sel]) }, [sel])
+  // The A/B section is not a tree item — it is its own toggle — so it rides
+  // along as a synthetic key. Without it the Studio proof cannot tell whether to
+  // preview a comparison section, and would either always show one or never.
+  useEffect(() => {
+    saveActiveSections([...sel, ...(compareOn && variantB ? [COMPARE_KEY] : [])])
+  }, [sel, compareOn, variantB])
 
   const generate = async () => {
     setStatus('running'); setError('')

@@ -66,7 +66,11 @@ _MAX_CACHE = 6
 _FIG_CACHE: "OrderedDict[str, bytes]" = OrderedDict()
 _MAX_FIG_CACHE = 96
 
-MAX_PAGES = 40
+# A full report with every section on, a long observation schedule and several
+# underlyings runs past 40 pages; the cap silently truncated the tail, so the
+# preview stopped where the document did not. Raised well clear of that, and the
+# truncation is now reported instead of being invisible.
+MAX_PAGES = 120
 DEFAULT_SCALE = 1.4      # ~100 dpi — legible at the Studio's page width
 MAX_SCALE = 3.0
 
@@ -87,6 +91,7 @@ def _rasterise(pdf_bytes: bytes, scale: float, pages: list[int] | None) -> list[
     out = []
     for i in want:
         if len(out) >= MAX_PAGES:
+            print(f"[proof] page cap hit: showing {MAX_PAGES} of {len(doc)} pages")
             break
         bitmap = doc[i].render(scale=scale)
         import io
@@ -179,6 +184,11 @@ def render_proof(*, branding: dict | None = None, terms: dict | None = None,
             logo_urls=None,
             issuer_logo_url=None,
             logo_tickers={name: sym for sym, name in note.tickers.items()},
+            # Stand-in data for every section gated on something other than the
+            # Monte Carlo run — backtest, current performance, A/B comparison,
+            # underlying breakdown. Without these the proof silently dropped
+            # them, so "select everything" previewed a partial document.
+            **fixture.extras(note, real=real, lang=lang, sections=sections),
         )
     finally:
         pdf_report._FIG_HOOK.reset(hook_token)

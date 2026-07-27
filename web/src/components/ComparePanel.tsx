@@ -43,12 +43,15 @@ const MC_METRICS: Record<string, { labelKey: string; dir: Dir; kind: Kind }> = {
   p5_redemption:           { labelKey: 'p5_redemption',         dir: 'up',      kind: 'pct' },
 }
 // Backtest summary keys → label/direction/format (diff computed client-side).
+// `loss_given_knock_in` is quoted as a NEGATIVE return, so a positive delta is a
+// shallower loss — 'up', not 'down'. Marking it 'down' painted "B loses 2.1%
+// less when it knocks in" red.
 const BT_METRICS: [string, string, Dir, Kind][] = [
   ['mean_irr',             'bt_mean_irr',      'up',      'pct'],
   ['median_irr',           'bt_median_irr',    'up',      'pct'],
   ['prob_called',          'bt_called_rate',   'neutral', 'pct'],
   ['prob_knock_in',        'bt_ki_rate',       'down',    'pct'],
-  ['loss_given_knock_in',  'loss_given_ki',    'down',    'pct'],
+  ['loss_given_knock_in',  'loss_given_ki',    'up',      'pct'],
   ['avg_time_to_autocall', 'avg_time_autocall','neutral', 'months'],
 ]
 
@@ -240,7 +243,11 @@ export default function ComparePanel({ terms, opts, cppAvailable, configs, varia
             : t('cmp_verdict_tie')}
         </div>
         <div className="stagger" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 16 }}>
-          <Tile label={t('cmp_win_rate')} value={pct(p.win_rate, 1)} color={CMP_B}
+          {/* The basis is named on the tile: the Monte Carlo win rate is on
+              TOTAL RETURN and the backtest's is on IRR, and a note that calls
+              sooner can win one and lose the other. Two tiles both reading
+              "B wins" over different quantities is a trap. */}
+          <Tile label={t('cmp_win_rate_tr')} value={pct(p.win_rate, 1)} color={CMP_B}
                 sub={t('cmp_win_sub', { a: pct(p.loss_rate, 1), tie: pct(p.tie_rate, 1) })} />
           <Tile label={t('cmp_mean_edge_lbl')} value={pctSigned(p.mean_edge, 2)} color={tone}
                 sub={p.se_edge != null ? `± ${pct(2 * p.se_edge, 2)}` : undefined} />
@@ -351,16 +358,27 @@ export default function ComparePanel({ terms, opts, cppAvailable, configs, varia
       {/* ── Variant B setup ─────────────────────────────────────────────── */}
       <Panel title={t('cmp_setup_title')}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 18, flexWrap: 'wrap' }}>
-            <NoteChip label={t('cmp_note_a')} name={terms.name || '—'} color="var(--cmp-a, #15694e)" />
-            <Icon name="chart" size={14} />
-            {variantB
-              ? <NoteChip label={t('cmp_note_b')} name={variantB.name || '—'} color="var(--cmp-b, #9a6b1a)" />
-              : <span style={{ fontSize: 13, color: 'var(--text-muted)' }}>{t('cmp_no_b')}</span>}
+          {/* A and B, side by side with B's one-line summary under it — the
+              summary used to sit at the bottom of the card, under the folder
+              controls, where it read as a caption for the wrong thing. */}
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 16, flexWrap: 'wrap' }}>
+            <NoteChip label={t('cmp_note_a')} name={terms.name || '—'} color={CMP_A} />
+            <span style={{ fontSize: 11.5, fontWeight: 600, letterSpacing: '0.08em',
+                           textTransform: 'uppercase', color: 'var(--text-faint)', lineHeight: '20px' }}>
+              {t('cmp_vs')}
+            </span>
+            {variantB ? (
+              <div style={{ minWidth: 0 }}>
+                <NoteChip label={t('cmp_note_b')} name={variantB.name || '—'} color={CMP_B} />
+                <div style={{ fontSize: 12, color: 'var(--text-muted)', lineHeight: 1.5, marginTop: 4 }}>
+                  {noteSummary(variantB, t)}
+                </div>
+              </div>
+            ) : <span style={{ fontSize: 13, color: 'var(--text-muted)', lineHeight: '20px' }}>{t('cmp_no_b')}</span>}
           </div>
 
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-            <button className="btn" onClick={dupA}><Icon name="upload" size={13} /> {t('cmp_duplicate_a')}</button>
+            <button className="btn" onClick={dupA}><Icon name="copy" size={13} /> {t('cmp_duplicate_a')}</button>
             <div style={{ minWidth: 220 }}>
               <Select value={''} ariaLabel={t('cmp_load_b')} placeholder={t('cmp_load_b')}
                       options={[
@@ -377,7 +395,7 @@ export default function ComparePanel({ terms, opts, cppAvailable, configs, varia
             <input ref={fileRef} type="file" accept="application/json,.json" style={{ display: 'none' }}
                    onChange={(e) => uploadB(e.target.files?.[0])} />
             {variantB && (
-              <button className="btn" onClick={() => setEditingB(true)}><Icon name="chart" size={13} /> {t('cmp_edit_b')}</button>
+              <button className="btn" onClick={() => setEditingB(true)}><Icon name="pencil" size={13} /> {t('cmp_edit_b')}</button>
             )}
             <div style={{ flex: 1 }} />
             <button className="btn btn--primary" disabled={!variantB || status === 'running'} onClick={runCompare}>
@@ -390,10 +408,6 @@ export default function ComparePanel({ terms, opts, cppAvailable, configs, varia
               from the rail could still land here with an empty picker, because each
               panel holds its own copy of the folder state. */}
           <FolderConnect fld={local} />
-
-          {variantB && (
-            <div style={{ fontSize: 12, color: 'var(--text-muted)', lineHeight: 1.5 }}>{noteSummary(variantB, t)}</div>
-          )}
         </div>
       </Panel>
 
@@ -506,16 +520,17 @@ export default function ComparePanel({ terms, opts, cppAvailable, configs, varia
           </Panel>
 
           {variantB && (
+            // Stacked, not columns. The ladder diagram carries barrier labels at
+            // a fixed type size, so halving its width made them illegible — the
+            // same reason the per-asset fans went full width.
             <Panel title={t('cmp_structures_title')}>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))', gap: 18 }}>
-                <div>
-                  <div style={{ marginBottom: 8 }}><NoteChip label={t('cmp_note_a')} name={terms.name || '—'} color="var(--cmp-a, #15694e)" /></div>
-                  <NoteTimeline terms={terms} />
-                </div>
-                <div>
-                  <div style={{ marginBottom: 8 }}><NoteChip label={t('cmp_note_b')} name={variantB.name || '—'} color="var(--cmp-b, #9a6b1a)" /></div>
-                  <NoteTimeline terms={variantB} />
-                </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+                {([[t('cmp_note_a'), terms, CMP_A], [t('cmp_note_b'), variantB, CMP_B]] as const).map(([label, tm, color]) => (
+                  <div key={label}>
+                    <div style={{ marginBottom: 8 }}><NoteChip label={label} name={tm.name || '—'} color={color} /></div>
+                    <NoteTimeline terms={tm} />
+                  </div>
+                ))}
               </div>
             </Panel>
           )}
@@ -524,7 +539,7 @@ export default function ComparePanel({ terms, opts, cppAvailable, configs, varia
           <Panel title={t('cmp_bt_title')} right={
             <button className="btn btn--ghost" style={{ padding: '4px 10px', fontSize: 12 }}
                     disabled={btStatus === 'running'} onClick={runBacktest}>
-              <Icon name={btStatus === 'running' ? 'spinner' : 'refresh'} size={13} /> {bt ? t('cmp_rerun') : t('cmp_run_bt')}
+              <Icon name={btStatus === 'running' ? 'spinner' : 'refresh'} size={13} /> {bt ? t('cmp_rerun_bt') : t('cmp_run_bt')}
             </button>
           }>
             {btStatus === 'error' && <div style={{ fontSize: 12.5, color: 'var(--red)' }}>{btError}</div>}
@@ -539,7 +554,7 @@ export default function ComparePanel({ terms, opts, cppAvailable, configs, varia
                 {btPaired && (
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 16 }}>
                     <div>
-                      <div className="eyebrow" style={{ marginBottom: 6 }}>{t('cmp_bt_win_rate')}</div>
+                      <div className="eyebrow" style={{ marginBottom: 6 }}>{t('cmp_bt_win_rate_irr')}</div>
                       <div className="mono" style={{ fontSize: 22, fontWeight: 600, color: CMP_B }}>{pct(btPaired.winRate, 1)}</div>
                       <div className="mono" style={{ fontSize: 11, color: 'var(--text-faint)', marginTop: 5 }}>
                         {t('cmp_bt_of_issues', { n: String(btPaired.n) })}
@@ -561,15 +576,18 @@ export default function ComparePanel({ terms, opts, cppAvailable, configs, varia
                   </div>
                 )}
                 <MetricTable rows={btRows} />
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 14 }}>
-                  <div>
-                    <div style={{ marginBottom: 6 }}><NoteChip label={t('cmp_note_a')} name={terms.name || '—'} color="var(--cmp-a, #15694e)" /></div>
-                    <div style={{ height: 280 }}><Figure fig={bt.a.figures?.irr_scatter} name="compare_bt_a" /></div>
-                  </div>
-                  <div>
-                    <div style={{ marginBottom: 6 }}><NoteChip label={t('cmp_note_b')} name={variantB?.name || '—'} color="var(--cmp-b, #9a6b1a)" /></div>
-                    <div style={{ height: 280 }}><Figure fig={bt.b.figures?.irr_scatter} name="compare_bt_b" /></div>
-                  </div>
+                {/* Full width, stacked: the issue scatter carries a per-period
+                    outcome legend, which at half width overran the plot and
+                    collided with the break-even annotation. */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                  {([[t('cmp_note_a'), terms.name, CMP_A, bt.a.figures?.irr_scatter, 'compare_bt_a'],
+                     [t('cmp_note_b'), variantB?.name, CMP_B, bt.b.figures?.irr_scatter, 'compare_bt_b']] as const).map(
+                    ([label, nm, color, fig, key]) => (
+                      <div key={key}>
+                        <div style={{ marginBottom: 6 }}><NoteChip label={label} name={nm || '—'} color={color} /></div>
+                        <div style={{ height: 320 }}><Figure fig={fig} name={key} /></div>
+                      </div>
+                    ))}
                 </div>
               </div>
             )}
@@ -579,7 +597,7 @@ export default function ComparePanel({ terms, opts, cppAvailable, configs, varia
           <Panel title={t('cmp_live_title')} right={
             <button className="btn btn--ghost" style={{ padding: '4px 10px', fontSize: 12 }}
                     disabled={liveStatus === 'running'} onClick={runLive}>
-              <Icon name={liveStatus === 'running' ? 'spinner' : 'refresh'} size={13} /> {live ? t('cmp_rerun') : t('cmp_run_live')}
+              <Icon name={liveStatus === 'running' ? 'spinner' : 'refresh'} size={13} /> {live ? t('cmp_rerun_live') : t('cmp_run_live')}
             </button>
           }>
             {liveStatus === 'error' && <div style={{ fontSize: 12.5, color: 'var(--red)' }}>{liveError}</div>}
@@ -591,7 +609,7 @@ export default function ComparePanel({ terms, opts, cppAvailable, configs, varia
             )}
             {live && liveStatus !== 'running' && (
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 14 }}>
-                {([['a', terms, 'var(--cmp-a, #15694e)'], ['b', variantB, 'var(--cmp-b, #9a6b1a)']] as const).map(([key, tm, color]) => {
+                {([['a', terms, CMP_A], ['b', variantB, CMP_B]] as const).map(([key, tm, color]) => {
                   const lr = live[key]
                   return (
                     <div key={key} style={{ border: '1px solid var(--border)', borderRadius: 12, padding: 14 }}>

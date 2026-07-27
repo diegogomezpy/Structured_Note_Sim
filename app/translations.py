@@ -1140,11 +1140,15 @@ _STRINGS: dict[str, tuple[str, str]] = {
     "cmp_win_rate":              ("B wins",                            "Gana B"),
     "cmp_mean_return_panel":     ("Mean total return",                 "Retorno total medio"),
     "cmp_parity":                ("Equal outcome",                     "Mismo resultado"),
-    "cmp_scatter_title":         ("Path by path: A vs B",              "Trayectoria a trayectoria: A vs B"),
+    # Not "Path by path" — that is the panel's own heading on the web, and the
+    # two stacked read as the same title printed twice.
+    "cmp_scatter_title":         ("Per-path IRR: A vs B",              "TIR por trayectoria: A vs B"),
     "cmp_scatter_x":             ("Note A IRR p.a.",                   "TIR anual Nota A"),
     "cmp_scatter_y":             ("Note B IRR p.a.",                   "TIR anual Nota B"),
     "cmp_transition_title":      ("How each path resolves",            "Cómo se resuelve cada trayectoria"),
     "cmp_fan_title":             ("Worst-of envelope — A vs B",        "Envolvente del peor de — A vs B"),
+    # One envelope, drawn once: with shared paths A and B ARE the same market.
+    "cmp_market_envelope":       ("Simulated market (shared paths)",   "Mercado simulado (trayectorias compartidas)"),
     "out_called":                ("Called early",                      "Cancelada anticipadamente"),
     "out_par":                   ("Redeemed at par",                   "Redimida a la par"),
     "out_ki":                    ("Knocked in",                        "Con knock-in"),

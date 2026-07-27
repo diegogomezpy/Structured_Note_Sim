@@ -82,7 +82,13 @@ function remapColor(c: unknown, table: Record<string, string>): unknown {
   return table[c.toLowerCase().replace(/\s+/g, '')] ?? table[c.toLowerCase()] ?? c
 }
 
-/** Recursively swap series colors anywhere a `color`/`fillcolor` lives. */
+/** Recursively swap series colors anywhere a `color`/`fillcolor` lives.
+
+    `color` is per-trace on a line but PER-POINT on a bar or marker, where Plotly
+    takes an array — and a colorscale is an array of `[stop, color]` pairs. Both
+    used to fall through untouched, so a chart that coloured its bars
+    individually (the A/B edge-by-outcome bars) or ramped a heatmap kept the
+    server's raw palette and rendered blue-and-orange inside a viridian app. */
 function deepRecolor(node: unknown, table: Record<string, string>): void {
   if (Array.isArray(node)) {
     node.forEach((n) => deepRecolor(n, table))
@@ -91,10 +97,16 @@ function deepRecolor(node: unknown, table: Record<string, string>): void {
   if (node && typeof node === 'object') {
     const obj = node as Record<string, unknown>
     for (const k of Object.keys(obj)) {
-      if ((k === 'color' || k === 'fillcolor') && typeof obj[k] === 'string') {
-        obj[k] = remapColor(obj[k], table)
+      const v = obj[k]
+      if (k === 'color' || k === 'fillcolor') {
+        if (typeof v === 'string') obj[k] = remapColor(v, table)
+        else if (Array.isArray(v)) obj[k] = v.map((c) => remapColor(c, table))
+      } else if (k === 'colorscale' && Array.isArray(v)) {
+        // [[stop, color], …] — swap the colour, leave the stop alone.
+        obj[k] = v.map((pair) => (Array.isArray(pair) && pair.length === 2
+          ? [pair[0], remapColor(pair[1], table)] : pair))
       } else {
-        deepRecolor(obj[k], table)
+        deepRecolor(v, table)
       }
     }
   }

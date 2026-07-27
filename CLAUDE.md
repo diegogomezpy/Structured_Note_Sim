@@ -161,8 +161,19 @@ The statistics live in **`core/compare.py`**, not the API layer — they are pur
 - **Error bars.** Every `compare_diff` row carries `se`, the standard error **of the delta** — the paired SE when paths are shared (market risk cancels, so it is far tighter), otherwise the two independent errors in quadrature. `metric_samples` maps a summary key to its per-path array; quantiles and conditional means return `None` and the row shows no ±. The client greys any delta inside ±2 se and labels it noise.
 - **Payload discipline.** The compare response deliberately carries **summaries only** — no per-side figure sets, no `run_id`s. It used to build the full 7-figure set for each side (fans, per-asset fans, correlations) that the panel never rendered, and store both runs in a store capped at `_MAX_RUNS`. Overlay histograms are also **pre-binned server-side** (`_bin_edges` / `_pct_bar` in `app/charts.py`): `go.Histogram` ships every raw path value, which at 20 000 antithetic paths was 426 KB for a picture with 60 bars. Net effect 802 KB → 150 KB *with six charts instead of two*. If you add a compare chart, bin it.
 - **Front end.** `ComparePanel` renders the verdict band, the **term-sheet diff** (`termDiffRows` in `web/src/lib/terms.ts` — which fields actually differ, so the metric deltas are attributable), the metric table with noise marks + CSV export, the paired charts, and backtest/live head-to-heads. Note B loads from the user's **connected folder** (`useLocalFolder('note-configs')`) or an upload — *not* from `/api/configs`, which returns `[]` by design.
+- **Win rate has a basis, and the two are different.** The Monte Carlo band measures it on **total return**; the backtest head-to-head measures it on **IRR** over paired issue dates. A note that calls sooner earns the same money in less time, so it can lose the first and win the second by a wide margin. Both tiles name their basis — an untagged "B wins" printed twice over different quantities reads as a contradiction.
+- **The worst-of envelope is a property of the SIMULATION, not the note.** With shared paths A's and B's bands are the same array, so `build_wof_fan_compare(..., shared=True)` draws the market **once** and puts each note's knock-in / autocall lines across it — where the barriers sit against one distribution *is* the comparison. Two envelopes only when the notes ran different simulations.
 
 Covered by `tests/test_compare.py` (hand-built payoff dicts, no simulation).
+
+### Chart colour: one remap, three surfaces
+
+Compare charts are built once, server-side, in the blue/amber source palette (`_CMP_A` / `_CMP_B` in `app/charts.py`) and recoloured per surface: `web/src/lib/plotlyTheme.ts:SERIES_REMAP` for the app (light and dark), `app/pdf_report.py:_rebrand_figure` for the PDF. Two consequences worth knowing before touching a compare chart:
+
+- **Use literals that are IN the remap tables.** A colour that isn't a key survives untouched — which is how the edge-by-outcome bars shipped royal blue and orange inside a viridian app. `deepRecolor` now handles per-point `color` **arrays** and `colorscale` stop pairs, not just scalar strings, so a bar chart that colours its bars individually and a heatmap ramp both follow the theme. rgba literals carry their alpha through both remaps.
+- **The tables are many-to-one.** Several distinct source colours collapse onto the same viridian in dark mode, so a chart that needs N visually distinct series cannot pick N arbitrary hexes and assume they stay distinct. Check the mapping, or use the A/B pair, which is guaranteed to differ.
+
+`--cmp-a` / `--cmp-b` in `web/src/index.css` are the CSS side of the same pair and **must resolve to what the figures resolve to** in each mode, or the chip beside a chart disagrees with the series inside it.
 
 ## API run/session model
 
@@ -200,7 +211,7 @@ The report's *look* is a swappable **theme**, separate from its *content*. `repo
 python -m pytest tests/test_golden_pdf.py -q
 ```
 
-  Inputs come from `tests/golden_fixture.py`: a seeded RNG builds a `results` dict shaped like the one `api/engine.py` stores, so the golden guards the *drawing* code and does not go red when the quant library legitimately changes a number. The brand fixtures are synthetic — the real CADIEM config and its brand fonts are gitignored licensed assets and must never enter the repo — but they drive the same code paths. On failure the run writes both renders to a temp dir and prints the path; review image by image, then re-baseline with `GOLDEN_UPDATE=1`. Runs in CI (`golden-pdf` job) and skips cleanly wherever the PDF stack is absent.
+  Inputs come from `tests/golden_fixture.py`: a seeded RNG builds a `results` dict shaped like the one `api/engine.py` stores, so the golden guards the *drawing* code and does not go red when the quant library legitimately changes a number. The analytics half lives in **`api/preview_fixture.py`** and is shared with the PDF Studio proof — `results()` + `figures()` for the Monte Carlo lens, and **`extras()`** for every section gated on something else (backtest, current performance, A/B comparison, underlying breakdown). Both callers splat `extras()`, so the golden guards the whole document and the proof previews it; a section with no fixture data is a section neither of them covers. The brand fixtures are synthetic — the real CADIEM config and its brand fonts are gitignored licensed assets and must never enter the repo — but they drive the same code paths. On failure the run writes both renders to a temp dir and prints the path; review image by image, then re-baseline with `GOLDEN_UPDATE=1`. Runs in CI (`golden-pdf` job) and skips cleanly wherever the PDF stack is absent.
 
 ## PDF attribution / provenance metadata
 

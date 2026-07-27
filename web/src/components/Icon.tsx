@@ -1,4 +1,4 @@
-export type Name = 'sun' | 'moon' | 'play' | 'refresh' | 'chart' | 'spinner' | 'x' | 'plus' | 'info' | 'check' | 'upload' | 'download' | 'save' | 'ban'
+export type Name = 'sun' | 'moon' | 'play' | 'refresh' | 'chart' | 'spinner' | 'x' | 'plus' | 'info' | 'check' | 'upload' | 'download' | 'save' | 'ban' | 'pencil' | 'copy'
 
 const PATHS: Record<Name, string> = {
   sun: 'M12 4V2M12 22v-2M4 12H2m20 0h-2M6.3 6.3 4.9 4.9m14.2 14.2-1.4-1.4M6.3 17.7l-1.4 1.4M19.1 4.9l-1.4 1.4M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8Z',
@@ -17,6 +17,10 @@ const PATHS: Record<Name, string> = {
   save: 'M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2ZM17 21v-8H7v8M7 3v5h8',
   // no-entry / no-image — circle with a diagonal slash
   ban: 'M12 3a9 9 0 1 0 0 18 9 9 0 1 0 0-18ZM5.6 5.6l12.8 12.8',
+  // edit — nib over a baseline
+  pencil: 'M4 20h4L19 9a2.1 2.1 0 0 0-3-3L5 17v3ZM14.5 6.5l3 3',
+  // duplicate — two offset sheets
+  copy: 'M9 9h10a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H9a1 1 0 0 1-1-1V10a1 1 0 0 1 1-1ZM5 15H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v1',
 }
 
 export default function Icon({ name, size = 16 }: { name: Name; size?: number }) {

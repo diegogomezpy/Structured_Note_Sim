@@ -143,6 +143,11 @@ def figures(terms=None) -> dict:
     d["asset_fans"] = []
     names = list(terms.tickers.values()) if terms is not None else []
     d["individual"] = [(n, object()) for n in names]
+    # The path-explorer selection ("Selected path(s)"). In the real report these
+    # are PNGs the client captured; here one panel stands in so the section is
+    # previewed rather than silently skipped.
+    d["panels"] = [{"title": None, "wof": object(), "num": 1}]
+    d["single_path_num"] = 1
     return d
 
 
@@ -186,4 +191,197 @@ def real_figures(terms, results: dict, lang: str = "en") -> dict:
             for i, n in enumerate(names)],
     }
     figs["asset_fans"] = []
+    figs["panels"] = [{"title": None, "wof": figs["wof_fan"], "num": 1}]
+    figs["single_path_num"] = 1
     return figs
+
+
+# ---------------------------------------------------------------------------
+# Sections beyond the Monte Carlo lens
+# ---------------------------------------------------------------------------
+# The proof used to hand `_build_pdf_report` only the MC results + figure set, so
+# every section gated on OTHER data — the historical backtest, current
+# performance, the A/B comparison, the underlying breakdown, the captured path
+# panels — was silently dropped. Selecting everything in the Report panel then
+# produced a preview with several sections missing, which reads as "the preview
+# is broken" rather than "the preview has no data for those".
+#
+# These build the same SHAPES `api/engine.py` passes, from the same fixed seed.
+
+def bt_summary(terms) -> dict:
+    """Backtest summary shaped like `_backtest_for_pdf`'s first return value."""
+    rng = np.random.default_rng(SEED + 1)
+    irr = rng.normal(0.075, 0.10, 240)
+    return {
+        "n_issues": 240,
+        "mean_irr": float(irr.mean()),
+        "median_irr": float(np.median(irr)),
+        "expected_total_return": 0.118,
+        "expected_nominal_payout": 1.036,
+        "prob_called": 0.74,
+        "prob_knock_in": 0.11,
+        "prob_knock_in_total": 0.11,
+        "prob_above_par": 0.81,
+        "prob_below_par": 0.19,
+        "loss_given_ki": -0.263,
+        "avg_time_to_autocall": 0.71,
+    }
+
+
+def live_data(terms) -> dict:
+    """Current-performance block shaped like `run_live_api(..., for_pdf=True)`.
+
+    `obs_rows` is a list of uniform dicts — the report turns its keys straight
+    into table headers, and picks a 6-column width profile, so the fixture keeps
+    six columns to paginate like the real thing.
+    """
+    names = list(terms.tickers.values())
+    rng = np.random.default_rng(SEED + 2)
+    perf = {nm: float(v) for nm, v in zip(names, rng.normal(0.04, 0.11, len(names)))}
+    worst = min(perf, key=perf.get) if perf else ""
+    n_obs = min(6, max(1, terms.n_obs))
+    rows = [{
+        "#": str(i + 1),
+        "Date": f"2025-{(i % 12) + 1:02d}-15",
+        "Worst-of": f"{0.98 - 0.01 * i:.2%}",
+        "Coupon": "Paid" if i % 3 else "Missed",
+        "Autocall": "No",
+        "Cumulative": f"{terms.coupon_rate * (i + 1):.2%}",
+    } for i in range(n_obs)]
+    return {
+        "wof_today": 0.943,
+        "worst_asset": worst,
+        "irr_to_date": 0.081,
+        "elapsed_years": 0.58,
+        "perf_today": perf,
+        "obs_rows": rows,
+    }
+
+
+def compare_data(terms) -> dict:
+    """A/B comparison block shaped like `_compare_for_pdf`'s first return value.
+
+    Note B is the same note with a wider coupon barrier and a richer coupon, so
+    the differing-terms table has rows to draw.
+    """
+    from core.note import NoteTerms
+
+    b = NoteTerms.from_dict({**terms.to_dict(), "name": f"{terms.name} (B)",
+                             "coupon_pa": float(terms.coupon_pa) * 1.25,
+                             "coupon_barrier": min(0.95, float(terms.coupon_barrier) + 0.15)})
+    rows = [
+        {"key": "expected_irr", "a": 0.084, "b": 0.101, "delta": 0.017, "se": 0.0021},
+        {"key": "expected_total_return", "a": 0.061, "b": 0.052, "delta": -0.009, "se": 0.0018},
+        {"key": "expected_coupon", "a": 0.093, "b": 0.081, "delta": -0.012, "se": 0.0009},
+        {"key": "prob_autocall", "a": 0.742, "b": 0.798, "delta": 0.056, "se": 0.0044},
+        {"key": "prob_knock_in_total", "a": 0.081, "b": 0.104, "delta": 0.023, "se": 0.0027},
+    ]
+    return {
+        "shared_paths": True,
+        "diff": {"rows": rows},
+        "paired": {"win_rate": 0.44, "loss_rate": 0.56, "tie_rate": 0.0,
+                   "mean_edge": -0.009, "median_edge": -0.004, "se_edge": 0.0018,
+                   "edge_p5": -0.121, "edge_p95": 0.046},
+        "name_a": terms.name, "name_b": b.name, "terms_b": b,
+    }
+
+
+def _panels(n: int = 1) -> list[dict]:
+    """Captured path-explorer panels (MC and backtest use the same shape)."""
+    return [{"title": "", "issue": "2019-04-01", "path": object(), "price": object()}
+            for _ in range(n)]
+
+
+def underlying_metrics(terms) -> dict:
+    """Per-underlying metric records for the breakdown pages."""
+    rng = np.random.default_rng(SEED + 3)
+    out = {}
+    for i, nm in enumerate(terms.tickers.values()):
+        out[nm] = {
+            "long_name": nm,
+            "type": "EQUITY",
+            "industry": ("Aerospace & Defense", "Specialty Retail", "Software")[i % 3],
+            "sector": "Industrials",
+            "u_last": float(60 + 30 * i),
+            "u_chg_1y": float(rng.normal(0.12, 0.2)),
+            "u_iv_3m": float(abs(rng.normal(0.28, 0.05))),
+            "u_vol_3m_realized": float(abs(rng.normal(0.26, 0.05))),
+            "iv_source": "implied",
+            "business_summary": (
+                "A representative issuer profile used by the PDF Studio proof. "
+                "The real report shows the description pulled for this underlying, "
+                "or the one written for it in the note's own settings."),
+            "analyst": {"buy": 58.0, "hold": 36.0, "sell": 6.0},
+        }
+    return out
+
+
+# The A/B comparison is not a tree item in the Report panel — it is its own
+# toggle — so the front end mirrors it into the active-section list under this
+# synthetic key (see web/src/lib/reportSections.ts:COMPARE_KEY). The section is
+# data-gated in the report, so without this the proof would show a comparison
+# whether or not the user asked for one.
+COMPARE_KEY = "compare_ab"
+
+
+def extras(terms, *, real: bool = False, lang: str = "en",
+           sections: list[str] | None = None) -> dict:
+    """Everything `_build_pdf_report` needs beyond `results` + `figures`.
+
+    Splat into the call: `_build_pdf_report(..., **fixture.extras(note))`. In
+    stub mode every figure is an opaque sentinel — `_fig_to_png` is intercepted,
+    so nothing inspects them; they only need to be PRESENT for their block to be
+    written and the pagination to match.
+    """
+    stub = (lambda: object())
+    figs = {"outcome": stub(), "pie": stub(), "irr_scatter": stub(),
+            "prices": stub(), "panels": _panels()}
+    cmp_figs = {"irr": stub(), "outcome": stub()}
+    if real:
+        figs, cmp_figs = _real_side_figures(terms, lang)
+    want_cmp = sections is None or COMPARE_KEY in sections
+    return {
+        "bt_summary": bt_summary(terms),
+        "bt_figures": figs,
+        "live_data": live_data(terms),
+        "live_figure": (figs.get("prices") if real else stub()),
+        "compare_data": compare_data(terms) if want_cmp else None,
+        "compare_figures": cmp_figs if want_cmp else None,
+        "underlying_metrics": underlying_metrics(terms),
+        "issuer_description": (
+            "A representative issuer profile used by the PDF Studio proof. The "
+            "real report shows the issuer description saved on the note, or the "
+            "one pulled for it automatically."),
+    }
+
+
+def _real_side_figures(terms, lang: str) -> tuple[dict, dict]:
+    """Genuine Plotly figures for the backtest / live / compare blocks.
+
+    A backtest figure wants a realised-issue DataFrame, which the fixture does
+    not have — rather than fake one badly, these reuse builders that take plain
+    arrays, so the proof's real-chart mode shows a real chart of the right kind
+    in each slot instead of a grey block.
+    """
+    import charts
+    import translations
+
+    tr = translations.Translator(lang)
+    res = results(terms)
+    t_grid = res["t_grid_years"]
+    obs = [(f"{i + 1}", t) for i, t in enumerate(res["obs_times"])]
+    fan = charts.build_wof_fan(res["worst_of_paths"], t_grid, terms.knock_in_barrier,
+                               obs, tr, autocall_barrier=terms.autocall_barrier)
+    irr = charts.build_irr_distribution(
+        res["annualized_returns"], res["total_returns"], res["autocall_events"],
+        res["expected_irr"], terms.coupon_pa, tr)
+    outcome = charts.build_outcome_breakdown(
+        res["prob_autocall_by_period"], res["prob_maturity"],
+        res["prob_knock_in_total"], tr)
+    # Distinct chart per slot — two identical figures on consecutive pages read
+    # as a rendering bug rather than as two different measures.
+    pie = charts.build_redemption_distribution(res["nominal_payoffs"], terms, tr)
+    figs = {"outcome": outcome, "pie": pie, "irr_scatter": irr,
+            "prices": fan, "panels": [{"title": "", "issue": "2019-04-01",
+                                       "path": fan, "price": fan}]}
+    return figs, {"irr": irr, "outcome": outcome}
