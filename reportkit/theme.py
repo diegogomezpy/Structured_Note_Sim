@@ -490,6 +490,33 @@ def _hexstr(rgb) -> str:
     return "#%02x%02x%02x" % (int(rgb[0]), int(rgb[1]), int(rgb[2]))
 
 
+def _luma(c) -> float:
+    """Relative luminance, 0 (black) → 1 (white)."""
+    r, g, b = (max(0.0, min(255.0, float(v))) / 255.0 for v in c[:3])
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b
+
+
+def readable_on(fg, bg, fallback, min_delta: float = 0.22) -> tuple:
+    """`fg`, unless it would be invisible against `bg` — then `fallback`.
+
+    A theme spec carries the colour of a piece of text and the colour of the
+    thing behind it as INDEPENDENT keys, and nothing forces them to agree. The
+    divider is the sharp edge: its "banner" style paints a dark band and so
+    defaults its heading to white, while its "editorial" style paints no band at
+    all and defaults to ink. A spec that switches style to editorial but keeps
+    the banner's `heading_color: white` then writes white text on a white page —
+    the heading is in the PDF's text layer, selectable and searchable, and
+    completely invisible. That is a config a library can't validate away (the
+    brand configs are user-authored and live outside this repo), so guard at the
+    point of drawing instead: any text whose luminance is within `min_delta` of
+    its background falls back to a colour that is known to read.
+    """
+    try:
+        return fg if abs(_luma(fg) - _luma(bg)) >= min_delta else fallback
+    except Exception:
+        return fallback
+
+
 def resolve_color(ref, pdf) -> tuple:
     """Resolve a spec colour reference against a document's palette tokens."""
     if ref is None:
@@ -741,16 +768,24 @@ class SpecTheme(ReportTheme):
         if dv.get("style") == "editorial":
             H = dv.get("height", 30.0)
             num = dv.get("number", {"size": 34, "color": {"mix": ["lime", "white", 0.66]}})
+            # The editorial style paints NO band — everything sits on the bare
+            # page. A spec carried over from the banner style brings
+            # `heading_color: white` with it and the chapter title disappears,
+            # so every colour here is checked against the page before it is used.
             pdf.set_xy(x0, y0 + 2)
             pdf._sf(num.get("size", 34), "bold")
-            pdf.set_text_color(*resolve_color(num.get("color"), pdf))
+            pdf.set_text_color(*readable_on(resolve_color(num.get("color"), pdf),
+                                            WHITE, blend(pdf.ink, WHITE, 0.55)))
             pdf.cell(26, 20, str(number), align="L")
             tx = x0 + 30
-            self.eyebrow(pdf, tx, y0 + 4.5, kicker, resolve_color(dv.get("kicker_color", "lime"), pdf),
+            self.eyebrow(pdf, tx, y0 + 4.5, kicker,
+                         readable_on(resolve_color(dv.get("kicker_color", "lime"), pdf),
+                                     WHITE, pdf.primary_color),
                          size=7.5, tracking=0.6, w=w - 30)
             pdf.set_xy(tx, y0 + 9.5)
             pdf._sf(dv.get("heading_size", 17), "bold")
-            pdf.set_text_color(*resolve_color(dv.get("heading_color", "ink"), pdf))
+            pdf.set_text_color(*readable_on(resolve_color(dv.get("heading_color", "ink"), pdf),
+                                            WHITE, pdf.ink))
             pdf.cell(w - 30, 9, pdf._safe(heading))
             ry = y0 + H - 2
             pdf.set_fill_color(*resolve_color(dv.get("rule_color", "rule_soft"), pdf))
@@ -762,8 +797,18 @@ class SpecTheme(ReportTheme):
             return
         # banner style
         H = dv.get("height", 30.0)
+        _fill = dv.get("fill", {"type": "solid", "color": "ink"})
         paint_shape(pdf, x0, y0, w, H, dv.get("shape", {"kind": "chamfer", "c": 4.4, "q": 1.3, "r": 3.4}),
-                    dv.get("fill", {"type": "solid", "color": "ink"}))
+                    _fill)
+        # Text here sits on the band, so contrast is checked against the band's
+        # own colour (a gradient is judged on its first stop — close enough to
+        # catch "invisible", which is all this guard is for).
+        _band = resolve_color(_fill.get("color") if isinstance(_fill, dict) else _fill, pdf)
+        if isinstance(_fill, dict) and _fill.get("stops"):
+            try:
+                _band = resolve_color(_fill["stops"][0].get("color"), pdf)
+            except Exception:
+                pass
         try:
             _var = int(str(number)) % 3
         except ValueError:
@@ -774,16 +819,19 @@ class SpecTheme(ReportTheme):
         num = dv.get("number", {"size": 26, "color": "lime", "x": 9})
         pdf.set_xy(x0 + num.get("x", 9), y0 + 9)
         pdf._sf(num.get("size", 26), "bold")
-        pdf.set_text_color(*resolve_color(num.get("color", "lime"), pdf))
+        pdf.set_text_color(*readable_on(resolve_color(num.get("color", "lime"), pdf),
+                                        _band, WHITE))
         pdf.cell(20, 12, str(number), align="L")
         if dv.get("vline"):
             pdf.set_fill_color(*resolve_color(dv.get("vline_color", {"mix": ["ink", "white", 0.30]}), pdf))
             pdf.rect(x0 + 31, y0 + 7, 0.5, H - 14, style="F")
-        self.eyebrow(pdf, x0 + 37, y0 + 7.5, kicker, resolve_color(dv.get("kicker_color", "lime"), pdf),
+        self.eyebrow(pdf, x0 + 37, y0 + 7.5, kicker,
+                     readable_on(resolve_color(dv.get("kicker_color", "lime"), pdf), _band, WHITE),
                      size=7.0, tracking=0.6, w=w - 50)
         pdf.set_xy(x0 + 37, y0 + 12.5)
         pdf._sf(dv.get("heading_size", 16), "bold")
-        pdf.set_text_color(*resolve_color(dv.get("heading_color", "white"), pdf))
+        pdf.set_text_color(*readable_on(resolve_color(dv.get("heading_color", "white"), pdf),
+                                        _band, WHITE))
         pdf.cell(w - 50, 9, pdf._safe(heading))
         pdf.set_y(y0 + H + 6)
         pdf.set_text_color(*TEXT)

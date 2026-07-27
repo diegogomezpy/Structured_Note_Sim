@@ -86,38 +86,10 @@ def _rasterise(pdf_bytes: bytes, dpi: int = DPI):
 
 # ── render ───────────────────────────────────────────────────────────────────
 def _render(theme: str, kind: str = "phoenix", *, real_figures: bool = False) -> bytes:
-    """Build one report through the real ``_build_pdf_report`` entry point."""
-    import pdf_report
-
-    terms = gf.note_terms(kind)
-    results = gf.results(terms)
-
-    pdf_report._fetch_image_bytes = lambda *a, **k: None
-
-    # The same ContextVar hook the proof endpoint uses, so the golden exercises
-    # the real interception path rather than a test-only monkeypatch.
-    token = None if real_figures else pdf_report._FIG_HOOK.set(
-        lambda fig, w, h, *colors: gf.stub_png(w, h))
-    try:
-        return pdf_report._build_pdf_report(
-            terms=terms,
-            results=results,
-            asset_names=results["asset_names"],
-            figures=gf.figures(terms),
-            lang="en",
-            branding=gf.branding(theme),
-            logo_urls=None,
-            issuer_logo_url=None,
-            logo_tickers={name: sym for sym, name in terms.tickers.items()},
-            # The backtest / current-performance / comparison / underlying
-            # sections draw their own chrome — metric bands, logo-row tables,
-            # the A/B terms diff. They render only when handed data, so without
-            # these the golden guarded roughly half the document.
-            **gf.extras(terms, real=real_figures),
-        )
-    finally:
-        if token is not None:
-            pdf_report._FIG_HOOK.reset(token)
+    """Build one report. Delegates to the shared fixture renderer so the golden
+    and the structural layout test (tests/test_pdf_layout.py) cannot drift into
+    guarding two different documents."""
+    return gf.render_report(theme, kind, real_figures=real_figures)
 
 
 def _load_baseline() -> dict:

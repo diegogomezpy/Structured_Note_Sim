@@ -77,3 +77,44 @@ def _noise(w: int, h: int, seed: int) -> str:
     im = Image.fromarray(np.clip(base, 0, 255).astype(np.uint8), "RGB")
     buf = io.BytesIO(); im.save(buf, "PNG")
     return base64.b64encode(buf.getvalue()).decode()
+
+
+def render_report(theme: str, kind: str = "phoenix", *, real_figures: bool = False,
+                  lang: str = "en") -> bytes:
+    """Build one report through the real ``_build_pdf_report`` entry point.
+
+    The single render path for every PDF test — the golden's pixel diff and the
+    structural layout invariants must be looking at the SAME document, or one of
+    them is guarding a build nobody ships.
+    """
+    import pdf_report
+
+    terms = note_terms(kind)
+    res = results(terms)
+
+    pdf_report._fetch_image_bytes = lambda *a, **k: None
+
+    # The same ContextVar hook the proof endpoint uses, so tests exercise the
+    # real interception path rather than a test-only monkeypatch.
+    token = None if real_figures else pdf_report._FIG_HOOK.set(
+        lambda fig, w, h, *colors: stub_png(w, h))
+    try:
+        return pdf_report._build_pdf_report(
+            terms=terms,
+            results=res,
+            asset_names=res["asset_names"],
+            figures=figures(terms),
+            lang=lang,
+            branding=branding(theme),
+            logo_urls=None,
+            issuer_logo_url=None,
+            logo_tickers={name: sym for sym, name in terms.tickers.items()},
+            # The backtest / current-performance / comparison / underlying
+            # sections draw their own chrome — metric bands, logo-row tables,
+            # the A/B terms diff. They render only when handed data, so without
+            # these the tests guard roughly half the document.
+            **extras(terms, real=real_figures),
+        )
+    finally:
+        if token is not None:
+            pdf_report._FIG_HOOK.reset(token)

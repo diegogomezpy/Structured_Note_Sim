@@ -1195,10 +1195,12 @@ class _NotePDF(FPDF):
         # Keep the whole table together when it can fit on one page: if the
         # header + all rows won't fit in the space left but WOULD fit on a fresh
         # page, break first instead of splitting a short table across pages.
-        _needed   = 9 + len(rows) * 8 + 6
-        _avail    = self.h - 30 - self.get_y()
-        _page_cap = self.h - 30 - 21   # usable height below the running header
-        if _needed > _avail and _needed <= _page_cap:
+        # `_table_room` above predicts this rule for the sub-heading that
+        # introduces the table; the two MUST stay in step or the heading gets
+        # orphaned on the page the table just left.
+        _needed = _TBL_HEAD_H + len(rows) * _TBL_ROW_H + _TBL_PAD
+        _avail  = self.h - 30 - self.get_y()
+        if _needed > _avail and _needed <= _PAGE_CAP:
             self.add_page()
         elif self.get_y() > self.h - 55:
             self.add_page()
@@ -1370,15 +1372,27 @@ class _NotePDF(FPDF):
         n = len(metrics)
         usable = self.w - self.l_margin - self.r_margin
         gap = 3.0
-        # Up to 4 across; beyond that, wrap to rows of 3 (the prototype's layout)
-        # so labels never get squeezed into clipping-narrow tiles.
-        per_row = n if n <= 4 else 3
-        nrows = (n + per_row - 1) // per_row
-        w = (usable - gap * (per_row - 1)) / per_row
+        # BALANCED rows, max 4 across. Filling rows of 3 until the tiles run out
+        # left a ragged tail — 7 metrics rendered 3 + 3 + 1, stranding one tile
+        # on a row of its own, and it read as an accident rather than a layout.
+        # Spread n over ceil(n/4) rows as evenly as possible instead, so 7 is
+        # 4 + 3, 5 is 3 + 2 and no row is ever shorter than the one below it by
+        # more than one tile. Each row is stretched to the full measure, so the
+        # band keeps a flush left AND right edge whatever the count.
+        nrows = max(1, (n + 3) // 4)
+        base, extra = divmod(n, nrows)
+        counts = [base + (1 if r < extra else 0) for r in range(nrows)]
+        # (row index, column index, columns in that row) per tile, in order.
+        slots, _i = [], 0
+        for r, cnt in enumerate(counts):
+            for c in range(cnt):
+                slots.append((r, c, cnt))
+                _i += 1
         y0 = self.get_y()
         h = 19.0
         for i, (label, value) in enumerate(metrics):
-            r, c = divmod(i, per_row)
+            r, c, cnt = slots[i]
+            w = (usable - gap * (cnt - 1)) / cnt
             x = self.l_margin + c * (w + gap)
             yr = y0 + r * (h + gap)
             self.set_fill_color(*self.panel_color)
@@ -3507,11 +3521,36 @@ def _cover_page(
 # Public API
 # ──────────────────────────────────────────────────────────────────────────────
 
-def _table_room(n_rows: int, row_h: float = 8.0, head_h: float = 9.0) -> float:
-    """Approx mm a filled-header table occupies. Capped so a long (multi-page)
-    table doesn't make its sub-header demand a whole empty page — the header plus
-    the start of the table is enough to keep them together; the rest flows."""
-    return min(head_h + n_rows * row_h + 6.0, 130.0)
+# Page-geometry constants shared by the heading reservation and the table's own
+# break rule. They MUST agree: the orphaned-heading bug was two independent
+# estimates of the same quantity. `_table_room` says how much room a heading has
+# to see before it may draw; `data_table` uses the same numbers to decide whether
+# to break. Change one, change both.
+_TBL_ROW_H  = 8.0
+_TBL_HEAD_H = 9.0
+_TBL_PAD    = 6.0
+_PAGE_CAP   = 246.0   # h(297) - footer(30) - running header(21): a fresh page's room
+_SPLIT_ROOM = 37.0    # heading + enough of a long table to be worth starting here
+
+
+def _table_room(n_rows: int, row_h: float = _TBL_ROW_H, head_h: float = _TBL_HEAD_H) -> float:
+    """Room a sub-heading must see before drawing, for a table of `n_rows`.
+
+    Includes the heading's own height, so call sites pass this straight to
+    `min_room=` — do NOT add a further allowance.
+
+    This has to predict what `_NotePDF.data_table` will actually do:
+      * a table that fits a fresh page is kept WHOLE, so the heading must
+        reserve the table's full height or the table will bounce to the next
+        page and leave the heading stranded on a decorated empty one;
+      * a longer table is going to split anyway, so the heading only needs
+        enough room for the header row and a few lines of it.
+
+    The previous version capped at 130mm while data_table measured the full
+    height uncapped, so every table of roughly 16-29 rows orphaned its heading.
+    """
+    full = head_h + n_rows * row_h + _TBL_PAD
+    return (full + 12.0) if full <= _PAGE_CAP else _SPLIT_ROOM
 
 
 def _draw_participation_profile(pdf, terms, lang: str) -> None:
@@ -4252,7 +4291,7 @@ def _build_pdf_report(
         if _show_terms:
             _term_data = _term_rows(terms, lang)
             pdf.subsection(_t("note_terms", lang),
-                           min_room=14 + _table_room(len(_term_data)))
+                           min_room=_table_room(len(_term_data)))
             pdf.data_table(
                 [_t("key_terms_col_characteristic", lang), _t("key_terms_col_description", lang)],
                 [[k, v] for k, v in _term_data],
@@ -4264,7 +4303,7 @@ def _build_pdf_report(
             # A sub-header under Note Terms (always a sub-label now — the 01 head
             # labels the section).
             pdf.subsection(_t("obs_schedule", lang),
-                           min_room=14 + _table_room(terms.n_obs))
+                           min_room=_table_room(terms.n_obs))
             obs_times = terms.obs_times()
             sched     = terms.autocall_barrier_schedule()
             ac_rows = []
@@ -4462,7 +4501,7 @@ def _build_pdf_report(
         _sec()
         _obs_times = list(terms.obs_times())
         pdf.subsection(_t("autocall_by_period", lang),
-                       min_room=14 + _table_room(len(prob_by_period)))
+                       min_room=_table_room(len(prob_by_period)))
         rows = []
         for i, (t_obs, p_ac) in enumerate(zip(_obs_times, prob_by_period)):
             eligible = _t("yes", lang) if (i + 1) >= terms.autocall_start_period else _t("no", lang)
@@ -4664,7 +4703,7 @@ def _build_pdf_report(
         if perf_today and _inc("live_asset_table"):
             _live_div()
             pdf.subsection(_t("live_asset_perf", lang),
-                           min_room=14 + _table_room(len(perf_today), row_h=10.0))
+                           min_room=_table_room(len(perf_today), row_h=10.0))
             _perf_logos = {
                 nm: (_logo_ovr.get(nm)
                      or _load_ticker_logo(nm, (logo_urls or {}).get(nm, ""),
@@ -4683,7 +4722,7 @@ def _build_pdf_report(
         if obs_rows and _inc("live_obs_table"):
             _live_div()
             pdf.subsection(_t("live_obs_history", lang),
-                           min_room=14 + _table_room(len(obs_rows)))
+                           min_room=_table_room(len(obs_rows)))
             obs_headers = list(obs_rows[0].keys())
             obs_data    = [[str(r.get(h, "")) for h in obs_headers] for r in obs_rows]
             n_cols = len(obs_headers)
@@ -4716,7 +4755,7 @@ def _build_pdf_report(
             if _diff_terms:
                 _cmp_div()
                 pdf.start_section(_t("cmp_terms_title", lang),
-                                  min_room=14 + _table_room(len(_diff_terms)))
+                                  min_room=_table_room(len(_diff_terms)))
                 pdf.data_table(
                     [_t("cmp_col_term", lang), _t("cmp_col_a", lang), _t("cmp_col_b", lang)],
                     _diff_terms,
@@ -4763,7 +4802,7 @@ def _build_pdf_report(
         if _cmp_rows:
             _cmp_div()
             pdf.start_section(_t("cmp_metrics_title", lang),
-                              min_room=14 + _table_room(len(_cmp_rows)))
+                              min_room=_table_room(len(_cmp_rows)))
             pdf.data_table(
                 [_t("cmp_col_metric", lang), _t("cmp_col_a", lang),
                  _t("cmp_col_b", lang), _t("cmp_col_delta", lang)],
