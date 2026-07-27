@@ -828,25 +828,49 @@ _CMP_A = "#2563eb"
 _CMP_B = "#d97706"
 
 
+def _bin_edges(*arrays, n_bins: int = 60) -> np.ndarray:
+    """Shared bin edges spanning every array, so overlaid distributions line up."""
+    lo = float(min(float(np.min(a)) for a in arrays))
+    hi = float(max(float(np.max(a)) for a in arrays))
+    size = max((hi - lo) / n_bins, 1e-6)
+    return np.arange(lo, hi + size * 1.5, size)
+
+
+def _pct_bar(values, edges, name, color, tr_fmt: str, *, denom: int | None = None,
+             opacity: float = 0.55) -> go.Bar:
+    """A pre-binned histogram bar trace.
+
+    go.Histogram would ship EVERY raw value to the browser — at 20 000 antithetic
+    paths that is hundreds of KB per trace for a picture with 60 bars. Binning
+    server-side sends the 60 bars instead, pixel-identical. `denom` normalises
+    against a different total (e.g. both halves of a signed split) so the areas
+    stay comparable; default is the trace's own count, matching histnorm="percent".
+    """
+    v = np.asarray(values, dtype=float)
+    counts, _ = np.histogram(v, bins=edges)
+    total = denom if denom else max(int(counts.sum()), 1)
+    centers = (edges[:-1] + edges[1:]) / 2.0
+    return go.Bar(
+        x=np.round(centers, 4), y=np.round(counts / total * 100.0, 4),
+        name=name, marker_color=color, opacity=opacity, marker_line_width=0,
+        width=float(edges[1] - edges[0]),
+        hovertemplate=f"{name}: {tr_fmt}<extra></extra>")
+
+
 def build_irr_compare(a_irrs, b_irrs, exp_a, exp_b, tr: Translator) -> go.Figure:
     """Overlaid IRR-p.a. distributions for two notes (A vs B), each note's
     expected IRR marked. Semi-transparent overlay so both shapes read at once."""
     A = np.asarray(a_irrs, dtype=float) * 100.0
     B = np.asarray(b_irrs, dtype=float) * 100.0
-    lo = float(min(A.min(), B.min())); hi = float(max(A.max(), B.max()))
-    size = max((hi - lo) / 60.0, 1e-6)
-    bins = dict(start=lo, end=hi + size, size=size)
+    edges = _bin_edges(A, B)
     fig = go.Figure()
     for x, name, color in ((A, tr("cmp_note_a"), _CMP_A), (B, tr("cmp_note_b"), _CMP_B)):
-        fig.add_trace(go.Histogram(
-            x=x, name=name, marker_color=color, opacity=0.55, marker_line_width=0,
-            histnorm="percent", xbins=bins,
-            hovertemplate=f"{name}: %{{x:.1f}}%<extra></extra>"))
+        fig.add_trace(_pct_bar(x, edges, name, color, "%{x:.1f}%"))
     for x, color in ((exp_a, _CMP_A), (exp_b, _CMP_B)):
         if x is not None:
             fig.add_vline(x=float(x) * 100.0, line=dict(color=color, width=1.5, dash="dash"))
     fig.update_layout(
-        title=tr("cmp_irr_dist"), barmode="overlay",
+        title=tr("cmp_irr_dist"), barmode="overlay", bargap=0,
         xaxis=dict(title=tr("cmp_irr_axis"), ticksuffix="%"),
         yaxis=dict(title=tr("cmp_pct_paths"), ticksuffix="%"),
         legend=dict(orientation="h", yanchor="top", y=-0.2, xanchor="center", x=0.5,
@@ -866,18 +890,13 @@ def build_outcome_compare(note_a, note_b, terms_a, terms_b, tr: Translator) -> g
     if both_part:
         A = np.asarray(note_a["nominal_payoffs"], dtype=float) * 100.0
         B = np.asarray(note_b["nominal_payoffs"], dtype=float) * 100.0
-        lo = float(min(A.min(), B.min())); hi = float(max(A.max(), B.max()))
-        size = max((hi - lo) / 60.0, 1e-6)
-        bins = dict(start=lo, end=hi + size, size=size)
+        edges = _bin_edges(A, B)
         fig = go.Figure()
         for x, name, color in ((A, tr("cmp_note_a"), _CMP_A), (B, tr("cmp_note_b"), _CMP_B)):
-            fig.add_trace(go.Histogram(
-                x=x, name=name, marker_color=color, opacity=0.55, marker_line_width=0,
-                histnorm="percent", xbins=bins,
-                hovertemplate=f"{name}: %{{x:.0f}}%<extra></extra>"))
+            fig.add_trace(_pct_bar(x, edges, name, color, "%{x:.0f}%"))
         fig.add_vline(x=100.0, line=dict(color="#6b7280", width=1.5, dash="dash"))
         fig.update_layout(
-            title=tr("cmp_redemption"), barmode="overlay",
+            title=tr("cmp_redemption"), barmode="overlay", bargap=0,
             xaxis=dict(title=tr("redemption_axis"), ticksuffix="%"),
             yaxis=dict(title=tr("cmp_pct_paths"), ticksuffix="%"),
             legend=dict(orientation="h", yanchor="top", y=-0.2, xanchor="center", x=0.5,
@@ -921,6 +940,149 @@ def build_outcome_compare(note_a, note_b, terms_a, terms_b, tr: Translator) -> g
                     font=dict(size=10), bgcolor="rgba(0,0,0,0)"))
     _apply_theme(fig)
     fig.update_layout(margin=dict(l=64, r=24, t=52, b=56))
+    return fig
+
+
+# ---------------------------------------------------------------------------
+# A/B paired analytics — only meaningful when both notes priced the SAME paths
+# ---------------------------------------------------------------------------
+# Path i means the same thing for A and B, so the per-path DIFFERENCE is a real
+# quantity rather than a difference of two independent averages. These builders
+# visualise that difference; api/engine.py:_paired_stats computes the numbers.
+
+def build_paired_delta(delta, mean_delta, tr: Translator) -> go.Figure:
+    """Distribution of the per-path edge (B − A total return). The mass either
+    side of zero IS the win rate, so the sign split is coloured rather than
+    left to the reader."""
+    d = np.asarray(delta, dtype=float) * 100.0
+    edges = _bin_edges(d, n_bins=70)
+    pos, neg = d[d > 0], d[d <= 0]
+    fig = go.Figure()
+    # Both halves normalise against the FULL path count, so the two areas are
+    # directly comparable — that ratio is the win rate, and per-trace
+    # normalisation would inflate whichever side has fewer paths.
+    for x, name, color in ((neg, tr("cmp_a_wins"), _CMP_A), (pos, tr("cmp_b_wins"), _CMP_B)):
+        if not x.size:
+            continue
+        fig.add_trace(_pct_bar(x, edges, name, color, "%{x:.1f}%",
+                               denom=int(d.size), opacity=0.75))
+    fig.add_vline(x=0.0, line=dict(color=_GREY, width=1.5))
+    if mean_delta is not None:
+        fig.add_vline(x=float(mean_delta) * 100.0, line=dict(color="#111827", width=1.5, dash="dash"),
+                      annotation_text=tr("cmp_mean_edge"), annotation_position="top right")
+    fig.update_layout(
+        title=tr("cmp_delta_title"), barmode="overlay", bargap=0,
+        xaxis=dict(title=tr("cmp_delta_axis"), ticksuffix="%"),
+        yaxis=dict(title=tr("cmp_pct_paths"), ticksuffix="%"),
+        legend=dict(orientation="h", yanchor="top", y=-0.2, xanchor="center", x=0.5,
+                    bgcolor="rgba(0,0,0,0)"))
+    _apply_theme(fig)
+    fig.update_layout(margin=dict(l=52, r=24, t=52, b=64))
+    return fig
+
+
+def build_paired_scatter(a_vals, b_vals, tr: Translator, *, max_points: int = 2500) -> go.Figure:
+    """Per-path A vs B IRR with a 45° reference. Points above the line are paths
+    where B won — so the SHAPE shows whether B's edge comes from the good states,
+    the bad states, or uniformly, which no pair of summary means can tell you.
+    Stride-subsampled (paths are unordered) to keep the payload sane."""
+    A = np.asarray(a_vals, dtype=float) * 100.0
+    B = np.asarray(b_vals, dtype=float) * 100.0
+    stride = max(1, len(A) // max_points)
+    # 2 dp is finer than a plotted pixel at any realistic axis range, and cuts the
+    # serialised payload several-fold versus full float64 repr.
+    A = np.round(A[::stride][:max_points], 2)
+    B = np.round(B[::stride][:max_points], 2)
+    lo = float(min(A.min(), B.min())); hi = float(max(A.max(), B.max()))
+    pad = max((hi - lo) * 0.04, 0.5)
+    lo, hi = lo - pad, hi + pad
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(
+        x=[lo, hi], y=[lo, hi], mode="lines", name=tr("cmp_parity"),
+        line=dict(color=_GREY, width=1.2, dash="dash"), hoverinfo="skip"))
+    win = B > A
+    for mask, name, color in ((~win, tr("cmp_a_wins"), _CMP_A), (win, tr("cmp_b_wins"), _CMP_B)):
+        if not mask.any():
+            continue
+        fig.add_trace(go.Scatter(
+            x=A[mask], y=B[mask], mode="markers", name=name,
+            marker=dict(size=4, color=color, opacity=0.45, line=dict(width=0)),
+            hovertemplate=f"A %{{x:.1f}}% · B %{{y:.1f}}%<extra>{name}</extra>"))
+    fig.update_layout(
+        title=tr("cmp_scatter_title"),
+        xaxis=dict(title=tr("cmp_scatter_x"), ticksuffix="%", range=[lo, hi]),
+        yaxis=dict(title=tr("cmp_scatter_y"), ticksuffix="%", range=[lo, hi],
+                   scaleanchor="x", scaleratio=1),
+        legend=dict(orientation="h", yanchor="top", y=-0.2, xanchor="center", x=0.5,
+                    bgcolor="rgba(0,0,0,0)"))
+    _apply_theme(fig)
+    fig.update_layout(margin=dict(l=56, r=24, t=52, b=64))
+    return fig
+
+
+def build_transition_heatmap(matrix, labels: list[str], tr: Translator) -> go.Figure:
+    """How each path resolves under A (rows) vs under B (columns). The diagonal is
+    'same outcome either way'; everything off it is a path the swap actually moved
+    — e.g. the cell that answers "of the paths where A knocked in, what did B do?"."""
+    m = np.asarray(matrix, dtype=float)
+    txt = [[f"{v:.1%}" if v >= 0.0005 else "" for v in row] for row in m]
+    fig = go.Figure(go.Heatmap(
+        z=m, x=labels, y=labels, text=txt, texttemplate="%{text}",
+        colorscale=[[0, _WHITE], [1, _NAVY]], zmin=0.0, showscale=False,
+        hovertemplate=(f"{tr('cmp_note_a')}: %{{y}}<br>{tr('cmp_note_b')}: %{{x}}"
+                       "<br>%{z:.2%}<extra></extra>")))
+    fig.update_layout(
+        title=tr("cmp_transition_title"),
+        xaxis=dict(title=tr("cmp_note_b"), side="bottom"),
+        yaxis=dict(title=tr("cmp_note_a"), autorange="reversed"))
+    _apply_theme(fig)
+    fig.update_xaxes(automargin=True)
+    fig.update_yaxes(automargin=True)
+    fig.update_layout(margin=dict(l=52, r=24, t=52, b=52))
+    return fig
+
+
+def build_wof_fan_compare(bands_a, bands_b, t_grid, knock_in, tr: Translator,
+                          *, autocall_barrier=None) -> go.Figure:
+    """Worst-of envelopes for A and B on one axis — median line plus the 25–75
+    band each. Identical when the notes share underlyings (the paths ARE the
+    same), so this reads as context for the barriers rather than as a difference;
+    it earns its place when A and B run on different underlyings."""
+    t = np.asarray(t_grid, dtype=float) * 12.0        # months
+    fig = go.Figure()
+    for bands, name, color in ((bands_a, tr("cmp_note_a"), _CMP_A),
+                               (bands_b, tr("cmp_note_b"), _CMP_B)):
+        if bands is None:
+            continue
+        # 4 dp on a 0–3 performance scale is well under a plotted pixel; full
+        # float64 repr would triple the serialised size for no visible gain.
+        b = np.round(np.asarray(bands, dtype=float), 4)   # (7, N+1) → [1,5,25,50,75,95,99]
+        rgb = tuple(int(color[i:i + 2], 16) for i in (1, 3, 5))
+        fill = f"rgba({rgb[0]},{rgb[1]},{rgb[2]},0.13)"
+        fig.add_trace(go.Scatter(x=t, y=b[4], mode="lines", line=dict(width=0),
+                                 showlegend=False, hoverinfo="skip"))
+        fig.add_trace(go.Scatter(x=t, y=b[2], mode="lines", line=dict(width=0),
+                                 fill="tonexty", fillcolor=fill,
+                                 showlegend=False, hoverinfo="skip"))
+        fig.add_trace(go.Scatter(
+            x=t, y=b[3], mode="lines", name=name, line=dict(color=color, width=2.2),
+            hovertemplate=f"{name} · %{{x:.0f}}mo: %{{y:.1%}}<extra></extra>"))
+    fig.add_hline(y=float(knock_in), line_dash="dash", line_color=_RED,
+                  annotation_text=tr("chart_ki_barrier", lvl=f"{float(knock_in):.0%}"),
+                  annotation_position="bottom right")
+    if autocall_barrier is not None:
+        fig.add_hline(y=float(autocall_barrier), line_dash="dot", line_color=_GREY,
+                      annotation_text=tr("chart_autocall_barrier_lvl", lvl=f"{float(autocall_barrier):.0%}"),
+                      annotation_position="top right")
+    fig.update_layout(
+        title=tr("cmp_fan_title"),
+        xaxis=dict(title=tr("time_months"), tickformat=".0f"),
+        yaxis=dict(title=tr("perf_vs_initial"), tickformat=".0%"),
+        hovermode="x unified",
+        legend=dict(orientation="h", yanchor="top", y=-0.2, xanchor="center", x=0.5,
+                    bgcolor="rgba(0,0,0,0)"))
+    _apply_theme(fig)
+    fig.update_layout(margin=dict(l=56, r=24, t=52, b=64))
     return fig
 
 

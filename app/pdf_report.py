@@ -4715,6 +4715,8 @@ def _build_pdf_report(
             "prob_at_cap":             ("p_at_cap",            "pct"),
             "prob_knocked_out":        ("p_knocked_out",       "pct"),
             "p5_redemption":           ("p5_redemption",       "pct"),
+            "prob_loss":               ("p_loss",              "pct"),
+            "cost_basis":              ("cost_basis",          "pct"),
         }
 
         def _cmp_val(v, kind):
