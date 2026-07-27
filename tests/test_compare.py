@@ -1,4 +1,4 @@
-"""Tests for the A/B paired analytics (api/engine.py).
+"""Tests for the A/B comparison statistics (core/compare.py).
 
 These lock the arithmetic that makes a comparison *paired*: index i is the same
 simulated world for both notes, so the per-path difference is a real quantity
@@ -7,7 +7,7 @@ runs on hand-built payoff dicts — no simulation, no network."""
 import numpy as np
 import pytest
 
-from api.engine import _outcome_buckets, _paired_stats, _share_blockers, _compare_diff
+from core.compare import outcome_buckets, paired_stats, share_blockers, compare_diff
 from core.note import NoteTerms
 
 
@@ -36,7 +36,7 @@ def _note(total, *, called=None, ki=None, payoff=None):
 
 # ── shareability ───────────────────────────────────────────────────────────────
 def test_identical_notes_can_share_paths():
-    assert _share_blockers(_terms(), _terms()) == []
+    assert share_blockers(_terms(), _terms()) == []
 
 
 @pytest.mark.parametrize("over,blocker", [
@@ -45,15 +45,15 @@ def test_identical_notes_can_share_paths():
     ({"seasoned": True, "issue_date": "2024-01-15"},      "seasoning"),
 ])
 def test_share_blockers_name_the_offending_term(over, blocker):
-    assert _share_blockers(_terms(), _terms(**over)) == [blocker]
+    assert share_blockers(_terms(), _terms(**over)) == [blocker]
 
 
 def test_seasoned_notes_need_the_same_issue_date():
     a = _terms(seasoned=True, issue_date="2024-01-15")
     b = _terms(seasoned=True, issue_date="2024-06-15")
     # Both seasoned, so the grid and the fixings differ only through the date.
-    assert _share_blockers(a, b) == ["issue_date"]
-    assert _share_blockers(a, _terms(seasoned=True, issue_date="2024-01-15")) == []
+    assert share_blockers(a, b) == ["issue_date"]
+    assert share_blockers(a, _terms(seasoned=True, issue_date="2024-01-15")) == []
 
 
 # ── paired statistics ──────────────────────────────────────────────────────────
@@ -62,7 +62,7 @@ def test_win_rate_counts_paths_not_averages():
     while the win rate favours B. Reporting only the mean hides that entirely."""
     a = _note([0.0] * 10)
     b = _note([-1.0] + [0.01] * 9)
-    p = _paired_stats(a, b, _terms(), _terms())
+    p = paired_stats(a, b, _terms(), _terms())
     assert p["win_rate"] == pytest.approx(0.9)
     assert p["loss_rate"] == pytest.approx(0.1)
     assert p["mean_edge"] < 0            # mean says A
@@ -70,7 +70,7 @@ def test_win_rate_counts_paths_not_averages():
 
 
 def test_ties_are_not_counted_as_wins():
-    p = _paired_stats(_note([0.05] * 4), _note([0.05] * 4), _terms(), _terms())
+    p = paired_stats(_note([0.05] * 4), _note([0.05] * 4), _terms(), _terms())
     assert (p["win_rate"], p["tie_rate"], p["loss_rate"]) == (0.0, 1.0, 0.0)
     assert p["mean_edge"] == pytest.approx(0.0)
     assert p["se_edge"] == pytest.approx(0.0)
@@ -78,7 +78,7 @@ def test_ties_are_not_counted_as_wins():
 
 def test_edge_percentiles_and_paired_standard_error():
     d = np.linspace(-0.10, 0.10, 101)               # symmetric edge distribution
-    p = _paired_stats(_note(np.zeros(101)), _note(d), _terms(), _terms())
+    p = paired_stats(_note(np.zeros(101)), _note(d), _terms(), _terms())
     assert p["mean_edge"] == pytest.approx(0.0, abs=1e-12)
     assert p["edge_p5"] == pytest.approx(-0.09, abs=1e-9)
     assert p["edge_p95"] == pytest.approx(0.09, abs=1e-9)
@@ -92,7 +92,7 @@ def test_transition_matrix_rows_are_a_outcomes():
     did B do?"."""
     a = _note([0.05, -0.4], called=[1, 0], ki=[False, True])
     b = _note([0.05, 0.02], called=[1, 0], ki=[False, False])
-    p = _paired_stats(a, b, _terms(), _terms())
+    p = paired_stats(a, b, _terms(), _terms())
     assert p["labels"] == ["out_called", "out_par", "out_ki"]
     m = p["transition"]
     assert m[0][0] == pytest.approx(0.5)      # called under both
@@ -103,7 +103,7 @@ def test_transition_matrix_rows_are_a_outcomes():
 def test_conditional_tails_look_at_a_s_bad_paths():
     a = _note([-0.30, 0.05, 0.05, 0.05])
     b = _note([0.10, 0.05, 0.05, 0.05])       # B rescues the one path A loses on
-    p = _paired_stats(a, b, _terms(), _terms())["conditional"]
+    p = paired_stats(a, b, _terms(), _terms())["conditional"]
     assert p["a_loss_rate"] == pytest.approx(0.25)
     assert p["b_loss_rate"] == pytest.approx(0.0)
     assert p["b_loses_given_a"] == pytest.approx(0.0)
@@ -113,7 +113,7 @@ def test_conditional_tails_look_at_a_s_bad_paths():
 def test_participation_buckets_split_on_the_redemption():
     t = _terms(note_type="participation", protection_level=1.0, autocall_start_period=99)
     note = _note([0.2, 0.0, -0.2], payoff=[1.2, 1.0, 0.8])
-    code, labels = _outcome_buckets(note, t)
+    code, labels = outcome_buckets(note, t)
     assert labels == ["part_loss", "part_par", "part_gain"]
     assert code.tolist() == [2, 1, 0]
 
@@ -126,10 +126,10 @@ def test_paired_standard_error_is_tighter_than_independent():
     market = rng.normal(0, 0.30, 4000)          # shared shock, dwarfs the term effect
     a = _note(market)
     b = _note(market + 0.01)                    # B is +1% on EVERY path
-    paired = _compare_diff({"expected_total_return": float(market.mean())},
+    paired = compare_diff({"expected_total_return": float(market.mean())},
                            {"expected_total_return": float((market + 0.01).mean())},
                            _terms(), _terms(), a, b, True)
-    indep = _compare_diff({"expected_total_return": float(market.mean())},
+    indep = compare_diff({"expected_total_return": float(market.mean())},
                           {"expected_total_return": float((market + 0.01).mean())},
                           _terms(), _terms(), a, b, False)
     se_paired = next(r["se"] for r in paired["rows"] if r["key"] == "expected_total_return")
@@ -140,9 +140,9 @@ def test_paired_standard_error_is_tighter_than_independent():
 
 def test_diff_adds_a_cost_basis_row_only_when_the_sides_differ():
     keys = lambda d: [r["key"] for r in d["rows"]]     # noqa: E731
-    same = _compare_diff({}, {}, _terms(), _terms())
+    same = compare_diff({}, {}, _terms(), _terms())
     assert "cost_basis" not in keys(same)
-    bought = _compare_diff({}, {}, _terms(), _terms(purchase_price=0.95))
+    bought = compare_diff({}, {}, _terms(), _terms(purchase_price=0.95))
     assert "cost_basis" in keys(bought)
     row = next(r for r in bought["rows"] if r["key"] == "cost_basis")
     assert (row["a"], row["b"]) == (1.0, pytest.approx(0.95))
