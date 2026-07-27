@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react'
+import { Fragment, useMemo, useRef, useState } from 'react'
 import { api } from '../api/client'
 import { useI18n } from '../i18n/I18nProvider'
 import type { BacktestResult, CompareResult, ConfigMeta, LiveResult, NoteTerms } from '../api/types'
@@ -13,7 +13,7 @@ import FolderConnect from './FolderConnect'
 import { Select } from './fields'
 import { useLocalFolder } from '../lib/localFolder'
 import { pct, pctSigned, num } from '../lib/format'
-import { noteSummary } from '../lib/terms'
+import { noteSummary, termDiffRows } from '../lib/terms'
 
 /* A/B comparison: price the current note (A) against a variant (B) and show the
    differences across Monte Carlo, historical backtest and current performance. B
@@ -23,7 +23,8 @@ import { noteSummary } from '../lib/terms'
 
 type Dir = 'up' | 'down' | 'neutral'
 type Kind = 'pct' | 'months'
-interface Row { label: string; a: number | null; b: number | null; delta: number | null; dir: Dir; kind: Kind }
+interface Row { label: string; a: number | null; b: number | null; delta: number | null; dir: Dir; kind: Kind
+                se?: number | null }
 
 // Monte Carlo diff keys → label/direction/format (server returns the A/B/Δ values).
 const MC_METRICS: Record<string, { labelKey: string; dir: Dir; kind: Kind }> = {
@@ -59,6 +60,13 @@ const deltaTone = (dir: Dir, d: number | null) => {
   if (d == null || dir === 'neutral' || Math.abs(d) < 1e-9) return 'var(--text-muted)'
   return (dir === 'up' ? d > 0 : d < 0) ? 'var(--accent-text)' : 'var(--red)'
 }
+/** A delta inside ±2 standard errors is Monte Carlo noise, not a term effect —
+    without this the table invites reading a rounding artefact as a decision. */
+const isNoise = (d: number | null, se: number | null | undefined) =>
+  d != null && se != null && se > 0 && Math.abs(d) < 2 * se
+
+const CMP_A = 'var(--cmp-a, #15694e)'
+const CMP_B = 'var(--cmp-b, #9a6b1a)'
 
 export default function ComparePanel({ terms, opts, cppAvailable, configs, variantB, onVariantBChange }: {
   terms: NoteTerms
@@ -185,25 +193,148 @@ export default function ComparePanel({ terms, opts, cppAvailable, configs, varia
           </tr>
         </thead>
         <tbody>
-          {rows.map((r) => (
-            <tr key={r.label} style={{ borderTop: '1px solid var(--border)' }}>
-              <td style={{ textAlign: 'left', padding: '8px 10px' }}>{r.label}</td>
-              <td style={{ textAlign: 'right', padding: '8px 10px', fontVariantNumeric: 'tabular-nums' }}>{fmtVal(r.a, r.kind)}</td>
-              <td style={{ textAlign: 'right', padding: '8px 10px', fontVariantNumeric: 'tabular-nums' }}>{fmtVal(r.b, r.kind)}</td>
-              <td style={{ textAlign: 'right', padding: '8px 10px', fontVariantNumeric: 'tabular-nums', color: deltaTone(r.dir, r.delta), fontWeight: 600 }}>{fmtDelta(r.delta, r.kind)}</td>
-            </tr>
-          ))}
+          {rows.map((r) => {
+            const noise = isNoise(r.delta, r.se)
+            return (
+              <tr key={r.label} style={{ borderTop: '1px solid var(--border)' }}>
+                <td style={{ textAlign: 'left', padding: '8px 10px' }}>{r.label}</td>
+                <td style={{ textAlign: 'right', padding: '8px 10px', fontVariantNumeric: 'tabular-nums' }}>{fmtVal(r.a, r.kind)}</td>
+                <td style={{ textAlign: 'right', padding: '8px 10px', fontVariantNumeric: 'tabular-nums' }}>{fmtVal(r.b, r.kind)}</td>
+                <td style={{ textAlign: 'right', padding: '8px 10px', fontVariantNumeric: 'tabular-nums',
+                             color: noise ? 'var(--text-faint)' : deltaTone(r.dir, r.delta), fontWeight: 600 }}
+                    title={r.se != null ? t('cmp_se_tip', { v: pct(r.se, 3) }) : undefined}>
+                  {fmtDelta(r.delta, r.kind)}
+                  {noise && <span style={{ fontWeight: 400, fontSize: 11, marginLeft: 5 }}>{t('cmp_noise')}</span>}
+                </td>
+              </tr>
+            )
+          })}
         </tbody>
       </table>
     </div>
   )
 
+  /** The headline a table of means can't give you: how often B actually wins,
+      and whether the average edge survives its own error bar. */
+  const VerdictBand = ({ p }: { p: NonNullable<CompareResult['compare']['paired']> }) => {
+    const solid = !isNoise(p.mean_edge, p.se_edge)
+    const bWins = p.mean_edge > 0
+    const tone = !solid ? 'var(--text-muted)' : bWins ? CMP_B : CMP_A
+    const Tile = ({ label, value, sub, color }: { label: string; value: string; sub?: string; color?: string }) => (
+      <div style={{ minWidth: 140 }}>
+        <div className="eyebrow" style={{ marginBottom: 6 }}>{label}</div>
+        {/* A range reads as one figure, so step the size down rather than let it
+            wrap out of line with the tiles either side. */}
+        <div className="mono" style={{ fontSize: value.length > 12 ? 17 : 24, fontWeight: 600,
+                                       lineHeight: 1.15, whiteSpace: 'nowrap',
+                                       color: color ?? 'var(--text)' }}>{value}</div>
+        {sub && <div className="mono" style={{ fontSize: 11, color: 'var(--text-faint)', marginTop: 6 }}>{sub}</div>}
+      </div>
+    )
+    return (
+      <Panel title={t('cmp_verdict_title')}>
+        <div style={{ fontSize: 13, marginBottom: 14, color: 'var(--text)' }}>
+          {solid
+            ? t(bWins ? 'cmp_verdict_b' : 'cmp_verdict_a', { w: pct(bWins ? p.win_rate : p.loss_rate, 0) })
+            : t('cmp_verdict_tie')}
+        </div>
+        <div className="stagger" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 16 }}>
+          <Tile label={t('cmp_win_rate')} value={pct(p.win_rate, 1)} color={CMP_B}
+                sub={t('cmp_win_sub', { a: pct(p.loss_rate, 1), tie: pct(p.tie_rate, 1) })} />
+          <Tile label={t('cmp_mean_edge_lbl')} value={pctSigned(p.mean_edge, 2)} color={tone}
+                sub={p.se_edge != null ? `± ${pct(2 * p.se_edge, 2)}` : undefined} />
+          <Tile label={t('cmp_median_edge')} value={pctSigned(p.median_edge, 2)} color={tone} />
+          <Tile label={t('cmp_edge_range')} value={`${pctSigned(p.edge_p5, 1)} … ${pctSigned(p.edge_p95, 1)}`}
+                sub={t('cmp_edge_range_sub')} />
+          {p.conditional.edge_on_a_losses != null && (
+            <Tile label={t('cmp_edge_on_losses')} value={pctSigned(p.conditional.edge_on_a_losses, 1)}
+                  color={p.conditional.edge_on_a_losses >= 0 ? CMP_B : CMP_A}
+                  sub={t('cmp_edge_on_losses_sub', { v: pct(p.conditional.a_loss_rate, 1) })} />
+          )}
+        </div>
+      </Panel>
+    )
+  }
+
+  /** Which terms actually differ. Without it the reader has to eyeball two
+      structure diagrams to work out what the metric deltas are attributable to. */
+  const TermDiff = () => {
+    if (!variantB) return null
+    const rows = termDiffRows(terms, variantB, t)
+    return (
+      <Panel title={t('cmp_termdiff_title')}>
+        {rows.length === 0
+          ? <div style={{ fontSize: 12.5, color: 'var(--text-muted)' }}>{t('cmp_termdiff_same')}</div>
+          : (
+            <div style={{ overflowX: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                <thead>
+                  <tr style={{ textAlign: 'right', color: 'var(--text-muted)', fontSize: 11.5, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                    <th style={{ textAlign: 'left', padding: '6px 10px' }}>{t('cmp_term')}</th>
+                    <th style={{ padding: '6px 10px' }}>{t('cmp_note_a')}</th>
+                    <th style={{ padding: '6px 10px' }}>{t('cmp_note_b')}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {rows.map((r) => (
+                    <tr key={r.label} style={{ borderTop: '1px solid var(--border)' }}>
+                      <td style={{ textAlign: 'left', padding: '8px 10px' }}>{r.label}</td>
+                      <td className="mono" style={{ textAlign: 'right', padding: '8px 10px', color: CMP_A }}>{r.a}</td>
+                      <td className="mono" style={{ textAlign: 'right', padding: '8px 10px', color: CMP_B }}>{r.b}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+      </Panel>
+    )
+  }
+
   const mcRows: Row[] = result
     ? result.compare.diff.rows.flatMap((row) => {
         const def = MC_METRICS[row.key]
-        return def ? [{ label: t(def.labelKey), a: row.a, b: row.b, delta: row.delta, dir: def.dir, kind: def.kind }] : []
+        return def ? [{ label: t(def.labelKey), a: row.a, b: row.b, delta: row.delta,
+                        dir: def.dir, kind: def.kind, se: row.se }] : []
       })
     : []
+
+  /** Backtest issues pair by ISSUE DATE — the same historical window priced two
+      ways — so the same win-rate reading the Monte Carlo gets applies here, over
+      real history rather than simulated paths. Null until both sides have run. */
+  const btPaired = useMemo(() => {
+    if (!bt) return null
+    const byDate = new Map(bt.b.issues.map((i) => [i.issue_date, i.irr]))
+    const pairs = bt.a.issues.flatMap((i) => {
+      const b = byDate.get(i.issue_date)
+      return i.irr != null && b != null ? [{ date: i.issue_date, edge: b - i.irr }] : []
+    })
+    if (!pairs.length) return null
+    const worst = pairs.reduce((w, p) => (p.edge < w.edge ? p : w), pairs[0])
+    return {
+      n: pairs.length,
+      winRate: pairs.filter((p) => p.edge > 0).length / pairs.length,
+      meanEdge: pairs.reduce((s, p) => s + p.edge, 0) / pairs.length,
+      worstEdge: worst.edge,
+      worstDate: worst.date,
+    }
+  }, [bt])
+
+  /** The metric table as CSV — the numbers usually end up in a deck or a mail,
+      and retyping them from the screen is how transcription errors happen. */
+  const exportCsv = () => {
+    const head = ['metric', terms.name || 'A', variantB?.name || 'B', 'delta', 'std_error']
+    const body = [...mcRows, ...btRows].map((r) => [
+      r.label, r.a ?? '', r.b ?? '', r.delta ?? '', r.se ?? '',
+    ])
+    const csv = [head, ...body]
+      .map((row) => row.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(',')).join('\n')
+    const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }))
+    const el = document.createElement('a')
+    el.href = url
+    el.download = `compare_${(terms.name || 'A').replace(/[^A-Za-z0-9_-]+/g, '_')}_vs_${(variantB?.name || 'B').replace(/[^A-Za-z0-9_-]+/g, '_')}.csv`
+    document.body.appendChild(el); el.click(); el.remove(); URL.revokeObjectURL(url)
+  }
 
   const btRows: Row[] = bt
     ? BT_METRICS.map(([key, labelKey, dir, kind]) => {
@@ -289,23 +420,72 @@ export default function ComparePanel({ terms, opts, cppAvailable, configs, varia
 
       {result && status !== 'running' && (
         <>
-          {/* provenance of the comparison basis */}
+          {/* Provenance of the comparison basis. When the paths could NOT be
+              shared, name the terms responsible — "noisier" is not actionable,
+              "the maturities differ" is. */}
           <div style={{
-            display: 'flex', alignItems: 'center', gap: 9, padding: '9px 14px', fontSize: 12.5,
-            borderRadius: 10, color: 'var(--text-muted)',
-            background: result.compare.shared_paths ? 'var(--accent-weak)' : 'var(--surface)',
-            border: `1px solid ${result.compare.shared_paths ? 'var(--accent)' : 'var(--border)'}`,
+            display: 'flex', alignItems: 'flex-start', gap: 9, padding: '9px 14px', fontSize: 12.5,
+            borderRadius: 10, color: 'var(--text-muted)', lineHeight: 1.55,
+            background: result.compare.shared_paths ? 'var(--accent-weak)' : 'var(--amber-weak)',
+            border: `1px solid ${result.compare.shared_paths ? 'var(--accent)' : 'var(--amber)'}`,
           }}>
             <Icon name={result.compare.shared_paths ? 'check' : 'info'} size={15} />
-            {result.compare.shared_paths ? t('cmp_shared_paths') : t('cmp_indep_paths')}
+            <span>
+              {result.compare.shared_paths ? t('cmp_shared_paths') : t('cmp_indep_paths')}
+              {!result.compare.shared_paths && (result.compare.share_blockers ?? []).length > 0 && (
+                <> {t('cmp_blocked_by', {
+                  v: (result.compare.share_blockers ?? []).map((k) => t(`cmp_blk_${k}`)).join(', '),
+                })}</>
+              )}
+            </span>
           </div>
 
-          <Panel title={t('cmp_diff_title')}><MetricTable rows={mcRows} /></Panel>
+          {result.compare.paired && <VerdictBand p={result.compare.paired} />}
+
+          <TermDiff />
+
+          <Panel title={t('cmp_diff_title')} right={
+            <button className="btn btn--ghost" style={{ padding: '4px 10px', fontSize: 12 }} onClick={exportCsv}>
+              <Icon name="download" size={13} /> {t('cmp_export_csv')}
+            </button>
+          }>
+            <MetricTable rows={mcRows} />
+            <div style={{ fontSize: 11.5, color: 'var(--text-faint)', marginTop: 10, lineHeight: 1.5 }}>
+              {t('cmp_noise_hint')}
+            </div>
+          </Panel>
+
+          {/* Paired views — only meaningful when both notes ran the same paths. */}
+          {result.compare.figures.delta && (
+            <Panel title={t('cmp_paired_title')}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 14 }}>
+                <div style={{ height: 320 }}><Figure fig={result.compare.figures.delta} name="compare_delta" /></div>
+                <div style={{ height: 320 }}><Figure fig={result.compare.figures.scatter} name="compare_scatter" /></div>
+              </div>
+              <div style={{ fontSize: 11.5, color: 'var(--text-faint)', marginTop: 10, lineHeight: 1.5 }}>
+                {t('cmp_paired_hint')}
+              </div>
+            </Panel>
+          )}
+
+          {result.compare.figures.transition && (
+            <Panel title={t('cmp_transition_panel')}>
+              <div style={{ height: 340 }}><Figure fig={result.compare.figures.transition} name="compare_transition" /></div>
+              <div style={{ fontSize: 11.5, color: 'var(--text-faint)', marginTop: 10, lineHeight: 1.5 }}>
+                {t('cmp_transition_hint')}
+              </div>
+            </Panel>
+          )}
 
           <Panel title={t('cmp_charts_title')}>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 14 }}>
               <div style={{ height: 300 }}><Figure fig={result.compare.figures.irr} name="compare_irr" /></div>
               <div style={{ height: 300 }}><Figure fig={result.compare.figures.outcome} name="compare_outcome" /></div>
+              {result.compare.figures.fan && (
+                <div style={{ height: 300, gridColumn: '1 / -1' }}>
+                  <Figure fig={result.compare.figures.fan} name="compare_fan" />
+                </div>
+              )}
             </div>
           </Panel>
 
@@ -340,6 +520,30 @@ export default function ComparePanel({ terms, opts, cppAvailable, configs, varia
             )}
             {bt && btStatus !== 'running' && (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                {btPaired && (
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 16 }}>
+                    <div>
+                      <div className="eyebrow" style={{ marginBottom: 6 }}>{t('cmp_bt_win_rate')}</div>
+                      <div className="mono" style={{ fontSize: 22, fontWeight: 600, color: CMP_B }}>{pct(btPaired.winRate, 1)}</div>
+                      <div className="mono" style={{ fontSize: 11, color: 'var(--text-faint)', marginTop: 5 }}>
+                        {t('cmp_bt_of_issues', { n: String(btPaired.n) })}
+                      </div>
+                    </div>
+                    <div>
+                      <div className="eyebrow" style={{ marginBottom: 6 }}>{t('cmp_bt_mean_edge')}</div>
+                      <div className="mono" style={{ fontSize: 22, fontWeight: 600, color: btPaired.meanEdge >= 0 ? CMP_B : CMP_A }}>
+                        {pctSigned(btPaired.meanEdge, 2)}
+                      </div>
+                    </div>
+                    <div>
+                      <div className="eyebrow" style={{ marginBottom: 6 }}>{t('cmp_bt_worst_edge')}</div>
+                      <div className="mono" style={{ fontSize: 22, fontWeight: 600, color: btPaired.worstEdge >= 0 ? CMP_B : CMP_A }}>
+                        {pctSigned(btPaired.worstEdge, 2)}
+                      </div>
+                      <div className="mono" style={{ fontSize: 11, color: 'var(--text-faint)', marginTop: 5 }}>{btPaired.worstDate}</div>
+                    </div>
+                  </div>
+                )}
                 <MetricTable rows={btRows} />
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 14 }}>
                   <div>
@@ -379,11 +583,26 @@ export default function ComparePanel({ terms, opts, cppAvailable, configs, varia
                       {!lr.available || !lr.summary
                         ? <div style={{ fontSize: 12.5, color: 'var(--text-muted)' }}>{t('report_live_na')}</div>
                         : (
-                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px 14px', fontSize: 13 }}>
-                            <span style={{ color: 'var(--text-muted)' }}>{t('live_wof_today')}</span><span style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{fmtVal(lr.summary.wof_today, 'pct')}</span>
-                            <span style={{ color: 'var(--text-muted)' }}>{t('expected_irr')}</span><span style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{fmtVal(lr.summary.irr_to_date, 'pct')}</span>
-                            <span style={{ color: 'var(--text-muted)' }}>{t('live_ki_buffer')}</span><span style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{fmtVal(lr.summary.ki_buffer, 'pct')}</span>
-                            <span style={{ color: 'var(--text-muted)' }}>{t('live_ac_buffer')}</span><span style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{fmtVal(lr.summary.ac_buffer, 'pct')}</span>
+                          <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: '8px 14px', fontSize: 13 }}>
+                            {([
+                              ['live_wof_today', lr.summary.wof_today],
+                              ['live_coupons_paid', lr.summary.total_coupons],
+                              ['live_irr_to_date', lr.summary.irr_to_date],
+                              ['live_ki_buffer', lr.summary.ki_buffer],
+                              ['live_ac_buffer', lr.summary.ac_buffer],
+                              // Position rows appear only for a secondary purchase,
+                              // where the note's own numbers aren't the holder's.
+                              ...(lr.summary.secondary ? [
+                                ['cost_basis', lr.summary.cost_basis],
+                                ['live_income_since', lr.summary.income_since],
+                                ['live_return_on_cost', lr.summary.return_on_cost],
+                              ] as [string, number | null | undefined][] : []),
+                            ] as [string, number | null | undefined][]).map(([k, v]) => (
+                              <Fragment key={k}>
+                                <span style={{ color: 'var(--text-muted)' }}>{t(k)}</span>
+                                <span className="mono" style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{fmtVal(v, 'pct')}</span>
+                              </Fragment>
+                            ))}
                           </div>
                         )}
                     </div>

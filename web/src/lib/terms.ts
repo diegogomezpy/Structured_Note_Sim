@@ -182,6 +182,98 @@ export function noteTermRows(t: NoteTerms, tr: (k: string) => string): [string, 
   return rows
 }
 
+/* ── term-sheet diff (A vs B) ─────────────────────────────────────────────── */
+
+type DiffFmt = 'pct' | 'months' | 'period' | 'bool' | 'text' | 'key' | 'tickers'
+
+/** Fields worth diffing, in term-sheet reading order, with how to render each.
+    `key` formats route through i18n (baskets, frequencies, participation styles);
+    everything absent from a note simply never differs and never shows. */
+const DIFF_FIELDS: [string, string, DiffFmt][] = [
+  ['note_type', 'sec_note_type', 'key'],
+  ['tickers', 'underlyings', 'tickers'],
+  ['maturity', 'maturity', 'months'],
+  ['payment_freq', 'frequency', 'key'],
+  ['coupon_pa', 'coupon_pa', 'pct'],
+  ['coupon_barrier', 'coupon_barrier', 'pct'],
+  ['memory', 'memory', 'bool'],
+  ['coupon_basket', 'coupon_basket', 'key'],
+  ['autocall_barrier', 'autocall_barrier', 'pct'],
+  ['autocall_start_period', 'autocall_start', 'period'],
+  ['autocall_basket', 'autocall_basket', 'key'],
+  ['autocall_step_down', 'ac_step_down', 'pct'],
+  ['autocall_floor', 'ac_floor', 'pct'],
+  ['knock_in_barrier', 'knock_in_barrier', 'pct'],
+  ['principal_protection', 'principal_protection', 'pct'],
+  ['one_star_level', 'one_star_level', 'pct'],
+  ['one_star_coupon', 'one_star_coupon', 'bool'],
+  ['one_star_autocall', 'one_star_autocall', 'bool'],
+  ['coupon_at_autocall_only', 'premium_at_call', 'bool'],
+  ['zenith', 'zenith', 'bool'],
+  ['upside_cap', 'upside_cap', 'pct'],
+  ['participation_downside', 'part_downside', 'key'],
+  ['participation_upside', 'part_upside', 'key'],
+  ['participation_basket', 'part_basket', 'key'],
+  ['protection_level', 'protection_level', 'pct'],
+  ['participation_rate', 'participation_rate', 'pct'],
+  ['participation_strike', 'participation_strike', 'pct'],
+  ['knockout_level', 'knockout_level', 'pct'],
+  ['knockout_payout', 'knockout_payout', 'pct'],
+  ['digital_payout', 'digital_payout', 'pct'],
+  ['participation_periodic', 'part_periodic', 'bool'],
+  ['period_cap', 'period_cap', 'pct'],
+  ['issue_date', 'issue_date', 'text'],
+  ['settlement_date', 'settlement_date', 'text'],
+  ['purchase_price', 'purchase_price', 'pct'],
+  ['accrued_at_purchase', 'accrued_at_purchase', 'pct'],
+  ['seasoned', 'seasoned', 'bool'],
+]
+
+/** i18n key for an enum value, so 'worst_of' renders as "Worst-of". */
+const ENUM_KEY: Record<string, (v: string) => string> = {
+  coupon_basket: (v) => `basket_${v}`,
+  autocall_basket: (v) => `basket_${v}`,
+  participation_basket: (v) => `basket_${v}`,
+  payment_freq: (v) => `freq_${v}`,
+  participation_downside: (v) => `pd_${v}`,
+  participation_upside: (v) => `pu_${v}`,
+  note_type: (v) => `nt_${v}`,
+}
+
+function fmtDiff(field: string, kind: DiffFmt, v: unknown, tr: (k: string) => string): string {
+  if (v == null || v === '') return '—'
+  switch (kind) {
+    case 'pct': return typeof v === 'number' ? pct(v, 2) : String(v)
+    case 'months': return typeof v === 'number' ? maturityLabel(v) : String(v)
+    case 'period': return `P${v}`
+    case 'bool': return v ? tr('yes') : tr('no')
+    case 'tickers': return Object.values(v as Record<string, string>).join(', ')
+    case 'key': return tr(ENUM_KEY[field]?.(String(v)) ?? String(v))
+    default: return String(v)
+  }
+}
+
+/** The fields that actually DIFFER between two notes, formatted for display.
+    This is the question the two structure diagrams can't answer at a glance —
+    "what did I change?" — and it is what makes every metric delta below it
+    attributable. Falsy-vs-missing is normalised so `null` and `0` and `false`
+    don't read as a change when neither note uses the feature. */
+export function termDiffRows(a: NoteTerms, b: NoteTerms, tr: (k: string) => string):
+    { label: string; a: string; b: string }[] {
+  const norm = (v: unknown) => (v == null || v === '' || v === false || v === 0 ? null : v)
+  const rows: { label: string; a: string; b: string }[] = []
+  for (const [field, labelKey, kind] of DIFF_FIELDS) {
+    const va = (a as Record<string, unknown>)[field]
+    const vb = (b as Record<string, unknown>)[field]
+    const same = kind === 'tickers'
+      ? JSON.stringify(va ?? {}) === JSON.stringify(vb ?? {})
+      : JSON.stringify(norm(va)) === JSON.stringify(norm(vb))
+    if (same) continue
+    rows.push({ label: tr(labelKey), a: fmtDiff(field, kind, va, tr), b: fmtDiff(field, kind, vb, tr) })
+  }
+  return rows
+}
+
 /** One-line plain-language summary of the coupon schedule, e.g.
     "4 × Quarterly · 10.0% coupon p.a. · +2.50%/period · memory coupons".
     Routes to `participationSummary` for Participation notes (payoff, not ladder).

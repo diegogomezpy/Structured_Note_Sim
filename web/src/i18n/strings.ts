@@ -481,7 +481,51 @@ export const S: Dict = {
   cmp_rerun:        { en: 'Re-run comparison', es: 'Volver a comparar' },
   cmp_stale:        { en: 'Terms changed since this comparison — re-run to refresh.', es: 'Los términos cambiaron desde esta comparación — vuelve a ejecutar para actualizar.' },
   cmp_shared_paths: { en: 'Both notes priced on ONE shared simulation — every difference is due to the terms, not RNG noise.', es: 'Ambas notas valoradas sobre UNA simulación compartida — toda diferencia se debe a los términos, no al ruido aleatorio.' },
-  cmp_indep_paths:  { en: 'Different underlyings or maturity — priced on independent simulations.', es: 'Subyacentes o vencimiento distintos — valoradas en simulaciones independientes.' },
+  cmp_indep_paths:  { en: 'Priced on independent simulations, so part of every difference below is Monte Carlo noise rather than a term effect.', es: 'Valoradas en simulaciones independientes, así que parte de cada diferencia de abajo es ruido de Monte Carlo y no un efecto de los términos.' },
+  cmp_blocked_by:   { en: 'They can share one simulation once these match: {v}.', es: 'Podrán compartir una simulación cuando coincidan: {v}.' },
+  cmp_blk_underlyings: { en: 'the underlyings', es: 'los subyacentes' },
+  cmp_blk_maturity: { en: 'the maturity', es: 'el vencimiento' },
+  cmp_blk_seasoning: { en: 'the seasoning setting', es: 'la valoración en curso' },
+  cmp_blk_issue_date: { en: 'the issue date', es: 'la fecha de emisión' },
+
+  // verdict — the head-to-head read of the paired paths
+  cmp_verdict_title: { en: 'Head to head', es: 'Cara a cara' },
+  cmp_verdict_a:    { en: 'Note A comes out ahead, winning on {w} of paths.', es: 'La Nota A queda por delante, ganando en el {w} de las trayectorias.' },
+  cmp_verdict_b:    { en: 'Note B comes out ahead, winning on {w} of paths.', es: 'La Nota B queda por delante, ganando en el {w} de las trayectorias.' },
+  cmp_verdict_tie:  { en: 'Too close to call — the average edge is smaller than its own margin of error.', es: 'Demasiado ajustado — la ventaja media es menor que su propio margen de error.' },
+  cmp_win_rate:     { en: 'B wins', es: 'Gana B' },
+  cmp_win_sub:      { en: 'A {a} · tie {tie}', es: 'A {a} · empate {tie}' },
+  cmp_mean_edge_lbl: { en: 'Mean edge', es: 'Ventaja media' },
+  cmp_median_edge:  { en: 'Median edge', es: 'Ventaja mediana' },
+  cmp_edge_range:   { en: 'Edge range', es: 'Rango de ventaja' },
+  cmp_edge_range_sub: { en: '5th–95th percentile', es: 'percentil 5–95' },
+  cmp_edge_on_losses: { en: 'Edge when A loses', es: 'Ventaja cuando A pierde' },
+  cmp_edge_on_losses_sub: { en: 'on the {v} of paths where A ends down', es: 'en el {v} de trayectorias donde A termina en pérdida' },
+
+  // significance
+  cmp_noise:        { en: '(noise)', es: '(ruido)' },
+  cmp_se_tip:       { en: 'Standard error of this difference: ±{v}', es: 'Error estándar de esta diferencia: ±{v}' },
+  cmp_noise_hint:   { en: 'Differences smaller than twice their standard error are marked as noise — run more paths to resolve them.', es: 'Las diferencias menores al doble de su error estándar se marcan como ruido — aumenta las trayectorias para resolverlas.' },
+
+  // term diff
+  cmp_termdiff_title: { en: 'What differs', es: 'Qué cambia' },
+  cmp_termdiff_same: { en: 'The two notes have identical terms — every metric difference below is Monte Carlo noise.', es: 'Las dos notas tienen términos idénticos — toda diferencia de métrica abajo es ruido de Monte Carlo.' },
+  cmp_term:         { en: 'Term', es: 'Término' },
+
+  // paired panels
+  cmp_paired_title: { en: 'Path by path', es: 'Trayectoria a trayectoria' },
+  cmp_paired_hint:  { en: 'Both notes were priced on the same simulated worlds, so each path can be compared directly. The split either side of zero is the win rate; the scatter shows whether B\'s edge comes from the good states, the bad ones, or all of them.',
+                      es: 'Ambas notas se valoraron sobre los mismos mundos simulados, así que cada trayectoria es comparable directamente. La división a cada lado del cero es la tasa de acierto; el diagrama muestra si la ventaja de B viene de los buenos estados, los malos, o de todos.' },
+  cmp_transition_panel: { en: 'Outcome switch', es: 'Cambio de resultado' },
+  cmp_transition_hint: { en: 'Rows are how each path resolves under A, columns under B. The diagonal is unchanged outcomes; off it are the paths the swap actually moved.',
+                      es: 'Las filas son cómo se resuelve cada trayectoria con A, las columnas con B. La diagonal son resultados sin cambio; fuera de ella están las trayectorias que el cambio movió.' },
+  cmp_export_csv:   { en: 'CSV', es: 'CSV' },
+
+  // backtest head-to-head
+  cmp_bt_win_rate:  { en: 'B wins', es: 'Gana B' },
+  cmp_bt_of_issues: { en: 'of {n} issue dates', es: 'de {n} fechas de emisión' },
+  cmp_bt_mean_edge: { en: 'Mean IRR edge', es: 'Ventaja media de TIR' },
+  cmp_bt_worst_edge: { en: 'Worst issue for B', es: 'Peor emisión para B' },
   cmp_diff_title:   { en: 'Metrics — A vs B', es: 'Métricas — A vs B' },
   cmp_charts_title: { en: 'Distributions — A vs B', es: 'Distribuciones — A vs B' },
   cmp_structures_title: { en: 'Structures — A vs B', es: 'Estructuras — A vs B' },

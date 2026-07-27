@@ -193,18 +193,63 @@ export interface CompareDiffRow {
   a: number | null
   b: number | null
   delta: number | null
+  /** Standard error of the DELTA — paired when the notes share paths, so much
+      tighter than either side's own error. |delta| < ~2·se means Monte Carlo
+      noise rather than a real difference. Null where there's no clean estimator
+      (quantiles, conditional means, stored terms). */
+  se?: number | null
 }
 export interface CompareDiff {
   rows: CompareDiffRow[]
   both_participation: boolean
 }
+
+/** Head-to-head over paired paths — present only when A and B were priced on the
+    same simulation (see `shared_paths`). */
+export interface ComparePaired {
+  n_paths: number
+  win_rate: number        // fraction of paths where B beat A
+  tie_rate: number
+  loss_rate: number
+  mean_edge: number       // B − A total return, per path
+  median_edge: number
+  mean_edge_irr: number
+  median_edge_irr: number
+  edge_p5: number
+  edge_p95: number
+  se_edge: number | null
+  se_edge_irr: number | null
+  transition: number[][]  // [A bucket][B bucket] → fraction of paths
+  labels: string[]        // i18n keys for the buckets
+  mixed_types: boolean
+  conditional: {
+    a_loss_rate: number
+    b_loss_rate: number
+    b_loses_given_a: number | null
+    a_loses_given_b: number | null
+    edge_on_a_losses: number | null
+  }
+}
+
+/** Why the two notes couldn't be priced on one simulation. */
+export type ShareBlocker = 'underlyings' | 'maturity' | 'seasoning' | 'issue_date'
+
+/** Compare sides carry the summary only — the panel renders overlay charts, so
+    per-side figure sets and run ids aren't fetched. */
+export interface CompareSide { summary: SimSummary }
+
 export interface CompareResult {
-  a: SimResult
-  b: SimResult
+  a: CompareSide
+  b: CompareSide
   compare: {
     shared_paths: boolean
+    share_blockers: ShareBlocker[]
+    paired: ComparePaired | null
     diff: CompareDiff
-    figures: { irr: any; outcome: any }
+    figures: {
+      irr: any; outcome: any; fan: any
+      delta?: any; scatter?: any; transition?: any   // paired only
+    }
   }
 }
 

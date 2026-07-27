@@ -150,6 +150,18 @@ A single **maturity-level** payoff (no coupons/autocall/knock-in) — `price_not
 
 Plus `participation_strike` and `participation_basket`. `_participation_redemption` has a TS mirror in `web/src/lib/participation.ts` that feeds the payoff-profile diagram, so the picture always matches the priced payoff — **keep the two in sync**. Airbag = `final/barrier` and shark-fin KO = at-maturity (European) are the intended conventions.
 
+## A/B comparison — paired paths
+
+`/api/compare` prices two notes and, wherever possible, prices them on **one shared simulation**. That is the feature, not an optimisation: index *i* is then the same simulated world for both notes, so the per-path difference is a real quantity rather than a difference of two independent averages.
+
+- **`_share_blockers(a, b)`** returns *why* the paths can't be shared — `underlyings` / `maturity` / `seasoning` / `issue_date` — so the UI names the term to change instead of only reporting that the comparison is noisier. `_can_share_paths` is the boolean wrapper; both `run_compare` and `_compare_for_pdf` use it.
+- **`_paired_stats()`** (shared paths only, else `None`) is the head-to-head: win/tie/loss rate, mean and median edge on total return and IRR, the 5th–95th percentile edge, the paired standard error, an **outcome transition matrix** (`_outcome_buckets` → called / at-par / knocked-in, or below/at/above par for participation) and conditional tails (*when A loses, what does B do?*). The win rate is the headline the summary means can't give: a +0.8% mean edge that wins on 51% of paths is a different product from one that wins on 88%.
+- **Error bars.** Every `_compare_diff` row carries `se`, the standard error **of the delta** — the paired SE when paths are shared (market risk cancels, so it is far tighter), otherwise the two independent errors in quadrature. `_metric_samples` maps a summary key to its per-path array; quantiles and conditional means return `None` and the row shows no ±. The client greys any delta inside ±2 se and labels it noise.
+- **Payload discipline.** The compare response deliberately carries **summaries only** — no per-side figure sets, no `run_id`s. It used to build the full 7-figure set for each side (fans, per-asset fans, correlations) that the panel never rendered, and store both runs in a store capped at `_MAX_RUNS`. Overlay histograms are also **pre-binned server-side** (`_bin_edges` / `_pct_bar` in `app/charts.py`): `go.Histogram` ships every raw path value, which at 20 000 antithetic paths was 426 KB for a picture with 60 bars. Net effect 802 KB → 150 KB *with six charts instead of two*. If you add a compare chart, bin it.
+- **Front end.** `ComparePanel` renders the verdict band, the **term-sheet diff** (`termDiffRows` in `web/src/lib/terms.ts` — which fields actually differ, so the metric deltas are attributable), the metric table with noise marks + CSV export, the paired charts, and backtest/live head-to-heads. Note B loads from the user's **connected folder** (`useLocalFolder('note-configs')`) or an upload — *not* from `/api/configs`, which returns `[]` by design.
+
+Covered by `tests/test_compare.py` (hand-built payoff dicts, no simulation).
+
 ## API run/session model
 
 The React SPA is stateless on the wire: it POSTs `/api/simulate` (and `/api/backtest`, `/api/report`, …) and gets JSON back. The server keeps state in `api/engine.py`:
