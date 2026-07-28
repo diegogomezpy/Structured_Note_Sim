@@ -1451,148 +1451,11 @@ def _exec_bullets(terms, results, bt_summary, live_data, lang: str) -> list[str]
     return b
 
 
-def _cover_left_photo(pdf: "_NotePDF", x0: float, top: float, w: float,
-                      bottom: float, img: bytes) -> bool:
-    """Fill the summary page's short left column with a tall (portrait) brand
-    photo so a client / terms-only report doesn't leave that column half-empty.
-    Mirrors the in-body egregious-void band treatment (brand tint + lime accent
-    rule + corner sigil) but vertical. Returns True on success; False to fall
-    back to the lighter hex/sigil composition."""
-    try:
-        avail = bottom - top
-        if avail < 58.0 or w < 40.0:
-            return False
-        cropped = _cover_crop(img, w / avail) or img
-        # Re-encode as JPEG so a photo on the cover doesn't bloat the PDF.
-        try:
-            from PIL import Image
-            _im = Image.open(io.BytesIO(cropped)).convert("RGB")
-            _buf = io.BytesIO(); _im.save(_buf, "JPEG", quality=80, optimize=True)
-            cropped = _buf.getvalue()
-        except Exception:
-            pass
-        pdf.image(io.BytesIO(cropped), x=x0, y=top, w=w, h=avail)
-        # Light brand tint so the photo harmonises with the palette without
-        # hiding it — meant to read as an image, not a colour block.
-        tint = getattr(pdf, "cover_overlay_color", pdf.primary_color)
-        with pdf.local_context(fill_opacity=0.26):
-            pdf.set_fill_color(*tint)
-            pdf.rect(x0, top, w, avail, style="F")
-        # Darker brand wash along the bottom edge grounds the band + corner sigil.
-        with pdf.local_context(fill_opacity=0.34):
-            pdf.set_fill_color(*pdf.ink)
-            pdf.rect(x0, bottom - 18.0, w, 18.0, style="F")
-        # Lime accent rule across the top edge — the brand's signature line.
-        pdf.set_fill_color(*pdf.lime)
-        pdf.rect(x0, top, w, 1.5, style="F")
-        # White-knockout sigil tucked into the bottom-left corner.
-        sig = getattr(pdf, "cover_sigil_bytes", None)
-        if sig:
-            from PIL import Image
-            iw, ih = Image.open(io.BytesIO(sig)).size
-            sh = min(avail * 0.30, 24.0); sw = sh * iw / ih
-            with pdf.local_context(fill_opacity=0.55):
-                pdf.image(io.BytesIO(sig), x=x0 + 5.0, y=bottom - sh - 4.0,
-                          w=sw, h=sh)
-        return True
-    except Exception:
-        return False
-
-
 def _mat_label(terms) -> str:
     """Maturity for display. The term sheet stores it in YEARS (the JSON contract
     and what the quant core computes on); tenors are quoted in MONTHS, so convert
     only here, at the render boundary. e.g. 1.5 -> "18M"."""
     return f"{round(float(terms.maturity) * 12)}M"
-
-
-def _draw_logo_fit(pdf, logo_b, x: float, y: float, max_h: float, max_w: float,
-                   *, cover: bool = False) -> None:
-    """Draw a logo at (x, y) fit inside (max_w, max_h) preserving aspect — never
-    stretched. The cover wordmark uses its OWN aspect (cover_logo_aspect), not the
-    header logo's, so a wide cover logo isn't squished into the header's box."""
-    if not logo_b:
-        return
-    if cover and getattr(pdf, "cover_logo_bytes", None):
-        asp = getattr(pdf, "cover_logo_aspect", None) or pdf.firm_logo_aspect
-    else:
-        asp = pdf.firm_logo_aspect
-    asp = asp or 1.0
-    h, w = max_h, max_h * asp
-    if w > max_w:
-        w, h = max_w, (max_w / asp if asp else max_h)
-    try:
-        pdf.image(io.BytesIO(logo_b), x=x, y=y, w=w, h=h)
-    except Exception:
-        pass
-
-
-def _cover_fill(pdf: _NotePDF):
-    """The active theme's `cover.fill`, or None when it declares nothing."""
-    spec = getattr(getattr(pdf, "theme", None), "spec", None)
-    if isinstance(spec, dict):
-        return (spec.get("cover") or {}).get("fill")
-    return None
-
-
-def _paint_cover_overlay(pdf: _NotePDF, W: float, H: float) -> None:
-    """Tint a full-bleed photo with the cover's colour identity.
-
-    A cover photo is drawn opaque over the whole page, so it completely hides
-    the background painted underneath — which means the tint drawn ON TOP of the
-    photo is the only thing that carries the cover's colour. That tint IS the
-    theme's cover-background fill at the configured opacity: a gradient tints as
-    a gradient, a radial as a radial, a solid as that solid colour. The photo
-    and the themed background compose (photo shows through at opacity < 1)
-    instead of the photo throwing the fill away.
-
-    There is deliberately a SINGLE source for the cover's colour — the theme's
-    `cover.fill`, edited under "Cover page background". A brand's legacy flat
-    `cover_overlay_color` is only the fallback tint when the theme declares no
-    cover fill at all, so old configs still render and a themeless brand keeps a
-    legible primary wash over its photo.
-    """
-    op = getattr(pdf, "cover_overlay_opacity", 0.0)
-    if not op or op <= 0:
-        return
-    fill = _cover_fill(pdf)
-    if isinstance(fill, dict) and fill.get("type") in ("linear", "radial"):
-        try:
-            paint_shape(pdf, 0, 0, W, H, {"kind": "square"}, fill, opacity=op)
-            return
-        except Exception:
-            pass
-    if isinstance(fill, dict) and fill.get("type") == "solid":
-        try:
-            pdf.set_fill_color(*resolve_color(fill.get("color", "primary"), pdf))
-        except Exception:
-            pdf.set_fill_color(*getattr(pdf, "cover_overlay_color", pdf.primary_color))
-    else:
-        pdf.set_fill_color(*getattr(pdf, "cover_overlay_color", pdf.primary_color))
-    try:
-        with pdf.local_context(fill_opacity=op):
-            pdf.rect(0, 0, W, H, style="F")
-    except Exception:
-        pass
-
-
-def _paint_cover_bg(pdf: _NotePDF, W: float, H: float) -> None:
-    """Fill a full-bleed page with the theme's cover background — a solid brand
-    colour by default, or a gradient when the active theme spec sets
-    `cover.fill`. Falls back to solid primary if anything is off."""
-    fill = _cover_fill(pdf)
-    try:
-        if fill and fill.get("type") in ("linear", "radial"):
-            paint_shape(pdf, 0, 0, W, H, {"kind": "square"}, fill)
-            return
-        if fill and fill.get("type") == "solid":
-            pdf.set_fill_color(*resolve_color(fill.get("color", "primary"), pdf))
-            pdf.rect(0, 0, W, H, style="F")
-            return
-    except Exception:
-        pass
-    pdf.set_fill_color(*pdf.primary_color)
-    pdf.rect(0, 0, W, H, style="F")
 
 
 def _front_cover_page(pdf: _NotePDF, terms, lang: str, report_title: str, website: str,
@@ -1605,244 +1468,180 @@ def _front_cover_page(pdf: _NotePDF, terms, lang: str, report_title: str, websit
     `report_kind` (the audience preset the report was built for) is stamped under
     the note as a report-type subtitle — "Risk report", "Client report", … — so a
     printed PDF says what kind of report it is. Unknown/None ⇒ no subtitle."""
-    import re
-    pdf.set_auto_page_break(auto=False)
-    pdf._is_cover = True
-    pdf.add_page()
-    pdf._cover_pages.add(pdf.page_no())
-    W, H = pdf.w, pdf.h
-    cx = W / 2
+    # The frame — page opened chrome-free, themed background, optional photo,
+    # brand tint over it — is reportkit's; only what sits ON the page is ours.
+    with pdf.full_bleed_page(getattr(pdf, "cover_image_bytes", None)) as (W, H):
+        ml = pdf.l_margin
+        inner = W - 2 * ml
+        # Sigil bleeding off an edge, then the white cover wordmark. Both are placed
+        # by brand percentages of the page, so both are reportkit's to draw.
+        pdf.cover_sigil()
+        pdf.cover_logo()
 
-    # Full-bleed background: brand primary colour (or a theme gradient), or an
-    # optional photo with a colour overlay at the configured opacity (so text
-    # stays legible over it).
-    _paint_cover_bg(pdf, W, H)
-    if getattr(pdf, "cover_image_bytes", None):
-        try:
-            _cov = _cover_crop(pdf.cover_image_bytes, W / H)
-            pdf.image(io.BytesIO(_cov), x=0, y=0, w=W, h=H)
-        except Exception:
-            pass
-        _paint_cover_overlay(pdf, W, H)
-
-    ml = pdf.l_margin
-    inner = W - 2 * ml
-    # Faint sigil/arcs motif, bleeding off the top-right (decorative, like the
-    # prototype). Knocked white via the brand's white sigil when supplied.
-    sig_b = getattr(pdf, "cover_sigil_bytes", None)
-    if sig_b:
-        try:
-            # Size / position / opacity are brand-overridable (% of page); absent
-            # values reproduce the original top-right bleed at 0.22 opacity.
-            _ssz = getattr(pdf, "cover_sigil_size_pct", None)
-            sw = W * (_ssz / 100.0) if _ssz is not None else W * 0.58
-            sh = sw * _logo_aspect(sig_b, default=1.0)
-            _sx = getattr(pdf, "cover_sigil_x_pct", None)
-            _sy = getattr(pdf, "cover_sigil_y_pct", None)
-            sx = W * (_sx / 100.0) if _sx is not None else (W - sw * 0.62)
-            sy = H * (_sy / 100.0) if _sy is not None else (-sh * 0.30)
-            _sop = getattr(pdf, "cover_sigil_opacity", None)
-            op = _sop if _sop is not None else 0.22
-            with pdf.local_context(fill_opacity=op):
-                pdf.image(io.BytesIO(sig_b), x=sx, y=sy, w=sw, h=sh)
-        except Exception:
-            pass
-
-    # Logo (white wordmark) top-left. A brand may supply a white knockout logo
-    # (`cover_logo_base64`); otherwise the normal logo is used. Position (% of
-    # page) and size (% of page width) are brand-overridable; the size % is the
-    # max WIDTH, with the max height kept at the original 16:90 box ratio so the
-    # default reproduces the original 16×90 mm fit box exactly.
-    logo_b = getattr(pdf, "cover_logo_bytes", None) or pdf.firm_logo_bytes
-    _lsz = getattr(pdf, "cover_logo_size_pct", None)
-    _max_w = W * (_lsz / 100.0) if _lsz is not None else 90.0
-    _max_h = _max_w * (16.0 / 90.0)
-    _lx = getattr(pdf, "cover_logo_x_pct", None)
-    _ly = getattr(pdf, "cover_logo_y_pct", None)
-    _logo_x = W * (_lx / 100.0) if _lx is not None else ml
-    _logo_y = H * (_ly / 100.0) if _ly is not None else H * 0.07
-    _draw_logo_fit(pdf, logo_b, _logo_x, _logo_y, _max_h, _max_w, cover=True)
-
-    # Hero block, left-aligned in the lower-middle of the page.
-    eb = (report_title or _t("report_eyebrow", lang)).upper()
-    hero_y = H * 0.40
-    pdf._eyebrow(ml, hero_y, eb, pdf.section_rule_color,
-                 size=11.0, tracking=1.6, w=inner)
-    # Big white Neulis title — wraps to as many lines as needed.
-    _name = _safe(terms.name)
-    _ts = 40.0
-    pdf._sf(_ts, "bold")
-    while _ts > 22.0 and pdf.get_string_width(_name) > inner * 2.4:
-        _ts -= 1.0
+        # Hero block, left-aligned in the lower-middle of the page.
+        eb = (report_title or _t("report_eyebrow", lang)).upper()
+        hero_y = H * 0.40
+        pdf._eyebrow(ml, hero_y, eb, pdf.section_rule_color,
+                     size=11.0, tracking=1.6, w=inner)
+        # Big white Neulis title — wraps to as many lines as needed.
+        _name = _safe(terms.name)
+        _ts = 40.0
         pdf._sf(_ts, "bold")
-    pdf.set_xy(ml, hero_y + 9)
-    pdf.set_text_color(255, 255, 255)
-    pdf.multi_cell(inner, _ts * 0.40, _name, align="L")
-    # Underlyings sub-line (muted mint) — symbols or display names per branding.
-    _tk = " / ".join(_underlying_labels(pdf, terms))
-    if _tk:
-        pdf.ln(2)
-        pdf.set_x(ml)
-        pdf._sf(13, "regular")
-        pdf.set_text_color(159, 196, 179)
-        pdf.cell(inner, 7, _safe(_tk))
-    # Short lime rule beneath.
-    pdf.ln(8)
-    pdf.set_fill_color(*pdf.section_rule_color)
-    pdf.rect(ml, pdf.get_y(), 22, 1.6, style="F")
+        while _ts > 22.0 and pdf.get_string_width(_name) > inner * 2.4:
+            _ts -= 1.0
+            pdf._sf(_ts, "bold")
+        pdf.set_xy(ml, hero_y + 9)
+        pdf.set_text_color(255, 255, 255)
+        pdf.multi_cell(inner, _ts * 0.40, _name, align="L")
+        # Underlyings sub-line (muted mint) — symbols or display names per branding.
+        _tk = " / ".join(_underlying_labels(pdf, terms))
+        if _tk:
+            pdf.ln(2)
+            pdf.set_x(ml)
+            pdf._sf(13, "regular")
+            pdf.set_text_color(159, 196, 179)
+            pdf.cell(inner, 7, _safe(_tk))
+        # Short lime rule beneath.
+        pdf.ln(8)
+        pdf.set_fill_color(*pdf.section_rule_color)
+        pdf.rect(ml, pdf.get_y(), 22, 1.6, style="F")
 
-    # Report-type subtitle under the rule ("Risk report", "Client report", …).
-    _kind_lbl = _LABELS.get(f"kind_{report_kind}") if report_kind else None
-    if _kind_lbl:
-        pdf.ln(6)
-        pdf._eyebrow(ml, pdf.get_y(), _t(f"kind_{report_kind}", lang).upper(),
-                     pdf.section_rule_color, size=9.0, tracking=1.4, w=inner)
+        # Report-type subtitle under the rule ("Risk report", "Client report", …).
+        _kind_lbl = _LABELS.get(f"kind_{report_kind}") if report_kind else None
+        if _kind_lbl:
+            pdf.ln(6)
+            pdf._eyebrow(ml, pdf.get_y(), _t(f"kind_{report_kind}", lang).upper(),
+                         pdf.section_rule_color, size=9.0, tracking=1.4, w=inner)
 
-    # ── Bottom band: user-selectable key terms + website ──────────────────
-    # Which figures appear here (and their order) is driven by branding
-    # `cover_metrics`: absent → the classic three; an explicit (possibly empty)
-    # list → exactly those, so the whole strip can be turned off. Capped to what
-    # the strip fits alongside the website.
-    band_h = 30.0
-    band_y = H - band_h
-    pdf.set_fill_color(*pdf.ink)
-    pdf.rect(0, band_y, W, band_h, style="F")
-    _ki_lbl = _t("ki_barrier", lang).split(' (')[0]
-    _part = _is_participation(terms)
-    _cap_v = _part_cap_value(terms)
-    _fcat = {
-        "maturity":         (_t("maturity", lang),         _mat_label(terms)),
-        "coupon_pa":        (_t("coupon_pa", lang),        f"{terms.coupon_pa * 100:.2f}%"),
-        "coupon_barrier":   (_t("coupon_barrier", lang),   f"{terms.coupon_barrier:.0%}"),
-        "autocall_barrier": (_t("autocall_barrier", lang), f"{terms.autocall_barrier:.0%}"),
-        "knock_in_barrier": (_ki_lbl,                      f"{terms.knock_in_barrier:.0%}"),
-        # Participation payoff metrics (shown in place of coupon/knock-in on a
-        # participation note, where those are 0 and meaningless).
-        "protection_level": (_t("protection_level", lang), f"{float(getattr(terms, 'protection_level', 1.0) or 1.0):.0%}"),
-        "participation_rate": (_t("participation_rate", lang), f"{float(getattr(terms, 'participation_rate', 1.0) or 1.0):.0%}"),
-        "upside_cap":       (_t("period_cap" if getattr(terms, "participation_periodic", False) else "upside_cap", lang),
-                             f"{_cap_v:.0%}" if _cap_v is not None else ""),
-        "issue_date":       (_t("issue_date", lang),       str(getattr(terms, "issue_date", "") or "")),
-        "issuer":           (_t("issuer", lang),           getattr(pdf, "issuer", "") or ""),
-    }
-    _sel = getattr(pdf, "cover_metrics", None)
-    if _sel is not None:
-        _keys = list(_sel)
-    elif _part:
-        # Participation default: protection + participation + (cap or maturity).
-        _keys = (["protection_level", "participation_rate", "upside_cap"]
-                 if _cap_v is not None else ["protection_level", "participation_rate", "maturity"])
-    else:
-        _keys = ["coupon_pa", "maturity", "knock_in_barrier"]
-    _kt = [_fcat[k] for k in _keys if k in _fcat and _fcat[k][1] != ""][:4]
-    if _kt:
-        web_w = 54.0 if website else 0.0
-        span  = (W - 2 * ml) - web_w
-        step  = min(48.0, span / len(_kt))
-        cellw = step - 2.0
-        kx = ml
-        for lbl, val in _kt:
-            pdf._eyebrow(kx, band_y + 9, lbl, (159, 196, 179), size=7.5,
-                         tracking=0.4, w=cellw)
-            pdf.set_xy(kx, band_y + 14)
-            pdf._sf(15, "bold"); pdf.set_text_color(255, 255, 255)
-            pdf.cell(cellw, 8, _safe(val))
-            kx += step
-    if website:
-        pdf._eyebrow(W - ml - 70, band_y + 12.5, website, pdf.section_rule_color,
-                     size=10.0, tracking=0.6, w=70, align="R")
-    pdf._is_cover = False
+        # ── Bottom band: user-selectable key terms + website ──────────────────
+        # Which figures appear here (and their order) is driven by branding
+        # `cover_metrics`: absent → the classic three; an explicit (possibly empty)
+        # list → exactly those, so the whole strip can be turned off. Capped to what
+        # the strip fits alongside the website.
+        band_h = 30.0
+        band_y = H - band_h
+        pdf.set_fill_color(*pdf.ink)
+        pdf.rect(0, band_y, W, band_h, style="F")
+        _ki_lbl = _t("ki_barrier", lang).split(' (')[0]
+        _part = _is_participation(terms)
+        _cap_v = _part_cap_value(terms)
+        _fcat = {
+            "maturity":         (_t("maturity", lang),         _mat_label(terms)),
+            "coupon_pa":        (_t("coupon_pa", lang),        f"{terms.coupon_pa * 100:.2f}%"),
+            "coupon_barrier":   (_t("coupon_barrier", lang),   f"{terms.coupon_barrier:.0%}"),
+            "autocall_barrier": (_t("autocall_barrier", lang), f"{terms.autocall_barrier:.0%}"),
+            "knock_in_barrier": (_ki_lbl,                      f"{terms.knock_in_barrier:.0%}"),
+            # Participation payoff metrics (shown in place of coupon/knock-in on a
+            # participation note, where those are 0 and meaningless).
+            "protection_level": (_t("protection_level", lang), f"{float(getattr(terms, 'protection_level', 1.0) or 1.0):.0%}"),
+            "participation_rate": (_t("participation_rate", lang), f"{float(getattr(terms, 'participation_rate', 1.0) or 1.0):.0%}"),
+            "upside_cap":       (_t("period_cap" if getattr(terms, "participation_periodic", False) else "upside_cap", lang),
+                                 f"{_cap_v:.0%}" if _cap_v is not None else ""),
+            "issue_date":       (_t("issue_date", lang),       str(getattr(terms, "issue_date", "") or "")),
+            "issuer":           (_t("issuer", lang),           getattr(pdf, "issuer", "") or ""),
+        }
+        _sel = getattr(pdf, "cover_metrics", None)
+        if _sel is not None:
+            _keys = list(_sel)
+        elif _part:
+            # Participation default: protection + participation + (cap or maturity).
+            _keys = (["protection_level", "participation_rate", "upside_cap"]
+                     if _cap_v is not None else ["protection_level", "participation_rate", "maturity"])
+        else:
+            _keys = ["coupon_pa", "maturity", "knock_in_barrier"]
+        _kt = [_fcat[k] for k in _keys if k in _fcat and _fcat[k][1] != ""][:4]
+        if _kt:
+            web_w = 54.0 if website else 0.0
+            span  = (W - 2 * ml) - web_w
+            step  = min(48.0, span / len(_kt))
+            cellw = step - 2.0
+            kx = ml
+            for lbl, val in _kt:
+                pdf._eyebrow(kx, band_y + 9, lbl, (159, 196, 179), size=7.5,
+                             tracking=0.4, w=cellw)
+                pdf.set_xy(kx, band_y + 14)
+                pdf._sf(15, "bold"); pdf.set_text_color(255, 255, 255)
+                pdf.cell(cellw, 8, _safe(val))
+                kx += step
+        if website:
+            pdf._eyebrow(W - ml - 70, band_y + 12.5, website, pdf.section_rule_color,
+                         size=10.0, tracking=0.6, w=70, align="R")
 
 
 def _full_bleed_disclaimer(pdf: _NotePDF, lang: str, text: str, website: str = ""):
     """Disclaimer as a branded full-bleed back page — white text on the brand
     colour with the logo header and a footer, pairing the branded front cover."""
-    pdf.set_auto_page_break(auto=False)
-    pdf._is_cover = True
-    pdf.add_page()
-    pdf._cover_pages.add(pdf.page_no())
-    W, H = pdf.w, pdf.h
-    _paint_cover_bg(pdf, W, H)
+    # The same frame as the front cover: a back page IS a cover that happens to
+    # carry legal text, so it takes the same background / photo / tint treatment.
+    with pdf.full_bleed_page(getattr(pdf, "back_image_bytes", None)) as (W, H):
+        logo_b = getattr(pdf, "cover_logo_bytes", None) or pdf.firm_logo_bytes
+        pdf.draw_logo_fit(logo_b, pdf.l_margin, 15, 12.0, 58.0, cover=True)
+        pdf.set_draw_color(*pdf.section_rule_color)
+        pdf.set_line_width(0.8)
+        pdf.line(pdf.l_margin, 33, W - pdf.r_margin, 33)
 
-    # Optional full-bleed photo with a colour overlay (mirrors the front cover) so
-    # the back page matches the cover treatment.
-    if getattr(pdf, "back_image_bytes", None):
-        try:
-            _bk = _cover_crop(pdf.back_image_bytes, W / H)
-            pdf.image(io.BytesIO(_bk), x=0, y=0, w=W, h=H)
-        except Exception:
-            pass
-        _paint_cover_overlay(pdf, W, H)
+        inner = W - pdf.l_margin - pdf.r_margin
+        _paras = (text or "").split("\n\n")
 
-    logo_b = getattr(pdf, "cover_logo_bytes", None) or pdf.firm_logo_bytes
-    _draw_logo_fit(pdf, logo_b, pdf.l_margin, 15, 12.0, 58.0, cover=True)
-    pdf.set_draw_color(*pdf.section_rule_color)
-    pdf.set_line_width(0.8)
-    pdf.line(pdf.l_margin, 33, W - pdf.r_margin, 33)
-
-    inner = W - pdf.l_margin - pdf.r_margin
-    _paras = (text or "").split("\n\n")
-
-    # Backing panel behind the title + body so the white legal text stays legible
-    # over the photo (which can be light in places). A darkened brand-colour card,
-    # semi-opaque and rounded like the figure cards — measured to fit the text.
-    if _paras and _paras[0]:
-        body_h = 0.0
-        try:
-            from fpdf.enums import MethodReturnValue as _MRV
-            for _i, _para in enumerate(_paras):
-                pdf._sf(7.6, "bold" if _i == len(_paras) - 1 else "regular")
-                body_h += pdf.multi_cell(inner, 4.0, _safe(_para), align="J",
-                                         dry_run=True, output=_MRV.HEIGHT) + 2.6
-        except Exception:
-            body_h = H * 0.42   # generous fallback if measurement isn't available
-        ptop, pbot = 37.0, min(54.0 + body_h + 6.0, H - 26.0)
-        pdf.set_fill_color(*_blend(pdf.primary_color, (0, 0, 0), 0.68))   # near-black green
-        try:
-            with pdf.local_context(fill_opacity=0.86):
-                pdf.rect(pdf.l_margin - 6, ptop, inner + 12, pbot - ptop,
-                         style="F", round_corners=True, corner_radius=4)
-        except Exception:
+        # Backing panel behind the title + body so the white legal text stays legible
+        # over the photo (which can be light in places). A darkened brand-colour card,
+        # semi-opaque and rounded like the figure cards — measured to fit the text.
+        if _paras and _paras[0]:
+            body_h = 0.0
             try:
-                pdf.rect(pdf.l_margin - 6, ptop, inner + 12, pbot - ptop, style="F")
+                from fpdf.enums import MethodReturnValue as _MRV
+                for _i, _para in enumerate(_paras):
+                    pdf._sf(7.6, "bold" if _i == len(_paras) - 1 else "regular")
+                    body_h += pdf.multi_cell(inner, 4.0, _safe(_para), align="J",
+                                             dry_run=True, output=_MRV.HEIGHT) + 2.6
             except Exception:
-                pass
+                body_h = H * 0.42   # generous fallback if measurement isn't available
+            ptop, pbot = 37.0, min(54.0 + body_h + 6.0, H - 26.0)
+            pdf.set_fill_color(*_blend(pdf.primary_color, (0, 0, 0), 0.68))   # near-black green
+            try:
+                with pdf.local_context(fill_opacity=0.86):
+                    pdf.rect(pdf.l_margin - 6, ptop, inner + 12, pbot - ptop,
+                             style="F", round_corners=True, corner_radius=4)
+            except Exception:
+                try:
+                    pdf.rect(pdf.l_margin - 6, ptop, inner + 12, pbot - ptop, style="F")
+                except Exception:
+                    pass
 
-    pdf.set_xy(pdf.l_margin, 41)
-    pdf._sf(16, "bold")
-    pdf.set_text_color(255, 255, 255)
-    pdf.cell(0, 8, _safe(_t("disclaimer_title", lang)), new_x="LMARGIN", new_y="NEXT")
-    # Lime keyline under the title (mirrors the prototype).
-    pdf.set_fill_color(*pdf.section_rule_color)
-    pdf.rect(pdf.l_margin, 50.5, 18, 1.4, style="F")
-
-    pdf.set_xy(pdf.l_margin, 55)
-    for _i, _para in enumerate(_paras):
-        pdf.set_x(pdf.l_margin)
-        pdf._sf(7.6, "bold" if _i == len(_paras) - 1 else "regular")
+        pdf.set_xy(pdf.l_margin, 41)
+        pdf._sf(16, "bold")
         pdf.set_text_color(255, 255, 255)
-        pdf.multi_cell(inner, 4.0, _safe(_para), align="J")
-        pdf.ln(2.6)
+        pdf.cell(0, 8, _safe(_t("disclaimer_title", lang)), new_x="LMARGIN", new_y="NEXT")
+        # Lime keyline under the title (mirrors the prototype).
+        pdf.set_fill_color(*pdf.section_rule_color)
+        pdf.rect(pdf.l_margin, 50.5, 18, 1.4, style="F")
 
-    # Footer: lime top hairline, website in lime, grey copyright (prototype).
-    pdf.set_fill_color(*pdf.section_rule_color)
-    try:
-        with pdf.local_context(fill_opacity=0.4):
+        pdf.set_xy(pdf.l_margin, 55)
+        for _i, _para in enumerate(_paras):
+            pdf.set_x(pdf.l_margin)
+            pdf._sf(7.6, "bold" if _i == len(_paras) - 1 else "regular")
+            pdf.set_text_color(255, 255, 255)
+            pdf.multi_cell(inner, 4.0, _safe(_para), align="J")
+            pdf.ln(2.6)
+
+        # Footer: lime top hairline, website in lime, grey copyright (prototype).
+        pdf.set_fill_color(*pdf.section_rule_color)
+        try:
+            with pdf.local_context(fill_opacity=0.4):
+                pdf.rect(pdf.l_margin, H - 26, W - 2 * pdf.l_margin, 0.4, style="F")
+        except Exception:
             pdf.rect(pdf.l_margin, H - 26, W - 2 * pdf.l_margin, 0.4, style="F")
-    except Exception:
-        pdf.rect(pdf.l_margin, H - 26, W - 2 * pdf.l_margin, 0.4, style="F")
-    if website:
-        pdf.set_xy(0, H - 22)
-        pdf._sf(9, "bold")
-        pdf.set_text_color(*pdf.section_rule_color)
-        pdf.cell(W - pdf.r_margin, 5, _safe(website), align="R")
-    pdf.set_xy(0, H - 15)
-    pdf._sf(7, "light")
-    pdf.set_text_color(159, 196, 179)
-    pdf.cell(W - pdf.r_margin, 4,
-             _safe(f"© {datetime.date.today().year} {pdf.firm_name} — All Rights Reserved."),
-             align="R")
-    pdf._is_cover = False
+        if website:
+            pdf.set_xy(0, H - 22)
+            pdf._sf(9, "bold")
+            pdf.set_text_color(*pdf.section_rule_color)
+            pdf.cell(W - pdf.r_margin, 5, _safe(website), align="R")
+        pdf.set_xy(0, H - 15)
+        pdf._sf(7, "light")
+        pdf.set_text_color(159, 196, 179)
+        pdf.cell(W - pdf.r_margin, 4,
+                 _safe(f"© {datetime.date.today().year} {pdf.firm_name} — All Rights Reserved."),
+                 align="R")
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -2494,7 +2293,7 @@ def _cover_page(
         _pool = getattr(pdf, "filler_image_list", None) or []
         _vimg = _pool[0] if _pool else None
         if ly + 45 < _yc[0] and _vimg is not None:
-            _left_filled = _cover_left_photo(pdf, x0, ly + 6.0, Lw, _bottom, _vimg)
+            _left_filled = pdf.cover_left_photo(x0, ly + 6.0, Lw, _bottom, _vimg)
         # Sigil watermark — only in a void below BOTH stacks (rare on client
         # reports, where the TOC runs long); harmless alongside the left photo.
         _sig = getattr(pdf, "cover_sigil_bytes", None)

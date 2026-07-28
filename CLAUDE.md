@@ -197,7 +197,7 @@ Discipline to preserve: don't retain the float64 working set (raw S/V paths, sta
 
 The themed-PDF engine lives in its **own repository** and is installed as a
 dependency: [`report_maker`](https://github.com/diegogomezpy/report_maker),
-pinned by tag in `requirements.txt` (`reportkit[charts] @ git+…@v0.1.0`). It has
+pinned by tag in `requirements.txt` (`reportkit[charts] @ git+…@v0.4.0`). It has
 no imports from `app/`, `core/` or `data/` and knows nothing about structured
 notes — a different project can `pip install` it and build a report.
 
@@ -206,7 +206,14 @@ notes — a different project can `pip install` it and build a report.
                          pagination (heading never orphaned from its block).
     reportkit.theme      ReportTheme / SpecTheme, palette-derived tokens, the
                          shape + gradient primitives, the theme registry.
-    reportkit.branding*  palette / logo / image resolution   (*still in the adapter)
+    reportkit.branding   resolve a brand config to a frozen `Brand`, and
+                         `apply_brand` it — palette before token derivation,
+                         brand fonts after the default family, watermark after
+                         the image decode, filler pool after cover/back.
+    reportkit.cover      full-bleed pages: `full_bleed()` opens the page
+                         chrome-free, paints the themed background, draws the
+                         photo and tints it. Plus the sigil / cover-logo
+                         placement and the tall left photo column.
     reportkit.fonts      registration; ships IBM Plex Sans under the OFL.
     reportkit.text       PDF-safe string sanitisation (incl. the Latin-1 path).
     reportkit.images     load / sanitise / embed + path, URL-scheme and
