@@ -100,22 +100,22 @@ from reportkit.theme import (  # noqa: E402
 from reportkit.images import _cover_crop  # noqa: E402
 # Colour parsing / palette remapping — core (no plotly); the chart layer that
 # consumes them is what moves behind the [charts] extra, not these.
+import reportkit.images as _rk_images  # noqa: E402
 from reportkit.color import (  # noqa: E402
     rgb_to_hue as _rgb_to_hue, parse_rgb as _parse_rgb, remap_color as _remap_color,
 )
 
 _REPO_ROOT       = Path(__file__).parent.parent
 
-# Ceiling on any single image the report embeds — see _dimensions_sane(), which
-# enforces it from the header. ~4900x4900 is far past any real cover or logo.
-_MAX_IMAGE_PX = 24_000_000
-# Backstop for decodes that don't route through _dimensions_sane (Pillow raises
-# above 2x this). Not the primary defence: it only warns below that threshold.
-try:
-    from PIL import Image as _PILImage
-    _PILImage.MAX_IMAGE_PIXELS = _MAX_IMAGE_PX
-except Exception:                               # Pillow absent → nothing decodes anyway
-    pass
+# Ceiling on any single image the report embeds — see reportkit.images
+# .dimensions_sane(), which enforces it from the header. ~4900x4900 is far past
+# any real cover or logo. `configure_limits` also raises Pillow's own
+# MAX_IMAGE_PIXELS as a backstop for decodes that bypass our check; reportkit
+# does NOT do that at import time, because a library mutating another library's
+# global behind the host's back is exactly the kind of surprise this extraction
+# is meant to remove. The application opts in, here, once.
+_MAX_IMAGE_PX = _rk_images.MAX_IMAGE_PX
+_rk_images.configure_limits(_MAX_IMAGE_PX)
 _TICKER_LOGO_DIR = _REPO_ROOT / "branding" / "ticker_logos"
 _FONT_DIR        = _REPO_ROOT / "fonts"
 _IBM_REGULAR     = _FONT_DIR / "IBMPlexSans-Regular.ttf"
@@ -1742,173 +1742,26 @@ class _NotePDF(FPDF):
 # *every* logo byte string through Pillow to a clean RGBA PNG before it ever
 # reaches pdf.image(): the format is guaranteed embeddable, the alpha channel is
 # preserved, and a multi-resolution ICO is collapsed to its largest frame.
-_EMBEDDABLE_MAGIC = (b"\x89PNG", b"\xff\xd8\xff", b"GIF8")  # PNG / JPEG / GIF
-
-
-def _dimensions_sane(raw: bytes) -> bool:
-    """Reject a decompression bomb by reading the HEADER, before any pixels.
-
-    Branding art arrives base64-encoded inside a user-supplied config, and a
-    ~100 KB PNG can declare 6000x6000 and expand to ~108 MB of RGBA. Pillow's
-    MAX_IMAGE_PIXELS is not the defence: it only *warns* until twice the limit,
-    and the cheap path below hands PNG/JPEG straight to fpdf2 without ever
-    calling Pillow, so the allocation happens later and elsewhere.
-
-    `Image.open` is lazy — it parses the header and stops — so `.size` costs
-    nothing. Reject rather than downscale: a brand asset this large is a mistake
-    or an attack, and silently shipping a resampled logo hides both.
-    """
-    try:
-        from PIL import Image
-        with Image.open(io.BytesIO(raw)) as im:
-            w, h = im.size
-    except Exception:
-        return True          # not decodable here; the caller's own guards apply
-    if w * h > _MAX_IMAGE_PX:
-        print(f"[PDF image] refused {w}x{h} ({w * h / 1e6:.0f} MPx) — over the "
-              f"{_MAX_IMAGE_PX / 1e6:.0f} MPx ceiling")
-        return False
-    return True
-
-
-def _to_embeddable_png(raw: bytes | None) -> bytes | None:
-    """Return PNG bytes fpdf2 can embed, or None.
-
-    If `raw` is already a PNG/JPEG/GIF it is returned unchanged (cheap path).
-    Otherwise — ICO, WEBP, BMP, TIFF, multi-frame favicon … — it is decoded by
-    Pillow and re-encoded as a single RGBA PNG. Any decode failure returns None
-    so a bad image is dropped rather than crashing the report.
-    """
-    if not raw:
-        return None
-    if not _dimensions_sane(raw):
-        return None
-    if raw[:4] in _EMBEDDABLE_MAGIC:
-        return raw
-    try:
-        from PIL import Image
-        im = Image.open(io.BytesIO(raw))
-        # ICO files carry several sizes; Pillow opens the first — pick the
-        # largest available frame for the crispest logo.
-        sizes = getattr(im, "ico", None)
-        if sizes is not None:
-            try:
-                biggest = max(im.ico.sizes())
-                im = im.ico.getimage(biggest)
-            except Exception:
-                pass
-        im = im.convert("RGBA")
-        out = io.BytesIO()
-        im.save(out, format="PNG")
-        data = out.getvalue()
-        print(f"[PDF logo] converted {len(raw):,}b -> PNG {len(data):,}b ({im.size[0]}x{im.size[1]})")
-        return data
-    except Exception as exc:
-        print(f"[PDF logo] convert FAIL ({len(raw)}b): {exc}")
-        return None
-
-
-def _logo_aspect(png: bytes | None, default: float = 1.0) -> float:
-    """Width/height aspect ratio of a logo, so it can be sized without squashing
-    a wide wordmark into a square box. Falls back to `default` on any error."""
-    if not png:
-        return default
-    try:
-        from PIL import Image
-        w, h = Image.open(io.BytesIO(png)).size
-        return (w / h) if h else default
-    except Exception:
-        return default
-
-
-def _fetch_image_bytes(url: str, timeout: int = 8) -> bytes | None:
-    """Download an image from a URL. Returns raw bytes or None on failure.
-
-    Uses a browser-like User-Agent so Google Favicon and other CDNs don't
-    redirect or block the request.  Validates that the response body is
-    non-empty before returning.
-    """
-    if not url:
-        return None
-    # http(s) only. `branding.logo_url` is user-supplied, and urlopen happily
-    # honours file:// (read any file on the server and embed it in the PDF the
-    # requester downloads) as well as ftp:// and data:. Nothing legitimate here
-    # is served over anything but HTTP.
-    if not str(url).lower().startswith(("http://", "https://")):
-        print(f"[PDF logo] refused non-http URL scheme: {str(url)[:60]!r}")
-        return None
-    # Upgrade Google favicon requests to sz=256 for crisper logos
-    if "google.com/s2/favicons" in url:
-        import re as _re
-        url = _re.sub(r"sz=\d+", "sz=256", url)
-    try:
-        req = urllib.request.Request(
-            url,
-            headers={
-                "User-Agent": (
-                    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
-                    "AppleWebKit/537.36 (KHTML, like Gecko) "
-                    "Chrome/124.0 Safari/537.36"
-                ),
-                "Accept": "image/png,image/jpeg,image/webp,image/*,*/*",
-            },
-        )
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
-            data = resp.read()
-        if not data:
-            print(f"[PDF logo] Empty response from {url}")
-            return None
-        print(f"[PDF logo] OK  {len(data):,} bytes  {url}")
-        return data
-    except Exception as exc:
-        print(f"[PDF logo] FAIL {url!r}: {exc}")
-        return None
-
-
-def _read_local_image(path: Path | None) -> bytes | None:
-    """Read a local image file as raw bytes. fpdf2 cannot render SVG natively,
-    so SVG files are skipped (returns None) with a diagnostic. Any failure is
-    swallowed and returns None so a missing/bad file never crashes the PDF."""
-    try:
-        if path is None or not path.exists() or not path.is_file():
-            return None
-        if path.suffix.lower() == ".svg":
-            print(f"[PDF logo] SKIP SVG (not renderable by fpdf2): {path}")
-            return None
-        data = path.read_bytes()
-        if not data:
-            return None
-        print(f"[PDF logo] OK  {len(data):,} bytes  {path}")
-        return data
-    except Exception as exc:
-        print(f"[PDF logo] FAIL local {path!r}: {exc}")
-        return None
+# Image loading / sanitising / embedding now lives in reportkit.images. Every
+# name is re-bound here under its original private spelling, as a MODULE GLOBAL
+# resolved at call time — `tests/golden_fixture.py` neutralises the network by
+# rebinding `pdf_report._fetch_image_bytes`, and `_load_logo` below looks it up
+# through this module, so the indirection is the test seam, not an accident.
+_dimensions_sane   = _rk_images.dimensions_sane
+_to_embeddable_png = _rk_images.to_embeddable_png
+_logo_aspect       = _rk_images.logo_aspect
+_fetch_image_bytes = _rk_images.fetch_image_bytes
+_read_local_image  = _rk_images.read_local_image
+_EMBEDDABLE_MAGIC  = _rk_images._EMBEDDABLE_MAGIC
 
 
 def _resolve_local_path(spec: str) -> Path | None:
-    """Resolve a branding `logo_file` to an absolute path INSIDE the repo root.
+    """Resolve a branding `logo_file` against THIS repo's root.
 
-    A branding config is user-supplied — uploaded through the web UI or dropped
-    into a connected folder — so `logo_file` is attacker-controlled input, not
-    an operator-only setting. Left unconstrained it is an arbitrary-file-read
-    primitive: any readable image on the server could be resolved and embedded
-    into a PDF the requester then downloads, and the "unusable" log line answers
-    does-this-path-exist for everything else.
-
-    Both absolute paths and `../` escapes are refused. The documented contract
-    was always "local path, repo-root relative", so this narrows the code to
-    what the docs already promised. Configs embed their artwork as
-    `logo_base64` (the web UI only ever writes that), so this path is for local
-    development.
+    The containment rule is reportkit's; the root is the host's, because an
+    installed library has no repo to be relative to.
     """
-    try:
-        root = _REPO_ROOT.resolve()
-        p = (Path(spec) if Path(spec).is_absolute() else (root / spec)).resolve()
-        p.relative_to(root)          # raises if p is outside the repo root
-        return p
-    except Exception:
-        print(f"[PDF logo] logo_file refused (outside the repo root): {spec!r}")
-        return None
+    return _rk_images.resolve_within(spec, _REPO_ROOT)
 
 
 def _load_logo(branding: dict | None) -> bytes | None:
