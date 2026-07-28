@@ -64,46 +64,58 @@ def _orphans(theme: str, kind: str = "phoenix") -> list[str]:
         return inner
 
     def wrap_content(name):
+        """Record the page the block's FIRST INK lands on.
+
+        Not the page it finishes on: a long table legitimately spans several
+        pages, and comparing the heading against the LAST page turns every
+        multi-page table into a false orphan. Not the page it starts the call on
+        either: the block may break before drawing anything, which is exactly
+        the defect. So instrument the drawing primitives and take the page of
+        the first one that fires — ignoring ink from the running header/footer
+        and the void decorator, which are not the block's own content.
+        """
         orig = getattr(cls, name)
+        INK = ("cell", "multi_cell", "rect", "image", "line")
 
         def inner(self, *a, **k):
-            # Page BEFORE the call — a table that breaks internally after
-            # drawing its first rows on this page is fine; one that breaks
-            # before drawing anything is what strands the heading. data_table
-            # decides that up front, so sample the page after it settles.
-            out = orig(self, *a, **k)
-            if pending:
-                label, hpage = pending.pop()
-                # `self.page_no()` can have advanced legitimately if the content
-                # itself is long; what matters is where it STARTED, which for a
-                # block that broke immediately is the page after the heading.
-                started = getattr(self, "_layout_probe_start", self.page_no())
-                if started != hpage:
-                    seen.append(f"{label} on p{hpage} but {name} started p{started}")
-            return out
-        return inner
-
-    def wrap_start_probe(name):
-        """Record the page a content call is on once it has done its own
-        keep-together break but before it draws."""
-        orig = getattr(cls, name)
-
-        def inner(self, *a, **k):
-            self._layout_probe_start = None
-            _add = cls.add_page
-
-            def probe_add(s, *aa, **kk):
-                r = _add(s, *aa, **kk)
-                if getattr(s, "_layout_probe_start", None) is None:
-                    s._layout_probe_start = s.page_no()
-                return r
-            cls.add_page = probe_add
-            try:
-                if self._layout_probe_start is None:
-                    self._layout_probe_start = self.page_no()
+            if not pending:
                 return orig(self, *a, **k)
+            first = []
+            saved = {m: getattr(cls, m) for m in INK if hasattr(cls, m)}
+
+            def probe(m, fn):
+                def p(s, *aa, **kk):
+                    if not first and not getattr(s, "_in_chrome", False):
+                        first.append(s.page_no())
+                    return fn(s, *aa, **kk)
+                return p
+
+            # The header/footer/void hooks fire mid-block via add_page; their ink
+            # is chrome, not content, so flag them out.
+            _add, _dec = cls.add_page, cls._decorate_void
+
+            def add_page(s, *aa, **kk):
+                s._in_chrome = True
+                try:
+                    return _add(s, *aa, **kk)
+                finally:
+                    s._in_chrome = False
+
+            for m, fn in saved.items():
+                setattr(cls, m, probe(m, fn))
+            cls.add_page = add_page
+            try:
+                out = orig(self, *a, **k)
             finally:
+                for m, fn in saved.items():
+                    setattr(cls, m, fn)
                 cls.add_page = _add
+                self._in_chrome = False
+            label, hpage = pending.pop()
+            started = first[0] if first else self.page_no()
+            if started != hpage:
+                seen.append(f"{label} on p{hpage} but {name} first drew on p{started}")
+            return out
         return inner
 
     try:
@@ -131,6 +143,50 @@ def test_no_orphaned_headings_participation():
     """The participation note takes different branches through the builder."""
     bad = _orphans("mercator", kind="participation")
     assert not bad, "participation: orphaned heading(s):\n  " + "\n  ".join(bad)
+
+
+# Table sizes chosen to sit on the seams, not at random:
+#   18 — the size that was reported broken (the 130mm cap vs the real height);
+#   27 — the largest table still kept whole under its heading;
+#   28 — the first that cannot be, and which the FIRST fix still orphaned
+#        because `_PAGE_CAP` measured a fresh page without the heading on it;
+#   36, 60 — long enough to span pages, where the block legitimately splits
+#        under its heading and must NOT be reported as an orphan.
+@pytest.mark.parametrize("n_obs", [18, 27, 28, 36, 60])
+def test_no_orphaned_headings_across_table_sizes(n_obs):
+    """The heading/table seam holds at every table size, not just the fixture's."""
+    from core.note import NoteTerms
+
+    original = gf.note_terms
+
+    def monthly(kind="phoenix"):
+        d = original(kind).to_dict()
+        d["payment_freq"] = "monthly"
+        d["maturity"] = n_obs / 12.0
+        return NoteTerms.from_dict(d)
+
+    gf.note_terms = monthly
+    try:
+        bad = _orphans("mercator")
+    finally:
+        gf.note_terms = original
+    assert not bad, f"n_obs={n_obs}: orphaned heading(s):\n  " + "\n  ".join(bad)
+
+
+def test_split_room_lets_a_long_table_start_under_its_heading():
+    """`_SPLIT_ROOM` is derived from data_table's own give-up threshold.
+
+    A heading that draws at the very bottom of its reservation must still leave
+    the cursor above the point where data_table breaks regardless — otherwise
+    the guard cannot save it and the heading is stranded anyway.
+    """
+    import pdf_report as P
+
+    worst_y_after_heading = (297.0 - 28.0 - P._SPLIT_ROOM) + P._HEAD_ROOM
+    assert worst_y_after_heading <= 297.0 - 55.0, (
+        f"_SPLIT_ROOM={P._SPLIT_ROOM} leaves the cursor at "
+        f"{worst_y_after_heading:.1f}mm, past data_table's {297.0 - 55.0:.1f}mm "
+        "give-up point — a long table would orphan its heading")
 
 
 @pytest.mark.parametrize("n_obs,expect_together", [(6, True), (18, True), (60, True)])

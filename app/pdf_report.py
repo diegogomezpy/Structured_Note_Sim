@@ -1118,7 +1118,24 @@ class _NotePDF(FPDF):
         return self.theme.section_divider(self, number, kicker, heading)
 
     def subsection(self, text: str, min_room: float = 27.0):
-        return self.theme.subsection(self, text, min_room=min_room)
+        out = self.theme.subsection(self, text, min_room=min_room)
+        # Claim the page for whatever block comes next — see _head_claimed().
+        self._head_page = self.page_no()
+        return out
+
+    def _head_claimed(self) -> bool:
+        """True (once) if a heading was just drawn on THIS page.
+
+        A block that is introduced by a heading must not run its own
+        keep-together check: the heading already made that decision, using
+        `_table_room` to reserve the room, and a second opinion taken 10mm
+        further down the page can only ever disagree — which is precisely how a
+        heading ends up alone on a page the block it introduces has left.
+        Consumed on read, so it applies to the FIRST block only.
+        """
+        claimed = getattr(self, "_head_page", None) == self.page_no()
+        self._head_page = None
+        return claimed
 
     def body(self, text: str, h: float = 4.5):
         """8.5pt regular body text."""
@@ -1205,7 +1222,12 @@ class _NotePDF(FPDF):
         # orphaned on the page the table just left.
         _needed = _TBL_HEAD_H + len(rows) * _TBL_ROW_H + _TBL_PAD
         _avail  = self.h - 30 - self.get_y()
-        if _needed > _avail and _needed <= _PAGE_CAP:
+        if self._head_claimed():
+            # A heading directly above already reserved for us; only break if we
+            # cannot even start here (which its reservation should have avoided).
+            if self.get_y() > self.h - 55:
+                self.add_page()
+        elif _needed > _avail and _needed <= _PAGE_CAP:
             self.add_page()
         elif self.get_y() > self.h - 55:
             self.add_page()
@@ -3535,7 +3557,14 @@ _TBL_ROW_H  = 8.0
 _TBL_HEAD_H = 9.0
 _TBL_PAD    = 6.0
 _PAGE_CAP   = 246.0   # h(297) - footer(30) - running header(21): a fresh page's room
-_SPLIT_ROOM = 37.0    # heading + enough of a long table to be worth starting here
+_HEAD_ROOM  = 10.0    # vertical space a sub-heading itself consumes (ln+cell+ln)
+# Minimum a heading must see before a table that is going to split anyway.
+# Derived, not chosen: data_table gives up and breaks when y > h - 55, so the
+# heading has to leave the cursor at or above that. It draws at
+# `h - b_margin - _SPLIT_ROOM` in the worst case and consumes _HEAD_ROOM, giving
+#   h - 28 - _SPLIT_ROOM + _HEAD_ROOM  <=  h - 55   ⇒  _SPLIT_ROOM >= 37.
+# 40 keeps a little slack so the two are not exactly equal.
+_SPLIT_ROOM = 40.0
 
 
 def _table_room(n_rows: int, row_h: float = _TBL_ROW_H, head_h: float = _TBL_HEAD_H) -> float:
@@ -3553,9 +3582,15 @@ def _table_room(n_rows: int, row_h: float = _TBL_ROW_H, head_h: float = _TBL_HEA
 
     The previous version capped at 130mm while data_table measured the full
     height uncapped, so every table of roughly 16-29 rows orphaned its heading.
+
+    Note the threshold is `_PAGE_CAP - _HEAD_ROOM`, not `_PAGE_CAP`: a table kept
+    whole UNDER A HEADING starts ~10mm lower than one on a bare page, so a table
+    that fits 246mm but not 236mm cannot be kept whole here at all. Promising to
+    reserve it anyway just moved the collision one page along — the heading broke
+    to a fresh page, drew, and the table broke out from under it again.
     """
     full = head_h + n_rows * row_h + _TBL_PAD
-    return (full + 12.0) if full <= _PAGE_CAP else _SPLIT_ROOM
+    return (full + 12.0) if full <= _PAGE_CAP - _HEAD_ROOM else _SPLIT_ROOM
 
 
 def _draw_participation_profile(pdf, terms, lang: str) -> None:
