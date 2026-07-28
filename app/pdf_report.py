@@ -91,8 +91,11 @@ from reportkit.theme import (  # noqa: E402
     _dev_rgb, _chamfer_outline, _chamfer_dims,
     _fill_chamfer, _stroke_chamfer, _hex_cluster,
     build_tokens, resolve_theme, paint_shape, resolve_color, resolve_watermark,
+    blend as _blend,
     AMBER as _AMBER, AMBER_DARK as _AMBER_DARK, MUTED as _MUTED,
     BODY_INK as _BODY_INK, RULE_SOFT as _RULE_SOFT, FOOTNOTE_GREY as _FOOTNOTE_GREY,
+    TEXT as _TEXT, TEXT_SOFT as _TEXT_SOFT, ROW_ALT as _ROW_ALT,
+    WHITE as _WHITE, BLACK as _BLACK,
 )
 from reportkit.images import _cover_crop  # noqa: E402
 
@@ -122,14 +125,6 @@ _IBM_BOLDITALIC  = _FONT_DIR / "IBMPlexSans-BoldItalic.ttf"
 # ──────────────────────────────────────────────────────────────────────────────
 _DEFAULT_PRIMARY  = (26,  46, 74)   # deep navy  #1a2e4a
 _DEFAULT_ACCENT   = (37,  99, 235)  # mid-blue   #2563eb
-_TEXT             = (43,  61, 79)   # dark navy-slate #2B3D4F  (was near-black #212121)
-_TEXT_SOFT        = (107, 114, 128) # warm grey  #6b7280
-_HAIRLINE         = (203, 213, 225) # cool grey  #cbd5e1
-_RULE_LIGHT       = (226, 232, 240) # slate-100  #e2e8f0
-_ROW_ALT          = (245, 246, 250) # slate-50   #F5F6FA — zebra rows
-_WHITE            = (255, 255, 255)
-_BLACK            = (0,   0,   0)
-_COVER_BAND_H     = 38              # mm — height of the top cover band
 _DEFAULT_SECONDARY = (198, 148, 38) # warm institutional gold #C69426 — 2nd chart category
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -141,7 +136,6 @@ _DEFAULT_SECONDARY = (198, 148, 38) # warm institutional gold #C69426 — 2nd ch
 # _NotePDF.__init__). The brand-neutral constants the design shares live in
 # pdf_theme.py and are imported at the top of this module (_AMBER, _AMBER_DARK,
 # _MUTED, _BODY_INK, _RULE_SOFT, _FOOTNOTE_GREY).
-_PANEL_TINT       = (236, 241, 246)  # #ECF1F6 — card/tile fill (default panel)
 
 # The full branding schema. Anything outside this set warns (mirrors
 # NoteTerms.from_dict) so a typo like "primary_colour" surfaces immediately
@@ -184,10 +178,6 @@ _KNOWN_BRANDING_KEYS = {
                             # e.g. "cadiem" (hexagon) or "mercator" (default). Absent
                             # / unknown falls back to the default theme.
 }
-_HEX_KEYS = ("primary_color", "accent_color", "chart_secondary_color",
-             "section_rule_color", "panel_color", "sidebar_bar_color",
-             "cover_overlay_color", "chart_grid_color", "chart_axis_color",
-             "chart_label_color", "chart_text_color")
 
 
 def _hex_to_rgb(hex_str: str) -> tuple[int, int, int]:
@@ -722,8 +712,6 @@ def _t(key: str, lang: str) -> str:
     return _LABELS.get(key, {}).get(lang, _LABELS.get(key, {}).get("en", key))
 
 
-_ES_MONTHS = ["", "enero", "febrero", "marzo", "abril", "mayo", "junio",
-              "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"]
 
 # payment_freq enum (core/note.py) -> Spanish wording. Unknown values pass
 # through unchanged so a custom freq label is never mangled.
@@ -739,19 +727,8 @@ def _fmt_freq(freq: str, lang: str) -> str:
     return _FREQ_ES.get(str(freq).lower(), str(freq)) if lang == "es" else str(freq)
 
 
-def _fmt_long_date(d: datetime.date, lang: str) -> str:
-    """Locale-aware long date. English uses the platform month name; Spanish uses
-    a built-in month table (no system locale dependency, no leftover English)."""
-    if lang == "es":
-        return f"{d.day} de {_ES_MONTHS[d.month]} de {d.year}"
-    return d.strftime("%-d %B %Y")
 
 
-def _fmt_month_year(d: datetime.date, lang: str) -> str:
-    """Month + year (e.g. 'JUNIO 2026' / 'June 2026') for the cover."""
-    if lang == "es":
-        return f"{_ES_MONTHS[d.month]} {d.year}"
-    return d.strftime("%B %Y")
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -797,7 +774,6 @@ def _safe(text: object, *, latin1: bool = False) -> str:
 # ──────────────────────────────────────────────────────────────────────────────
 
 # Font family name exposed to _sf() — switches based on what is available
-_FONT_FAMILY = "IBMPlexSans"   # overridden to "Helvetica" if IBM files absent
 
 
 def _register_ibm_plex(pdf: FPDF) -> bool:
@@ -2056,8 +2032,6 @@ _SRC_LIGHT = (96, 165, 250)   # #60a5fa  autocalled bars / light secondary serie
 _SRC_EXTRA = {(8, 145, 178), (124, 58, 237), (13, 148, 136)}  # >3-asset series colours
 
 
-def _blend(rgb: tuple, target: tuple, f: float) -> tuple:
-    return tuple(round(rgb[i] * (1 - f) + target[i] * f) for i in range(3))
 
 
 def _rgb_to_hue(rgb: tuple) -> float:
