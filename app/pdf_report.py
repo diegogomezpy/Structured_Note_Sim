@@ -101,6 +101,8 @@ from reportkit.images import _cover_crop  # noqa: E402
 # consumes them is what moves behind the [charts] extra, not these.
 import reportkit.images as _rk_images  # noqa: E402
 import reportkit.charts as _rk_charts  # noqa: E402
+import reportkit.fonts as _rk_fonts  # noqa: E402
+from reportkit.text import _safe, _EMOJI_STRIP  # noqa: E402,F401
 from reportkit.color import (  # noqa: E402
     rgb_to_hue as _rgb_to_hue, parse_rgb as _parse_rgb, remap_color as _remap_color,
 )
@@ -741,37 +743,6 @@ def _fmt_freq(freq: str, lang: str) -> str:
 # IBM Plex Sans covers all Latin/Greek/punctuation/math Unicode natively, so we
 # only need to neutralise emojis and a handful of symbols it omits.
 # ──────────────────────────────────────────────────────────────────────────────
-_EMOJI_STRIP = {
-    "✅": "OK", "⚠️": "!", "❌": "x", "🚀": ">>", "⏳": "...",
-    "®": "", "™": "", "©": "",
-}
-
-
-def _safe(text: object, *, latin1: bool = False) -> str:
-    """Sanitise text for the PDF.
-
-    With IBM Plex Sans (Unicode font) only emojis need neutralising.
-    Pass latin1=True only for the Helvetica fallback path.
-    """
-    s = str(text)
-    for bad, good in _EMOJI_STRIP.items():
-        s = s.replace(bad, good)
-    if latin1:
-        _LATIN1_MAP = {
-            "—": "-", "–": "-", "−": "-", "·": "-", "•": "-",
-            "→": "->", "←": "<-", "≥": ">=", "≤": "<=",
-            "“": '"', "”": '"', "‘": "'", "’": "'",
-            "…": "...", "×": "x", "÷": "/",
-            "€": "EUR", "£": "GBP",
-            "κ": "kappa", "θ": "theta", "ξ": "xi", "ρ": "rho",
-            "σ": "sigma", "μ": "mu", "ν": "nu", "₀": "0", "√": "sqrt ",
-        }
-        for bad, good in _LATIN1_MAP.items():
-            s = s.replace(bad, good)
-        s = s.encode("latin-1", "ignore").decode("latin-1")
-    return s
-
-
 # ──────────────────────────────────────────────────────────────────────────────
 # Font registration
 # Primary: IBM Plex Sans individual TTF files (institutional quality, Unicode).
@@ -780,113 +751,6 @@ def _safe(text: object, *, latin1: bool = False) -> str:
 
 # Font family name exposed to _sf() — switches based on what is available
 
-
-def _register_ibm_plex(pdf: FPDF) -> bool:
-    """Register IBM Plex Sans TTF files. Returns True if all variants loaded."""
-    _required = [_IBM_REGULAR, _IBM_BOLD, _IBM_SEMIBOLD, _IBM_LIGHT,
-                 _IBM_ITALIC, _IBM_BOLDITALIC]
-    if not all(p.exists() for p in _required):
-        return False
-    try:
-        pdf.add_font("IBMPlexSans",      "",   str(_IBM_REGULAR),    uni=True)
-        pdf.add_font("IBMPlexSans",      "B",  str(_IBM_BOLD),       uni=True)
-        pdf.add_font("IBMPlexSans",      "I",  str(_IBM_ITALIC),     uni=True)
-        pdf.add_font("IBMPlexSans",      "BI", str(_IBM_BOLDITALIC), uni=True)
-        pdf.add_font("IBMPlexSansSB",    "",   str(_IBM_SEMIBOLD),   uni=True)
-        pdf.add_font("IBMPlexSansLight", "",   str(_IBM_LIGHT),      uni=True)
-        return True
-    except Exception as exc:
-        print(f"[PDF font] IBM Plex Sans registration failed: {exc}")
-        return False
-
-
-def _register_brand_fonts(pdf, branding: dict | None) -> None:
-    """Route the report's title / body type to custom brand fonts when the brand
-    provides them. The branding keys `title_font` / `body_font` name a font (e.g.
-    "Neulis Alt", "Gantari"); the TTF for each weight comes from EITHER an embedded
-    base64 blob in `title_font_files` / `body_font_files` ({Style: base64 TTF}, so
-    the fonts travel with an uploaded config and work on the deploy) OR the local
-    file fonts/brand/<AlnumName>-<Style>.ttf (Style in Regular/Bold/Italic/
-    BoldItalic). Embedded data wins; the local file is the fallback.
-
-    Title type is the bold/semibold (heading) weights; body type is regular/light/
-    italic. Anything that can't be loaded silently keeps the IBM Plex mapping, so
-    a brand that only ships some weights — or none — never breaks the report."""
-    if getattr(pdf, "_font_family", "") != "IBMPlexSans":   # need the unicode TTF path
-        return
-    b = branding or {}
-    if not (b.get("title_font") or b.get("body_font")):
-        return
-
-    def _tmp_font(raw: bytes, alnum: str, suffix: str) -> str:
-        # Write an embedded TTF to a temp dir tied to the pdf's lifetime (cleaned
-        # when the pdf is GC'd, i.e. after output()), so fpdf can read/embed it.
-        d = getattr(pdf, "_brand_font_tmp", None)
-        if d is None:
-            d = pdf._brand_font_tmp = tempfile.TemporaryDirectory(prefix="brandfont_")
-        path = os.path.join(d.name, f"{alnum}-{suffix}.ttf")
-        with open(path, "wb") as fh:
-            fh.write(raw)
-        return path
-
-    def _register(font_name: str | None, files: dict | None, styles: list[tuple[str, str]]):
-        if not font_name:
-            return None
-        alnum = "".join(c for c in str(font_name) if c.isalnum())
-        fam = "Brand" + alnum
-        files = files if isinstance(files, dict) else {}
-        loaded: set[str] = set()
-        for code, suffix in styles:
-            path = None
-            # 1) embedded base64 (keyed by Style name, or the fpdf style code)
-            blob = files.get(suffix) or files.get(code)
-            if blob:
-                try:
-                    _pl = blob.split(",", 1)[1] if str(blob).strip().startswith("data:") else blob
-                    path = _tmp_font(base64.b64decode(_pl), alnum, suffix)
-                except Exception as e:
-                    print(f"[PDF font] {font_name} {suffix} embedded decode failed: {e}")
-                    path = None
-            # 2) local file fallback
-            if path is None:
-                cand = _FONT_DIR / "brand" / f"{alnum}-{suffix}.ttf"
-                path = str(cand) if cand.exists() else None
-            if path:
-                try:
-                    pdf.add_font(fam, code, path, uni=True)
-                    loaded.add(code)
-                except Exception as e:
-                    print(f"[PDF font] {font_name} {suffix} failed: {e}")
-        if "" not in loaded:
-            print(f"[PDF font] brand font '{font_name}' has no usable regular weight — using IBM Plex")
-            return None
-        print(f"[PDF font] brand font '{font_name}' registered ({sorted(loaded)})")
-        return fam, loaded
-
-    title = _register(b.get("title_font"), b.get("title_font_files"), [("", "Bold")])
-    body  = _register(b.get("body_font"), b.get("body_font_files"),
-                      [("", "Regular"), ("B", "Bold"), ("I", "Italic"), ("BI", "BoldItalic")])
-    if title:
-        tfam, _ = title
-        pdf._sf_map["bold"] = (tfam, "")
-        pdf._sf_map["semibold"] = (tfam, "")
-    if body:
-        bfam, bl = body
-        pdf._sf_map["regular"] = (bfam, "")
-        pdf._sf_map["light"]   = (bfam, "")
-        # Tracked eyebrows/kickers use the BODY font bold (per the reference),
-        # not the title face — keep a dedicated semantic weight for them.
-        pdf._sf_map["body_bold"] = (bfam, "B" if "B" in bl else "")
-        pdf._sf_map["italic"]  = (bfam, "I" if "I" in bl else "")
-        pdf._sf_map["bold_italic"] = (bfam, "BI" if "BI" in bl else ("I" if "I" in bl else ""))
-        if not title and "B" in bl:   # no title font → body bold also carries headings
-            pdf._sf_map["bold"] = (bfam, "B")
-            pdf._sf_map["semibold"] = (bfam, "B")
-
-
-# ──────────────────────────────────────────────────────────────────────────────
-# FPDF subclass
-# ──────────────────────────────────────────────────────────────────────────────
 
 class _NotePDF(FPDF):
     """A4 portrait document with QIS-publication styling and IBM Plex Sans typography."""
@@ -965,31 +829,21 @@ class _NotePDF(FPDF):
         self.set_auto_page_break(auto=True, margin=28)
         self.alias_nb_pages()
         # IBM Plex Sans (Unicode); last resort the built-in Helvetica (Latin-1).
-        if _register_ibm_plex(self):
-            self._font_family = "IBMPlexSans"
+        # The FONT FILES are this repo's (fonts/), not reportkit's bundled copy —
+        # identical bytes either way, but keeping the host's directory as the
+        # source means the extraction cannot change which glyphs get embedded.
+        if _rk_fonts.register_default_family(self, font_dir=_FONT_DIR):
+            self._font_family = _rk_fonts.FAMILY
             self._use_unicode = True
-            self._sf_map = {
-                "regular":     ("IBMPlexSans",      ""),
-                "bold":        ("IBMPlexSans",      "B"),
-                "body_bold":   ("IBMPlexSans",      "B"),
-                "bold_italic": ("IBMPlexSans",      "BI"),
-                "italic":      ("IBMPlexSans",      "I"),
-                "semibold":    ("IBMPlexSansSB",    ""),
-                "light":       ("IBMPlexSansLight", ""),
-            }
+            self._sf_map = dict(_rk_fonts.DEFAULT_STYLE_MAP)
             print("[PDF font] Using IBM Plex Sans")
         else:
+            # Every page renders in Helvetica from here — Latin-1 only, so
+            # `_safe(latin1=True)` becomes load-bearing. This is a whole-document
+            # event, not a detail.
             self._font_family = "Helvetica"
             self._use_unicode = False
-            self._sf_map = {
-                "regular":     ("Helvetica", ""),
-                "bold":        ("Helvetica", "B"),
-                "body_bold":   ("Helvetica", "B"),
-                "bold_italic": ("Helvetica", "BI"),
-                "italic":      ("Helvetica", "I"),
-                "semibold":    ("Helvetica", "B"),
-                "light":       ("Helvetica", ""),
-            }
+            self._sf_map = dict(_rk_fonts.HELVETICA_STYLE_MAP)
             print("[PDF font] Using Helvetica fallback")
 
     # ------------------------------------------------------------------
@@ -4035,7 +3889,7 @@ def _build_pdf_report(
     )
     # Custom brand typography (title_font / body_font) — no-op + IBM Plex fallback
     # when the brand ships no fonts or the TTF files are absent.
-    _register_brand_fonts(pdf, branding)
+    _rk_fonts.register_brand_fonts(pdf, branding, brand_dir=_FONT_DIR / "brand")
     _stamp_attribution(pdf)
     # Usable content width — a page-geometry constant used by every table. Defined
     # here (not inside the Note-Terms block) so later sections never hit an unbound
