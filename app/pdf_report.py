@@ -972,6 +972,10 @@ class _NotePDF(FPDF):
         self.firm_logo_aspect = _logo_aspect(firm_logo_bytes, default=1.0)
         self._is_cover     = False
         self._cover_pages  = set()   # page numbers with no running header/footer (covers)
+        # `{chapter_key: "01"}` from `_plan_chapters` — the numbers the contents
+        # page prints. Empty until `_build_pdf_report` sets it, so a head drawn
+        # without one prints no number rather than a number that means nothing.
+        self.chapter_nums  = {}
         self._fig_no       = 0
         # Round-robin cursor into `filler_image_list` so successive egregious-void
         # photo bands cycle through the chosen images instead of repeating one.
@@ -1120,9 +1124,12 @@ class _NotePDF(FPDF):
 
     # Decorate the page we're leaving (cursor is at the content end here) so any
     # short content page gets its void filled automatically — except covers.
+    #
+    # The test is `_cover_pages` alone. `_is_cover` describes the page ABOUT to
+    # be drawn (every cover builder raises it before calling here), so asking it
+    # about the page being left skipped the last content page ahead of any cover.
     def add_page(self, *args, **kwargs):
-        if (self.page_no() > 0 and not self._is_cover
-                and self.page_no() not in self._cover_pages):
+        if self.page_no() > 0 and self.page_no() not in self._cover_pages:
             self._decorate_void(variant=self.page_no() % 3)
         return super().add_page(*args, **kwargs)
 
@@ -1653,7 +1660,8 @@ class _NotePDF(FPDF):
         x0 = self.l_margin
         w  = self.w - self.l_margin - self.r_margin
         self.add_page()
-        self.secondary_head("03", _t("kick_underlying", self.lang),
+        self.secondary_head(self.chapter_nums.get("underlying", ""),
+                            _t("kick_underlying", self.lang),
                             self._safe(long_name), badge=ticker,
                             badge_color=(color or self.primary_color),
                             badge_logo=logo_bytes)
@@ -3133,6 +3141,100 @@ def _full_bleed_disclaimer(pdf: _NotePDF, lang: str, text: str, website: str = "
     pdf._is_cover = False
 
 
+# ──────────────────────────────────────────────────────────────────────────────
+# Report outline — the single source of the chapter numbers
+# ──────────────────────────────────────────────────────────────────────────────
+# The cover's "In this report" list and the numbered heads in the body used to
+# count independently, and agreed on nothing past the first entry. The cover
+# numbered every LEAF (01 Note Terms · 02 Underlying Breakdown · 03 Payoff &
+# Distribution · …) while the body numbered CHAPTERS from hard-coded literals
+# (01 Note Terms · 03 Underlying · 04 Monte Carlo · 05 Backtest · …). So the
+# cover's "04 Price Paths" and the body's "04 · Monte Carlo" were different
+# things, the body skipped a number whenever a chapter was toggled off (no
+# issuer ⇒ 01 then 03), and the Comparison chapter was numbered in the body but
+# missing from the list altogether.
+#
+# Both surfaces now read `_plan_chapters`. A number printed on a page and the
+# same number in the contents list cannot drift, and toggling a chapter off
+# renumbers both. Sub-sections inside a lens are deliberately NOT numbered —
+# they carry no number in the body either, so numbering them in the list was
+# what invented the second, conflicting sequence.
+_CHAPTERS = ("note_terms", "issuer", "underlying", "mc", "bt", "live", "compare")
+
+
+def _plan_chapters(present: dict) -> dict:
+    """`{chapter_key: bool}` → `{chapter_key: "01"}`, numbered in document order.
+
+    Absent/false chapters get no entry, so a caller that renders a chapter it
+    did not declare present prints an empty number rather than a wrong one.
+    """
+    out, n = {}, 0
+    for key in _CHAPTERS:
+        if present.get(key):
+            n += 1
+            out[key] = f"{n:02d}"
+    return out
+
+
+# Which projected metrics the A/B table reports, and how to format each.
+_CMP_LBL = {
+    "expected_irr":            ("expected_irr",        "pct"),
+    "expected_total_return":   ("total_return_short",  "pct"),
+    "expected_coupon":         ("expected_coupon",     "pct"),
+    "expected_nominal_payout": ("expected_redemption", "pct"),
+    "prob_autocall":           ("prob_autocall",       "pct"),
+    "prob_knock_in_total":     ("prob_knock_in",       "pct"),
+    "avg_time_to_autocall":    ("avg_time_autocall",   "months"),
+    "expected_gain":           ("expected_gain",       "pct"),
+    "prob_above_par":          ("p_above_par",         "pct"),
+    "prob_at_cap":             ("p_at_cap",            "pct"),
+    "prob_knocked_out":        ("p_knocked_out",       "pct"),
+    "p5_redemption":           ("p5_redemption",       "pct"),
+    "prob_loss":               ("p_loss",              "pct"),
+    "cost_basis":              ("cost_basis",          "pct"),
+}
+
+
+def _compare_tables(terms, compare_data, lang: str):
+    """`(differing-terms rows, projected-metric rows)` for the Comparison chapter.
+
+    Pure data prep, split out from the rendering block because the outline has to
+    know whether the chapter has any content before the contents page is drawn —
+    a comparison whose tables are both empty is not a chapter.
+    """
+    if not compare_data:
+        return [], []
+
+    diff_terms = []
+    terms_b = compare_data.get("terms_b")
+    if terms_b is not None:
+        rows_a = _term_rows(terms, lang)
+        map_b  = dict(_term_rows(terms_b, lang))
+        diff_terms = [[lbl, av, map_b.get(lbl, "—")]
+                      for lbl, av in rows_a if map_b.get(lbl, "—") != av]
+
+    def _val(v, kind):
+        if v is None or v != v:                                   # nan-safe
+            return "—"
+        return f"{v * 12:.1f} mo" if kind == "months" else f"{v:.2%}"
+
+    def _dlt(d, kind):
+        if d is None or d != d:
+            return "—"
+        sgn = "+" if d >= 0 else ""
+        return f"{sgn}{d * 12:.1f} mo" if kind == "months" else f"{sgn}{d:.2%}"
+
+    cmp_rows = []
+    for r in compare_data.get("diff", {}).get("rows", []):
+        m = _CMP_LBL.get(r.get("key"))
+        if not m:
+            continue
+        lbl, kind = m
+        cmp_rows.append([_t(lbl, lang), _val(r.get("a"), kind),
+                         _val(r.get("b"), kind), _dlt(r.get("delta"), kind)])
+    return diff_terms, cmp_rows
+
+
 def _cover_page(
     pdf: _NotePDF,
     terms,
@@ -3146,6 +3248,8 @@ def _cover_page(
     logo_tickers: dict[str, str] | None = None,
     inc=None,
     logo_overrides: dict[str, bytes] | None = None,
+    chapters: dict | None = None,
+    compare_data=None,
 ):
     # inc(section_key) -> bool: which optional sections are included, so the
     # cover "In this report" list matches the body. Defaults to all-on.
@@ -3520,46 +3624,64 @@ def _cover_page(
         yy += 8.0
     ry += rail_h + 6.0
 
-    # ── Right rail: In this report (grouped, numbered contents) ────────────
+    # ── Right rail: In this report (grouped contents) ──────────────────────
+    # Entries are `(head, head_number, [sub-section titles])`. A chapter's number
+    # comes from `chapters` — the same mapping the body's numbered heads read —
+    # and a chapter absent from it is one the body will not render, so it is not
+    # listed either. Sub-sections stay unnumbered: they carry no number on the
+    # page, and numbering them here is what used to invent a second sequence
+    # that disagreed with every heading in the document.
+    _ch = chapters or {}
     _n_assets = len(asset_names or [])
     _any_fan  = any(inc(f"mc_fan_{i}") for i in range(_n_assets))
     toc_groups = []
     _top = []
-    if inc("note_terms"):
-        _top.append(_t("note_terms", lang))
-    if getattr(terms, "issuer", "") and inc("issuer_info"):
-        _top.append(_t("issuer_info", lang))
-    if inc("underlying_breakdown"):
-        _top.append(_t("underlying_breakdown", lang))
+    if _ch.get("note_terms"):
+        _top.append((_t("note_terms", lang), _ch["note_terms"]))
+    if _ch.get("issuer"):
+        _top.append((_t("issuer_info", lang), _ch["issuer"]))
+    if _ch.get("underlying"):
+        _top.append((_t("underlying_breakdown", lang), _ch["underlying"]))
     if _top:
-        toc_groups.append((None, _top))
-    _mc = []
-    if inc("mc_metrics") or inc("mc_irr") or inc("mc_autocall"):
-        _mc.append(_t("mc_subtab_payoff", lang))
-    if inc("mc_wof") or _any_fan:
-        _mc.append(_t("mc_subtab_paths", lang))
-    if inc("mc_single_wof"):
-        _mc.append(_t("mc_subtab_explorer", lang))
-    if results.get("params") and (inc("calib_table") or inc("calib_corr")):
-        _mc.append(_t("calibration", lang))
-    if _mc:
-        toc_groups.append((_t("lens_mc", lang), _mc))
-    _bt = []
-    if bt_summary and (inc("bt_metrics") or inc("bt_outcome") or inc("bt_pie") or inc("bt_irr")):
-        _bt.append(_t("bt_subtab_outcomes", lang))
-    if bt_summary and inc("bt_prices"):
-        _bt.append(_t("bt_subtab_prices", lang))
-    if _bt:
-        toc_groups.append((_t("lens_bt", lang), _bt))
-    if live_data and (inc("live_metrics") or inc("live_asset_table")
-                      or inc("live_obs_table") or inc("live_chart")):
+        toc_groups.append((None, None, _top))
+    if _ch.get("mc"):
+        _mc = []
+        if inc("mc_metrics") or inc("mc_irr") or inc("mc_autocall"):
+            _mc.append(_t("mc_subtab_payoff", lang))
+        if inc("mc_wof") or _any_fan:
+            _mc.append(_t("mc_subtab_paths", lang))
+        if inc("mc_single_wof"):
+            _mc.append(_t("mc_subtab_explorer", lang))
+        if results.get("params") and (inc("calib_table") or inc("calib_corr")):
+            _mc.append(_t("calibration", lang))
+        toc_groups.append((_t("lens_mc", lang), _ch["mc"], _mc))
+    if _ch.get("bt"):
+        _bt = []
+        if inc("bt_metrics") or inc("bt_outcome") or inc("bt_pie") or inc("bt_irr"):
+            _bt.append(_t("bt_subtab_outcomes", lang))
+        if inc("bt_prices"):
+            _bt.append(_t("bt_subtab_prices", lang))
+        toc_groups.append((_t("lens_bt", lang), _ch["bt"], _bt))
+    if _ch.get("live"):
         _live = []
         if inc("live_asset_table"):
             _live.append(_t("live_asset_perf", lang))
         if inc("live_obs_table"):
             _live.append(_t("live_obs_history", lang))
-        toc_groups.append((_t("lens_live", lang), _live))
-    toc_groups.append((None, [_t("glossary_title", lang), _t("disclaimer_title", lang)]))
+        toc_groups.append((_t("lens_live", lang), _ch["live"], _live))
+    if _ch.get("compare"):
+        # The comparison chapter printed a numbered banner in the body but never
+        # appeared in this list at all.
+        _cmp = []
+        if (compare_data or {}).get("terms_b") is not None:
+            _cmp.append(_t("cmp_terms_title", lang))
+        if (compare_data or {}).get("diff", {}).get("rows"):
+            _cmp.append(_t("cmp_metrics_title", lang))
+        toc_groups.append((_t("lens_compare", lang), _ch["compare"], _cmp))
+    # Reference matter — unnumbered in the body (`start_section`), so unnumbered
+    # here too.
+    toc_groups.append((None, None, [(_t("glossary_title", lang), None),
+                                    (_t("disclaimer_title", lang), None)]))
 
     pdf._eyebrow(Rx, ry, _t("in_this_report", lang), pdf.muted,
                  size=8.0, tracking=0.6, w=Rw)
@@ -3570,42 +3692,52 @@ def _cover_page(
     _toc_bottom = pdf.h - 14.0
     _toc_avail  = _toc_bottom - _toc_top
     _gap        = 1.2
-    _n_heads    = sum(1 for nm, _ in toc_groups if nm is not None)
-    _n_rows     = sum(len(lv) for _, lv in toc_groups) + _n_heads
+    _n_heads    = sum(1 for nm, _, _ in toc_groups if nm is not None)
+    _n_rows     = sum(len(lv) for _, _, lv in toc_groups) + _n_heads
     _row_h      = 5.4
     if _n_rows > 0 and (_n_rows * _row_h + _n_heads * _gap) > _toc_avail:
         _scale = min(1.0, max(0.0, _toc_avail - _n_heads * _gap) / (_n_rows * _row_h))
         _row_h = max(3.9, _row_h * _scale)
         _gap   = _gap * _scale
     _yc = [ry]
-    _ix = [1]
+    _NUM_W = 7.0
 
-    def _toc_leaf(text, indent=0.0):
+    def _toc_leaf(text, number=None, indent=0.0):
+        if number:
+            pdf.set_xy(Rx + indent, _yc[0])
+            pdf._sf(7.5, "bold"); pdf.set_text_color(*pdf.lime)
+            pdf.cell(_NUM_W, _row_h, number)
+            indent += _NUM_W
         pdf.set_xy(Rx + indent, _yc[0])
-        pdf._sf(7.5, "bold"); pdf.set_text_color(*pdf.lime)
-        pdf.cell(7.0, _row_h, f"{_ix[0]:02d}")
-        _ix[0] += 1
-        pdf.set_xy(Rx + indent + 7.0, _yc[0])
         pdf._sf(8.0, "regular"); pdf.set_text_color(*pdf.body_ink)
-        pdf.cell(Rw - indent - 7.0, _row_h, _safe(text))
+        pdf.cell(Rw - indent, _row_h, _safe(text))
         pdf.set_draw_color(*_RULE_SOFT); pdf.set_line_width(0.2)
         pdf.line(Rx, _yc[0] + _row_h, Rx + Rw, _yc[0] + _row_h)
         _yc[0] += _row_h
 
-    def _toc_head(name):
+    def _toc_head(name, number=None):
         _yc[0] += _gap
-        pdf._eyebrow(Rx, _yc[0] + 0.4, name, pdf.primary_color,
-                     size=7.0, tracking=0.5, w=Rw)
+        _ind = 0.0
+        if number:
+            pdf.set_xy(Rx, _yc[0])
+            pdf._sf(7.5, "bold"); pdf.set_text_color(*pdf.lime)
+            pdf.cell(_NUM_W, _row_h, number)
+            _ind = _NUM_W
+        pdf._eyebrow(Rx + _ind, _yc[0] + 0.4, name, pdf.primary_color,
+                     size=7.0, tracking=0.5, w=Rw - _ind)
         _yc[0] += _row_h
 
-    for name, leaves in toc_groups:
+    for name, number, leaves in toc_groups:
         if name is not None:
-            _toc_head(name)
+            # A lens: the chapter number sits on the head, and its sub-sections
+            # hang under it aligned to the head's text — unnumbered, because
+            # nothing numbers them on the page either.
+            _toc_head(name, number)
             for leaf in leaves:
-                _toc_leaf(leaf, indent=3.0)
+                _toc_leaf(leaf, None, indent=_NUM_W)
         else:
-            for leaf in leaves:
-                _toc_leaf(leaf)
+            for leaf, leaf_no in leaves:
+                _toc_leaf(leaf, leaf_no)
 
     # Client / short reports leave a big empty band below the left stack — fill
     # the shorter left column with a tall brand photo when one is available
@@ -4386,20 +4518,12 @@ def _build_pdf_report(
     pdf.cover_sigil_size_pct = _opt_num("cover_sigil_size_pct")
     pdf.cover_sigil_opacity  = _opt_num("cover_sigil_opacity")
 
-    # ── 0. Front cover (toggleable, default on) ────────────────────────────
-    if _inc("cover"):
-        _front_cover_page(pdf, terms, lang, report_title, website, report_kind)
-
-    # ── 1. Summary / contents page ─────────────────────────────────────────
-    _cover_page(pdf, terms, results, asset_names, bt_summary, live_data, lang,
-                logo_urls, issuer_logo_bytes, logo_tickers, inc=_inc,
-                logo_overrides=_logo_ovr)
-
-    # ── 2. Note terms + observation schedule (each toggleable) ──────────────
-    # The first content page. Note Terms, the Observation Schedule, the Issuer
-    # block and the Underlying Breakdown are all toggleable from the Build-report
-    # panel's "Note details" category; with include_sections=None (programmatic
-    # callers) every one renders, so existing callers are unaffected.
+    # ── Outline ────────────────────────────────────────────────────────────
+    # Decide which chapters this report actually contains BEFORE the contents
+    # page is drawn, because the contents page is page 2 and the body that it
+    # lists has not run yet. Each flag below is the OR of exactly the conditions
+    # the corresponding block uses further down, hoisted here so the list and the
+    # headings are settled by one evaluation instead of two guesses.
     _show_terms = _inc("note_terms")
     # The observation schedule (coupon / autocall ladder) is a Phoenix concept — a
     # Participation note is a single maturity payoff, so it doesn't apply there.
@@ -4407,11 +4531,90 @@ def _build_pdf_report(
     _show_obs   = _inc("obs_schedule") and not _is_part_note
     _show_diag  = _inc("note_diagram")
     _show_desc  = _inc("note_description")
+
+    bt_figures  = bt_figures or {}
+    params      = results.get("params", [])
+    prob_by_period = results.get("prob_autocall_by_period", [])
+    # Back-compat: sessions from before multi-panel only stored one wof figure.
+    _panels = figures.get("panels")
+    if not _panels and figures.get("single_path_wof") is not None:
+        _panels = [{"title": None, "wof": figures.get("single_path_wof"),
+                    "num": figures.get("single_path_num", 0)}]
+    _bt_panels = bt_figures.get("panels") or []
+
+    _has_mc = bool(
+        _inc("mc_metrics")
+        or (_inc("mc_outcome") and figures.get("outcome") is not None)
+        or _inc("mc_irr")
+        or (_inc("mc_autocall") and any(p > 0 for p in prob_by_period))
+        or _inc("mc_wof")
+        # The per-asset fans are indexed off `figures["individual"]`, not off
+        # `asset_names` — a figure set can be short of one.
+        or any(_inc(f"mc_fan_{i}")
+               for i in range(len(figures.get("individual") or [])))
+        or (_inc("mc_sample") and figures.get("sample") is not None)
+        or (_inc("mc_single_wof")
+            and (any(p.get("wof") is not None for p in (_panels or []))
+                 or any(pi.get("png") for pi in (figures.get("panel_images") or []))))
+        or (params and _inc("calib_table"))
+        or (_inc("calib_corr") and figures.get("corr") is not None)
+    )
+    _has_bt = bool(bt_summary) and bool(
+        _inc("bt_metrics")
+        or (_inc("bt_outcome") and bt_figures.get("outcome") is not None)
+        or (_inc("bt_pie") and bt_figures.get("pie") is not None)
+        or (_inc("bt_irr") and bt_figures.get("irr_scatter") is not None)
+        or (_inc("bt_prices") and bt_figures.get("prices") is not None)
+        or (_inc("bt_path") and _bt_panels)
+    )
+    _has_live = bool(live_data) and bool(
+        _inc("live_metrics")
+        or (_inc("live_asset_table") and live_data.get("perf_today"))
+        or (_inc("live_obs_table") and live_data.get("obs_rows"))
+        or (_inc("live_chart") and live_figure is not None)
+    )
+    # The comparison tables are built here rather than at the point of use: the
+    # chapter only exists if one of them has rows, and that has to be known
+    # before the contents page is drawn.
+    _diff_terms, _cmp_rows = _compare_tables(terms, compare_data, lang)
+    _cmp_figs = compare_figures or {}
+    _has_cmp = bool(compare_data) and bool(
+        _diff_terms or _cmp_rows
+        or _cmp_figs.get("irr") is not None or _cmp_figs.get("outcome") is not None
+    )
+
+    _chap = _plan_chapters({
+        "note_terms": _show_terms or _show_obs or _show_diag or _show_desc,
+        "issuer":     bool(pdf.issuer) and _inc("issuer_info"),
+        "underlying": bool(underlying_metrics) and _inc("underlying_breakdown"),
+        "mc":         _has_mc,
+        "bt":         _has_bt,
+        "live":       _has_live,
+        "compare":    _has_cmp,
+    })
+    # `underlying_block` draws one page per underlying and needs the number.
+    pdf.chapter_nums = _chap
+
+    # ── 0. Front cover (toggleable, default on) ────────────────────────────
+    if _inc("cover"):
+        _front_cover_page(pdf, terms, lang, report_title, website, report_kind)
+
+    # ── 1. Summary / contents page ─────────────────────────────────────────
+    _cover_page(pdf, terms, results, asset_names, bt_summary, live_data, lang,
+                logo_urls, issuer_logo_bytes, logo_tickers, inc=_inc,
+                logo_overrides=_logo_ovr, chapters=_chap, compare_data=compare_data)
+
+    # ── 2. Note terms + observation schedule (each toggleable) ──────────────
+    # The first content page. Note Terms, the Observation Schedule, the Issuer
+    # block and the Underlying Breakdown are all toggleable from the Build-report
+    # panel's "Note details" category; with include_sections=None (programmatic
+    # callers) every one renders, so existing callers are unaffected.
     if _show_terms or _show_obs or _show_diag or _show_desc:
         pdf.add_page()
         usable = pdf.w - pdf.l_margin - pdf.r_margin
         # 01 · Note Terms secondary head for the whole reference section.
-        pdf.secondary_head("01", _t("kick_note_terms", lang), _t("nt_page_title", lang))
+        pdf.secondary_head(_chap.get("note_terms", ""), _t("kick_note_terms", lang),
+                           _t("nt_page_title", lang))
         if _show_desc:
             # Systematic prose blurb (override or auto-generated from the terms).
             from core.note_description import describe_note
@@ -4477,8 +4680,8 @@ def _build_pdf_report(
             (_t("rating_fitch", lang), getattr(terms, "issuer_rating_fitch", "") or ""),
         ]
         _ratings = [(l, v) for l, v in _ratings if v.strip()]
-        pdf.secondary_head("02", _t("kick_issuer", lang), _t("issuer_info", lang),
-                           min_room=70.0)
+        pdf.secondary_head(_chap.get("issuer", ""), _t("kick_issuer", lang),
+                           _t("issuer_info", lang), min_room=70.0)
         pdf.issuer_info_block(pdf.issuer, issuer_logo_bytes, _issuer_desc, _ratings)
 
     # ── 2c. Underlying Breakdown (per-underlying summary + 1Y price chart) ───
@@ -4583,7 +4786,7 @@ def _build_pdf_report(
 
     # Lens 1 of 3 — the forward-looking model. Drawn once, before whichever MC
     # sub-section renders first.
-    _mc_div = _lazy_divider("04", _t("lens_mc", lang), _t("sec_mc_heading", lang))
+    _mc_div = _lazy_divider(_chap.get("mc", ""), _t("lens_mc", lang), _t("sec_mc_heading", lang))
 
     # 3a. Payoff & Distribution — summary metrics, IRR distribution, autocall table.
     # Reserve enough room for the metric band + the IRR figure so the section
@@ -4635,7 +4838,6 @@ def _build_pdf_report(
     if _inc("mc_irr"):
         _sec()
         pdf.figure(_fig_to_png(figures.get("irr_dist"), **_kw), _t("fig_irr", lang), src_mc)
-    prob_by_period = results.get("prob_autocall_by_period", [])
     # Skip when the note can't autocall (participation ⇒ all-zero) — the table is
     # meaningless there, and `obs_times` isn't bound (the obs schedule is hidden).
     if _inc("mc_autocall") and any(p > 0 for p in prob_by_period):
@@ -4684,11 +4886,6 @@ def _build_pdf_report(
     # default "Worst-of path #N"). The per-asset price chart was removed from the
     # explorer, so it is no longer in the report either.
     _sec = _lazy_section(_t("mc_subtab_explorer", lang), before=_mc_div)
-    _pn = figures.get("single_path_num", 0)
-    # Back-compat: sessions from before multi-panel only stored one wof figure.
-    _panels = figures.get("panels")
-    if not _panels and figures.get("single_path_wof") is not None:
-        _panels = [{"title": None, "wof": figures.get("single_path_wof"), "num": _pn}]
     if _inc("mc_single_wof") and _panels:
         for _p in _panels:
             if _p.get("wof") is None:
@@ -4709,7 +4906,6 @@ def _build_pdf_report(
     # ── 4. Calibration ─────────────────────────────────────────────────────
     # Still part of the Monte Carlo lens (the model behind the simulation), so it
     # carries the same "01" divider rather than opening a new part.
-    params = results.get("params", [])
     _sec = _lazy_section(_t("calibration", lang), before=_mc_div)
     if params and _inc("calib_table"):
         _sec()
@@ -4762,9 +4958,8 @@ def _build_pdf_report(
                    _t("fig_corr", lang), _t("src_hist", lang), w=105, h=86)
 
     # ── 5. Historical backtest ─────────────────────────────────────────────
-    bt_figures = bt_figures or {}
     # Lens 2 of 3 — the realised-history lens.
-    _bt_div = _lazy_divider("05", _t("lens_bt", lang), _t("sec_bt_heading", lang))
+    _bt_div = _lazy_divider(_chap.get("bt", ""), _t("lens_bt", lang), _t("sec_bt_heading", lang))
     # 5a. Outcomes & Summary — metrics, outcome bar, worst-asset pie, IRR scatter.
     # Same keep-together reserve as the MC payoff section (band + first chart).
     _sec = _lazy_section(_t("bt_subtab_outcomes", lang), min_room=150.0, before=_bt_div)
@@ -4825,7 +5020,6 @@ def _build_pdf_report(
 
     # 5c. Historical Path Explorer — one worst-of path per comparison panel, with
     # the user's panel title (or the issue date). Mirrors the on-screen explorer.
-    _bt_panels = bt_figures.get("panels") or []
     if bt_summary and _inc("bt_path") and _bt_panels:
         _bt_div()
         pdf.start_section(_t("bt_subtab_explorer", lang))
@@ -4839,7 +5033,8 @@ def _build_pdf_report(
     if live_data:
         # Lens 3 of 3 — the live, today lens. No section_title: the divider names
         # it; the metric band and the asset/observation sub-tables follow.
-        _live_div = _lazy_divider("06", _t("lens_live", lang), _t("sec_live_heading", lang))
+        _live_div = _lazy_divider(_chap.get("live", ""), _t("lens_live", lang),
+                                  _t("sec_live_heading", lang))
         if _inc("live_metrics"):
             _live_div()
             pdf.metric_band([
@@ -4891,64 +5086,23 @@ def _build_pdf_report(
     # Optional lens: a side-by-side of the primary note (A) and a variant (B).
     # Renders a differing-terms table, a projected-metrics A/B/Δ table and the
     # overlaid IRR + outcome charts. Only present when a Note B was supplied.
-    if compare_data:
-        _cmp_figs = compare_figures or {}
-        _cmp_div = _lazy_divider("07", _t("lens_compare", lang), _t("sec_compare_heading", lang))
+    if _has_cmp:
+        _cmp_div = _lazy_divider(_chap.get("compare", ""), _t("lens_compare", lang),
+                                 _t("sec_compare_heading", lang))
 
         # 6b-i. Differing terms — one row per term that changed between A and B.
-        _terms_b = compare_data.get("terms_b")
-        if _terms_b is not None:
-            _rows_a = _term_rows(terms, lang)
-            _map_b  = dict(_term_rows(_terms_b, lang))
-            _diff_terms = [[lbl, av, _map_b.get(lbl, "—")]
-                           for lbl, av in _rows_a if _map_b.get(lbl, "—") != av]
-            if _diff_terms:
-                _cmp_div()
-                pdf.start_section(_t("cmp_terms_title", lang),
-                                  min_room=_table_room(len(_diff_terms)))
-                pdf.data_table(
-                    [_t("cmp_col_term", lang), _t("cmp_col_a", lang), _t("cmp_col_b", lang)],
-                    _diff_terms,
-                    col_widths=[usable * 0.4, usable * 0.3, usable * 0.3],
-                    aligns=["L", "R", "R"])
+        # (Both tables are built by `_compare_tables`, above the contents page.)
+        if _diff_terms:
+            _cmp_div()
+            pdf.start_section(_t("cmp_terms_title", lang),
+                              min_room=_table_room(len(_diff_terms)))
+            pdf.data_table(
+                [_t("cmp_col_term", lang), _t("cmp_col_a", lang), _t("cmp_col_b", lang)],
+                _diff_terms,
+                col_widths=[usable * 0.4, usable * 0.3, usable * 0.3],
+                aligns=["L", "R", "R"])
 
         # 6b-ii. Projected metrics — A · B · Δ.
-        _CMP_LBL = {
-            "expected_irr":            ("expected_irr",        "pct"),
-            "expected_total_return":   ("total_return_short",  "pct"),
-            "expected_coupon":         ("expected_coupon",     "pct"),
-            "expected_nominal_payout": ("expected_redemption", "pct"),
-            "prob_autocall":           ("prob_autocall",       "pct"),
-            "prob_knock_in_total":     ("prob_knock_in",       "pct"),
-            "avg_time_to_autocall":    ("avg_time_autocall",   "months"),
-            "expected_gain":           ("expected_gain",       "pct"),
-            "prob_above_par":          ("p_above_par",         "pct"),
-            "prob_at_cap":             ("p_at_cap",            "pct"),
-            "prob_knocked_out":        ("p_knocked_out",       "pct"),
-            "p5_redemption":           ("p5_redemption",       "pct"),
-            "prob_loss":               ("p_loss",              "pct"),
-            "cost_basis":              ("cost_basis",          "pct"),
-        }
-
-        def _cmp_val(v, kind):
-            if v is None or v != v:                                   # nan-safe
-                return "—"
-            return f"{v * 12:.1f} mo" if kind == "months" else f"{v:.2%}"
-
-        def _cmp_dlt(d, kind):
-            if d is None or d != d:
-                return "—"
-            _sgn = "+" if d >= 0 else ""
-            return f"{_sgn}{d * 12:.1f} mo" if kind == "months" else f"{_sgn}{d:.2%}"
-
-        _cmp_rows = []
-        for _r in compare_data.get("diff", {}).get("rows", []):
-            _m = _CMP_LBL.get(_r.get("key"))
-            if not _m:
-                continue
-            _lbl, _kind = _m
-            _cmp_rows.append([_t(_lbl, lang), _cmp_val(_r.get("a"), _kind),
-                              _cmp_val(_r.get("b"), _kind), _cmp_dlt(_r.get("delta"), _kind)])
         if _cmp_rows:
             _cmp_div()
             pdf.start_section(_t("cmp_metrics_title", lang),
@@ -5019,10 +5173,6 @@ def _build_pdf_report(
             pdf.write(4.4, pdf._safe(_defn))
             pdf.ln(6.2)
     pdf.set_text_color(*_TEXT)
-    # The disclaimer back page sets `_is_cover` before its add_page, so the
-    # add_page override won't decorate the glossary's (often large) trailing
-    # void — fill it explicitly here while this is still a content page.
-    pdf._decorate_void(variant=pdf.page_no() % 3)
 
     # ── 8. Disclaimers (own back page) ─────────────────────────────────────
     _disclaimer_text = (_brand_text(_b.get("disclaimer_body"), lang)

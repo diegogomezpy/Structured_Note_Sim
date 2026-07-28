@@ -351,7 +351,18 @@ class ReportTheme:
     def footer(self, pdf) -> None:
         # The cover renders its own self-contained bottom disclaimer band; the
         # running footer would overprint it, so skip it on cover pages.
-        if pdf._is_cover or pdf.page_no() in pdf._cover_pages:
+        #
+        # `_cover_pages` and NOT `_is_cover`: fpdf2 renders the CLOSING page's
+        # footer from inside `add_page()`, and every cover builder sets
+        # `_is_cover = True` *before* its `add_page()` — so consulting the flag
+        # here asks "is the page I am about to draw a cover?" when the question
+        # is "is the page I am finishing one?". That stripped the footer off the
+        # last content page before any cover, most visibly the glossary's.
+        # `_cover_pages` is keyed by page number, so it cannot be ambiguous; a
+        # cover is registered in it immediately after `add_page()` and covers
+        # disable auto page break, so nothing can break out of one before the
+        # entry lands.
+        if pdf.page_no() in pdf._cover_pages:
             return
         pdf.set_draw_color(*pdf.rule_soft)
         pdf.set_line_width(0.2)
@@ -851,7 +862,11 @@ class SpecTheme(ReportTheme):
 
     # ── empty-space decoration ─────────────────────────────────────────────
     def decorate_void(self, pdf, variant=0, min_gap=44.0) -> None:
-        if pdf._is_cover or pdf.page_no() in pdf._cover_pages:
+        # `_cover_pages`, not `_is_cover` — same reason as `footer()`: the void of
+        # the page being LEFT is filled from inside `add_page()`, where the flag
+        # already describes the cover about to be drawn. That is why the glossary
+        # had to fill its own trailing void by hand.
+        if pdf.page_no() in pdf._cover_pages:
             return
         y = pdf.get_y() + 4.0
         floor = pdf.h - 28.0

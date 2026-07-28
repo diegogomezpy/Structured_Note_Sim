@@ -197,6 +197,18 @@ Discipline to preserve: don't retain the float64 working set (raw S/V paths, sta
 
 The report generator is being extracted into **`reportkit/`**, a domain-agnostic package with **no imports from `app/`, `core/`, or `data/`** so it's reusable by other projects. `reportkit.theme` owns the visual-identity layer (below); `reportkit.images` holds small image helpers (`cover_crop`). `app/pdf_report.py` is the Structured-Note **adapter** — it maps `NoteTerms`/results onto the themed document and registers note-specific blocks (structure diagram, participation profile, glossary content), keeping the public `generate_pdf_report()` entry point so `api/engine.py` is unchanged. (In progress: a declarative theme spec so themes are authorable data; a generic `ReportDocument` builder; `reportkit.branding`.)
 
+## PDF outline — one source for the chapter numbers
+
+The report has exactly **seven possible numbered chapters**, in this order: Note Terms · Issuer · Underlying Breakdown · Monte Carlo · Historical Backtest · Current Performance · Comparison (`_CHAPTERS` in `app/pdf_report.py`). The first three head a page with `secondary_head`; the last four open an analytical lens with `section_divider`. Everything else — Payoff & Distribution, Price Paths, the glossary, the disclaimer — is a **sub-section and carries no number anywhere**.
+
+`_plan_chapters({key: bool}) -> {key: "01"}` numbers whatever is present, in that order. It is the **only** place a chapter number is decided; the cover's "In this report" list and the body's heads both read the mapping (`pdf.chapter_nums` for `underlying_block`, which draws one page per underlying). Consequences:
+
+- **Never write a number literal in a head call.** The old literals meant the body skipped a number whenever a chapter was toggled off (no issuer ⇒ 01 then 03), and the cover — which numbered every *leaf* — printed a different sequence entirely, so its "04 Price Paths" and the body's "04 · Monte Carlo" were different things.
+- **The presence flags are hoisted above the cover** in `_build_pdf_report` (`_has_mc`, `_has_bt`, `_has_live`, `_has_cmp`), because the contents page is page 2 and the body it lists has not run yet. Each is the OR of exactly the conditions its block uses; adding an item to a lens means adding its condition to that OR. `_compare_tables()` exists for this reason — the comparison chapter only exists if one of its tables has rows, which has to be known before the cover is drawn.
+- Adding a chapter: extend `_CHAPTERS`, add its flag to the `_plan_chapters` call, list it in `_cover_page`'s `toc_groups`, and pass `_chap[key]` to its head. `tests/test_pdf_layout.py` asserts the printed numbers and the contents list are the same gapless `01..N` sequence, over every theme.
+
+**Cover pages and `_is_cover`.** `_is_cover` describes the page **about to be drawn** — every cover builder raises it *before* its `add_page()`. fpdf2 renders the closing page's footer from inside `add_page()`, so any "is the current page a cover?" test must use **`_cover_pages`** (keyed by page number), never the flag. Consulting the flag is what stripped the footer off the glossary and stopped its trailing void being decorated. `_is_cover` is load-bearing for **`header()` only**, which runs for the new page before it can be registered.
+
 ## PDF report themes (pluggable visual identity)
 
 The report's *look* is a swappable **theme**, separate from its *content*. `reportkit/theme.py` owns the visual-identity layer; `app/pdf_report.py` owns the content (tables, metric bands, figures, glossary, cover copy, chart rebranding) and delegates every chrome surface to the active theme.

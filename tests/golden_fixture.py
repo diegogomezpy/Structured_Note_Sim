@@ -80,7 +80,7 @@ def _noise(w: int, h: int, seed: int) -> str:
 
 
 def render_report(theme: str, kind: str = "phoenix", *, real_figures: bool = False,
-                  lang: str = "en") -> bytes:
+                  lang: str = "en", include_sections: list[str] | None = None) -> bytes:
     """Build one report through the real ``_build_pdf_report`` entry point.
 
     The single render path for every PDF test — the golden's pixel diff and the
@@ -106,6 +106,11 @@ def render_report(theme: str, kind: str = "phoenix", *, real_figures: bool = Fal
             figures=figures(terms),
             lang=lang,
             branding=branding(theme),
+            # None ⇒ every section, which is what the golden pins. A list lets a
+            # structural test render a report with chapters switched off — the
+            # case where the contents list and the body headings have to agree
+            # on a renumbering rather than on the full document.
+            include_sections=include_sections,
             logo_urls=None,
             issuer_logo_url=None,
             logo_tickers={name: sym for sym, name in terms.tickers.items()},

@@ -21,6 +21,8 @@ orphan. That is exact, and it fails with the heading's own text in the message.
 """
 from __future__ import annotations
 
+import re
+
 import pytest
 
 pytest.importorskip("fpdf")
@@ -211,3 +213,140 @@ def test_table_room_matches_data_table_break_rule(n_obs, expect_together):
         # demanding the full height would waste a page before every long table.
         assert reserved < P._PAGE_CAP
     assert expect_together
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Outline invariants — the contents list and the pages must agree
+# ──────────────────────────────────────────────────────────────────────────────
+# The cover's "In this report" list numbered every leaf while the body numbered
+# chapters from hard-coded literals, so the two sequences described different
+# things: the cover's "04 Price Paths" against the body's "04 · Monte Carlo".
+# They also disagreed on omission (no issuer ⇒ the body jumped 01 → 03) and on
+# membership (the Comparison chapter was numbered on the page but absent from
+# the list). These pin the agreement rather than either sequence.
+
+def _render_and_read(theme: str, *, kind: str = "phoenix",
+                     include_sections: list[str] | None = None):
+    """Render, and return `(body_numbers, contents_numbers, cover_pages, pages)`.
+
+    Body numbers are captured by instrumenting the two numbered heading calls —
+    exact, unlike scraping them back out of the page text. The contents list is
+    read from the rendered page, because the point is to check what a reader
+    actually sees on it, not what was passed to the builder.
+    """
+    import pypdfium2 as pdfium
+    import pdf_report
+
+    cls = pdf_report._NotePDF
+    body: list[str] = []
+    built: list = []
+    orig_sec, orig_div = cls.secondary_head, cls.section_divider
+    orig_init = cls.__init__
+
+    def sec(self, number, *a, **k):
+        body.append(number)
+        return orig_sec(self, number, *a, **k)
+
+    def div(self, number, *a, **k):
+        body.append(number)
+        return orig_div(self, number, *a, **k)
+
+    def init(self, *a, **k):
+        orig_init(self, *a, **k)
+        built.append(self)
+
+    cls.secondary_head, cls.section_divider, cls.__init__ = sec, div, init
+    try:
+        raw = render_report(theme=theme, kind=kind, real_figures=False,
+                            include_sections=include_sections)
+    finally:
+        cls.secondary_head, cls.section_divider, cls.__init__ = orig_sec, orig_div, orig_init
+
+    doc = pdfium.PdfDocument(raw)
+    pages = [doc[i].get_textpage().get_text_range() for i in range(len(doc))]
+
+    marker = pdf_report._t("in_this_report", "en").upper()
+    contents: list[str] = []
+    for text in pages:
+        at = text.upper().find(marker)
+        if at < 0:
+            continue
+        for line in text[at:].splitlines():
+            m = re.match(r"^(\d{2})\s+\S", line.strip())
+            if m:
+                contents.append(m.group(1))
+        break
+
+    # De-duplicate the body list in order: the Underlying chapter heads one page
+    # per underlying, so its number legitimately repeats.
+    seen, body_uniq = set(), []
+    for n in body:
+        if n not in seen:
+            seen.add(n)
+            body_uniq.append(n)
+    return body_uniq, contents, built[-1]._cover_pages, pages
+
+
+@pytest.mark.parametrize("theme", THEMES)
+def test_contents_list_numbers_match_the_body(theme):
+    body, contents, _, _ = _render_and_read(theme)
+    assert body, "no numbered chapter heads were drawn at all"
+    assert contents == body, (
+        f"[{theme}] the contents page lists {contents} but the body prints {body} — "
+        "a number in the list points at a different chapter than the same number "
+        "on the page")
+
+
+@pytest.mark.parametrize("theme", THEMES)
+def test_chapter_numbers_are_gapless(theme):
+    body, _, _, _ = _render_and_read(theme)
+    assert body == [f"{i:02d}" for i in range(1, len(body) + 1)], (
+        f"[{theme}] chapter numbers {body} skip or repeat — they must run 01..N "
+        "over the chapters this report actually contains")
+
+
+def test_omitting_a_chapter_renumbers_both_surfaces():
+    """Turning a chapter off must close the gap on the page AND in the list.
+
+    With the literals, dropping the Underlying Breakdown left the body reading
+    01 · … · 04 Monte Carlo with nothing numbered 02 or 03.
+    """
+    keep = ["cover", "note_terms", "obs_schedule", "note_diagram", "note_description",
+            "mc_metrics", "mc_irr", "bt_metrics", "live_metrics"]
+    body, contents, _, _ = _render_and_read("mercator", include_sections=keep)
+    assert body == [f"{i:02d}" for i in range(1, len(body) + 1)], body
+    assert contents == body, (f"contents {contents} vs body {body}")
+    # Underlying Breakdown was excluded, so the chapter count must have dropped.
+    full, _, _, _ = _render_and_read("mercator")
+    assert len(body) < len(full), "the reduced report kept every chapter"
+
+
+def test_plan_chapters_numbers_in_document_order():
+    import pdf_report as P
+
+    assert P._plan_chapters({"note_terms": True, "mc": True, "bt": True}) == {
+        "note_terms": "01", "mc": "02", "bt": "03"}
+    # Absent ⇒ no entry, so a head drawn for a chapter nobody declared prints an
+    # empty number instead of borrowing someone else's.
+    assert "issuer" not in P._plan_chapters({"note_terms": True})
+    assert P._plan_chapters({}) == {}
+
+
+@pytest.mark.parametrize("theme", THEMES)
+def test_every_content_page_carries_a_footer(theme):
+    """Only the designed cover pages may lack the running footer.
+
+    The glossary silently lost its footer because `footer()` consulted
+    `_is_cover`, a flag describing the page about to be DRAWN, while fpdf2 runs
+    the footer for the page being CLOSED — so the last content page ahead of any
+    cover was treated as one.
+    """
+    import pdf_report
+
+    _, _, cover_pages, pages = _render_and_read(theme)
+    stamp = re.compile(
+        rf"{re.escape(pdf_report._t('page_of', 'en'))}\s+\d+\s+"
+        rf"{re.escape(pdf_report._t('page_of_mid', 'en'))}\s+\d+")
+    missing = [i + 1 for i, text in enumerate(pages)
+               if (i + 1) not in cover_pages and not stamp.search(text)]
+    assert not missing, f"[{theme}] content pages with no footer: {missing}"
