@@ -31,7 +31,7 @@ pytest.importorskip("pypdfium2")
 import tests.golden_fixture as gf              # noqa: E402
 from tests.golden_fixture import render_report  # noqa: E402
 
-THEMES = ["mercator", "hexagon", "custom", "hexcluster"]
+THEMES = ["mercator", "hexagon", "custom", "hexcluster", "photos"]
 
 # Calls that draw a heading and then expect content under it.
 HEADINGS = ["subsection", "secondary_head", "section_divider", "section_title",

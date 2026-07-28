@@ -17,14 +17,30 @@ echo "── 1/3  test suite ─────────────────
 python3 -m pytest tests/ -q 2>&1 | tail -3
 if [ "${PIPESTATUS[0]}" -ne 0 ]; then echo "   FAIL: tests"; fail=1; fi
 
-echo "── 2/3  golden hashes untouched ────────────────────────────"
-if git diff --quiet -- tests/golden/hashes.json && \
-   git diff --cached --quiet -- tests/golden/hashes.json; then
-  echo "   ok: hashes.json unmodified"
-else
-  echo "   FAIL: hashes.json changed — a pure code move must not need a re-baseline"
-  fail=1
-fi
+echo "── 2/3  golden baselines not re-based ──────────────────────"
+# The invariant is not "the file is untouched" — ADDING a fixture is legitimate
+# and desirable. It is "no EXISTING baseline moved": a pure code move must never
+# change a page that was already pinned. Distinguishing the two is the whole
+# point, because "I added a fixture" and "I quietly re-baselined" look identical
+# to `git diff --quiet`.
+python3 - <<'PYGATE'
+import json, subprocess, sys
+try:
+    old = json.loads(subprocess.run(
+        ["git", "show", "HEAD:tests/golden/hashes.json"],
+        capture_output=True, text=True, check=True).stdout)
+except Exception:
+    print("   skip: no committed baseline to compare against"); sys.exit(0)
+new = json.loads(open("tests/golden/hashes.json").read())
+moved = sorted(k for k in old if old[k] != new.get(k))
+added = sorted(set(new) - set(old))
+if moved:
+    print(f"   FAIL: {len(moved)} existing baseline(s) RE-BASED: {moved}")
+    sys.exit(1)
+print(f"   ok: {len(old)} existing baselines unchanged"
+      + (f", {len(added)} added ({', '.join(added)})" if added else ""))
+PYGATE
+if [ "$?" -ne 0 ]; then fail=1; fi
 
 echo "── 3/3  document fingerprints ──────────────────────────────"
 python3 scripts/pdf_baseline.py check 2>&1 | grep -vE "^\[PDF (logo|font)" | tail -3

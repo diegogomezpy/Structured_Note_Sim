@@ -37,9 +37,21 @@ def branding(theme: str) -> dict:
     path is unguarded and a refactor could silently break the deployed report.
     """
     hexcluster = theme == "hexcluster"
-    cfg = json.loads((FIXTURES / f"branding_{'hexagon' if hexcluster else theme}.json").read_text())
+    photos = theme == "photos"
+    _base = "hexagon" if hexcluster else ("mercator" if photos else theme)
+    cfg = json.loads((FIXTURES / f"branding_{_base}.json").read_text())
     cfg["logo_base64"] = _swatch(320, 96, (18, 62, 64), "LOGO")
     cfg["cover_logo_base64"] = _swatch(560, 120, (255, 255, 255), "COVER")
+    if photos:
+        # The POSITIONAL image-slot path, which every other fixture bypasses by
+        # setting an explicit cover AND back. Here the pool alone decides the
+        # roles, and slot 0 is a deliberate BLANK — the picker's "No image" —
+        # so the cover must fall back to the themed background while slot 1
+        # still becomes the back page. Without this fixture three branches of
+        # the slot algorithm render in no baseline at all.
+        cfg["filler_images_base64"] = ["", _noise(900, 600, 67), _noise(700, 460, 71)]
+        cfg["watermark_base64"] = _swatch(300, 300, (255, 255, 255), "WM")
+        return cfg
     cfg["cover_image_base64"] = _noise(900, 600, 11)
     cfg["back_image_base64"] = _noise(900, 600, 29)
     if hexcluster:

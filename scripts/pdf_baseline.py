@@ -39,7 +39,7 @@ _BASELINE = Path(
     or (Path.home() / ".cache" / "snsim" / "pdf_baseline.json")
 )
 
-THEMES = ["mercator", "hexagon", "custom", "hexcluster"]
+THEMES = ["mercator", "hexagon", "custom", "hexcluster", "photos"]
 KINDS = ["phoenix", "participation"]
 LANGS = ["en", "es"]
 
