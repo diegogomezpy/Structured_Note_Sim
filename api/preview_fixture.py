@@ -292,20 +292,50 @@ def _panels(n: int = 1) -> list[dict]:
             for _ in range(n)]
 
 
-def underlying_metrics(terms) -> dict:
-    """Per-underlying metric records for the breakdown pages."""
-    rng = np.random.default_rng(SEED + 3)
+def underlying_closes(terms) -> dict:
+    """A trailing-12M daily close series per underlying.
+
+    The breakdown page shows a price chart and, above it, the last price — so
+    one series feeds both and the two agree. VALUES are seeded; only the index
+    dates track today, because a proof chart labelled with a stale year reads as
+    a broken preview. Nothing pinned by the golden depends on the dates: in stub
+    mode `_FIG_HOOK` intercepts the figure before it is ever rendered.
+    """
+    import pandas as pd
+
+    rng = np.random.default_rng(SEED + 4)
+    idx = pd.bdate_range(end=pd.Timestamp.today().normalize(), periods=252)
     out = {}
     for i, nm in enumerate(terms.tickers.values()):
+        steps = rng.normal(0.0004, 0.0135, len(idx))
+        out[nm] = pd.Series((60.0 + 30 * i) * np.cumprod(1.0 + steps), index=idx)
+    return out
+
+
+def underlying_metrics(terms) -> dict:
+    """Per-underlying metric records for the breakdown pages.
+
+    The KEYS are the contract with `data.loader.load_underlying_metrics`, whose
+    record `underlying_block` reads — `market_cap` / `last_price` / `rsi_14` /
+    `iv_3m`. They were once named `u_*` here, which nothing reads, so every
+    metric tile in the proof rendered "—" while the real report filled them.
+    """
+    rng = np.random.default_rng(SEED + 3)
+    closes = underlying_closes(terms)
+    out = {}
+    for i, nm in enumerate(terms.tickers.values()):
+        px = closes[nm]
         out[nm] = {
             "long_name": nm,
             "type": "EQUITY",
             "industry": ("Aerospace & Defense", "Specialty Retail", "Software")[i % 3],
             "sector": "Industrials",
-            "u_last": float(60 + 30 * i),
-            "u_chg_1y": float(rng.normal(0.12, 0.2)),
-            "u_iv_3m": float(abs(rng.normal(0.28, 0.05))),
-            "u_vol_3m_realized": float(abs(rng.normal(0.26, 0.05))),
+            "currency": "USD",
+            "market_cap": float(8.0e10 * (i + 1) + rng.normal(0, 4e9)),
+            "last_price": float(px.iloc[-1]),
+            "day_change": float(px.iloc[-1] / px.iloc[-2] - 1.0),
+            "rsi_14": float(np.clip(rng.normal(52.0, 9.0), 5.0, 95.0)),
+            "iv_3m": float(abs(rng.normal(0.28, 0.05))),
             "iv_source": "implied",
             "business_summary": (
                 "A representative issuer profile used by the PDF Studio proof. "
@@ -314,6 +344,24 @@ def underlying_metrics(terms) -> dict:
             "analyst": {"buy": 58.0, "hold": 36.0, "sell": 6.0},
         }
     return out
+
+
+def underlying_price_figs(terms, *, real: bool = False, lang: str = "en") -> dict:
+    """The trailing-12M price chart per underlying.
+
+    Absent, `underlying_block` draws its metric tiles and description and then
+    simply stops — leaving the bottom two thirds of the page to the void
+    decoration. That is what the proof showed: not a chart that failed to load,
+    a chart that was never handed over.
+    """
+    if not real:
+        return {nm: object() for nm in terms.tickers.values()}
+    import charts
+    import translations
+
+    tr = translations.Translator(lang)
+    return {nm: charts.build_underlying_price_chart(px, nm, tr)
+            for nm, px in underlying_closes(terms).items()}
 
 
 # The A/B comparison is not a tree item in the Report panel — it is its own
@@ -348,6 +396,7 @@ def extras(terms, *, real: bool = False, lang: str = "en",
         "compare_data": compare_data(terms) if want_cmp else None,
         "compare_figures": cmp_figs if want_cmp else None,
         "underlying_metrics": underlying_metrics(terms),
+        "underlying_price_figs": underlying_price_figs(terms, real=real, lang=lang),
         "issuer_description": (
             "A representative issuer profile used by the PDF Studio proof. The "
             "real report shows the issuer description saved on the note, or the "
