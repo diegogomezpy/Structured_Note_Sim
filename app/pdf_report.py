@@ -99,6 +99,7 @@ import reportkit.images as _rk_images  # noqa: E402
 import reportkit.charts as _rk_charts  # noqa: E402
 import reportkit.fonts as _rk_fonts  # noqa: E402
 import reportkit.branding as _rk_branding  # noqa: E402
+import reportkit.outline as _rk_outline  # noqa: E402
 from reportkit.document import ReportDocument  # noqa: E402
 from reportkit.text import _safe, _EMOJI_STRIP  # noqa: E402,F401
 from reportkit.color import (  # noqa: E402
@@ -1666,17 +1667,8 @@ _CHAPTERS = ("note_terms", "issuer", "underlying", "mc", "bt", "live", "compare"
 
 
 def _plan_chapters(present: dict) -> dict:
-    """`{chapter_key: bool}` → `{chapter_key: "01"}`, numbered in document order.
-
-    Absent/false chapters get no entry, so a caller that renders a chapter it
-    did not declare present prints an empty number rather than a wrong one.
-    """
-    out, n = {}, 0
-    for key in _CHAPTERS:
-        if present.get(key):
-            n += 1
-            out[key] = f"{n:02d}"
-    return out
+    """`{chapter_key: bool}` → `{chapter_key: "01"}`, in THIS report's order."""
+    return _rk_outline.plan_chapters(present, _CHAPTERS)
 
 
 # Which projected metrics the A/B table reports, and how to format each.
@@ -2197,94 +2189,24 @@ def _cover_page(
     pdf.set_fill_color(*pdf.lime); pdf.rect(Rx, ry + 4.6, 18, 1.2, style="F")
     ry += 8.0
 
-    _toc_top    = ry
-    _toc_bottom = pdf.h - 14.0
-    _toc_avail  = _toc_bottom - _toc_top
-    _MIN_ROW_H  = 3.9            # below this the 8pt rows stop being legible
-
-    def _fit(groups, row_h=5.4, gap=1.2):
-        """Row height / gap that fit `groups`, or None if they can't at any.
-
-        Shrink first, shed only when even the minimum row height overflows —
-        a squeezed list is better than an incomplete one.
-        """
-        heads = sum(1 for nm, _, _ in groups if nm is not None)
-        rows  = sum(len(lv) for _, _, lv in groups) + heads
-        if rows <= 0 or rows * row_h + heads * gap <= _toc_avail:
-            return row_h, gap
-        scale = min(1.0, max(0.0, _toc_avail - heads * gap) / (rows * row_h))
-        row_h, gap = row_h * scale, gap * scale
-        if row_h >= _MIN_ROW_H:
-            return row_h, gap
-        row_h = _MIN_ROW_H
-        return (row_h, gap) if rows * row_h + heads * gap <= _toc_avail else None
-
     # The summary page has auto page break OFF — it is one designed page, and an
     # overlong list does not wrap, it draws off the bottom. Every underlying adds
     # a row to the rail above, pushing `ry` down, so past ~4 underlyings the full
-    # list cannot fit even at the minimum row height. Shed lens SUB-SECTIONS —
-    # the optional detail — a group at a time, biggest first, until it fits. The
-    # numbered chapters always survive: they are what the body's headings refer
-    # to, and a chapter listed nowhere is the defect this file exists to prevent.
-    _fitted = _fit(toc_groups)
-    while _fitted is None:
-        _fat = max((i for i, (nm, _, lv) in enumerate(toc_groups) if nm is not None and lv),
-                   key=lambda i: len(toc_groups[i][2]), default=None)
-        if _fat is None:
-            _fitted = (_MIN_ROW_H, 0.0)      # heads only and still tight — draw it
-            break
-        toc_groups[_fat] = (toc_groups[_fat][0], toc_groups[_fat][1], [])
-        _fitted = _fit(toc_groups)
-    _row_h, _gap = _fitted
-    _yc = [ry]
-    _NUM_W = 7.0
+    # list cannot fit even at the minimum row height. `shed_to_fit` shrinks
+    # first and then drops lens SUB-SECTIONS, biggest group first; the numbered
+    # chapters always survive.
+    toc_groups, _row_h, _gap = _rk_outline.shed_to_fit(
+        toc_groups, avail=(pdf.h - 14.0) - ry)
 
-    def _toc_leaf(text, number=None, indent=0.0):
-        # The number column is RESERVED whether or not it is filled, so an
-        # unnumbered row (glossary, disclaimer, a lens sub-section) still lines
-        # its title up with every numbered one instead of hanging 7mm left.
-        if number:
-            pdf.set_xy(Rx + indent, _yc[0])
-            pdf._sf(7.5, "bold"); pdf.set_text_color(*pdf.lime)
-            pdf.cell(_NUM_W, _row_h, number)
-        indent += _NUM_W
-        pdf.set_xy(Rx + indent, _yc[0])
-        pdf._sf(8.0, "regular"); pdf.set_text_color(*pdf.body_ink)
-        pdf.cell(Rw - indent, _row_h, _safe(text))
-        pdf.set_draw_color(*_RULE_SOFT); pdf.set_line_width(0.2)
-        pdf.line(Rx, _yc[0] + _row_h, Rx + Rw, _yc[0] + _row_h)
-        _yc[0] += _row_h
-
-    def _toc_head(name, number=None):
-        _yc[0] += _gap
-        _ind = 0.0
-        if number:
-            pdf.set_xy(Rx, _yc[0])
-            pdf._sf(7.5, "bold"); pdf.set_text_color(*pdf.lime)
-            pdf.cell(_NUM_W, _row_h, number)
-            _ind = _NUM_W
-        pdf._eyebrow(Rx + _ind, _yc[0] + 0.4, name, pdf.primary_color,
-                     size=7.0, tracking=0.5, w=Rw - _ind)
-        _yc[0] += _row_h
-
-    for name, number, leaves in toc_groups:
-        if name is not None:
-            # A lens: the chapter number sits on the head, and its sub-sections
-            # hang under it aligned to the head's text — unnumbered, because
-            # nothing numbers them on the page either.
-            _toc_head(name, number)
-            for leaf in leaves:
-                _toc_leaf(leaf)
-        else:
-            for leaf, leaf_no in leaves:
-                _toc_leaf(leaf, leaf_no)
+    _toc_end = _rk_outline.contents_list(pdf, toc_groups, x=Rx, y=ry, w=Rw,
+                                         row_h=_row_h, gap=_gap)
 
     # Client / short reports leave a big empty band below the left stack — fill
     # the shorter left column with a tall brand photo when one is available
     # (client-version request), else compose the void with the lighter graphic
     # treatment (sigil watermark + low-left hex-cluster).
     _bottom = pdf.h - 18.0
-    _void_top = max(ly, _yc[0]) + 8.0
+    _void_top = max(ly, _toc_end) + 8.0
     _left_filled = False
     try:
         # `filler_image_list` is already the report-body photos (cover/back
@@ -2292,7 +2214,7 @@ def _cover_page(
         # the summary's vertical photo and the cover won't show the same shot.
         _pool = getattr(pdf, "filler_image_list", None) or []
         _vimg = _pool[0] if _pool else None
-        if ly + 45 < _yc[0] and _vimg is not None:
+        if ly + 45 < _toc_end and _vimg is not None:
             _left_filled = pdf.cover_left_photo(x0, ly + 6.0, Lw, _bottom, _vimg)
         # Sigil watermark — only in a void below BOTH stacks (rare on client
         # reports, where the TOC runs long); harmless alongside the left photo.
@@ -2306,7 +2228,7 @@ def _cover_page(
                           y=_void_top + ((_bottom - _void_top) - _sh) / 2.0,
                           w=_sw, h=_sh)
         # No photo for the left column → fall back to the hex cluster.
-        if not _left_filled and ly + 45 < _yc[0] and _bottom - ly > 50:
+        if not _left_filled and ly + 45 < _toc_end and _bottom - ly > 50:
             _sc = min((_bottom - ly) * 0.5, 54.0)
             pdf.theme.cover_left_void_fill(pdf, x0, _sc, _bottom)
     except Exception:
@@ -3179,30 +3101,13 @@ def _build_pdf_report(
                secondary_color=secondary_color)
     src_mc = f"{_t('src_mc', lang)}, {n_paths_val:,} {_t('paths_word', lang)}"
 
+    # Heads that draw only if something follows them, so a fully-toggled-off
+    # lens leaves neither a divider nor an empty section header behind.
     def _lazy_divider(number, kicker, heading):
-        """Emit a three-lens primary banner at most once, when the lens's first
-        included item is drawn — so a fully-toggled-off lens leaves no divider."""
-        state = {"done": False}
-        def ensure():
-            if not state["done"]:
-                pdf.section_divider(number, kicker, heading)
-                state["done"] = True
-        return ensure
+        return _rk_outline.lazy_divider(pdf, number, kicker, heading)
 
     def _lazy_section(title, min_room=146.0, before=None):
-        """Emit a section header at most once, only when its first included item
-        is actually drawn — so a section with everything toggled off leaves no
-        empty header behind. ``before`` is a lazy part divider fired first (it is
-        idempotent), so whichever sub-section of a lens renders first also draws
-        that lens's divider."""
-        state = {"done": False}
-        def ensure():
-            if before is not None:
-                before()
-            if not state["done"]:
-                pdf.start_section(title, min_room=min_room)
-                state["done"] = True
-        return ensure
+        return _rk_outline.lazy_section(pdf, title, min_room=min_room, before=before)
 
     # Lens 1 of 3 — the forward-looking model. Drawn once, before whichever MC
     # sub-section renders first.
