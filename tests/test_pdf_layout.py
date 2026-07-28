@@ -350,3 +350,96 @@ def test_every_content_page_carries_a_footer(theme):
     missing = [i + 1 for i, text in enumerate(pages)
                if (i + 1) not in cover_pages and not stamp.search(text)]
     assert not missing, f"[{theme}] content pages with no footer: {missing}"
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# The contents list is one designed page — it must fit, and it must line up
+# ──────────────────────────────────────────────────────────────────────────────
+# The summary page turns auto page break OFF, so an overlong list does not wrap:
+# it draws off the bottom edge. Every underlying adds a row to the rail above it,
+# and the Comparison chapter added three more rows, so the list has to shed
+# detail rather than overflow.
+
+def _toc_cells(n_assets: int = 3, theme: str = "mercator"):
+    """Render with `n_assets` underlyings; return the (x, y, text) of every cell
+    drawn on the summary page, plus the page geometry."""
+    import pdf_report
+
+    names = ["Alpha Corp", "Beta SA", "Gamma Inc", "Delta NV", "Epsilon Plc",
+             "Zeta AG", "Eta Oyj"]
+    syms = ["AAA", "BBB", "CCC", "DDD", "EEE", "FFF", "GGG"]
+    orig_terms = gf.note_terms
+
+    def terms(kind="phoenix"):
+        t = orig_terms(kind)
+        t.tickers = {syms[i]: names[i] for i in range(n_assets)}
+        return t
+
+    cls = pdf_report._NotePDF
+    drawn: list[tuple[float, float, str]] = []
+    orig_cell = cls.cell
+
+    def cell(self, w=0, h=0, txt="", *a, **k):
+        if self._is_cover and self.page_no() == 2:
+            drawn.append((self.get_x(), self.get_y(), str(txt)))
+        return orig_cell(self, w, h, txt, *a, **k)
+
+    cls.cell, gf.note_terms = cell, terms
+    try:
+        gf.render_report(theme=theme, real_figures=False)
+    finally:
+        cls.cell, gf.note_terms = orig_cell, orig_terms
+    return drawn
+
+
+@pytest.mark.parametrize("n_assets", [2, 3, 4, 5, 6, 7])
+def test_contents_list_never_overflows_the_summary_page(n_assets):
+    drawn = _toc_cells(n_assets)
+    bottom = 297.0 - 14.0                     # `_toc_bottom` on A4
+    over = [(y, t) for _, y, t in drawn if y > bottom]
+    assert not over, (
+        f"{n_assets} underlyings: contents rows drawn below y={bottom} "
+        f"(page is 297mm, auto page break is off, so these fall off the sheet): {over}")
+
+
+def test_contents_rows_share_one_left_edge():
+    """Numbered and unnumbered rows must line up.
+
+    The reference rows (Glossary, Disclaimer) carry no number, and when the
+    number column was only reserved for rows that had one they hung 7mm left of
+    every other title.
+    """
+    drawn = _toc_cells(3)
+    titles = {"Note Terms", "Underlying Breakdown", "Payoff & Distribution",
+              "Price Paths", "Glossary of Terms", "Disclaimer"}
+    xs = {t: x for x, _, t in drawn if t in titles}
+    assert len(xs) >= 4, f"only found {sorted(xs)} — the probe missed rows"
+    assert len(set(round(x, 2) for x in xs.values())) == 1, (
+        f"contents rows start at different x: {xs}")
+
+
+def test_comparison_leaves_follow_the_built_tables():
+    """A sub-section is listed only if the body will render it.
+
+    The leaves were derived from the raw `compare_data` while the body gates on
+    the tables `_compare_tables` actually builds — so a Note B differing only in
+    its basket (no differing *term sheet* rows) was promised a terms table the
+    document did not contain.
+    """
+    import pypdfium2 as pdfium
+    import pdf_report
+
+    orig = pdf_report._compare_tables
+    # No differing terms, but real metric rows — the basket-only comparison.
+    pdf_report._compare_tables = lambda t, c, l: ([], orig(t, c, l)[1])
+    try:
+        raw = render_report(theme="mercator", real_figures=False)
+    finally:
+        pdf_report._compare_tables = orig
+
+    cover = pdfium.PdfDocument(raw)[1].get_textpage().get_text_range()
+    terms_leaf = pdf_report._t("cmp_terms_title", "en")
+    metrics_leaf = pdf_report._t("cmp_metrics_title", "en")
+    assert terms_leaf not in cover, (
+        f"contents lists {terms_leaf!r} but the body renders no terms table")
+    assert metrics_leaf in cover, "the metrics table is rendered but not listed"

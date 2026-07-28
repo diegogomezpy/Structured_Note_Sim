@@ -3249,7 +3249,8 @@ def _cover_page(
     inc=None,
     logo_overrides: dict[str, bytes] | None = None,
     chapters: dict | None = None,
-    compare_data=None,
+    cmp_terms: bool = False,
+    cmp_metrics: bool = False,
 ):
     # inc(section_key) -> bool: which optional sections are included, so the
     # cover "In this report" list matches the body. Defaults to all-on.
@@ -3671,11 +3672,16 @@ def _cover_page(
         toc_groups.append((_t("lens_live", lang), _ch["live"], _live))
     if _ch.get("compare"):
         # The comparison chapter printed a numbered banner in the body but never
-        # appeared in this list at all.
+        # appeared in this list at all. Both leaves are gated on the BUILT tables
+        # (`_compare_tables`, passed in), not on the raw payload: a Note B that
+        # differs only in its basket has a `terms_b` but no differing rows —
+        # `_term_rows` doesn't print the underlyings — so the body renders no
+        # terms table and listing one here would promise a section that isn't
+        # there.
         _cmp = []
-        if (compare_data or {}).get("terms_b") is not None:
+        if cmp_terms:
             _cmp.append(_t("cmp_terms_title", lang))
-        if (compare_data or {}).get("diff", {}).get("rows"):
+        if cmp_metrics:
             _cmp.append(_t("cmp_metrics_title", lang))
         toc_groups.append((_t("lens_compare", lang), _ch["compare"], _cmp))
     # Reference matter — unnumbered in the body (`start_section`), so unnumbered
@@ -3691,23 +3697,54 @@ def _cover_page(
     _toc_top    = ry
     _toc_bottom = pdf.h - 14.0
     _toc_avail  = _toc_bottom - _toc_top
-    _gap        = 1.2
-    _n_heads    = sum(1 for nm, _, _ in toc_groups if nm is not None)
-    _n_rows     = sum(len(lv) for _, _, lv in toc_groups) + _n_heads
-    _row_h      = 5.4
-    if _n_rows > 0 and (_n_rows * _row_h + _n_heads * _gap) > _toc_avail:
-        _scale = min(1.0, max(0.0, _toc_avail - _n_heads * _gap) / (_n_rows * _row_h))
-        _row_h = max(3.9, _row_h * _scale)
-        _gap   = _gap * _scale
+    _MIN_ROW_H  = 3.9            # below this the 8pt rows stop being legible
+
+    def _fit(groups, row_h=5.4, gap=1.2):
+        """Row height / gap that fit `groups`, or None if they can't at any.
+
+        Shrink first, shed only when even the minimum row height overflows —
+        a squeezed list is better than an incomplete one.
+        """
+        heads = sum(1 for nm, _, _ in groups if nm is not None)
+        rows  = sum(len(lv) for _, _, lv in groups) + heads
+        if rows <= 0 or rows * row_h + heads * gap <= _toc_avail:
+            return row_h, gap
+        scale = min(1.0, max(0.0, _toc_avail - heads * gap) / (rows * row_h))
+        row_h, gap = row_h * scale, gap * scale
+        if row_h >= _MIN_ROW_H:
+            return row_h, gap
+        row_h = _MIN_ROW_H
+        return (row_h, gap) if rows * row_h + heads * gap <= _toc_avail else None
+
+    # The summary page has auto page break OFF — it is one designed page, and an
+    # overlong list does not wrap, it draws off the bottom. Every underlying adds
+    # a row to the rail above, pushing `ry` down, so past ~4 underlyings the full
+    # list cannot fit even at the minimum row height. Shed lens SUB-SECTIONS —
+    # the optional detail — a group at a time, biggest first, until it fits. The
+    # numbered chapters always survive: they are what the body's headings refer
+    # to, and a chapter listed nowhere is the defect this file exists to prevent.
+    _fitted = _fit(toc_groups)
+    while _fitted is None:
+        _fat = max((i for i, (nm, _, lv) in enumerate(toc_groups) if nm is not None and lv),
+                   key=lambda i: len(toc_groups[i][2]), default=None)
+        if _fat is None:
+            _fitted = (_MIN_ROW_H, 0.0)      # heads only and still tight — draw it
+            break
+        toc_groups[_fat] = (toc_groups[_fat][0], toc_groups[_fat][1], [])
+        _fitted = _fit(toc_groups)
+    _row_h, _gap = _fitted
     _yc = [ry]
     _NUM_W = 7.0
 
     def _toc_leaf(text, number=None, indent=0.0):
+        # The number column is RESERVED whether or not it is filled, so an
+        # unnumbered row (glossary, disclaimer, a lens sub-section) still lines
+        # its title up with every numbered one instead of hanging 7mm left.
         if number:
             pdf.set_xy(Rx + indent, _yc[0])
             pdf._sf(7.5, "bold"); pdf.set_text_color(*pdf.lime)
             pdf.cell(_NUM_W, _row_h, number)
-            indent += _NUM_W
+        indent += _NUM_W
         pdf.set_xy(Rx + indent, _yc[0])
         pdf._sf(8.0, "regular"); pdf.set_text_color(*pdf.body_ink)
         pdf.cell(Rw - indent, _row_h, _safe(text))
@@ -3734,7 +3771,7 @@ def _cover_page(
             # nothing numbers them on the page either.
             _toc_head(name, number)
             for leaf in leaves:
-                _toc_leaf(leaf, None, indent=_NUM_W)
+                _toc_leaf(leaf)
         else:
             for leaf, leaf_no in leaves:
                 _toc_leaf(leaf, leaf_no)
@@ -4602,7 +4639,8 @@ def _build_pdf_report(
     # ── 1. Summary / contents page ─────────────────────────────────────────
     _cover_page(pdf, terms, results, asset_names, bt_summary, live_data, lang,
                 logo_urls, issuer_logo_bytes, logo_tickers, inc=_inc,
-                logo_overrides=_logo_ovr, chapters=_chap, compare_data=compare_data)
+                logo_overrides=_logo_ovr, chapters=_chap,
+                cmp_terms=bool(_diff_terms), cmp_metrics=bool(_cmp_rows))
 
     # ── 2. Note terms + observation schedule (each toggleable) ──────────────
     # The first content page. Note Terms, the Observation Schedule, the Issuer
