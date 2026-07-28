@@ -48,7 +48,15 @@ WORKDIR /app
 # All deps ship cp312 manylinux wheels, so no build toolchain is needed.
 COPY requirements.txt ./requirements.txt
 COPY api/requirements.txt ./api-requirements.txt
-RUN pip install --no-cache-dir -r requirements.txt -r api-requirements.txt
+# `git` is needed only to fetch reportkit from its tag, so it is installed and
+# purged inside ONE layer — leaving it behind would ship a compiler-adjacent
+# toolchain in a public-facing image for no runtime benefit. Without it the
+# build fails outright at the reportkit line, which is how this was caught.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends git \
+    && pip install --no-cache-dir -r requirements.txt -r api-requirements.txt \
+    && apt-get purge -y git && apt-get autoremove -y \
+    && rm -rf /var/lib/apt/lists/*
 
 # The PDF figure export (kaleido) drives a headless browser. Debian's chromium
 # package proved unusable for this: its version drifts on every image rebuild,

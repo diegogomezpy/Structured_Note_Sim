@@ -81,7 +81,6 @@ from fpdf import FPDF
 # previews is the single biggest cost worth avoiding). A real report sets
 # nothing. It is a ContextVar rather than a module flag so one caller's preview
 # can never strip the charts out of another caller's PDF.
-_FIG_HOOK: ContextVar = ContextVar("fig_hook", default=None)
 
 # Visual-identity layer — now lives in the reusable `reportkit` package (the
 # theme engine is domain-agnostic). The chamfer primitives are re-exported under
@@ -91,23 +90,35 @@ from reportkit.theme import (  # noqa: E402
     _dev_rgb, _chamfer_outline, _chamfer_dims,
     _fill_chamfer, _stroke_chamfer, _hex_cluster,
     build_tokens, resolve_theme, paint_shape, resolve_color, resolve_watermark,
+    blend as _blend,
     AMBER as _AMBER, AMBER_DARK as _AMBER_DARK, MUTED as _MUTED,
     BODY_INK as _BODY_INK, RULE_SOFT as _RULE_SOFT, FOOTNOTE_GREY as _FOOTNOTE_GREY,
+    TEXT as _TEXT, TEXT_SOFT as _TEXT_SOFT, ROW_ALT as _ROW_ALT,
+    WHITE as _WHITE, BLACK as _BLACK,
 )
 from reportkit.images import _cover_crop  # noqa: E402
+# Colour parsing / palette remapping — core (no plotly); the chart layer that
+# consumes them is what moves behind the [charts] extra, not these.
+import reportkit.images as _rk_images  # noqa: E402
+import reportkit.charts as _rk_charts  # noqa: E402
+import reportkit.fonts as _rk_fonts  # noqa: E402
+from reportkit.document import ReportDocument  # noqa: E402
+from reportkit.text import _safe, _EMOJI_STRIP  # noqa: E402,F401
+from reportkit.color import (  # noqa: E402
+    rgb_to_hue as _rgb_to_hue, parse_rgb as _parse_rgb, remap_color as _remap_color,
+)
 
 _REPO_ROOT       = Path(__file__).parent.parent
 
-# Ceiling on any single image the report embeds — see _dimensions_sane(), which
-# enforces it from the header. ~4900x4900 is far past any real cover or logo.
-_MAX_IMAGE_PX = 24_000_000
-# Backstop for decodes that don't route through _dimensions_sane (Pillow raises
-# above 2x this). Not the primary defence: it only warns below that threshold.
-try:
-    from PIL import Image as _PILImage
-    _PILImage.MAX_IMAGE_PIXELS = _MAX_IMAGE_PX
-except Exception:                               # Pillow absent → nothing decodes anyway
-    pass
+# Ceiling on any single image the report embeds — see reportkit.images
+# .dimensions_sane(), which enforces it from the header. ~4900x4900 is far past
+# any real cover or logo. `configure_limits` also raises Pillow's own
+# MAX_IMAGE_PIXELS as a backstop for decodes that bypass our check; reportkit
+# does NOT do that at import time, because a library mutating another library's
+# global behind the host's back is exactly the kind of surprise this extraction
+# is meant to remove. The application opts in, here, once.
+_MAX_IMAGE_PX = _rk_images.MAX_IMAGE_PX
+_rk_images.configure_limits(_MAX_IMAGE_PX)
 _TICKER_LOGO_DIR = _REPO_ROOT / "branding" / "ticker_logos"
 _FONT_DIR        = _REPO_ROOT / "fonts"
 _IBM_REGULAR     = _FONT_DIR / "IBMPlexSans-Regular.ttf"
@@ -122,14 +133,6 @@ _IBM_BOLDITALIC  = _FONT_DIR / "IBMPlexSans-BoldItalic.ttf"
 # ──────────────────────────────────────────────────────────────────────────────
 _DEFAULT_PRIMARY  = (26,  46, 74)   # deep navy  #1a2e4a
 _DEFAULT_ACCENT   = (37,  99, 235)  # mid-blue   #2563eb
-_TEXT             = (43,  61, 79)   # dark navy-slate #2B3D4F  (was near-black #212121)
-_TEXT_SOFT        = (107, 114, 128) # warm grey  #6b7280
-_HAIRLINE         = (203, 213, 225) # cool grey  #cbd5e1
-_RULE_LIGHT       = (226, 232, 240) # slate-100  #e2e8f0
-_ROW_ALT          = (245, 246, 250) # slate-50   #F5F6FA — zebra rows
-_WHITE            = (255, 255, 255)
-_BLACK            = (0,   0,   0)
-_COVER_BAND_H     = 38              # mm — height of the top cover band
 _DEFAULT_SECONDARY = (198, 148, 38) # warm institutional gold #C69426 — 2nd chart category
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -141,7 +144,6 @@ _DEFAULT_SECONDARY = (198, 148, 38) # warm institutional gold #C69426 — 2nd ch
 # _NotePDF.__init__). The brand-neutral constants the design shares live in
 # pdf_theme.py and are imported at the top of this module (_AMBER, _AMBER_DARK,
 # _MUTED, _BODY_INK, _RULE_SOFT, _FOOTNOTE_GREY).
-_PANEL_TINT       = (236, 241, 246)  # #ECF1F6 — card/tile fill (default panel)
 
 # The full branding schema. Anything outside this set warns (mirrors
 # NoteTerms.from_dict) so a typo like "primary_colour" surfaces immediately
@@ -184,10 +186,6 @@ _KNOWN_BRANDING_KEYS = {
                             # e.g. "cadiem" (hexagon) or "mercator" (default). Absent
                             # / unknown falls back to the default theme.
 }
-_HEX_KEYS = ("primary_color", "accent_color", "chart_secondary_color",
-             "section_rule_color", "panel_color", "sidebar_bar_color",
-             "cover_overlay_color", "chart_grid_color", "chart_axis_color",
-             "chart_label_color", "chart_text_color")
 
 
 def _hex_to_rgb(hex_str: str) -> tuple[int, int, int]:
@@ -722,8 +720,6 @@ def _t(key: str, lang: str) -> str:
     return _LABELS.get(key, {}).get(lang, _LABELS.get(key, {}).get("en", key))
 
 
-_ES_MONTHS = ["", "enero", "febrero", "marzo", "abril", "mayo", "junio",
-              "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"]
 
 # payment_freq enum (core/note.py) -> Spanish wording. Unknown values pass
 # through unchanged so a custom freq label is never mangled.
@@ -739,19 +735,8 @@ def _fmt_freq(freq: str, lang: str) -> str:
     return _FREQ_ES.get(str(freq).lower(), str(freq)) if lang == "es" else str(freq)
 
 
-def _fmt_long_date(d: datetime.date, lang: str) -> str:
-    """Locale-aware long date. English uses the platform month name; Spanish uses
-    a built-in month table (no system locale dependency, no leftover English)."""
-    if lang == "es":
-        return f"{d.day} de {_ES_MONTHS[d.month]} de {d.year}"
-    return d.strftime("%-d %B %Y")
 
 
-def _fmt_month_year(d: datetime.date, lang: str) -> str:
-    """Month + year (e.g. 'JUNIO 2026' / 'June 2026') for the cover."""
-    if lang == "es":
-        return f"{_ES_MONTHS[d.month]} {d.year}"
-    return d.strftime("%B %Y")
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -759,37 +744,6 @@ def _fmt_month_year(d: datetime.date, lang: str) -> str:
 # IBM Plex Sans covers all Latin/Greek/punctuation/math Unicode natively, so we
 # only need to neutralise emojis and a handful of symbols it omits.
 # ──────────────────────────────────────────────────────────────────────────────
-_EMOJI_STRIP = {
-    "✅": "OK", "⚠️": "!", "❌": "x", "🚀": ">>", "⏳": "...",
-    "®": "", "™": "", "©": "",
-}
-
-
-def _safe(text: object, *, latin1: bool = False) -> str:
-    """Sanitise text for the PDF.
-
-    With IBM Plex Sans (Unicode font) only emojis need neutralising.
-    Pass latin1=True only for the Helvetica fallback path.
-    """
-    s = str(text)
-    for bad, good in _EMOJI_STRIP.items():
-        s = s.replace(bad, good)
-    if latin1:
-        _LATIN1_MAP = {
-            "—": "-", "–": "-", "−": "-", "·": "-", "•": "-",
-            "→": "->", "←": "<-", "≥": ">=", "≤": "<=",
-            "“": '"', "”": '"', "‘": "'", "’": "'",
-            "…": "...", "×": "x", "÷": "/",
-            "€": "EUR", "£": "GBP",
-            "κ": "kappa", "θ": "theta", "ξ": "xi", "ρ": "rho",
-            "σ": "sigma", "μ": "mu", "ν": "nu", "₀": "0", "√": "sqrt ",
-        }
-        for bad, good in _LATIN1_MAP.items():
-            s = s.replace(bad, good)
-        s = s.encode("latin-1", "ignore").decode("latin-1")
-    return s
-
-
 # ──────────────────────────────────────────────────────────────────────────────
 # Font registration
 # Primary: IBM Plex Sans individual TTF files (institutional quality, Unicode).
@@ -797,776 +751,28 @@ def _safe(text: object, *, latin1: bool = False) -> str:
 # ──────────────────────────────────────────────────────────────────────────────
 
 # Font family name exposed to _sf() — switches based on what is available
-_FONT_FAMILY = "IBMPlexSans"   # overridden to "Helvetica" if IBM files absent
 
 
-def _register_ibm_plex(pdf: FPDF) -> bool:
-    """Register IBM Plex Sans TTF files. Returns True if all variants loaded."""
-    _required = [_IBM_REGULAR, _IBM_BOLD, _IBM_SEMIBOLD, _IBM_LIGHT,
-                 _IBM_ITALIC, _IBM_BOLDITALIC]
-    if not all(p.exists() for p in _required):
-        return False
-    try:
-        pdf.add_font("IBMPlexSans",      "",   str(_IBM_REGULAR),    uni=True)
-        pdf.add_font("IBMPlexSans",      "B",  str(_IBM_BOLD),       uni=True)
-        pdf.add_font("IBMPlexSans",      "I",  str(_IBM_ITALIC),     uni=True)
-        pdf.add_font("IBMPlexSans",      "BI", str(_IBM_BOLDITALIC), uni=True)
-        pdf.add_font("IBMPlexSansSB",    "",   str(_IBM_SEMIBOLD),   uni=True)
-        pdf.add_font("IBMPlexSansLight", "",   str(_IBM_LIGHT),      uni=True)
-        return True
-    except Exception as exc:
-        print(f"[PDF font] IBM Plex Sans registration failed: {exc}")
-        return False
+class _NotePDF(ReportDocument):
+    """The Structured-Note adapter's document.
 
+    Deliberately THIN. Everything generic — chrome, tables, metric bands,
+    figures, the keep-together pagination — is `ReportDocument`. Only blocks that
+    know what a structured note is live here.
 
-def _register_brand_fonts(pdf, branding: dict | None) -> None:
-    """Route the report's title / body type to custom brand fonts when the brand
-    provides them. The branding keys `title_font` / `body_font` name a font (e.g.
-    "Neulis Alt", "Gantari"); the TTF for each weight comes from EITHER an embedded
-    base64 blob in `title_font_files` / `body_font_files` ({Style: base64 TTF}, so
-    the fonts travel with an uploaded config and work on the deploy) OR the local
-    file fonts/brand/<AlnumName>-<Style>.ttf (Style in Regular/Bold/Italic/
-    BoldItalic). Embedded data wins; the local file is the fallback.
+    Do not re-declare inherited methods for convenience: tests/test_pdf_layout.py
+    `setattr`s 17 method names onto this class to instrument pagination, and a
+    redefinition here would shadow the instrumented base method and silently
+    blind the orphaned-heading probe.
+    """
 
-    Title type is the bold/semibold (heading) weights; body type is regular/light/
-    italic. Anything that can't be loaded silently keeps the IBM Plex mapping, so
-    a brand that only ships some weights — or none — never breaks the report."""
-    if getattr(pdf, "_font_family", "") != "IBMPlexSans":   # need the unicode TTF path
-        return
-    b = branding or {}
-    if not (b.get("title_font") or b.get("body_font")):
-        return
-
-    def _tmp_font(raw: bytes, alnum: str, suffix: str) -> str:
-        # Write an embedded TTF to a temp dir tied to the pdf's lifetime (cleaned
-        # when the pdf is GC'd, i.e. after output()), so fpdf can read/embed it.
-        d = getattr(pdf, "_brand_font_tmp", None)
-        if d is None:
-            d = pdf._brand_font_tmp = tempfile.TemporaryDirectory(prefix="brandfont_")
-        path = os.path.join(d.name, f"{alnum}-{suffix}.ttf")
-        with open(path, "wb") as fh:
-            fh.write(raw)
-        return path
-
-    def _register(font_name: str | None, files: dict | None, styles: list[tuple[str, str]]):
-        if not font_name:
-            return None
-        alnum = "".join(c for c in str(font_name) if c.isalnum())
-        fam = "Brand" + alnum
-        files = files if isinstance(files, dict) else {}
-        loaded: set[str] = set()
-        for code, suffix in styles:
-            path = None
-            # 1) embedded base64 (keyed by Style name, or the fpdf style code)
-            blob = files.get(suffix) or files.get(code)
-            if blob:
-                try:
-                    _pl = blob.split(",", 1)[1] if str(blob).strip().startswith("data:") else blob
-                    path = _tmp_font(base64.b64decode(_pl), alnum, suffix)
-                except Exception as e:
-                    print(f"[PDF font] {font_name} {suffix} embedded decode failed: {e}")
-                    path = None
-            # 2) local file fallback
-            if path is None:
-                cand = _FONT_DIR / "brand" / f"{alnum}-{suffix}.ttf"
-                path = str(cand) if cand.exists() else None
-            if path:
-                try:
-                    pdf.add_font(fam, code, path, uni=True)
-                    loaded.add(code)
-                except Exception as e:
-                    print(f"[PDF font] {font_name} {suffix} failed: {e}")
-        if "" not in loaded:
-            print(f"[PDF font] brand font '{font_name}' has no usable regular weight — using IBM Plex")
-            return None
-        print(f"[PDF font] brand font '{font_name}' registered ({sorted(loaded)})")
-        return fam, loaded
-
-    title = _register(b.get("title_font"), b.get("title_font_files"), [("", "Bold")])
-    body  = _register(b.get("body_font"), b.get("body_font_files"),
-                      [("", "Regular"), ("B", "Bold"), ("I", "Italic"), ("BI", "BoldItalic")])
-    if title:
-        tfam, _ = title
-        pdf._sf_map["bold"] = (tfam, "")
-        pdf._sf_map["semibold"] = (tfam, "")
-    if body:
-        bfam, bl = body
-        pdf._sf_map["regular"] = (bfam, "")
-        pdf._sf_map["light"]   = (bfam, "")
-        # Tracked eyebrows/kickers use the BODY font bold (per the reference),
-        # not the title face — keep a dedicated semantic weight for them.
-        pdf._sf_map["body_bold"] = (bfam, "B" if "B" in bl else "")
-        pdf._sf_map["italic"]  = (bfam, "I" if "I" in bl else "")
-        pdf._sf_map["bold_italic"] = (bfam, "BI" if "BI" in bl else ("I" if "I" in bl else ""))
-        if not title and "B" in bl:   # no title font → body bold also carries headings
-            pdf._sf_map["bold"] = (bfam, "B")
-            pdf._sf_map["semibold"] = (bfam, "B")
-
-
-# ──────────────────────────────────────────────────────────────────────────────
-# FPDF subclass
-# ──────────────────────────────────────────────────────────────────────────────
-
-class _NotePDF(FPDF):
-    """A4 portrait document with QIS-publication styling and IBM Plex Sans typography."""
-
-    def __init__(self, lang: str = "en", issuer: str = "", doc_ref: str = "",
-                 primary_color: tuple = _DEFAULT_PRIMARY,
-                 accent_color: tuple = _DEFAULT_ACCENT,
-                 firm_name: str = "Structured Note Analytics",
-                 firm_logo_bytes: bytes | None = None,
-                 report_title: str | None = None,
-                 website: str = "", contact: str = "",
-                 footer_note: str | None = None,
-                 section_rule_color: tuple = _DEFAULT_ACCENT,
-                 panel_color: tuple | None = None,
-                 sidebar_bar_color: tuple | None = None,
-                 theme: "ReportTheme | None" = None):
-        super().__init__(orientation="P", unit="mm", format="A4")
-        # Pluggable visual identity — the theme draws every "look" surface
-        # (header/footer, section heads, dividers, cover masthead, void decor)
-        # through this instance. Defaults to the CADIEM hexagon language so an
-        # un-themed document renders exactly as before.
-        self.theme         = theme if theme is not None else resolve_theme(None)
-        self.lang          = lang
-        self.issuer        = issuer
-        self.doc_ref       = doc_ref
-        self.primary_color = primary_color
-        self.accent_color  = accent_color
-        self.section_rule_color = section_rule_color
-        # ── Palette-derived design tokens ──────────────────────────────────
-        # build_tokens() (pdf_theme.py) is the single source for the identity
-        # colour derivation, shared by every theme: `ink` = a darkened primary
-        # (mastheads / banners / stat values); `lime` = the section-rule colour
-        # (keylines, number chips, accents); `teal` = the accent (secondary
-        # series, kickers); downside stays amber (the brand has no red). `panel`
-        # = the card/tile fill (an explicit brand `panel_color` wins, else a very
-        # light PRIMARY tint so a bold accent never yields a pink card — CADIEM
-        # pins its mint that a 7% teal tint would wash out); `sidebar_bar` = the
-        # solid bar atop the cover sidebar (defaults to PRIMARY, matching the
-        # table headers). The tokens are also kept on `self.tokens` for the theme.
-        tok = build_tokens(primary_color, accent_color, section_rule_color,
-                           panel=panel_color, sidebar_bar=sidebar_bar_color)
-        self.tokens        = tok
-        self.sidebar_bar_color = tok.sidebar_bar
-        self.panel_color   = tok.panel
-        self.ink           = tok.ink
-        self.lime          = tok.lime
-        self.teal          = tok.teal
-        self.amber         = tok.amber
-        self.amber_dark    = tok.amber_dark
-        self.muted         = tok.muted
-        self.body_ink      = tok.body_ink
-        self.rule_soft     = tok.rule_soft
-        self.footnote_grey = tok.footnote_grey
-        self.firm_name     = firm_name
-        self.firm_logo_bytes = firm_logo_bytes
-        # Optional branding content (B5). report_title overrides the default
-        # "Structured Note Analytics" eyebrow/subtitle; footer_note overrides the
-        # default footer disclaimer line; website/contact print on the cover.
-        self.report_title  = report_title
-        self.website       = website or ""
-        self.contact       = contact or ""
-        self.footer_note   = footer_note
-        # Aspect ratio so a wide wordmark isn't squashed into a square box.
-        self.firm_logo_aspect = _logo_aspect(firm_logo_bytes, default=1.0)
-        self._is_cover     = False
-        self._cover_pages  = set()   # page numbers with no running header/footer (covers)
-        # `{chapter_key: "01"}` from `_plan_chapters` — the numbers the contents
-        # page prints. Empty until `_build_pdf_report` sets it, so a head drawn
-        # without one prints no number rather than a number that means nothing.
-        self.chapter_nums  = {}
-        self._fig_no       = 0
-        # Round-robin cursor into `filler_image_list` so successive egregious-void
-        # photo bands cycle through the chosen images instead of repeating one.
-        self._void_photo_idx = 0
-        self.set_margins(16, 16, 16)
-        self.set_auto_page_break(auto=True, margin=28)
-        self.alias_nb_pages()
-        # IBM Plex Sans (Unicode); last resort the built-in Helvetica (Latin-1).
-        if _register_ibm_plex(self):
-            self._font_family = "IBMPlexSans"
-            self._use_unicode = True
-            self._sf_map = {
-                "regular":     ("IBMPlexSans",      ""),
-                "bold":        ("IBMPlexSans",      "B"),
-                "body_bold":   ("IBMPlexSans",      "B"),
-                "bold_italic": ("IBMPlexSans",      "BI"),
-                "italic":      ("IBMPlexSans",      "I"),
-                "semibold":    ("IBMPlexSansSB",    ""),
-                "light":       ("IBMPlexSansLight", ""),
-            }
-            print("[PDF font] Using IBM Plex Sans")
-        else:
-            self._font_family = "Helvetica"
-            self._use_unicode = False
-            self._sf_map = {
-                "regular":     ("Helvetica", ""),
-                "bold":        ("Helvetica", "B"),
-                "body_bold":   ("Helvetica", "B"),
-                "bold_italic": ("Helvetica", "BI"),
-                "italic":      ("Helvetica", "I"),
-                "semibold":    ("Helvetica", "B"),
-                "light":       ("Helvetica", ""),
-            }
-            print("[PDF font] Using Helvetica fallback")
-
-    # ------------------------------------------------------------------
-    # Font helpers
-    # ------------------------------------------------------------------
-    def _sf(self, size: float, weight: str = "regular") -> None:
-        """Set font by semantic weight via the active font map — IBM Plex Sans
-        (or Helvetica) by default, overridden by custom brand fonts when a brand
-        registers them (see _register_brand_fonts)."""
-        family, style = self._sf_map.get(weight, self._sf_map["regular"])
-        self.set_font(family, style, size)
-
-    def _fit_font(self, text: str, max_w: float, size: float,
-                  weight: str = "regular", min_size: float = 5.5) -> None:
-        """Set the font to the largest size <= `size` at which `text` fits in
-        `max_w` mm on one line, never going below `min_size`. Prevents the
-        single-line name cells (calibration table, cover sidebar) from either
-        overflowing into the neighbouring column or being clipped — long names
-        shrink just enough to fit instead."""
-        s = size
-        self._sf(s, weight)
-        safe = self._safe(text)
-        while s > min_size and self.get_string_width(safe) > max_w:
-            s -= 0.25
-            self._sf(s, weight)
-
-    def _safe(self, text: object) -> str:
-        return _safe(text, latin1=not self._use_unicode)
-
-    def t(self, key: str) -> str:
-        """Resolve a report label in this document's language. The theme layer
-        (pdf_theme.py) reaches translations through this so it needs no direct
-        dependency on _t / _LABELS."""
-        return _t(key, self.lang)
-
-    # ------------------------------------------------------------------
-    # Cell/multi_cell overrides for automatic text sanitisation
-    # ------------------------------------------------------------------
-    def cell(self, *args, **kwargs):
-        if len(args) >= 3 and isinstance(args[2], str):
-            args = (args[0], args[1], self._safe(args[2]), *args[3:])
-        for k in ("text", "txt"):
-            if k in kwargs and isinstance(kwargs[k], str):
-                kwargs[k] = self._safe(kwargs[k])
-        return super().cell(*args, **kwargs)
-
-    def multi_cell(self, *args, **kwargs):
-        if len(args) >= 3 and isinstance(args[2], str):
-            args = (args[0], args[1], self._safe(args[2]), *args[3:])
-        for k in ("text", "txt"):
-            if k in kwargs and isinstance(kwargs[k], str):
-                kwargs[k] = self._safe(kwargs[k])
-        return super().multi_cell(*args, **kwargs)
-
-    # ------------------------------------------------------------------
-    # Page chrome — running header / footer
-    # ------------------------------------------------------------------
-    # ------------------------------------------------------------------
-    # Page chrome & section heads — all delegated to the active theme
-    # (pdf_theme.py). These wrappers keep the _NotePDF method surface (and every
-    # call site) unchanged while the drawing lives in the swappable theme.
-    # ------------------------------------------------------------------
-    def header(self):
-        return self.theme.header(self)
-
-    def footer(self):
-        return self.theme.footer(self)
-
-    # ------------------------------------------------------------------
-    # Building blocks
-    # ------------------------------------------------------------------
-    def start_section(self, text: str, min_room: float = 146.0):
-        """Begin a major section, breaking to a new page only when needed.
-
-        ``min_room`` is the space the section title PLUS its first block need; we
-        break to a fresh page when fewer than that many mm remain, so a title is
-        never left stranded at the foot of a page with its chart/table overleaf.
-        The default (150) covers a title + a full-width chart (~120mm); sections
-        whose first block is short (issuer panel, glossary, disclaimer) pass a
-        smaller value so they don't leave a big void.
-        """
-        if self.page_no() == 0:
-            self.add_page()
-        elif self.get_y() > self.h - self.b_margin - min_room:
-            self.add_page()
-        else:
-            self.ln(6)   # generous separation between stacked sections
-        self.section_title(text)
-
-    def _eyebrow(self, x: float, y: float, text: str, color: tuple,
-                 size: float = 7.0, tracking: float = 0.4,
-                 w: float = 0.0, align: str = "L") -> None:
-        return self.theme.eyebrow(self, x, y, text, color,
-                                  size=size, tracking=tracking, w=w, align=align)
-
-    def section_title(self, text: str):
-        return self.theme.section_title(self, text)
-
-    def secondary_head(self, number: str, kicker: str, title: str,
-                       min_room: float = 40.0, badge: str | None = None,
-                       badge_color: tuple | None = None,
-                       badge_logo: bytes | None = None):
-        return self.theme.secondary_head(self, number, kicker, title,
-                                         min_room=min_room, badge=badge,
-                                         badge_color=badge_color, badge_logo=badge_logo)
-
-    def _decorate_void(self, variant: int = 0, min_gap: float = 44.0) -> None:
-        return self.theme.decorate_void(self, variant=variant, min_gap=min_gap)
-
-    def _decorate_void_photo(self, x0: float, x1: float, y: float,
-                             floor: float, gap: float, filler: bytes) -> bool:
-        return self.theme.decorate_void_photo(self, x0, x1, y, floor, gap, filler)
-
-    # Decorate the page we're leaving (cursor is at the content end here) so any
-    # short content page gets its void filled automatically — except covers.
-    #
-    # The test is `_cover_pages` alone. `_is_cover` describes the page ABOUT to
-    # be drawn (every cover builder raises it before calling here), so asking it
-    # about the page being left skipped the last content page ahead of any cover.
-    def add_page(self, *args, **kwargs):
-        if self.page_no() > 0 and self.page_no() not in self._cover_pages:
-            self._decorate_void(variant=self.page_no() % 3)
-        return super().add_page(*args, **kwargs)
-
-    def section_divider(self, number: str, kicker: str, heading: str):
-        return self.theme.section_divider(self, number, kicker, heading)
-
-    def subsection(self, text: str, min_room: float = 27.0):
-        out = self.theme.subsection(self, text, min_room=min_room)
-        # Claim the page for whatever block comes next — see _head_claimed().
-        self._head_page = self.page_no()
-        return out
-
-    def _head_claimed(self) -> bool:
-        """True (once) if a heading was just drawn on THIS page.
-
-        A block that is introduced by a heading must not run its own
-        keep-together check: the heading already made that decision, using
-        `_table_room` to reserve the room, and a second opinion taken 10mm
-        further down the page can only ever disagree — which is precisely how a
-        heading ends up alone on a page the block it introduces has left.
-        Consumed on read, so it applies to the FIRST block only.
-        """
-        claimed = getattr(self, "_head_page", None) == self.page_no()
-        self._head_page = None
-        return claimed
-
-    def body(self, text: str, h: float = 4.5):
-        """8.5pt regular body text."""
-        self._sf(8.5, "regular")
-        self.set_text_color(*_TEXT)
-        self.multi_cell(0, h, text)
-        self.ln(1.5)
-
-    def bullet(self, text: str):
-        """8.5pt bullet point with proper indent."""
-        self._sf(8.5, "regular")
-        self.set_text_color(*_TEXT)
-        x0 = self.get_x()
-        self.cell(5, 5, "•" if self._use_unicode else chr(149))
-        self.multi_cell(self.w - self.r_margin - x0 - 5, 5, text)
-        self.ln(1.5)
-
-    def kv_table(self, rows: list[tuple[str, str]], col_w: tuple[float, float] = (78, 100)):
-        """Label/value table with thin rules and consistent alignment."""
-        self.set_text_color(*_TEXT)
-        for row_idx, (k, v) in enumerate(rows):
-            y0 = self.get_y()
-            if y0 > self.h - 32:
-                self.add_page()
-                y0 = self.get_y()
-            # Light zebra on alternating rows — subtle background
-            if row_idx % 2 == 0:
-                self.set_fill_color(*_ROW_ALT)
-                self.rect(self.l_margin, y0, col_w[0] + col_w[1], 8.5, style="F")
-            self._sf(8.5, "regular")    # label — reference uses regular weight in table cells
-            self.set_text_color(*_TEXT)
-            self.cell(col_w[0], 8.5, k)
-            self._sf(8.5, "regular")
-            self.cell(col_w[1], 8.5, v, new_x="LMARGIN", new_y="NEXT")
-        self.ln(3)
-
-    def data_table(self, headers: list[str], rows: list[list[str]],
-                   col_widths: list[float] | None = None,
-                   aligns: list[str] | None = None,
-                   rounded: bool = True):
-        """Filled-header table with zebra rows and proper number alignment.
-
-        rounded=True (default) draws a rounded-rect card behind the whole table
-        so the outer corners round off; pass rounded=False for plain rects.
-        """
-        n = len(headers)
-        usable = self.w - self.l_margin - self.r_margin
-        if col_widths is None:
-            col_widths = [usable / n] * n
-        if aligns is None:
-            aligns = ["L"] + ["R"] * (n - 1)
-        tbl_w  = sum(col_widths)
-        _CR    = 3.0   # corner radius (mm)
-        # _use_round flips off when the table can't fully fit (multi-page) — a
-        # rounded card across a page break looks broken, so fall back to rects.
-        _use_round = [False]
-
-        def _header_row(rounded_card: bool = False):
-            # Header strip: rounded-top ink card (so the table's top corners round)
-            # with transparent text cells, else a plain ink filled row. First column
-            # header reads in lime, the rest white (per the prototype).
-            if rounded_card:
-                self.set_fill_color(*self.ink)
-                try:
-                    self.rect(self.l_margin, self.get_y(), tbl_w, 9, style="F",
-                              round_corners=("TOP_LEFT", "TOP_RIGHT"), corner_radius=_CR)
-                except TypeError:
-                    self.rect(self.l_margin, self.get_y(), tbl_w, 9, style="F")
-            else:
-                self.set_fill_color(*self.ink)
-            self._sf(7.5, "body_bold")
-            for idx, (h, w, a) in enumerate(zip(headers, col_widths, aligns)):
-                self.set_text_color(*(self.lime if idx == 0 else _WHITE))
-                self.cell(w, 9, f" {h} ", border=0, fill=not rounded_card, align=a)
-            self.ln()
-            self.set_text_color(*_TEXT)
-            self._sf(8, "regular")
-
-        # Keep the whole table together when it can fit on one page: if the
-        # header + all rows won't fit in the space left but WOULD fit on a fresh
-        # page, break first instead of splitting a short table across pages.
-        # `_table_room` above predicts this rule for the sub-heading that
-        # introduces the table; the two MUST stay in step or the heading gets
-        # orphaned on the page the table just left.
-        _needed = _TBL_HEAD_H + len(rows) * _TBL_ROW_H + _TBL_PAD
-        _avail  = self.h - 30 - self.get_y()
-        if self._head_claimed():
-            # A heading directly above already reserved for us; only break if we
-            # cannot even start here (which its reservation should have avoided).
-            if self.get_y() > self.h - 55:
-                self.add_page()
-        elif _needed > _avail and _needed <= _PAGE_CAP:
-            self.add_page()
-        elif self.get_y() > self.h - 55:
-            self.add_page()
-
-        # Rounded card: a white rounded rect behind the whole table rounds the
-        # bottom corners; the header's rounded-top green strip rounds the top.
-        # Header text and white rows draw transparent over it; only alt zebra
-        # rows get an opaque fill (the last one rounded so it doesn't square the
-        # bottom). Only when the whole table fits the page; older fpdf2 → rects.
-        if rounded:
-            _ch = 9 + len(rows) * 8
-            _cy = self.get_y()
-            if _cy + _ch <= self.h - 28:
-                try:
-                    self.set_fill_color(*_WHITE)
-                    self.rect(self.l_margin, _cy, tbl_w, _ch, style="F",
-                              round_corners=True, corner_radius=_CR)
-                    _use_round[0] = True
-                except TypeError:
-                    _use_round[0] = False
-        _header_row(_use_round[0])
-
-        _last = len(rows) - 1
-        for i, row in enumerate(rows):
-            if self.get_y() > self.h - 30:
-                self.add_page()
-                _header_row(False)   # continuation header is always a plain row
-            is_alt = (i % 2 == 0)
-            if _use_round[0]:
-                # Transparent cells over the white card; paint only alt rows.
-                if is_alt:
-                    self.set_fill_color(*_ROW_ALT)
-                    if i == _last:
-                        try:
-                            self.rect(self.l_margin, self.get_y(), tbl_w, 8, style="F",
-                                      round_corners=("BOTTOM_LEFT", "BOTTOM_RIGHT"),
-                                      corner_radius=_CR)
-                        except TypeError:
-                            self.rect(self.l_margin, self.get_y(), tbl_w, 8, style="F")
-                    else:
-                        self.rect(self.l_margin, self.get_y(), tbl_w, 8, style="F")
-                for cell_val, w, a in zip(row, col_widths, aligns):
-                    self.cell(w, 8, f" {cell_val} ", border=0, fill=False, align=a)
-                self.ln()
-            else:
-                self.set_fill_color(*(_ROW_ALT if is_alt else _WHITE))
-                for cell_val, w, a in zip(row, col_widths, aligns):
-                    self.cell(w, 8, f" {cell_val} ", border=0, fill=True, align=a)
-                self.ln()
-
-    def logo_row_table(self, headers: list[str], rows: list[list[str]],
-                       logos: dict, col_widths: list[float] | None = None,
-                       aligns: list[str] | None = None):
-        """Like data_table but draws a small inline ticker logo to the left of the
-        first-column name. `rows[i][0]` is the asset name and `logos[name]` its
-        PNG bytes (or None). Rounded outer corners match data_table."""
-        n = len(headers)
-        usable = self.w - self.l_margin - self.r_margin
-        if col_widths is None:
-            col_widths = [usable / n] * n
-        if aligns is None:
-            aligns = ["L"] + ["R"] * (n - 1)
-        LW = LH = 6.0
-        ROW_H  = 10.0
-        HEAD_H = 9.0
-        tbl_w  = sum(col_widths)
-        _CR    = 3.0
-        # Rounded card disables on a multi-page split (a rounded card across a
-        # page break looks broken) — same fallback as data_table.
-        _use_round = [False]
-
-        def _header_row(rounded_card: bool = False):
-            if rounded_card:
-                self.set_fill_color(*self.ink)
-                try:
-                    self.rect(self.l_margin, self.get_y(), tbl_w, HEAD_H, style="F",
-                              round_corners=("TOP_LEFT", "TOP_RIGHT"), corner_radius=_CR)
-                except TypeError:
-                    self.rect(self.l_margin, self.get_y(), tbl_w, HEAD_H, style="F")
-            else:
-                self.set_fill_color(*self.ink)
-            self._sf(7.5, "body_bold")
-            for idx, (h, w, a) in enumerate(zip(headers, col_widths, aligns)):
-                self.set_text_color(*(self.lime if idx == 0 else _WHITE))
-                self.cell(w, HEAD_H, f" {h} ", border=0, fill=not rounded_card, align=a)
-            self.ln()
-            self.set_text_color(*_TEXT)
-            self._sf(8, "regular")
-
-        # Keep the whole table together when it fits on one page (see data_table).
-        _needed   = HEAD_H + len(rows) * ROW_H + 6
-        _avail    = self.h - 30 - self.get_y()
-        _page_cap = self.h - 30 - 21
-        if _needed > _avail and _needed <= _page_cap:
-            self.add_page()
-        elif self.get_y() > self.h - 55:
-            self.add_page()
-
-        # White rounded card behind the whole table rounds the bottom corners;
-        # the header's rounded-top strip rounds the top. Only when it fits the
-        # page; older fpdf2 (no round_corners kwarg) → plain rects.
-        _ch = HEAD_H + len(rows) * ROW_H
-        _cy = self.get_y()
-        if _cy + _ch <= self.h - 28:
-            try:
-                self.set_fill_color(*_WHITE)
-                self.rect(self.l_margin, _cy, tbl_w, _ch, style="F",
-                          round_corners=True, corner_radius=_CR)
-                _use_round[0] = True
-            except TypeError:
-                _use_round[0] = False
-        _header_row(_use_round[0])
-
-        _last = len(rows) - 1
-        for i, row in enumerate(rows):
-            if self.get_y() > self.h - 30:
-                self.add_page()
-                _header_row(False)   # continuation header is a plain row
-            name  = str(row[0])
-            is_alt = (i % 2 == 0)
-            row_y = self.get_y()
-            # Full-width row background: alt rows get a zebra fill (the last one
-            # rounded at the bottom so the card's corners stay round); white rows
-            # are transparent over the white card.
-            if _use_round[0]:
-                if is_alt:
-                    self.set_fill_color(*_ROW_ALT)
-                    if i == _last:
-                        try:
-                            self.rect(self.l_margin, row_y, tbl_w, ROW_H, style="F",
-                                      round_corners=("BOTTOM_LEFT", "BOTTOM_RIGHT"),
-                                      corner_radius=_CR)
-                        except TypeError:
-                            self.rect(self.l_margin, row_y, tbl_w, ROW_H, style="F")
-                    else:
-                        self.rect(self.l_margin, row_y, tbl_w, ROW_H, style="F")
-            else:
-                self.set_fill_color(*(_ROW_ALT if is_alt else _WHITE))
-                self.rect(self.l_margin, row_y, tbl_w, ROW_H, style="F")
-            # First column: inline logo, then name
-            ldata  = (logos or {}).get(name)
-            text_x = self.l_margin + 2
-            if ldata:
-                try:
-                    self.image(io.BytesIO(ldata), x=self.l_margin + 1,
-                               y=row_y + (ROW_H - LH) / 2, w=LW, h=LH)
-                    text_x = self.l_margin + LW + 3
-                except Exception:
-                    pass
-            self.set_xy(text_x, row_y + (ROW_H - 4) / 2)
-            _name_w = col_widths[0] - (text_x - self.l_margin) - 1
-            self._fit_font(name, _name_w, 8, "semibold")
-            self.set_text_color(*_TEXT)
-            self.cell(_name_w, 4, self._safe(name))
-            # Remaining columns — transparent text over the row background
-            self._sf(8, "regular")
-            self.set_text_color(*_TEXT)
-            self.set_xy(self.l_margin + col_widths[0], row_y)
-            for cell_val, w, a in zip(row[1:], col_widths[1:], aligns[1:]):
-                self.cell(w, ROW_H, f" {cell_val} ", border=0, fill=False, align=a)
-            self.set_y(row_y + ROW_H)
-
-        self.ln(4)
-
-    def metric_band(self, metrics: list[tuple[str, str]]):
-        """A row of metric tiles — each an ECF1F6 card with a tracked muted label
-        and an ink (or amber, when negative) Neulis value. Mirrors the prototype's
-        MC / Backtest / Current-Performance metric strips."""
-        n = len(metrics)
-        usable = self.w - self.l_margin - self.r_margin
-        gap = 3.0
-        # BALANCED rows, max 4 across. Filling rows of 3 until the tiles run out
-        # left a ragged tail — 7 metrics rendered 3 + 3 + 1, stranding one tile
-        # on a row of its own, and it read as an accident rather than a layout.
-        # Spread n over ceil(n/4) rows as evenly as possible instead, so 7 is
-        # 4 + 3, 5 is 3 + 2 and no row is ever shorter than the one below it by
-        # more than one tile. Each row is stretched to the full measure, so the
-        # band keeps a flush left AND right edge whatever the count.
-        nrows = max(1, (n + 3) // 4)
-        base, extra = divmod(n, nrows)
-        counts = [base + (1 if r < extra else 0) for r in range(nrows)]
-        # (row index, column index, columns in that row) per tile, in order.
-        slots, _i = [], 0
-        for r, cnt in enumerate(counts):
-            for c in range(cnt):
-                slots.append((r, c, cnt))
-                _i += 1
-        y0 = self.get_y()
-        h = 19.0
-        for i, (label, value) in enumerate(metrics):
-            r, c, cnt = slots[i]
-            w = (usable - gap * (cnt - 1)) / cnt
-            x = self.l_margin + c * (w + gap)
-            yr = y0 + r * (h + gap)
-            self.set_fill_color(*self.panel_color)
-            try:
-                self.rect(x, yr, w, h, style="F", round_corners=True, corner_radius=2)
-            except TypeError:
-                self.rect(x, yr, w, h, style="F")
-            # Tracked muted label.
-            lbl = self._safe(label.upper())
-            size = 6.3
-            self._sf(size, "body_bold")
-            while self.get_string_width(lbl) > (w - 6) and size > 4.4:
-                size -= 0.2
-                self._sf(size, "body_bold")
-            self.set_xy(x + 4, yr + 3.6)
-            self.set_text_color(*self.muted)
-            try:
-                self.set_char_spacing(0.3)
-            except Exception:
-                pass
-            self.cell(w - 6, 3.3, lbl)
-            try:
-                self.set_char_spacing(0)
-            except Exception:
-                pass
-            # Value — ink, or amber when negative; shrink/wrap a long free-text value.
-            val = self._safe(str(value))
-            self.set_text_color(*(self.amber if val.strip().startswith("-") else self.ink))
-            vsize = 14.0
-            self._sf(vsize, "bold")
-            while self.get_string_width(val) > (w - 6) and vsize > 8.5:
-                vsize -= 0.3
-                self._sf(vsize, "bold")
-            if self.get_string_width(val) > (w - 6):
-                self.set_xy(x + 4, yr + 8.2)
-                self.multi_cell(w - 6, vsize * 0.42, val,
-                                align="L", new_x="LMARGIN", new_y="TOP")
-            else:
-                self.set_xy(x + 4, yr + 9.6)
-                self.cell(w - 6, 7, val)
-
-        self.set_y(y0 + nrows * h + (nrows - 1) * gap)
-        self.set_text_color(*_TEXT)
-        self.ln(5)
-
-    def figure(self, img_bytes: bytes | None, caption: str, source: str,
-               w: float = 172, h: float | None = None, max_h: float = 118):
-        if img_bytes is None:
-            return
-        self._fig_no += 1
-        # Derive the placement height from the PNG's true pixel aspect ratio so
-        # charts keep their natural proportions instead of being squashed into a
-        # fixed box. A very tall chart is fitted by height and re-centred.
-        if h is None:
-            try:
-                from PIL import Image
-                iw, ih = Image.open(io.BytesIO(img_bytes)).size
-                h = w * ih / iw
-                if h > max_h:
-                    h = max_h
-                    w = h * iw / ih
-            except Exception:
-                h = 80
-        _fpad = 3.0   # padding between the chart and its panel edge
-        needed = h + 18 + 2 * _fpad
-        if self.get_y() + needed > self.h - 28:
-            self.add_page()
-        # Caption above figure — SemiBold 8.5pt in the brand primary colour
-        # (matches the section titles). Deliberately NOT the accent: the accent
-        # now drives the chart series palette, and a caption that tracks the chart
-        # lines looked off — the caption is chrome, so it stays on the brand head
-        # colour like every other heading.
-        self._sf(8.5, "bold")
-        self.set_text_color(*self.ink)
-        self.multi_cell(0, 4.5, f"{_t('figure_word', self.lang)} {self._fig_no}: {caption}", align="C")
-        self.ln(1)
-        x = (self.w - w) / 2
-        # White rounded card with a hairline border behind the chart (the
-        # prototype frames every figure in a white bordered card).
-        self.ln(_fpad)
-        _img_y = self.get_y()
-        self.set_fill_color(*_WHITE)
-        self.set_draw_color(*self.rule_soft)
-        self.set_line_width(0.2)
-        try:
-            self.rect(x - _fpad, _img_y - _fpad, w + 2 * _fpad, h + 2 * _fpad,
-                      style="DF", round_corners=True, corner_radius=2)
-        except TypeError:
-            self.rect(x - _fpad, _img_y - _fpad, w + 2 * _fpad, h + 2 * _fpad, style="DF")
-        self.image(io.BytesIO(img_bytes), x=x, y=_img_y, w=w, h=h)
-        self.set_y(_img_y + h + _fpad)
-        self.ln(1.5)
-        # Source line — italic muted, like the prototype caption source.
-        self._sf(7, "italic")
-        self.set_text_color(*self.muted)
-        self.cell(0, 3.5, source, align="C", new_x="LMARGIN", new_y="NEXT")
-        self.set_text_color(*_TEXT)
-        self.ln(3.5)
-
-    def callout(self, title: str, text: str, w: float | None = None):
-        """A light-tinted blurb panel with a green left keyline (the prototype's
-        'Model & Methodology' box). Title in ink, body in body-ink."""
-        if w is None:
-            w = self.w - self.l_margin - self.r_margin
-        x0, y0 = self.l_margin, self.get_y()
-        self._sf(8, "regular")
-        lines = self.multi_cell(w - 12, 4.3, self._safe(text), dry_run=True, output="LINES")
-        box_h = 11 + len(lines) * 4.3 + 4
-        if y0 + box_h > self.h - 28:
-            self.add_page()
-            y0 = self.get_y()
-        # Very light green-tinted panel + a 1.4mm green left bar.
-        self.set_fill_color(*_blend(self.primary_color, _WHITE, 0.94))
-        try:
-            self.rect(x0, y0, w, box_h, style="F", round_corners=True, corner_radius=2)
-        except TypeError:
-            self.rect(x0, y0, w, box_h, style="F")
-        self.set_fill_color(*self.primary_color)
-        self.rect(x0, y0, 1.4, box_h, style="F")
-        self.set_xy(x0 + 7, y0 + 4.0)
-        self._sf(8.5, "bold")
-        self.set_text_color(*self.ink)
-        self.cell(w - 11, 5, title)
-        self.set_xy(x0 + 7, y0 + 10.5)
-        self._sf(8, "regular")
-        self.set_text_color(*self.body_ink)
-        self.multi_cell(w - 11, 4.3, text)
-        self.set_y(y0 + box_h + 4)
+    def __init__(self, *args, issuer: str = "", **kwargs):
+        # This repo's own fonts/ and label table — identical bytes and identical
+        # strings to before, so the extraction cannot move a glyph or a word.
+        kwargs.setdefault("font_dir", _FONT_DIR)
+        kwargs.setdefault("labels", _t)
+        super().__init__(*args, **kwargs)
+        self.issuer = issuer          # note state, not document state
 
     def issuer_info_block(self, name: str, logo_bytes: bytes | None,
                           description: str, ratings: list[tuple[str, str]]):
@@ -1761,173 +967,26 @@ class _NotePDF(FPDF):
 # *every* logo byte string through Pillow to a clean RGBA PNG before it ever
 # reaches pdf.image(): the format is guaranteed embeddable, the alpha channel is
 # preserved, and a multi-resolution ICO is collapsed to its largest frame.
-_EMBEDDABLE_MAGIC = (b"\x89PNG", b"\xff\xd8\xff", b"GIF8")  # PNG / JPEG / GIF
-
-
-def _dimensions_sane(raw: bytes) -> bool:
-    """Reject a decompression bomb by reading the HEADER, before any pixels.
-
-    Branding art arrives base64-encoded inside a user-supplied config, and a
-    ~100 KB PNG can declare 6000x6000 and expand to ~108 MB of RGBA. Pillow's
-    MAX_IMAGE_PIXELS is not the defence: it only *warns* until twice the limit,
-    and the cheap path below hands PNG/JPEG straight to fpdf2 without ever
-    calling Pillow, so the allocation happens later and elsewhere.
-
-    `Image.open` is lazy — it parses the header and stops — so `.size` costs
-    nothing. Reject rather than downscale: a brand asset this large is a mistake
-    or an attack, and silently shipping a resampled logo hides both.
-    """
-    try:
-        from PIL import Image
-        with Image.open(io.BytesIO(raw)) as im:
-            w, h = im.size
-    except Exception:
-        return True          # not decodable here; the caller's own guards apply
-    if w * h > _MAX_IMAGE_PX:
-        print(f"[PDF image] refused {w}x{h} ({w * h / 1e6:.0f} MPx) — over the "
-              f"{_MAX_IMAGE_PX / 1e6:.0f} MPx ceiling")
-        return False
-    return True
-
-
-def _to_embeddable_png(raw: bytes | None) -> bytes | None:
-    """Return PNG bytes fpdf2 can embed, or None.
-
-    If `raw` is already a PNG/JPEG/GIF it is returned unchanged (cheap path).
-    Otherwise — ICO, WEBP, BMP, TIFF, multi-frame favicon … — it is decoded by
-    Pillow and re-encoded as a single RGBA PNG. Any decode failure returns None
-    so a bad image is dropped rather than crashing the report.
-    """
-    if not raw:
-        return None
-    if not _dimensions_sane(raw):
-        return None
-    if raw[:4] in _EMBEDDABLE_MAGIC:
-        return raw
-    try:
-        from PIL import Image
-        im = Image.open(io.BytesIO(raw))
-        # ICO files carry several sizes; Pillow opens the first — pick the
-        # largest available frame for the crispest logo.
-        sizes = getattr(im, "ico", None)
-        if sizes is not None:
-            try:
-                biggest = max(im.ico.sizes())
-                im = im.ico.getimage(biggest)
-            except Exception:
-                pass
-        im = im.convert("RGBA")
-        out = io.BytesIO()
-        im.save(out, format="PNG")
-        data = out.getvalue()
-        print(f"[PDF logo] converted {len(raw):,}b -> PNG {len(data):,}b ({im.size[0]}x{im.size[1]})")
-        return data
-    except Exception as exc:
-        print(f"[PDF logo] convert FAIL ({len(raw)}b): {exc}")
-        return None
-
-
-def _logo_aspect(png: bytes | None, default: float = 1.0) -> float:
-    """Width/height aspect ratio of a logo, so it can be sized without squashing
-    a wide wordmark into a square box. Falls back to `default` on any error."""
-    if not png:
-        return default
-    try:
-        from PIL import Image
-        w, h = Image.open(io.BytesIO(png)).size
-        return (w / h) if h else default
-    except Exception:
-        return default
-
-
-def _fetch_image_bytes(url: str, timeout: int = 8) -> bytes | None:
-    """Download an image from a URL. Returns raw bytes or None on failure.
-
-    Uses a browser-like User-Agent so Google Favicon and other CDNs don't
-    redirect or block the request.  Validates that the response body is
-    non-empty before returning.
-    """
-    if not url:
-        return None
-    # http(s) only. `branding.logo_url` is user-supplied, and urlopen happily
-    # honours file:// (read any file on the server and embed it in the PDF the
-    # requester downloads) as well as ftp:// and data:. Nothing legitimate here
-    # is served over anything but HTTP.
-    if not str(url).lower().startswith(("http://", "https://")):
-        print(f"[PDF logo] refused non-http URL scheme: {str(url)[:60]!r}")
-        return None
-    # Upgrade Google favicon requests to sz=256 for crisper logos
-    if "google.com/s2/favicons" in url:
-        import re as _re
-        url = _re.sub(r"sz=\d+", "sz=256", url)
-    try:
-        req = urllib.request.Request(
-            url,
-            headers={
-                "User-Agent": (
-                    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
-                    "AppleWebKit/537.36 (KHTML, like Gecko) "
-                    "Chrome/124.0 Safari/537.36"
-                ),
-                "Accept": "image/png,image/jpeg,image/webp,image/*,*/*",
-            },
-        )
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
-            data = resp.read()
-        if not data:
-            print(f"[PDF logo] Empty response from {url}")
-            return None
-        print(f"[PDF logo] OK  {len(data):,} bytes  {url}")
-        return data
-    except Exception as exc:
-        print(f"[PDF logo] FAIL {url!r}: {exc}")
-        return None
-
-
-def _read_local_image(path: Path | None) -> bytes | None:
-    """Read a local image file as raw bytes. fpdf2 cannot render SVG natively,
-    so SVG files are skipped (returns None) with a diagnostic. Any failure is
-    swallowed and returns None so a missing/bad file never crashes the PDF."""
-    try:
-        if path is None or not path.exists() or not path.is_file():
-            return None
-        if path.suffix.lower() == ".svg":
-            print(f"[PDF logo] SKIP SVG (not renderable by fpdf2): {path}")
-            return None
-        data = path.read_bytes()
-        if not data:
-            return None
-        print(f"[PDF logo] OK  {len(data):,} bytes  {path}")
-        return data
-    except Exception as exc:
-        print(f"[PDF logo] FAIL local {path!r}: {exc}")
-        return None
+# Image loading / sanitising / embedding now lives in reportkit.images. Every
+# name is re-bound here under its original private spelling, as a MODULE GLOBAL
+# resolved at call time — `tests/golden_fixture.py` neutralises the network by
+# rebinding `pdf_report._fetch_image_bytes`, and `_load_logo` below looks it up
+# through this module, so the indirection is the test seam, not an accident.
+_dimensions_sane   = _rk_images.dimensions_sane
+_to_embeddable_png = _rk_images.to_embeddable_png
+_logo_aspect       = _rk_images.logo_aspect
+_fetch_image_bytes = _rk_images.fetch_image_bytes
+_read_local_image  = _rk_images.read_local_image
+_EMBEDDABLE_MAGIC  = _rk_images._EMBEDDABLE_MAGIC
 
 
 def _resolve_local_path(spec: str) -> Path | None:
-    """Resolve a branding `logo_file` to an absolute path INSIDE the repo root.
+    """Resolve a branding `logo_file` against THIS repo's root.
 
-    A branding config is user-supplied — uploaded through the web UI or dropped
-    into a connected folder — so `logo_file` is attacker-controlled input, not
-    an operator-only setting. Left unconstrained it is an arbitrary-file-read
-    primitive: any readable image on the server could be resolved and embedded
-    into a PDF the requester then downloads, and the "unusable" log line answers
-    does-this-path-exist for everything else.
-
-    Both absolute paths and `../` escapes are refused. The documented contract
-    was always "local path, repo-root relative", so this narrows the code to
-    what the docs already promised. Configs embed their artwork as
-    `logo_base64` (the web UI only ever writes that), so this path is for local
-    development.
+    The containment rule is reportkit's; the root is the host's, because an
+    installed library has no repo to be relative to.
     """
-    try:
-        root = _REPO_ROOT.resolve()
-        p = (Path(spec) if Path(spec).is_absolute() else (root / spec)).resolve()
-        p.relative_to(root)          # raises if p is outside the repo root
-        return p
-    except Exception:
-        print(f"[PDF logo] logo_file refused (outside the repo root): {spec!r}")
-        return None
+    return _rk_images.resolve_within(spec, _REPO_ROOT)
 
 
 def _load_logo(branding: dict | None) -> bytes | None:
@@ -2056,16 +1115,6 @@ _SRC_LIGHT = (96, 165, 250)   # #60a5fa  autocalled bars / light secondary serie
 _SRC_EXTRA = {(8, 145, 178), (124, 58, 237), (13, 148, 136)}  # >3-asset series colours
 
 
-def _blend(rgb: tuple, target: tuple, f: float) -> tuple:
-    return tuple(round(rgb[i] * (1 - f) + target[i] * f) for i in range(3))
-
-
-def _rgb_to_hue(rgb: tuple) -> float:
-    """HSL hue in degrees [0, 360) for an (R,G,B) 0-255 tuple. Used to rotate the
-    backtest's blue autocall ramp onto the brand accent's hue."""
-    r, g, b = (c / 255.0 for c in rgb[:3])
-    h, _l, _s = colorsys.rgb_to_hls(r, g, b)
-    return h * 360.0
 
 
 def _build_color_remap(primary: tuple, accent: tuple, secondary: tuple) -> dict:
@@ -2107,54 +1156,6 @@ def _build_scale_remap(primary: tuple, accent: tuple) -> dict:
     """Colour-scale map (heatmaps): keep the intensity ramp on-brand (primary/
     accent), never gold — the navy/blue endpoints map to the brand, red stays red."""
     return {_SRC_NAVY: primary, _SRC_BLUE: accent}
-
-
-def _parse_rgb(c: str):
-    """Return (r,g,b,alpha_or_None) for a hex or rgb()/rgba() string, else None."""
-    if not isinstance(c, str):
-        return None
-    s = c.strip().lower()
-    if s.startswith("#"):
-        s = s[1:]
-        if len(s) == 3:
-            s = "".join(ch * 2 for ch in s)
-        if len(s) == 6:
-            try:
-                return (int(s[0:2], 16), int(s[2:4], 16), int(s[4:6], 16), None)
-            except ValueError:
-                return None
-        return None
-    m = re.match(r"rgba?\(\s*([\d.]+)\s*,\s*([\d.]+)\s*,\s*([\d.]+)\s*(?:,\s*([\d.]+)\s*)?\)", s)
-    if m:
-        r, g, b = (int(float(m.group(i))) for i in (1, 2, 3))
-        a = float(m.group(4)) if m.group(4) is not None else None
-        return (r, g, b, a)
-    return None
-
-
-def _remap_color(c, remap: dict, ramp_hue: float):
-    """Map one colour through a branding remap, preserving any alpha. Blue-family
-    hsl() colours (the backtest autocall ramp) are hue-rotated to `ramp_hue` (the
-    brand accent's hue); colours whose RGB isn't a known source value are returned
-    unchanged."""
-    if isinstance(c, str):
-        h = re.match(r"hsl\(\s*(\d+(?:\.\d+)?)\s*,\s*([\d.]+)%\s*,\s*([\d.]+)%\s*\)",
-                     c.strip().lower())
-        if h:
-            hue = float(h.group(1))
-            if 195 <= hue <= 255:   # blue family -> brand-accent ramp
-                return f"hsl({ramp_hue:.0f},{h.group(2)}%,{h.group(3)}%)"
-            return c
-    p = _parse_rgb(c)
-    if p is None:
-        return c
-    rgb, alpha = p[:3], p[3]
-    tgt = remap.get(rgb)
-    if tgt is None:
-        return c
-    if alpha is None:
-        return f"rgb({tgt[0]},{tgt[1]},{tgt[2]})"
-    return f"rgba({tgt[0]},{tgt[1]},{tgt[2]},{alpha})"
 
 
 def _rebrand_figure(fig, primary: tuple, accent: tuple, secondary: tuple):
@@ -2225,205 +1226,28 @@ def _rebrand_figure(fig, primary: tuple, accent: tuple, secondary: tuple):
         pass
 
 
-def _theme_figure(fig, primary_color: tuple, accent_color: tuple,
-                  secondary_color: tuple = _DEFAULT_SECONDARY):
-    """Apply the print theme to a Plotly figure before rasterising: white
-    backgrounds, report typography, light gridlines, no Plotly logo — and remap
-    the source navy/blue palette onto the branding colours (no-op for the default
-    palette). Semantic colours (red KI line, grey autocall, orange coupon) and
-    the fan-chart band alpha hierarchy are preserved by `_rebrand_figure`.
-    """
-    try:
-        _rebrand_figure(fig, primary_color, accent_color, secondary_color)
-    except Exception:
-        pass
-    try:
-        fig.update_layout(
-            # Transparent so the chart blends into its brand-tinted figure card
-            # instead of stamping an opaque white rectangle that clashes with the
-            # panel. fpdf2 composites the PNG's alpha over the card fill, so the
-            # panel colour shows through the plot area and margins.
-            paper_bgcolor="rgba(0,0,0,0)",
-            plot_bgcolor="rgba(0,0,0,0)",
-            font=dict(family="IBM Plex Sans, Arial, sans-serif", size=10, color="#1a1a2e"),
-            modebar_remove=["logo", "toImage", "sendDataToCloud"],
-        )
-        # Clean, understated legend: a single horizontal strip along the bottom
-        # (clears the P1/P2.. observation labels pinned to the top of the path/fan
-        # charts), no "variable" group title, muted slate text at a readable-but-
-        # not-shouty size, no box. Replaces the heavy 13pt bold navy legend.
-        # Only for charts that actually show a legend — a legend-less chart (the
-        # correlation heatmap, the per-underlying price line) keeps its own tight
-        # margins instead of reserving 78mm of empty space at the bottom.
-        if getattr(fig.layout, "showlegend", None) is not False:
-            fig.update_layout(
-                legend=dict(
-                    orientation="h",
-                    yanchor="top", y=-0.18, xanchor="center", x=0.5,
-                    title=dict(text=""),
-                    font=dict(family="IBM Plex Sans, Arial, sans-serif",
-                              size=11, color="#5b6675"),
-                    bgcolor="rgba(0,0,0,0)", borderwidth=0,
-                    itemsizing="constant",
-                ),
-                margin=dict(b=78),
-            )
-        # Axes: cool-grey, semi-transparent so gridlines stay legible on the
-        # tinted card now that the opaque white plot background is gone (a near-
-        # white grid would vanish against the panel). Per-axis ranges/tickformats
-        # set in charts.py are untouched.
-        fig.update_xaxes(linecolor="rgba(71,85,105,0.35)",
-                         gridcolor="rgba(71,85,105,0.14)",
-                         zerolinecolor="rgba(71,85,105,0.35)")
-        fig.update_yaxes(linecolor="rgba(71,85,105,0.35)",
-                         gridcolor="rgba(71,85,105,0.14)",
-                         zerolinecolor="rgba(71,85,105,0.35)")
-    except Exception:
-        pass
-
-
-# Kaleido v1 drives an external Chrome/Chromium (unlike the self-contained
-# v0.2.x). On a headless host with no browser — every export raises and the
-# report silently drops all figures. The Docker image installs `chromium` (and
-# points kaleido at it via BROWSER_PATH); as a belt-and-suspenders fallback for
-# other environments we attempt a one-time runtime Chrome download so the report
-# still renders charts when the system package is missing. Guarded to try once.
-_CHROME_FETCH_TRIED = False
-
-
-def _ensure_chrome() -> None:
-    """Best-effort: make sure Kaleido has a Chrome to drive. No-op on failure.
-
-    Tries kaleido.get_chrome_sync() once (downloads Chromium into Kaleido's
-    cache). Only runs once per process; safe when a system Chromium already
-    exists (Kaleido prefers it and this is skipped after the first attempt)."""
-    global _CHROME_FETCH_TRIED
-    if _CHROME_FETCH_TRIED:
-        return
-    _CHROME_FETCH_TRIED = True
-    try:
-        import kaleido
-        get_chrome = getattr(kaleido, "get_chrome_sync", None)
-        if get_chrome is not None:
-            get_chrome()
-            print("[PDF figure] fetched Chromium for Kaleido")
-    except Exception as exc:
-        print(f"[PDF figure] Chrome fetch unavailable: {exc}")
-
-
-# Persistent Kaleido server. Plotly's pio.to_image boots a fresh headless
-# Chrome on EVERY call (~3s of startup each); a full report exports ~13 figures,
-# so cold-booting per figure is ~40s of pure overhead. Starting Kaleido's sync
-# server once keeps a single Chrome alive for the whole build — pio.to_image
-# auto-detects the running server, so _fig_to_png itself needs no change — and
-# the export collapses to one ~2.7s boot plus ~0.2s per figure (~5s total).
-# generate_pdf_report starts it before rendering and tears it down in a finally,
-# so the Chrome subprocess never lingers past a build. Best-effort: if the
-# server can't start (no Chrome on a headless host), exports fall back to the
-# per-call path in _fig_to_png unchanged.
-def _start_kaleido_server() -> bool:
-    """Start Kaleido's persistent sync server. Returns True on success."""
-    try:
-        import kaleido
-        kaleido.start_sync_server()
-        return True
-    except Exception as exc:
-        print(f"[PDF figure] persistent Kaleido server unavailable "
-              f"({type(exc).__name__}: {exc}); exporting per figure")
-        return False
-
-
-def _stop_kaleido_server() -> None:
-    """Tear down the persistent Kaleido server (and its Chrome subprocess)."""
-    try:
-        import kaleido
-        kaleido.stop_sync_server()
-    except Exception:
-        pass
-
-
-# The Kaleido server is per-PROCESS, but report builds are per-REQUEST and the
-# API serves them concurrently. Started and stopped naively, the first build to
-# finish tears Chrome out from under every other one still running, and their
-# remaining figures come back empty — a complete-looking PDF with no charts in
-# it, which is the failure mode CLAUDE.md already warns about for the proof
-# endpoint. Reference-count instead: the last build out turns off the lights.
-_KALEIDO_LOCK = threading.Lock()
-_KALEIDO_USERS = 0
-_KALEIDO_UP = False
-
-
-def _acquire_kaleido() -> bool:
-    """Ensure the shared server is up and register this build as a user."""
-    global _KALEIDO_USERS, _KALEIDO_UP
-    with _KALEIDO_LOCK:
-        if _KALEIDO_USERS == 0:
-            _KALEIDO_UP = _start_kaleido_server()
-        if not _KALEIDO_UP:
-            return False
-        _KALEIDO_USERS += 1
-        return True
-
-
-def _release_kaleido() -> None:
-    """Deregister this build; stop the server only when it is the last one."""
-    global _KALEIDO_USERS, _KALEIDO_UP
-    with _KALEIDO_LOCK:
-        if _KALEIDO_USERS <= 0:
-            return
-        _KALEIDO_USERS -= 1
-        if _KALEIDO_USERS == 0 and _KALEIDO_UP:
-            _stop_kaleido_server()
-            _KALEIDO_UP = False
+# Chart rasterisation lives in reportkit.charts, behind the [charts] extra.
+# `_FIG_HOOK` is an ALIAS OF THE SAME ContextVar, not a new one: api/proof.py and
+# tests/golden_fixture.py .set()/.reset() through `pdf_report._FIG_HOOK`, and a
+# second ContextVar would silently disable the proof's placeholder mode and put a
+# real headless Chrome in CI.
+_FIG_HOOK = _rk_charts.FIG_HOOK
+_theme_figure = _rk_charts.theme_figure
 
 
 def _fig_to_png(fig, width: int = 900, height: int = 500,
                 primary_color: tuple = _DEFAULT_PRIMARY,
                 accent_color: tuple = _DEFAULT_ACCENT,
                 secondary_color: tuple = _DEFAULT_SECONDARY) -> bytes | None:
-    """Rasterise a Plotly figure to PNG bytes at 3× scale (~300 dpi equivalent).
+    """Rasterise a figure, re-coloured into the brand palette.
 
-    Applies `_theme_figure` before rendering so all charts use the report's
-    branded color scheme and white background regardless of app theme.
-
-    Returns None on failure, but logs why first — a swallowed exception here
-    silently empties the whole report of charts, which is near-impossible to
-    diagnose after the fact. The most common cause is a missing Chrome for
-    Kaleido v1 on a headless deploy; we retry once after fetching one.
+    `_rebrand_figure` is injected rather than moved: it knows this app's SOURCE
+    palette (the navy/blue `app/charts.py` builders emit) and short-circuits when
+    the brand happens to equal it. That is domain knowledge about our own charts,
+    not something a reusable library can assume.
     """
-    # Proof/preview interception. It has to happen HERE, not by putting bytes in
-    # the `figures` dict, because the next line wraps whatever it was given in
-    # go.Figure(). A placeholder must honour the requested size: figure() derives
-    # its placement height from the image's aspect and only then tests whether
-    # the block still fits, so a wrong aspect shifts every later page break and
-    # the proof stops matching the real document's pagination.
-    _hook = _FIG_HOOK.get()
-    if _hook is not None:
-        _out = _hook(fig, width, height, primary_color, accent_color, secondary_color)
-        if _out is not None:
-            return _out
-
-    import plotly.io as pio
-    import plotly.graph_objects as go
-    fig = go.Figure(fig)
-    fig.update_layout(title=None, margin=dict(t=24, b=40))
-    _theme_figure(fig, primary_color, accent_color, secondary_color)
-    # When the persistent server is running, plotly warns once per figure that
-    # "kopts is ignored if using a server" — harmless (width/height/scale are
-    # respected via the figure layout) but it floods the logs. Mute just that.
-    with warnings.catch_warnings():
-        warnings.filterwarnings("ignore", message=".*kopts.*", category=UserWarning)
-        try:
-            return pio.to_image(fig, format="png", width=width, height=height, scale=3)
-        except Exception as exc:
-            print(f"[PDF figure] to_image failed ({type(exc).__name__}: {exc}); "
-                  "retrying after Chrome fetch")
-            _ensure_chrome()
-            try:
-                return pio.to_image(fig, format="png", width=width, height=height, scale=3)
-            except Exception as exc2:
-                print(f"[PDF figure] to_image failed again: {type(exc2).__name__}: {exc2}")
-                return None
+    return _rk_charts.fig_to_png(fig, width, height, primary_color, accent_color,
+                                 secondary_color, rebrand=_rebrand_figure)
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -3823,45 +2647,13 @@ def _cover_page(
 # estimates of the same quantity. `_table_room` says how much room a heading has
 # to see before it may draw; `data_table` uses the same numbers to decide whether
 # to break. Change one, change both.
-_TBL_ROW_H  = 8.0
-_TBL_HEAD_H = 9.0
-_TBL_PAD    = 6.0
-_PAGE_CAP   = 246.0   # h(297) - footer(30) - running header(21): a fresh page's room
-_HEAD_ROOM  = 10.0    # vertical space a sub-heading itself consumes (ln+cell+ln)
-# Minimum a heading must see before a table that is going to split anyway.
-# Derived, not chosen: data_table gives up and breaks when y > h - 55, so the
-# heading has to leave the cursor at or above that. It draws at
-# `h - b_margin - _SPLIT_ROOM` in the worst case and consumes _HEAD_ROOM, giving
-#   h - 28 - _SPLIT_ROOM + _HEAD_ROOM  <=  h - 55   ⇒  _SPLIT_ROOM >= 37.
-# 40 keeps a little slack so the two are not exactly equal.
-_SPLIT_ROOM = 40.0
-
-
-def _table_room(n_rows: int, row_h: float = _TBL_ROW_H, head_h: float = _TBL_HEAD_H) -> float:
-    """Room a sub-heading must see before drawing, for a table of `n_rows`.
-
-    Includes the heading's own height, so call sites pass this straight to
-    `min_room=` — do NOT add a further allowance.
-
-    This has to predict what `_NotePDF.data_table` will actually do:
-      * a table that fits a fresh page is kept WHOLE, so the heading must
-        reserve the table's full height or the table will bounce to the next
-        page and leave the heading stranded on a decorated empty one;
-      * a longer table is going to split anyway, so the heading only needs
-        enough room for the header row and a few lines of it.
-
-    The previous version capped at 130mm while data_table measured the full
-    height uncapped, so every table of roughly 16-29 rows orphaned its heading.
-
-    Note the threshold is `_PAGE_CAP - _HEAD_ROOM`, not `_PAGE_CAP`: a table kept
-    whole UNDER A HEADING starts ~10mm lower than one on a bare page, so a table
-    that fits 246mm but not 236mm cannot be kept whole here at all. Promising to
-    reserve it anyway just moved the collision one page along — the heading broke
-    to a fresh page, drew, and the table broke out from under it again.
-    """
-    full = head_h + n_rows * row_h + _TBL_PAD
-    return (full + 12.0) if full <= _PAGE_CAP - _HEAD_ROOM else _SPLIT_ROOM
-
+# Page geometry + the heading-reservation rule now live in reportkit.document,
+# with the table code that breaks on the same numbers. Re-exported under their
+# original names: tests/test_pdf_layout.py reads all seven off this module.
+from reportkit.document import (  # noqa: E402
+    _TBL_ROW_H, _TBL_HEAD_H, _TBL_PAD, _PAGE_CAP, _HEAD_ROOM, _SPLIT_ROOM,
+    _table_room,
+)
 
 def _draw_participation_profile(pdf, terms, lang: str) -> None:
     """Payoff-profile diagram for a Participation Note — redemption (y) versus the
@@ -4305,12 +3097,8 @@ def generate_pdf_report(*args, **kwargs) -> bytes:
     of export for a full report), and tears the Chrome subprocess down in a
     finally so it never outlives the build. The server is best-effort: if it
     can't start, figure export silently falls back to the per-call path."""
-    _server = _acquire_kaleido()
-    try:
+    with _rk_charts.kaleido_session():
         return _build_pdf_report(*args, **kwargs)
-    finally:
-        if _server:
-            _release_kaleido()
 
 
 def _build_pdf_report(
@@ -4440,7 +3228,7 @@ def _build_pdf_report(
     )
     # Custom brand typography (title_font / body_font) — no-op + IBM Plex fallback
     # when the brand ships no fonts or the TTF files are absent.
-    _register_brand_fonts(pdf, branding)
+    _rk_fonts.register_brand_fonts(pdf, branding, brand_dir=_FONT_DIR / "brand")
     _stamp_attribution(pdf)
     # Usable content width — a page-geometry constant used by every table. Defined
     # here (not inside the Note-Terms block) so later sections never hit an unbound
