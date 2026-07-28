@@ -151,12 +151,32 @@ def test_read_local_image_tolerates_missing(tmp_path):
 
 def test_adapter_keeps_the_monkeypatchable_module_globals():
     """`tests/golden_fixture.py` neutralises the network by rebinding
-    `pdf_report._fetch_image_bytes`. That only works if the name stays a module
-    global resolved at call time — get this wrong and the golden silently starts
-    hitting the network while staying green."""
+    `pdf_report._fetch_image_bytes`. That only works if the name is a module
+    global the loaders resolve at CALL time — bind it early (say, into a default
+    argument or a local alias inside `_load_logo`) and the golden silently
+    starts hitting the network while still passing.
+
+    So this asserts the seam, not the current value: the fixture rebinds the
+    name process-wide and never restores it, so by the time this runs the
+    attribute is usually already someone else's lambda.
+    """
     import pdf_report as P
 
-    assert P._fetch_image_bytes is fetch_image_bytes
-    assert P._to_embeddable_png is to_embeddable_png
-    assert P._dimensions_sane is dimensions_sane
-    assert callable(P._resolve_local_path)
+    for name in ("_fetch_image_bytes", "_to_embeddable_png", "_dimensions_sane",
+                 "_resolve_local_path", "_read_local_image", "_logo_aspect"):
+        assert callable(getattr(P, name)), f"{name} is not a module global"
+
+    sentinel = _png(7, 7)
+    original = P._fetch_image_bytes
+    calls = []
+    try:
+        def fake(url, *a, **k):
+            calls.append(url)
+            return sentinel
+        P._fetch_image_bytes = fake
+        got = P._load_logo({"logo_url": "https://example.invalid/x.png"})
+        assert calls == ["https://example.invalid/x.png"], (
+            "the loader bound the fetcher early — the monkeypatch seam is gone")
+        assert got == sentinel, "PNG bytes must pass through unmodified"
+    finally:
+        P._fetch_image_bytes = original
