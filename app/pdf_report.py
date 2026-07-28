@@ -4633,13 +4633,22 @@ def _build_pdf_report(
     # meaningless there, and `obs_times` isn't bound (the obs schedule is hidden).
     if _inc("mc_autocall") and any(p > 0 for p in prob_by_period):
         _sec()
-        _obs_times = list(terms.obs_times())
+        # Seasoning indexing contract (see CLAUDE.md): every per-period array is
+        # aligned to the PRICED WINDOW, and column i describes term-sheet period
+        # `period_offset + i + 1`. Display layers add the offset — the web ones
+        # did, this table did not. It labelled window indices as term-sheet
+        # periods, zipped the FIRST observation times against the REMAINING
+        # probabilities, and tested eligibility on the window index, so a
+        # seasoned note's report was wrong in three ways at once.
+        _off = int(results.get("period_offset", results.get("periods_elapsed", 0)) or 0)
+        _obs_times = list(terms.obs_times())[_off:]
         pdf.subsection(_t("autocall_by_period", lang),
                        min_room=_table_room(len(prob_by_period)))
         rows = []
         for i, (t_obs, p_ac) in enumerate(zip(_obs_times, prob_by_period)):
-            eligible = _t("yes", lang) if (i + 1) >= terms.autocall_start_period else _t("no", lang)
-            rows.append([f"P{i+1}", f"{t_obs * 12:.0f}", f"{p_ac:.2%}", eligible])
+            _abs = _off + i + 1                       # term-sheet period number
+            eligible = _t("yes", lang) if _abs >= terms.autocall_start_period else _t("no", lang)
+            rows.append([f"P{_abs}", f"{t_obs * 12:.0f}", f"{p_ac:.2%}", eligible])
         pdf.data_table(
             [_t("period", lang), _t("time_y", lang), _t("p_autocall", lang), _t("eligible", lang)],
             rows,
