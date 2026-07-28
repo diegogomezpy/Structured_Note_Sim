@@ -96,6 +96,17 @@ from reportkit.theme import (  # noqa: E402
 from reportkit.images import _cover_crop  # noqa: E402
 
 _REPO_ROOT       = Path(__file__).parent.parent
+
+# Ceiling on any single image the report embeds — see _dimensions_sane(), which
+# enforces it from the header. ~4900x4900 is far past any real cover or logo.
+_MAX_IMAGE_PX = 24_000_000
+# Backstop for decodes that don't route through _dimensions_sane (Pillow raises
+# above 2x this). Not the primary defence: it only warns below that threshold.
+try:
+    from PIL import Image as _PILImage
+    _PILImage.MAX_IMAGE_PIXELS = _MAX_IMAGE_PX
+except Exception:                               # Pillow absent → nothing decodes anyway
+    pass
 _TICKER_LOGO_DIR = _REPO_ROOT / "branding" / "ticker_logos"
 _FONT_DIR        = _REPO_ROOT / "fonts"
 _IBM_REGULAR     = _FONT_DIR / "IBMPlexSans-Regular.ttf"
@@ -1744,6 +1755,32 @@ class _NotePDF(FPDF):
 _EMBEDDABLE_MAGIC = (b"\x89PNG", b"\xff\xd8\xff", b"GIF8")  # PNG / JPEG / GIF
 
 
+def _dimensions_sane(raw: bytes) -> bool:
+    """Reject a decompression bomb by reading the HEADER, before any pixels.
+
+    Branding art arrives base64-encoded inside a user-supplied config, and a
+    ~100 KB PNG can declare 6000x6000 and expand to ~108 MB of RGBA. Pillow's
+    MAX_IMAGE_PIXELS is not the defence: it only *warns* until twice the limit,
+    and the cheap path below hands PNG/JPEG straight to fpdf2 without ever
+    calling Pillow, so the allocation happens later and elsewhere.
+
+    `Image.open` is lazy — it parses the header and stops — so `.size` costs
+    nothing. Reject rather than downscale: a brand asset this large is a mistake
+    or an attack, and silently shipping a resampled logo hides both.
+    """
+    try:
+        from PIL import Image
+        with Image.open(io.BytesIO(raw)) as im:
+            w, h = im.size
+    except Exception:
+        return True          # not decodable here; the caller's own guards apply
+    if w * h > _MAX_IMAGE_PX:
+        print(f"[PDF image] refused {w}x{h} ({w * h / 1e6:.0f} MPx) — over the "
+              f"{_MAX_IMAGE_PX / 1e6:.0f} MPx ceiling")
+        return False
+    return True
+
+
 def _to_embeddable_png(raw: bytes | None) -> bytes | None:
     """Return PNG bytes fpdf2 can embed, or None.
 
@@ -1753,6 +1790,8 @@ def _to_embeddable_png(raw: bytes | None) -> bytes | None:
     so a bad image is dropped rather than crashing the report.
     """
     if not raw:
+        return None
+    if not _dimensions_sane(raw):
         return None
     if raw[:4] in _EMBEDDABLE_MAGIC:
         return raw
@@ -1829,12 +1868,12 @@ def _fetch_image_bytes(url: str, timeout: int = 8) -> bytes | None:
         return None
 
 
-def _read_local_image(path: Path) -> bytes | None:
+def _read_local_image(path: Path | None) -> bytes | None:
     """Read a local image file as raw bytes. fpdf2 cannot render SVG natively,
     so SVG files are skipped (returns None) with a diagnostic. Any failure is
     swallowed and returns None so a missing/bad file never crashes the PDF."""
     try:
-        if not path.exists() or not path.is_file():
+        if path is None or not path.exists() or not path.is_file():
             return None
         if path.suffix.lower() == ".svg":
             print(f"[PDF logo] SKIP SVG (not renderable by fpdf2): {path}")
@@ -1849,11 +1888,30 @@ def _read_local_image(path: Path) -> bytes | None:
         return None
 
 
-def _resolve_local_path(spec: str) -> Path:
-    """Resolve a branding logo_file spec to an absolute path. Absolute paths are
-    honoured as-is; relative paths resolve against the repo root."""
-    p = Path(spec)
-    return p if p.is_absolute() else (_REPO_ROOT / p)
+def _resolve_local_path(spec: str) -> Path | None:
+    """Resolve a branding `logo_file` to an absolute path INSIDE the repo root.
+
+    A branding config is user-supplied — uploaded through the web UI or dropped
+    into a connected folder — so `logo_file` is attacker-controlled input, not
+    an operator-only setting. Left unconstrained it is an arbitrary-file-read
+    primitive: any readable image on the server could be resolved and embedded
+    into a PDF the requester then downloads, and the "unusable" log line answers
+    does-this-path-exist for everything else.
+
+    Both absolute paths and `../` escapes are refused. The documented contract
+    was always "local path, repo-root relative", so this narrows the code to
+    what the docs already promised. Configs embed their artwork as
+    `logo_base64` (the web UI only ever writes that), so this path is for local
+    development.
+    """
+    try:
+        root = _REPO_ROOT.resolve()
+        p = (Path(spec) if Path(spec).is_absolute() else (root / spec)).resolve()
+        p.relative_to(root)          # raises if p is outside the repo root
+        return p
+    except Exception:
+        print(f"[PDF logo] logo_file refused (outside the repo root): {spec!r}")
+        return None
 
 
 def _load_logo(branding: dict | None) -> bytes | None:
