@@ -65,6 +65,7 @@ import base64
 import colorsys
 import datetime
 import tempfile
+import threading
 import urllib.request
 import warnings
 import numpy as np
@@ -2326,6 +2327,41 @@ def _stop_kaleido_server() -> None:
         pass
 
 
+# The Kaleido server is per-PROCESS, but report builds are per-REQUEST and the
+# API serves them concurrently. Started and stopped naively, the first build to
+# finish tears Chrome out from under every other one still running, and their
+# remaining figures come back empty — a complete-looking PDF with no charts in
+# it, which is the failure mode CLAUDE.md already warns about for the proof
+# endpoint. Reference-count instead: the last build out turns off the lights.
+_KALEIDO_LOCK = threading.Lock()
+_KALEIDO_USERS = 0
+_KALEIDO_UP = False
+
+
+def _acquire_kaleido() -> bool:
+    """Ensure the shared server is up and register this build as a user."""
+    global _KALEIDO_USERS, _KALEIDO_UP
+    with _KALEIDO_LOCK:
+        if _KALEIDO_USERS == 0:
+            _KALEIDO_UP = _start_kaleido_server()
+        if not _KALEIDO_UP:
+            return False
+        _KALEIDO_USERS += 1
+        return True
+
+
+def _release_kaleido() -> None:
+    """Deregister this build; stop the server only when it is the last one."""
+    global _KALEIDO_USERS, _KALEIDO_UP
+    with _KALEIDO_LOCK:
+        if _KALEIDO_USERS <= 0:
+            return
+        _KALEIDO_USERS -= 1
+        if _KALEIDO_USERS == 0 and _KALEIDO_UP:
+            _stop_kaleido_server()
+            _KALEIDO_UP = False
+
+
 def _fig_to_png(fig, width: int = 900, height: int = 500,
                 primary_color: tuple = _DEFAULT_PRIMARY,
                 accent_color: tuple = _DEFAULT_ACCENT,
@@ -4093,12 +4129,12 @@ def generate_pdf_report(*args, **kwargs) -> bytes:
     of export for a full report), and tears the Chrome subprocess down in a
     finally so it never outlives the build. The server is best-effort: if it
     can't start, figure export silently falls back to the per-call path."""
-    _server = _start_kaleido_server()
+    _server = _acquire_kaleido()
     try:
         return _build_pdf_report(*args, **kwargs)
     finally:
         if _server:
-            _stop_kaleido_server()
+            _release_kaleido()
 
 
 def _build_pdf_report(
