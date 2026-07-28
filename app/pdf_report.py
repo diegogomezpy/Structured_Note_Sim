@@ -344,6 +344,11 @@ _LABELS: dict[str, dict[str, str]] = {
     "purchase_price":        {"en": "Purchase price",                    "es": "Precio de compra"},
     "accrued_at_purchase":   {"en": "Accrued at purchase",               "es": "Cupón corrido"},
     "cost_basis":            {"en": "Cost basis",                        "es": "Coste de la posición"},
+    # P(negative return ON COST) — distinct from P(knock-in), since coupons can
+    # carry a knocked-in path back into profit and a discount can rescue a
+    # below-par redemption. Only the A/B comparison table quotes it, which is why
+    # a missing entry went unnoticed: it printed the raw key "p_loss" as a label.
+    "p_loss":                {"en": "P(loss on cost)",                   "es": "P(pérdida sobre coste)"},
     "seasoned":              {"en": "Modelled horizon",                  "es": "Horizonte modelado"},
     "seasoned_row":          {"en": "Remaining life only",               "es": "Solo la vida restante"},
     "issuer":                {"en": "Issuer",                            "es": "Emisor"},
