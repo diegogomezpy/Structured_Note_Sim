@@ -98,6 +98,11 @@ from reportkit.theme import (  # noqa: E402
     WHITE as _WHITE, BLACK as _BLACK,
 )
 from reportkit.images import _cover_crop  # noqa: E402
+# Colour parsing / palette remapping — core (no plotly); the chart layer that
+# consumes them is what moves behind the [charts] extra, not these.
+from reportkit.color import (  # noqa: E402
+    rgb_to_hue as _rgb_to_hue, parse_rgb as _parse_rgb, remap_color as _remap_color,
+)
 
 _REPO_ROOT       = Path(__file__).parent.parent
 
@@ -2034,14 +2039,6 @@ _SRC_EXTRA = {(8, 145, 178), (124, 58, 237), (13, 148, 136)}  # >3-asset series 
 
 
 
-def _rgb_to_hue(rgb: tuple) -> float:
-    """HSL hue in degrees [0, 360) for an (R,G,B) 0-255 tuple. Used to rotate the
-    backtest's blue autocall ramp onto the brand accent's hue."""
-    r, g, b = (c / 255.0 for c in rgb[:3])
-    h, _l, _s = colorsys.rgb_to_hls(r, g, b)
-    return h * 360.0
-
-
 def _build_color_remap(primary: tuple, accent: tuple, secondary: tuple) -> dict:
     """Series/marker map: charts.py source palette -> brand accent + secondary.
 
@@ -2081,54 +2078,6 @@ def _build_scale_remap(primary: tuple, accent: tuple) -> dict:
     """Colour-scale map (heatmaps): keep the intensity ramp on-brand (primary/
     accent), never gold — the navy/blue endpoints map to the brand, red stays red."""
     return {_SRC_NAVY: primary, _SRC_BLUE: accent}
-
-
-def _parse_rgb(c: str):
-    """Return (r,g,b,alpha_or_None) for a hex or rgb()/rgba() string, else None."""
-    if not isinstance(c, str):
-        return None
-    s = c.strip().lower()
-    if s.startswith("#"):
-        s = s[1:]
-        if len(s) == 3:
-            s = "".join(ch * 2 for ch in s)
-        if len(s) == 6:
-            try:
-                return (int(s[0:2], 16), int(s[2:4], 16), int(s[4:6], 16), None)
-            except ValueError:
-                return None
-        return None
-    m = re.match(r"rgba?\(\s*([\d.]+)\s*,\s*([\d.]+)\s*,\s*([\d.]+)\s*(?:,\s*([\d.]+)\s*)?\)", s)
-    if m:
-        r, g, b = (int(float(m.group(i))) for i in (1, 2, 3))
-        a = float(m.group(4)) if m.group(4) is not None else None
-        return (r, g, b, a)
-    return None
-
-
-def _remap_color(c, remap: dict, ramp_hue: float):
-    """Map one colour through a branding remap, preserving any alpha. Blue-family
-    hsl() colours (the backtest autocall ramp) are hue-rotated to `ramp_hue` (the
-    brand accent's hue); colours whose RGB isn't a known source value are returned
-    unchanged."""
-    if isinstance(c, str):
-        h = re.match(r"hsl\(\s*(\d+(?:\.\d+)?)\s*,\s*([\d.]+)%\s*,\s*([\d.]+)%\s*\)",
-                     c.strip().lower())
-        if h:
-            hue = float(h.group(1))
-            if 195 <= hue <= 255:   # blue family -> brand-accent ramp
-                return f"hsl({ramp_hue:.0f},{h.group(2)}%,{h.group(3)}%)"
-            return c
-    p = _parse_rgb(c)
-    if p is None:
-        return c
-    rgb, alpha = p[:3], p[3]
-    tgt = remap.get(rgb)
-    if tgt is None:
-        return c
-    if alpha is None:
-        return f"rgb({tgt[0]},{tgt[1]},{tgt[2]})"
-    return f"rgba({tgt[0]},{tgt[1]},{tgt[2]},{alpha})"
 
 
 def _rebrand_figure(fig, primary: tuple, accent: tuple, secondary: tuple):
