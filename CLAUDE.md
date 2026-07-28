@@ -197,7 +197,7 @@ Discipline to preserve: don't retain the float64 working set (raw S/V paths, sta
 
 The themed-PDF engine lives in its **own repository** and is installed as a
 dependency: [`report_maker`](https://github.com/diegogomezpy/report_maker),
-pinned by tag in `requirements.txt` (`reportkit[charts] @ git+…@v0.5.0`). It has
+pinned by tag in `requirements.txt` (`reportkit[charts] @ git+…@v0.6.0`). It has
 no imports from `app/`, `core/` or `data/` and knows nothing about structured
 notes — a different project can `pip install` it and build a report.
 
@@ -214,6 +214,13 @@ notes — a different project can `pip install` it and build a report.
                          chrome-free, paints the themed background, draws the
                          photo and tints it. Plus the sigil / cover-logo
                          placement and the tall left photo column.
+    reportkit.outline    `plan_chapters` (the numbering), `shed_to_fit` +
+                         `contents_list` (the fit/shed engine), and the lazy
+                         section / divider heads.
+    reportkit.testing    deterministic inputs + `sample_document()`; the
+                         package's own pixel golden and pagination sweep run
+                         over it, so `_table_room` is now guarded upstream
+                         rather than only by this repo's gate.
     reportkit.fonts      registration; ships IBM Plex Sans under the OFL.
     reportkit.text       PDF-safe string sanitisation (incl. the Latin-1 path).
     reportkit.images     load / sanitise / embed + path, URL-scheme and
