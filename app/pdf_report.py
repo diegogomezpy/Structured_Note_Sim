@@ -1841,6 +1841,13 @@ def _fetch_image_bytes(url: str, timeout: int = 8) -> bytes | None:
     """
     if not url:
         return None
+    # http(s) only. `branding.logo_url` is user-supplied, and urlopen happily
+    # honours file:// (read any file on the server and embed it in the PDF the
+    # requester downloads) as well as ftp:// and data:. Nothing legitimate here
+    # is served over anything but HTTP.
+    if not str(url).lower().startswith(("http://", "https://")):
+        print(f"[PDF logo] refused non-http URL scheme: {str(url)[:60]!r}")
+        return None
     # Upgrade Google favicon requests to sz=256 for crisper logos
     if "google.com/s2/favicons" in url:
         import re as _re

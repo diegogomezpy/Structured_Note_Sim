@@ -2026,6 +2026,23 @@ def _compare_for_pdf(sf_a: dict, terms_a: NoteTerms, terms_b: NoteTerms, tr, *,
     return data, figs
 
 
+def expand_section_keys(sections, n_assets: int) -> set:
+    """Normalise a report section list: expand the `mc_fans` pseudo-key.
+
+    The UI offers "Per-underlying fans" as ONE toggle, but the report gates each
+    fan on its own `mc_fan_{i}` key, so the pseudo-key has to be expanded before
+    it reaches `_build_pdf_report`. Shared with api/proof.py — the PDF Studio
+    preview passed the section list through unexpanded, so a report that would
+    print N fan pages previewed without any of them, which reads as the preview
+    being broken rather than as a key that was never translated.
+    """
+    keys = set(sections or [])
+    if "mc_fans" in keys:
+        keys |= {f"mc_fan_{i}" for i in range(max(0, int(n_assets)))}
+        keys.discard("mc_fans")
+    return keys
+
+
 def _decode_data_url_png(data_url: str | None) -> bytes | None:
     """A `data:image/png;base64,…` URL (or a bare base64 string) → raw PNG bytes.
 
@@ -2137,11 +2154,8 @@ def _build_report_pdf(terms: NoteTerms, *, sections: list[str] | None = None, la
     asset_names = list(tickers.values())
     n_assets = len(tickers)
 
-    keys = set(sections or [])
+    keys = expand_section_keys(sections, n_assets)
     all_on = not keys
-    if "mc_fans" in keys:                                           # per-underlying fans pseudo-key
-        keys |= {f"mc_fan_{i}" for i in range(n_assets)}
-        keys.discard("mc_fans")
     include_sections = None if all_on else keys
 
     want_mc   = all_on or any(k.startswith("mc_") for k in keys)

@@ -47,7 +47,7 @@ import charts                                      # noqa: E402
 import pdf_report                                  # noqa: E402  (bare name — see above)
 
 from . import preview_fixture as fixture           # noqa: E402
-from .engine import _chart_options_from_branding   # noqa: E402
+from .engine import _chart_options_from_branding, expand_section_keys  # noqa: E402
 
 # Page rasters are cached on a hash of (branding, terms, options). Editing one
 # colour re-renders everything anyway, so the cache mostly serves scrolling and
@@ -180,7 +180,8 @@ def render_proof(*, branding: dict | None = None, terms: dict | None = None,
             figures=figs,
             lang=lang,
             branding=branding,
-            include_sections=set(sections) if sections else None,
+            include_sections=(expand_section_keys(sections, len(note.tickers or {}))
+                              if sections else None),
             logo_urls=None,
             issuer_logo_url=None,
             logo_tickers={name: sym for sym, name in note.tickers.items()},

@@ -53,7 +53,7 @@ jobs:
           python -m pytest tests/ -q
 
   golden-pdf:
-    name: golden PDF (pixel identity)
+    name: golden PDF + layout invariants
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -64,7 +64,11 @@ jobs:
       # is hermetic: seeded fixtures, and figures stubbed inside _fig_to_png, so
       # Kaleido never boots. pypdfium2 rasterises the pages (BSD/Apache; PyMuPDF
       # is deliberately not a dependency here, see requirements.txt).
-      - name: Render the report and diff against the baseline
+      # Both PDF suites: the golden pins the pixels, test_pdf_layout pins the
+      # structural invariants (no heading orphaned from its block). The light
+      # `python` job skips them both — importorskip("fpdf") — so if they are not
+      # named here they run nowhere, which is what happened to the layout test.
+      - name: Render the report, diff the baseline, check layout invariants
         run: |
           pip install pytest numpy pandas scipy fpdf2 plotly Pillow pypdfium2
-          python -m pytest tests/test_golden_pdf.py -q
+          python -m pytest tests/test_golden_pdf.py tests/test_pdf_layout.py -q

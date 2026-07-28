@@ -479,11 +479,24 @@ _TOKEN_ATTR = {
 _CONST_TOKEN = {"white": WHITE, "black": BLACK, "text": TEXT}
 
 
-def _parse_hex(s) -> tuple:
-    h = str(s).strip().lstrip("#")
-    if len(h) == 3:
-        h = "".join(ch * 2 for ch in h)
-    return (int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16))
+def _parse_hex(s, default: tuple = TEXT) -> tuple:
+    """Parse `#rgb`/`#rrggbb`, falling back rather than raising.
+
+    Theme specs are user-authored JSON, so a malformed colour is a typo, not a
+    programming error — and every one of these is reached deep inside a drawing
+    routine where an exception aborts the whole document. `"#zz"` used to raise
+    ValueError out of int(..., 16) and take the report with it.
+    """
+    try:
+        h = str(s).strip().lstrip("#")
+        if len(h) == 3:
+            h = "".join(ch * 2 for ch in h)
+        if len(h) != 6:
+            raise ValueError(f"expected 3 or 6 hex digits, got {h!r}")
+        return (int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16))
+    except Exception:
+        print(f"[reportkit.theme] unparseable colour {s!r}; using the default")
+        return default
 
 
 def _hexstr(rgb) -> str:
