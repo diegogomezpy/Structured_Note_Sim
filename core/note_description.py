@@ -145,4 +145,10 @@ def describe_note(terms, lang: str = "en", issuer: str | None = None) -> str:
     cg = getattr(terms, "capital_guarantee", None)
     if getattr(terms, "note_type", "") == "participation" or (cg is not None and cg > 0):
         return _describe_participation(terms, lang, names, multi)
+    # A Phoenix with no observation schedule has nothing to describe — every
+    # sentence in the prose is about what happens ON an observation date, and
+    # the generators index the schedule directly (`c.ac[c.start - 1]`), so a
+    # zero-observation note raised IndexError and took the whole report with it.
+    if getattr(terms, "n_obs", 0) < 1:
+        return ""
     return describe_phoenix(terms, lang, issuer)

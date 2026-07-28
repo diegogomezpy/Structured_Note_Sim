@@ -12,6 +12,7 @@ explorer can fetch/filter individual paths later without re-simulating.
 from __future__ import annotations
 
 import base64
+import io
 import json
 import os
 import re
@@ -2026,14 +2027,28 @@ def _compare_for_pdf(sf_a: dict, terms_a: NoteTerms, terms_b: NoteTerms, tr, *,
 
 
 def _decode_data_url_png(data_url: str | None) -> bytes | None:
-    """A `data:image/png;base64,…` URL (or a bare base64 string) → raw PNG bytes."""
+    """A `data:image/png;base64,…` URL (or a bare base64 string) → raw PNG bytes.
+
+    These come straight off the browser (the path-explorer capture), so they are
+    untrusted: base64 that decodes fine can still be anything at all. Verify it
+    is a real image HERE and drop it if not — the alternative is Pillow raising
+    UnidentifiedImageError deep inside the page builder and taking the entire
+    report down over one bad thumbnail.
+    """
     if not data_url:
         return None
     try:
         s = data_url.split(",", 1)[1] if data_url.startswith("data:") else data_url
-        return base64.b64decode(s)
+        raw = base64.b64decode(s)
     except Exception:
         return None
+    try:
+        from PIL import Image
+        Image.open(io.BytesIO(raw)).verify()
+    except Exception as e:
+        print(f"[report] selected-path image dropped (not a readable image): {e}")
+        return None
+    return raw
 
 
 _CHART_HEX_RE = re.compile(r"^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$")
