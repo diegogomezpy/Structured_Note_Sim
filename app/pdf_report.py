@@ -81,7 +81,6 @@ from fpdf import FPDF
 # previews is the single biggest cost worth avoiding). A real report sets
 # nothing. It is a ContextVar rather than a module flag so one caller's preview
 # can never strip the charts out of another caller's PDF.
-_FIG_HOOK: ContextVar = ContextVar("fig_hook", default=None)
 
 # Visual-identity layer — now lives in the reusable `reportkit` package (the
 # theme engine is domain-agnostic). The chamfer primitives are re-exported under
@@ -101,6 +100,7 @@ from reportkit.images import _cover_crop  # noqa: E402
 # Colour parsing / palette remapping — core (no plotly); the chart layer that
 # consumes them is what moves behind the [charts] extra, not these.
 import reportkit.images as _rk_images  # noqa: E402
+import reportkit.charts as _rk_charts  # noqa: E402
 from reportkit.color import (  # noqa: E402
     rgb_to_hue as _rgb_to_hue, parse_rgb as _parse_rgb, remap_color as _remap_color,
 )
@@ -2001,205 +2001,28 @@ def _rebrand_figure(fig, primary: tuple, accent: tuple, secondary: tuple):
         pass
 
 
-def _theme_figure(fig, primary_color: tuple, accent_color: tuple,
-                  secondary_color: tuple = _DEFAULT_SECONDARY):
-    """Apply the print theme to a Plotly figure before rasterising: white
-    backgrounds, report typography, light gridlines, no Plotly logo — and remap
-    the source navy/blue palette onto the branding colours (no-op for the default
-    palette). Semantic colours (red KI line, grey autocall, orange coupon) and
-    the fan-chart band alpha hierarchy are preserved by `_rebrand_figure`.
-    """
-    try:
-        _rebrand_figure(fig, primary_color, accent_color, secondary_color)
-    except Exception:
-        pass
-    try:
-        fig.update_layout(
-            # Transparent so the chart blends into its brand-tinted figure card
-            # instead of stamping an opaque white rectangle that clashes with the
-            # panel. fpdf2 composites the PNG's alpha over the card fill, so the
-            # panel colour shows through the plot area and margins.
-            paper_bgcolor="rgba(0,0,0,0)",
-            plot_bgcolor="rgba(0,0,0,0)",
-            font=dict(family="IBM Plex Sans, Arial, sans-serif", size=10, color="#1a1a2e"),
-            modebar_remove=["logo", "toImage", "sendDataToCloud"],
-        )
-        # Clean, understated legend: a single horizontal strip along the bottom
-        # (clears the P1/P2.. observation labels pinned to the top of the path/fan
-        # charts), no "variable" group title, muted slate text at a readable-but-
-        # not-shouty size, no box. Replaces the heavy 13pt bold navy legend.
-        # Only for charts that actually show a legend — a legend-less chart (the
-        # correlation heatmap, the per-underlying price line) keeps its own tight
-        # margins instead of reserving 78mm of empty space at the bottom.
-        if getattr(fig.layout, "showlegend", None) is not False:
-            fig.update_layout(
-                legend=dict(
-                    orientation="h",
-                    yanchor="top", y=-0.18, xanchor="center", x=0.5,
-                    title=dict(text=""),
-                    font=dict(family="IBM Plex Sans, Arial, sans-serif",
-                              size=11, color="#5b6675"),
-                    bgcolor="rgba(0,0,0,0)", borderwidth=0,
-                    itemsizing="constant",
-                ),
-                margin=dict(b=78),
-            )
-        # Axes: cool-grey, semi-transparent so gridlines stay legible on the
-        # tinted card now that the opaque white plot background is gone (a near-
-        # white grid would vanish against the panel). Per-axis ranges/tickformats
-        # set in charts.py are untouched.
-        fig.update_xaxes(linecolor="rgba(71,85,105,0.35)",
-                         gridcolor="rgba(71,85,105,0.14)",
-                         zerolinecolor="rgba(71,85,105,0.35)")
-        fig.update_yaxes(linecolor="rgba(71,85,105,0.35)",
-                         gridcolor="rgba(71,85,105,0.14)",
-                         zerolinecolor="rgba(71,85,105,0.35)")
-    except Exception:
-        pass
-
-
-# Kaleido v1 drives an external Chrome/Chromium (unlike the self-contained
-# v0.2.x). On a headless host with no browser — every export raises and the
-# report silently drops all figures. The Docker image installs `chromium` (and
-# points kaleido at it via BROWSER_PATH); as a belt-and-suspenders fallback for
-# other environments we attempt a one-time runtime Chrome download so the report
-# still renders charts when the system package is missing. Guarded to try once.
-_CHROME_FETCH_TRIED = False
-
-
-def _ensure_chrome() -> None:
-    """Best-effort: make sure Kaleido has a Chrome to drive. No-op on failure.
-
-    Tries kaleido.get_chrome_sync() once (downloads Chromium into Kaleido's
-    cache). Only runs once per process; safe when a system Chromium already
-    exists (Kaleido prefers it and this is skipped after the first attempt)."""
-    global _CHROME_FETCH_TRIED
-    if _CHROME_FETCH_TRIED:
-        return
-    _CHROME_FETCH_TRIED = True
-    try:
-        import kaleido
-        get_chrome = getattr(kaleido, "get_chrome_sync", None)
-        if get_chrome is not None:
-            get_chrome()
-            print("[PDF figure] fetched Chromium for Kaleido")
-    except Exception as exc:
-        print(f"[PDF figure] Chrome fetch unavailable: {exc}")
-
-
-# Persistent Kaleido server. Plotly's pio.to_image boots a fresh headless
-# Chrome on EVERY call (~3s of startup each); a full report exports ~13 figures,
-# so cold-booting per figure is ~40s of pure overhead. Starting Kaleido's sync
-# server once keeps a single Chrome alive for the whole build — pio.to_image
-# auto-detects the running server, so _fig_to_png itself needs no change — and
-# the export collapses to one ~2.7s boot plus ~0.2s per figure (~5s total).
-# generate_pdf_report starts it before rendering and tears it down in a finally,
-# so the Chrome subprocess never lingers past a build. Best-effort: if the
-# server can't start (no Chrome on a headless host), exports fall back to the
-# per-call path in _fig_to_png unchanged.
-def _start_kaleido_server() -> bool:
-    """Start Kaleido's persistent sync server. Returns True on success."""
-    try:
-        import kaleido
-        kaleido.start_sync_server()
-        return True
-    except Exception as exc:
-        print(f"[PDF figure] persistent Kaleido server unavailable "
-              f"({type(exc).__name__}: {exc}); exporting per figure")
-        return False
-
-
-def _stop_kaleido_server() -> None:
-    """Tear down the persistent Kaleido server (and its Chrome subprocess)."""
-    try:
-        import kaleido
-        kaleido.stop_sync_server()
-    except Exception:
-        pass
-
-
-# The Kaleido server is per-PROCESS, but report builds are per-REQUEST and the
-# API serves them concurrently. Started and stopped naively, the first build to
-# finish tears Chrome out from under every other one still running, and their
-# remaining figures come back empty — a complete-looking PDF with no charts in
-# it, which is the failure mode CLAUDE.md already warns about for the proof
-# endpoint. Reference-count instead: the last build out turns off the lights.
-_KALEIDO_LOCK = threading.Lock()
-_KALEIDO_USERS = 0
-_KALEIDO_UP = False
-
-
-def _acquire_kaleido() -> bool:
-    """Ensure the shared server is up and register this build as a user."""
-    global _KALEIDO_USERS, _KALEIDO_UP
-    with _KALEIDO_LOCK:
-        if _KALEIDO_USERS == 0:
-            _KALEIDO_UP = _start_kaleido_server()
-        if not _KALEIDO_UP:
-            return False
-        _KALEIDO_USERS += 1
-        return True
-
-
-def _release_kaleido() -> None:
-    """Deregister this build; stop the server only when it is the last one."""
-    global _KALEIDO_USERS, _KALEIDO_UP
-    with _KALEIDO_LOCK:
-        if _KALEIDO_USERS <= 0:
-            return
-        _KALEIDO_USERS -= 1
-        if _KALEIDO_USERS == 0 and _KALEIDO_UP:
-            _stop_kaleido_server()
-            _KALEIDO_UP = False
+# Chart rasterisation lives in reportkit.charts, behind the [charts] extra.
+# `_FIG_HOOK` is an ALIAS OF THE SAME ContextVar, not a new one: api/proof.py and
+# tests/golden_fixture.py .set()/.reset() through `pdf_report._FIG_HOOK`, and a
+# second ContextVar would silently disable the proof's placeholder mode and put a
+# real headless Chrome in CI.
+_FIG_HOOK = _rk_charts.FIG_HOOK
+_theme_figure = _rk_charts.theme_figure
 
 
 def _fig_to_png(fig, width: int = 900, height: int = 500,
                 primary_color: tuple = _DEFAULT_PRIMARY,
                 accent_color: tuple = _DEFAULT_ACCENT,
                 secondary_color: tuple = _DEFAULT_SECONDARY) -> bytes | None:
-    """Rasterise a Plotly figure to PNG bytes at 3× scale (~300 dpi equivalent).
+    """Rasterise a figure, re-coloured into the brand palette.
 
-    Applies `_theme_figure` before rendering so all charts use the report's
-    branded color scheme and white background regardless of app theme.
-
-    Returns None on failure, but logs why first — a swallowed exception here
-    silently empties the whole report of charts, which is near-impossible to
-    diagnose after the fact. The most common cause is a missing Chrome for
-    Kaleido v1 on a headless deploy; we retry once after fetching one.
+    `_rebrand_figure` is injected rather than moved: it knows this app's SOURCE
+    palette (the navy/blue `app/charts.py` builders emit) and short-circuits when
+    the brand happens to equal it. That is domain knowledge about our own charts,
+    not something a reusable library can assume.
     """
-    # Proof/preview interception. It has to happen HERE, not by putting bytes in
-    # the `figures` dict, because the next line wraps whatever it was given in
-    # go.Figure(). A placeholder must honour the requested size: figure() derives
-    # its placement height from the image's aspect and only then tests whether
-    # the block still fits, so a wrong aspect shifts every later page break and
-    # the proof stops matching the real document's pagination.
-    _hook = _FIG_HOOK.get()
-    if _hook is not None:
-        _out = _hook(fig, width, height, primary_color, accent_color, secondary_color)
-        if _out is not None:
-            return _out
-
-    import plotly.io as pio
-    import plotly.graph_objects as go
-    fig = go.Figure(fig)
-    fig.update_layout(title=None, margin=dict(t=24, b=40))
-    _theme_figure(fig, primary_color, accent_color, secondary_color)
-    # When the persistent server is running, plotly warns once per figure that
-    # "kopts is ignored if using a server" — harmless (width/height/scale are
-    # respected via the figure layout) but it floods the logs. Mute just that.
-    with warnings.catch_warnings():
-        warnings.filterwarnings("ignore", message=".*kopts.*", category=UserWarning)
-        try:
-            return pio.to_image(fig, format="png", width=width, height=height, scale=3)
-        except Exception as exc:
-            print(f"[PDF figure] to_image failed ({type(exc).__name__}: {exc}); "
-                  "retrying after Chrome fetch")
-            _ensure_chrome()
-            try:
-                return pio.to_image(fig, format="png", width=width, height=height, scale=3)
-            except Exception as exc2:
-                print(f"[PDF figure] to_image failed again: {type(exc2).__name__}: {exc2}")
-                return None
+    return _rk_charts.fig_to_png(fig, width, height, primary_color, accent_color,
+                                 secondary_color, rebrand=_rebrand_figure)
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -4081,12 +3904,8 @@ def generate_pdf_report(*args, **kwargs) -> bytes:
     of export for a full report), and tears the Chrome subprocess down in a
     finally so it never outlives the build. The server is best-effort: if it
     can't start, figure export silently falls back to the per-call path."""
-    _server = _acquire_kaleido()
-    try:
+    with _rk_charts.kaleido_session():
         return _build_pdf_report(*args, **kwargs)
-    finally:
-        if _server:
-            _release_kaleido()
 
 
 def _build_pdf_report(
