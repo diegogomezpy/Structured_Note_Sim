@@ -47,9 +47,13 @@ jobs:
       # Golden-value tests for the payoff core (no network). Importing core.note
       # pulls core/__init__ → calibrator (scipy) → simulator, so scipy is needed
       # even though the tests themselves only exercise the numpy payoff engine.
+      # reportkit is the report ENGINE, pulled from its own repo at a pinned
+      # tag — keep this URL in step with requirements.txt. It used to be a
+      # directory in this repo, so before the extraction these jobs got it for
+      # free from the checkout; now they do not.
       - name: Unit tests (quant core)
         run: |
-          pip install pytest numpy pandas scipy
+          pip install pytest numpy pandas scipy "reportkit @ git+https://github.com/diegogomezpy/report_maker@v0.1.0"
           python -m pytest tests/ -q
 
   golden-pdf:
@@ -70,5 +74,5 @@ jobs:
       # named here they run nowhere, which is what happened to the layout test.
       - name: Render the report, diff the baseline, check layout invariants
         run: |
-          pip install pytest numpy pandas scipy fpdf2 plotly Pillow pypdfium2
+          pip install pytest numpy pandas scipy fpdf2 plotly Pillow pypdfium2 "reportkit @ git+https://github.com/diegogomezpy/report_maker@v0.1.0"
           python -m pytest tests/test_golden_pdf.py tests/test_pdf_layout.py -q

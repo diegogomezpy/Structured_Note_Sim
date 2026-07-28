@@ -193,9 +193,54 @@ The engine keeps full daily paths, so **RAM, not CPU, is the ceiling**. A stored
 
 Discipline to preserve: don't retain the float64 working set (raw S/V paths, stacked/perf cubes) past building the compact copies; `_RUNS` is capped so memory can't grow unbounded across runs. The band-aware chart builders (`build_wof_fan`, `build_fan_chart`) take a `bands=` arg and skip the percentile scan when given. The API bounds `n_paths` to 1000–250000 (default 10000); size the deploy's memory for the cap you allow.
 
-## `reportkit` — reusable themed-PDF library
+## `reportkit` — the report engine, now a separate package
 
-The report generator is being extracted into **`reportkit/`**, a domain-agnostic package with **no imports from `app/`, `core/`, or `data/`** so it's reusable by other projects. `reportkit.theme` owns the visual-identity layer (below); `reportkit.images` holds small image helpers (`cover_crop`). `app/pdf_report.py` is the Structured-Note **adapter** — it maps `NoteTerms`/results onto the themed document and registers note-specific blocks (structure diagram, participation profile, glossary content), keeping the public `generate_pdf_report()` entry point so `api/engine.py` is unchanged. (In progress: a declarative theme spec so themes are authorable data; a generic `ReportDocument` builder; `reportkit.branding`.)
+The themed-PDF engine lives in its **own repository** and is installed as a
+dependency: [`report_maker`](https://github.com/diegogomezpy/report_maker),
+pinned by tag in `requirements.txt` (`reportkit[charts] @ git+…@v0.1.0`). It has
+no imports from `app/`, `core/` or `data/` and knows nothing about structured
+notes — a different project can `pip install` it and build a report.
+
+    reportkit.document   ReportDocument: covers, section heads, tables, metric
+                         bands, figures, callouts, and the keep-together
+                         pagination (heading never orphaned from its block).
+    reportkit.theme      ReportTheme / SpecTheme, palette-derived tokens, the
+                         shape + gradient primitives, the theme registry.
+    reportkit.branding*  palette / logo / image resolution   (*still in the adapter)
+    reportkit.fonts      registration; ships IBM Plex Sans under the OFL.
+    reportkit.text       PDF-safe string sanitisation (incl. the Latin-1 path).
+    reportkit.images     load / sanitise / embed + path, URL-scheme and
+                         decompression-bomb guards.
+    reportkit.color      CSS colour parsing, brand palette remapping.
+    reportkit.spec       describe a document as data; `render_spec(dict)`.
+    reportkit.charts     [charts extra] Plotly figure → brand-coloured PNG.
+
+`app/pdf_report.py` is the Structured-Note **adapter**: `_NotePDF(ReportDocument)`
+plus the note-specific blocks (term sheets, structure diagram, participation
+profile, glossary, the `_LABELS` vocabulary, `_build_pdf_report`'s assembly).
+`generate_pdf_report()` is unchanged, so `api/engine.py` never noticed.
+
+**Things that are load-bearing and easy to break:**
+
+- **`pdf_report._FIG_HOOK` must stay an alias of the SAME ContextVar** as
+  `reportkit.charts.FIG_HOOK`. `api/proof.py` and `tests/golden_fixture.py`
+  `.set()`/`.reset()` through that attribute path; a second ContextVar disables
+  the proof's placeholder mode and puts a real headless Chrome in CI.
+- **`_fetch_image_bytes` and friends stay module globals** in the adapter,
+  resolved at call time — `golden_fixture.py` rebinds `_fetch_image_bytes` to
+  neutralise the network. Bind it early and the golden goes to the network while
+  staying green.
+- **The adapter injects, reportkit does not assume:** the font directory (this
+  repo's `fonts/`, so the same bytes get embedded), the label table (`_t` wins
+  over reportkit's nine chrome defaults), and `_rebrand_figure` (which knows
+  *this* app's source chart palette).
+- **`_NotePDF` must not re-declare inherited methods.** `tests/test_pdf_layout.py`
+  `setattr`s 17 method names onto it to instrument pagination; a redefinition
+  shadows the instrumented base method and blinds the orphan probe.
+- **Bumping the tag is a production change.** Re-run
+  `scripts/extraction_gate.sh` after any bump: the suite, `tests/golden/hashes.json`
+  unchanged, and all 16 documents byte-identical. `scripts/pdf_baseline.py
+  capture` re-baselines, deliberately by hand.
 
 ## PDF outline — one source for the chapter numbers
 
