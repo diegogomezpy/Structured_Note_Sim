@@ -59,13 +59,9 @@ green-ramp hue derived from the accent — see _rebrand_figure.
 from __future__ import annotations
 
 import io
-import os
 import re
 import base64
-import colorsys
 import datetime
-import tempfile
-import threading
 import urllib.request
 import warnings
 import numpy as np
@@ -164,7 +160,6 @@ _branding_color = _rk_branding.branding_color
 _DEFAULT_PRIMARY   = _rk_branding.DEFAULT_PRIMARY
 _DEFAULT_ACCENT    = _rk_branding.DEFAULT_ACCENT
 _DEFAULT_SECONDARY = _rk_branding.DEFAULT_SECONDARY
-_KNOWN_BRANDING_KEYS = _rk_branding.KNOWN_KEYS | _NOTE_BRANDING_KEYS
 
 
 def _validate_branding(branding: dict | None) -> None:
@@ -3113,120 +3108,35 @@ def _build_pdf_report(
     )
     # Custom brand typography (title_font / body_font) — no-op + IBM Plex fallback
     # when the brand ships no fonts or the TTF files are absent.
-    _rk_fonts.register_brand_fonts(pdf, branding, brand_dir=_FONT_DIR / "brand")
     _stamp_attribution(pdf)
     # Usable content width — a page-geometry constant used by every table. Defined
     # here (not inside the Note-Terms block) so later sections never hit an unbound
     # `usable` when Note details is toggled off.
     usable = pdf.w - pdf.l_margin - pdf.r_margin
-    # Optional full-bleed background photo for the branded cover (base64 / data URI).
-    def _decode_b64_img(_v):
-        if not _v:
-            return None
-        try:
-            _pl = _v.split(",", 1)[1] if _v.strip().startswith("data:") else _v
-            return _to_embeddable_png(base64.b64decode(_pl))
-        except Exception as _e:
-            print(f"[PDF cover] image skipped: {_e}")
-            return None
-    # `filler_images_base64` is an optional POOL of report photos (the multi-pick
-    # cover-photo library). Its slots are POSITIONAL: 0 = cover, 1 = back, the
-    # rest = void-filler bands. A slot can be a deliberate BLANK (an empty-string
-    # sentinel from the picker's "No image" placeholder) meaning "no photo here,
-    # themed background instead" — so we keep positions: a blank/failed decode
-    # becomes None and HOLDS its slot rather than letting the next photo shift up
-    # into the cover/back role. Real images are deduped by content.
-    _pool_raw = _b.get("filler_images_base64") or []
-    if isinstance(_pool_raw, str):            # tolerate a single string
-        _pool_raw = [_pool_raw]
-    _slots, _seen = [], set()
-    for _item in _pool_raw:
-        _img = _decode_b64_img(_item)
-        if _img is None:
-            _slots.append(None)               # blank slot — keep the position
-        elif _img not in _seen:
-            _seen.add(_img); _slots.append(_img)
-        # else: a real image repeated — drop the duplicate
-    pdf.cover_logo_bytes  = _decode_b64_img(_b.get("cover_logo_base64"))
-    pdf.cover_logo_aspect = _logo_aspect(pdf.cover_logo_bytes, default=pdf.firm_logo_aspect)
-    pdf.cover_sigil_bytes = _decode_b64_img(_b.get("cover_sigil_base64"))
-    # ── Watermark — ONE resolved config (image + appearance + surfaces). ──────
-    # A single faint brand mark drawn behind text on up to four surfaces: an
-    # uploaded image (any brand) or the theme's own hex cluster (CADIEM's). The
-    # image comes from the nested `watermark.image_base64` or the legacy flat
-    # `watermark_base64`; a legacy `watermark_enabled: false` drops it so the hex
-    # fallback shows. resolve_watermark() reads the appearance + the single
-    # `surfaces` gate, honouring the legacy flat `watermark_*` knobs so old
-    # configs render identically. Every surface reads this one config.
-    _wm_cfg = _b.get("watermark") if isinstance(_b.get("watermark"), dict) else {}
-    _wm_img_b64 = _wm_cfg.get("image_base64") or _b.get("watermark_base64")
-    if _b.get("watermark_enabled", True) is False:
-        _wm_img_b64 = None
-    pdf.watermark = resolve_watermark(_b, _decode_b64_img(_wm_img_b64))
-    # Cover face: explicit `cover_image_base64`, else slot 0. Slot 0 may be a
-    # deliberate blank (None) — the user chose "No image" for the cover — which
-    # is honoured: the cover shows the themed background, no photo.
-    _explicit_cover = _decode_b64_img(_b.get("cover_image_base64"))
-    pdf.cover_image_bytes = _explicit_cover if _explicit_cover else (_slots[0] if _slots else None)
-    # Back (disclaimer) face: explicit field, else slot 1 (which may be a
-    # deliberate blank → honoured as no back photo). Only when there is NO back
-    # slot at all does it fall back to the cover photo, so a 1-image brand still
-    # gets a back photo without silently overriding an explicit "No image".
-    _explicit_back = _decode_b64_img(_b.get("back_image_base64"))
-    if _explicit_back:
-        pdf.back_image_bytes = _explicit_back
-    elif len(_slots) > 1:
-        pdf.back_image_bytes = _slots[1]      # may be None → deliberate blank
-    else:
-        pdf.back_image_bytes = pdf.cover_image_bytes
-    # Void-filler pool: the report-BODY photos only — every real image in the
-    # slots that isn't already the cover or back face (blanks drop out via the
-    # `img` truthiness test). This keeps the cover/back photos from reappearing
-    # inside the report. If nothing is left (a 1- or 2-image brand, all consumed
-    # by cover/back), fall back to those photos so there is still a filler band.
-    _used = {b for b in (pdf.cover_image_bytes, pdf.back_image_bytes) if b}
-    _fillers = [img for img in _slots if img and img not in _used]
-    if _fillers:
-        pdf.filler_image_list = _fillers
-    else:
-        _fb, _fbseen = [], set()
-        for _img in (pdf.cover_image_bytes, pdf.back_image_bytes):
-            if _img and _img not in _fbseen:
-                _fbseen.add(_img); _fb.append(_img)
-        pdf.filler_image_list = _fb
-    # Legacy flat overlay colour — kept only as the fallback tint when the theme
-    # declares no cover fill (see `_paint_cover_overlay`, where the theme's
-    # cover.fill is the single source for the cover's colour identity).
-    pdf.cover_overlay_color = _branding_color(branding, "cover_overlay_color", primary_color)
-    try:
-        pdf.cover_overlay_opacity = float(_b.get("cover_overlay_opacity", 0.55))
-    except Exception:
-        pdf.cover_overlay_opacity = 0.55
-    # Optional user-selected KEY TERMS for the cover footer strip (list of metric
-    # keys). Missing/None → the default three (see `_front_cover_page`); an
-    # explicit empty list → show none (the whole strip can be turned off).
-    _cm = _b.get("cover_metrics")
+    # ── Brand assets, copy and placement ───────────────────────────────────
+    # One call. reportkit.branding resolves the config — the positional photo
+    # slots, watermark (including the legacy flat keys), overlay, sigil, cover
+    # logo, copy overrides and placement percentages — and `apply_brand` writes
+    # them in the order that matters. This used to be ~90 lines here, which is
+    # why a config could be recognised and then only partly honoured.
+    #
+    # `root` and `fetch` are passed EXPLICITLY: reportkit refuses `logo_file`
+    # and `logo_url` unless a host opts in, and `_fetch_image_bytes` stays the
+    # module global tests/golden_fixture.py rebinds to neutralise the network.
+    _brand = _rk_branding.resolve(
+        _b, lang=lang, root=_REPO_ROOT, fetch=_fetch_image_bytes,
+        extra_keys=_NOTE_BRANDING_KEYS, default_firm_name=_DEFAULT_FIRM_NAME)
+    for _w in _brand.warnings:
+        print(f"[PDF branding] {_w}")
+    pdf.apply_brand(_brand, font_dir=_FONT_DIR / "brand")
+
+    # Note-specific, deliberately NOT reportkit's: which key-TERM chips the
+    # cover band shows, and whether the sub-lines name underlyings by ticker or
+    # by display name. A law firm's quarterly report has neither.
+    _cm = _brand.extras.get("cover_metrics")
     pdf.cover_metrics = list(_cm) if isinstance(_cm, (list, tuple)) else None
-    # How the cover / summary sub-lines name the underlyings. "ticker" (the
-    # default, and the historical behaviour) prints the exchange symbols; "name"
-    # prints the display names from the note's `tickers` map. Anything else falls
-    # back to "ticker" so a stray value can't blank the line.
-    pdf.underlying_labels = "name" if _b.get("underlying_labels") == "name" else "ticker"
-    # Cover logo / emblem placement — all % of page (None ⇒ theme default). Read
-    # here and applied in `_front_cover_page`; absent values reproduce the
-    # original fixed placement byte-for-byte.
-    def _opt_num(key):
-        try:
-            return float(_b.get(key))
-        except (TypeError, ValueError):
-            return None
-    pdf.cover_logo_x_pct     = _opt_num("cover_logo_x_pct")
-    pdf.cover_logo_y_pct     = _opt_num("cover_logo_y_pct")
-    pdf.cover_logo_size_pct  = _opt_num("cover_logo_size_pct")
-    pdf.cover_sigil_x_pct    = _opt_num("cover_sigil_x_pct")
-    pdf.cover_sigil_y_pct    = _opt_num("cover_sigil_y_pct")
-    pdf.cover_sigil_size_pct = _opt_num("cover_sigil_size_pct")
-    pdf.cover_sigil_opacity  = _opt_num("cover_sigil_opacity")
+    pdf.underlying_labels = ("name" if _brand.extras.get("underlying_labels") == "name"
+                             else "ticker")
 
     # ── Outline ────────────────────────────────────────────────────────────
     # Decide which chapters this report actually contains BEFORE the contents
