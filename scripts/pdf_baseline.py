@@ -1,8 +1,8 @@
 """Whole-document PDF fingerprint — the safety net for refactors that must not
 change output.
 
-The golden test (`tests/test_golden_pdf.py`) pins per-page pixels for 4 brand
-fixtures in English, phoenix only. That is the right guard for *drawing* changes.
+The golden test (`tests/test_golden_pdf.py`) pins per-page pixels for every
+fixture in its own `THEMES` list, in English, phoenix only. That is the right guard for *drawing* changes.
 It is not wide enough for a structural refactor — moving code between modules can
 change a Spanish participation report while leaving every guarded page identical.
 

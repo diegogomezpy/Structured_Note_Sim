@@ -34,8 +34,12 @@ from tests.golden_fixture import render_report  # noqa: E402
 THEMES = ["mercator", "hexagon", "custom", "hexcluster", "photos"]
 
 # Calls that draw a heading and then expect content under it.
+# `open_section` is the current name; `start_section` is reportkit's 0.7
+# deprecation shim, kept here so a stray legacy call site is still probed
+# rather than silently uninstrumented — which is what happened when the rename
+# landed and this list still named only the old one.
 HEADINGS = ["subsection", "secondary_head", "section_divider", "section_title",
-            "start_section"]
+            "open_section", "start_section"]
 # Calls that emit the content a heading is introducing. `figure` is included:
 # a caption split from its figure is the same defect wearing a different hat.
 CONTENT = ["data_table", "logo_row_table", "kv_table", "metric_band", "figure",

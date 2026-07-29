@@ -197,7 +197,7 @@ Discipline to preserve: don't retain the float64 working set (raw S/V paths, sta
 
 The themed-PDF engine lives in its **own repository** and is installed as a
 dependency: [`report_maker`](https://github.com/diegogomezpy/report_maker),
-pinned by tag in `requirements.txt` (`reportkit[charts] @ git+…@v0.6.0`). It has
+pinned by tag in `requirements.txt` (`reportkit[charts] @ git+…@v0.7.0`). It has
 no imports from `app/`, `core/` or `data/` and knows nothing about structured
 notes — a different project can `pip install` it and build a report.
 
@@ -219,8 +219,10 @@ notes — a different project can `pip install` it and build a report.
                          section / divider heads.
     reportkit.testing    deterministic inputs + `sample_document()`; the
                          package's own pixel golden and pagination sweep run
-                         over it, so `_table_room` is now guarded upstream
-                         rather than only by this repo's gate.
+                         over it. Both now genuinely reach `table_room`: the
+                         sample passes `min_room=table_room(n)`, without which
+                         the pixel golden rendered identically to a build where
+                         `table_room` RAISED. Verified by mutation upstream.
     reportkit.fonts      registration; ships IBM Plex Sans under the OFL.
     reportkit.text       PDF-safe string sanitisation (incl. the Latin-1 path).
     reportkit.images     load / sanitise / embed + path, URL-scheme and
@@ -249,11 +251,16 @@ profile, glossary, the `_LABELS` vocabulary, `_build_pdf_report`'s assembly).
   over reportkit's nine chrome defaults), and `_rebrand_figure` (which knows
   *this* app's source chart palette).
 - **`_NotePDF` must not re-declare inherited methods.** `tests/test_pdf_layout.py`
-  `setattr`s 17 method names onto it to instrument pagination; a redefinition
-  shadows the instrumented base method and blinds the orphan probe.
+  `setattr`s 14 method names (`HEADINGS` + `CONTENT`) onto **`_NotePDF` itself**
+  to instrument pagination, restoring them in a `finally`. A subclass override
+  therefore IS what gets wrapped — the risk is not shadowing but DRIFT: when
+  reportkit renamed `start_section` to `open_section`, the list still named only
+  the old one and six real call sites went silently uninstrumented until the
+  name was added.
 - **Bumping the tag is a production change.** Re-run
   `scripts/extraction_gate.sh` after any bump: the suite, `tests/golden/hashes.json`
-  unchanged, and all 16 documents byte-identical. `scripts/pdf_baseline.py
+  unchanged, and every document byte-identical (the matrix is THEMES x KINDS x
+  LANGS — 20 today). `scripts/pdf_baseline.py
   capture` re-baselines, deliberately by hand.
 
 ## PDF outline — one source for the chapter numbers
@@ -276,7 +283,7 @@ The report's *look* is a swappable **theme**, separate from its *content*. `repo
 - **Palette-driven tokens.** `build_tokens(primary, accent, section_rule, panel, sidebar_bar) -> ThemeTokens` derives `ink/lime/teal/amber/panel/sidebar_bar/…` from the resolved brand palette (single source for the derivation that `_NotePDF.__init__` used to inline). The brand-neutral constants (`AMBER`, `RULE_SOFT`, `TEXT`, …) and the chamfer-hexagon shape primitives also live here and are re-imported into `pdf_report.py` under their original `_NAMES`.
 - **Themes.** `HexagonTheme` (`"hexagon"` / `"cadiem"`) is CADIEM's original chamfer-hexagon language, moved **verbatim**. `MercatorTheme` (`"mercator"`) is the website-inspired language (rounded number-chips, a light editorial chapter opener with a big ghosted numeral, thin accent keylines, airy voids — no chamfers/hexagons).
 - **Selection.** `branding["report_theme"]` → `resolve_theme()` → registry; unknown/absent falls back to `DEFAULT_THEME`, which is **`"mercator"`** (so a generic un-themed brand gets the clean airy report). **CADIEM must set `"report_theme": "cadiem"` in its branding config** to keep the hexagon look — the deployed CADIEM config carries this key (it is otherwise gitignored). The web branding form exposes the picker (`brand_theme` in `ReportPanel.tsx`).
-- **Byte-identity contract.** A change to a drawing routine must not move pixels it did not intend to. `tests/test_golden_pdf.py` proves it: a hermetic harness (no network, no Chrome — figures are stubbed *inside* `_fig_to_png` at the caller's exact pixel size so pagination is unchanged) that renders the full report under three brand fixtures — `mercator` (default), `hexagon` (resolves the built-in CADIEM theme) and `custom` (an inline SpecTheme with linear/radial gradients) — and diffs per-page SHA-256 digests against `tests/golden/hashes.json`.
+- **Byte-identity contract.** A change to a drawing routine must not move pixels it did not intend to. `tests/test_golden_pdf.py` proves it: a hermetic harness (no network, no Chrome — figures are stubbed *inside* `_fig_to_png` at the caller's exact pixel size so pagination is unchanged) that renders the full report under every fixture in its own `THEMES` list — today `mercator` (default), `hexagon` (resolves the built-in CADIEM theme), `custom` (an inline SpecTheme with linear/radial gradients), `hexcluster` (no watermark image, so the drawn hex-cluster fallback renders) and `photos` (the positional image-slot path, with a deliberate blank in slot 0) — and diffs per-page SHA-256 digests against `tests/golden/hashes.json`.
 
 ```bash
 python -m pytest tests/test_golden_pdf.py -q

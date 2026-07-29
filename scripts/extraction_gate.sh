@@ -7,7 +7,8 @@
 #
 #   1. full test suite
 #   2. tests/golden/hashes.json unchanged in git  (a re-baseline is not a pass)
-#   3. all 16 documents byte-identical to the captured baseline
+#   3. every document byte-identical to the captured baseline
+#      (the matrix is THEMES x KINDS x LANGS in scripts/pdf_baseline.py)
 set -uo pipefail
 cd "$(dirname "$0")/.." || exit 2
 
