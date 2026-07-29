@@ -26,7 +26,7 @@ N_PATHS = 4000
 N_STEPS = 394
 
 
-def note_terms(kind: str = "phoenix"):
+def note_terms(kind: str = "autocall"):
     """A representative note of each family the report can render."""
     from core.note import NoteTerms
 
@@ -44,12 +44,12 @@ def note_terms(kind: str = "phoenix"):
             "tickers": {"AAA": "Alpha Corp", "BBB": "Beta SA"},
         })
     return NoteTerms.from_dict({
-        "name": "Sample Phoenix Note XS0000000000",
+        "name": "Sample Autocall Note XS0000000000",
         "maturity": 1.5, "payment_freq": "quarterly", "coupon_pa": 0.124,
         "coupon_barrier": 0.60, "autocall_barrier": 1.0,
         "autocall_start_period": 1, "knock_in_barrier": 0.50,
         "memory": True, "coupon_basket": "worst_of",
-        "autocall_basket": "worst_of", "note_type": "phoenix",
+        "autocall_basket": "worst_of", "note_type": "autocall",
         "tickers": {"AAA": "Alpha Corp", "BBB": "Beta SA", "CCC": "Gamma Inc"},
     })
 

@@ -12,7 +12,7 @@ from core.note import NoteTerms
 
 
 def _terms(**over) -> NoteTerms:
-    d = {"name": "T", "note_type": "phoenix", "maturity": 1.0, "payment_freq": "quarterly",
+    d = {"name": "T", "note_type": "autocall", "maturity": 1.0, "payment_freq": "quarterly",
          "coupon_pa": 0.10, "coupon_barrier": 0.7, "autocall_barrier": 1.0,
          "autocall_start_period": 1, "knock_in_barrier": 0.5,
          "tickers": {"^GSPC": "SPX"}}

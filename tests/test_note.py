@@ -14,8 +14,8 @@ import pytest
 from core.note import NoteTerms, price_note, replay_note, _participation_redemption
 
 
-def _phoenix(**over) -> NoteTerms:
-    d = {"name": "T", "note_type": "phoenix", "maturity": 1.0, "payment_freq": "semi-annual",
+def _autocall(**over) -> NoteTerms:
+    d = {"name": "T", "note_type": "autocall", "maturity": 1.0, "payment_freq": "semi-annual",
          "coupon_pa": 0.10, "coupon_barrier": 0.7, "autocall_barrier": 1.0,
          "autocall_start_period": 1, "knock_in_barrier": 0.5, "memory": True,
          "tickers": {"^GSPC": "SPX"}}
@@ -25,13 +25,13 @@ def _phoenix(**over) -> NoteTerms:
 
 # ── NoteTerms: derived fields + round-trip ──────────────────────────────────────
 def test_derived_fields():
-    t = _phoenix()                       # semi-annual over 1y → 2 observations
+    t = _autocall()                       # semi-annual over 1y → 2 observations
     assert t.n_obs == 2
     assert t.coupon_rate == pytest.approx(0.05)     # 10% p.a. / 2 periods
 
 
 def test_from_dict_to_dict_roundtrip():
-    for t in (_phoenix(), _phoenix(name="Ünïcode — note", coupon_pa=0.135)):
+    for t in (_autocall(), _autocall(name="Ünïcode — note", coupon_pa=0.135)):
         again = NoteTerms.from_dict(json.loads(json.dumps(t.to_dict())))
         assert again.name == t.name
         assert again.coupon_pa == pytest.approx(t.coupon_pa)
@@ -59,8 +59,8 @@ def test_legacy_knockout_rebate_becomes_payout():
 
 
 # ── price_note golden values (deterministic hand-built paths) ────────────────────
-def test_price_note_phoenix_golden():
-    t = _phoenix()
+def test_price_note_autocall_golden():
+    t = _autocall()
     # 2 paths, 1 asset, 5 time steps; observations at steps 2 and 4.
     perf = np.ones((2, 5, 1))
     perf[1, :, 0] = 0.3                  # path 1 crashes and stays below every barrier
@@ -80,7 +80,7 @@ def test_price_note_phoenix_golden():
 def test_price_note_all_autocall_hard_trigger():
     # Hard trigger (call_steepness None): worst-of exactly at the barrier autocalls
     # with probability exactly 1.0 regardless of seed.
-    t = _phoenix()
+    t = _autocall()
     perf = np.ones((16, 5, 1))
     note = price_note(perf, t, obs_steps=[2, 4], obs_times=[0.5, 1.0])
     assert note["prob_autocall"] == 1.0
@@ -91,7 +91,7 @@ def test_price_note_all_autocall_hard_trigger():
 def test_price_note_zenith_upside_participation():
     # Zenith: an in-the-money redemption pays the worst-of upside on top of
     # par + coupon; below-par at maturity is unchanged (1:1 loss).
-    t = _phoenix(zenith=True)            # 2 obs, coupon 0.05/period, coupon barrier 0.7, KI 0.5
+    t = _autocall(zenith=True)            # 2 obs, coupon 0.05/period, coupon barrier 0.7, KI 0.5
     perf = np.ones((3, 5, 1))
     perf[0, :, 0] = 1.20                                  # autocalls P1 at 1.20
     perf[1, 2, 0] = 0.80; perf[1, 4, 0] = 0.80           # maturity 0.80 (70%..100%): par + 2 coupons
@@ -138,7 +138,7 @@ def test_participation_shark_fin_null_payout_no_crash():
 
 # ── secondary-market position: returns measured on cost, not par ────────────────
 def test_cost_basis_defaults_to_par():
-    t = _phoenix()
+    t = _autocall()
     assert t.cost_basis == pytest.approx(1.0)
     assert t.is_secondary is False
 
@@ -150,7 +150,7 @@ def test_cost_basis_defaults_to_par():
     ({"purchase_price": 1.03},                              1.03,  True),   # bought at a premium
 ])
 def test_cost_basis_and_is_secondary(over, cost, secondary):
-    t = _phoenix(**over)
+    t = _autocall(**over)
     assert t.cost_basis == pytest.approx(cost)
     assert t.is_secondary is secondary
 
@@ -161,8 +161,8 @@ def test_purchase_price_rebases_returns():
     perf = np.ones((2, 5, 1))
     perf[1, :, 0] = 0.3                                   # crashes, knocked in
     kw = dict(obs_steps=[2, 4], obs_times=[0.5, 1.0])
-    par = price_note(perf, _phoenix(), **kw)
-    sec = price_note(perf, _phoenix(purchase_price=0.95), **kw)
+    par = price_note(perf, _autocall(), **kw)
+    sec = price_note(perf, _autocall(purchase_price=0.95), **kw)
 
     # The note itself is unchanged — same payoff, same call, same knock-in.
     assert sec["nominal_payoffs"] == pytest.approx(par["nominal_payoffs"])
@@ -180,7 +180,7 @@ def test_purchase_price_rebases_returns():
 def test_prob_loss_is_not_the_knock_in_rate():
     """P(loss) is about the POSITION, so a coupon can rescue a knocked-in path and a
     discount can rescue a below-par redemption — neither shows up in P(knock-in)."""
-    t = _phoenix(coupon_pa=0.60, coupon_barrier=0.0)      # 30%/period, always paid
+    t = _autocall(coupon_pa=0.60, coupon_barrier=0.0)      # 30%/period, always paid
     perf = np.ones((2, 5, 1))
     perf[0, :, 0] = 0.90                                  # matures at 0.90, no knock-in
     perf[1, 2, 0] = 0.90; perf[1, 4, 0] = 0.45            # knocks in, redeems at 0.45 + 0.60 coupons
@@ -206,7 +206,7 @@ def test_participation_returns_on_cost():
 
 
 def test_position_fields_roundtrip():
-    t = _phoenix(settlement_date="2025-06-01", purchase_price=0.955,
+    t = _autocall(settlement_date="2025-06-01", purchase_price=0.955,
                  accrued_at_purchase=0.0125)
     again = NoteTerms.from_dict(json.loads(json.dumps(t.to_dict())))
     assert again.settlement_date == "2025-06-01"
@@ -217,7 +217,7 @@ def test_position_fields_roundtrip():
 
 def test_zero_cost_basis_rejected():
     with pytest.raises(ValueError, match="purchase_price"):
-        _phoenix(purchase_price=0.0)
+        _autocall(purchase_price=0.0)
 
 
 # ── seasoning: pricing only the remaining window of a partially-elapsed note ─────
@@ -229,8 +229,8 @@ def _seasoned_kw(k, **over):
 
 
 def _q(**over) -> NoteTerms:
-    """A 1y quarterly phoenix — 4 observations, so a window is easy to reason about."""
-    return _phoenix(payment_freq="quarterly", coupon_pa=0.08, **over)
+    """A 1y quarterly autocall — 4 observations, so a window is easy to reason about."""
+    return _autocall(payment_freq="quarterly", coupon_pa=0.08, **over)
 
 
 def test_seasoning_prices_only_the_remaining_window():

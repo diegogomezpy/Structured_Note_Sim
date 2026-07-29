@@ -1,13 +1,13 @@
 """
 core/note.py
 ------------
-NoteTerms dataclass — full Phoenix/Autocallable structured note specification.
+NoteTerms dataclass — full Autocall/Autocallable structured note specification.
 price_note()         — fully vectorized payoff engine (no Python loops).
 
 Supports replication of:
-  - HSBC XS3376563584: 24M monthly Phoenix Memory Worst-of, knock-in barrier,
+  - HSBC XS3376563584: 24M monthly Autocall Memory Worst-of, knock-in barrier,
                         separate coupon barrier, autocall starts at period 4
-  - BBVA XS3378405743: 18M quarterly Phoenix Memory Worst-of, knock-in barrier,
+  - BBVA XS3378405743: 18M quarterly Autocall Memory Worst-of, knock-in barrier,
                         One Star best-of FINAL-redemption rescue (the default)
   - BNP Paribas One Star: One Star best-of overlay additionally on coupon AND
                         autocall (opt-in via one_star_coupon / one_star_autocall)
@@ -227,7 +227,7 @@ _FREQ_TO_PERIODS: dict[str, int] = {
 @dataclass
 class NoteTerms:
     """
-    Full specification of a Phoenix Memory Autocallable note.
+    Full specification of a Autocall Memory Autocallable note.
 
     Human-readable fields (set these in JSON / UI):
       maturity        : tenor in years (e.g. 2.0)
@@ -259,7 +259,7 @@ class NoteTerms:
     one_star_coupon:        bool        = False  # best-of also satisfies the coupon barrier
     one_star_autocall:      bool        = False  # best-of also forces the autocall trigger
     call_steepness:         float | None = None   # None = hard trigger (default)
-    # ── Classic / Growth Autocall extensions (default = no-op → plain Phoenix) ──
+    # ── Classic / Growth Autocall extensions (default = no-op → plain Autocall) ──
     autocall_step_down:      float       = 0.0    # per-period decrement of autocall barrier (0 = constant)
     autocall_floor:          float | None = None  # minimum autocall barrier when stepping down
     coupon_at_autocall_only: bool        = False  # True = no periodic coupon; accrued premium paid as a lump at autocall
@@ -274,12 +274,12 @@ class NoteTerms:
     # "100% no cap" Zenith note only needs to set zenith=True.
     zenith:                 bool        = False
     # ── Note structure type (explicit; drives the menu, payoff branch, diagram, prose) ──
-    # phoenix | reverse_conv | growth_autocall | participation | custom. Inferred on
+    # autocall | reverse_conv | growth_autocall | participation | custom. Inferred on
     # load for legacy configs that predate this field (see from_dict).
-    note_type:              str          = "phoenix"
+    note_type:              str          = "autocall"
     # ── Participation Note (note_type == "participation") ─────────────────────
     # A single maturity-level payoff profile: choose ONE downside style and ONE
-    # upside style; the whole Phoenix waterfall (coupons/autocall/knock-in) is
+    # upside style; the whole Autocall waterfall (coupons/autocall/knock-in) is
     # skipped. See _participation_redemption() for the exact per-style formulas.
     participation_downside: str          = "full"       # full | buffer | airbag | bear
     participation_upside:   str          = "linear"     # linear | shark_fin | digital
@@ -298,7 +298,7 @@ class NoteTerms:
     # ── Capital Protected legacy fields (kept for back-compat; see from_dict) ──
     capital_guarantee:       float | None = None  # legacy CP guarantee → migrated to protection_level + note_type=participation
     upside_cap:              float | None = None  # maximum redemption above par; also the cap for linear/shark-fin upside
-    name:                   str         = "Phoenix Memory Note"
+    name:                   str         = "Autocall Memory Note"
     # Systematic, terms-driven prose blurb (core.note_description). "" = auto-generate;
     # a non-empty value is a user override, mirroring issuer/underlying descriptions.
     note_description:       str         = ""
@@ -514,9 +514,16 @@ class NoteTerms:
         # ── note_type inference (configs predating the explicit field) ────
         # The old 'Capital Protected' note keyed on capital_guarantee>0; map it
         # to the generalised participation branch (full protection, 100% linear
-        # participation — the closest equivalent). Otherwise label the phoenix /
+        # participation — the closest equivalent). Otherwise label the autocall /
         # reverse-convertible / growth-autocall family (menu label only; those
         # share the one waterfall). protection_level inherits capital_guarantee.
+        # "autocall" was the family's name until it was renamed to the plainer
+        # "autocall". Accept it forever: it is written into every note_config
+        # saved before the rename, and a config that stops loading is a worse
+        # outcome than an alias that never goes away.
+        if d.get("note_type") == "autocall":
+            d["note_type"] = "autocall"
+
         if not d.get("note_type"):
             if (d.get("capital_guarantee") or 0) > 0:
                 d["note_type"] = "participation"
@@ -528,7 +535,7 @@ class NoteTerms:
             elif d.get("coupon_barrier") == 0 and not d.get("memory", True):
                 d["note_type"] = "reverse_conv"
             else:
-                d["note_type"] = "phoenix"
+                d["note_type"] = "autocall"
 
         # Shark-fin drop level was briefly a rebate (extra above par); it is now an
         # absolute knock-out payout (the level it drops to).
@@ -854,7 +861,7 @@ def _participation_payoff(perf_paths, terms, obs_steps, t_maturity, n_obs,
                           start_basket: float = 1.0) -> dict:
     """price_note() branch for note_type == 'participation'. A pure maturity payoff:
     no coupons, no autocall, no periodic knock-in. Returns the same result schema as
-    the Phoenix path so everything downstream (stats, plots, path explorer) is
+    the Autocall path so everything downstream (stats, plots, path explorer) is
     unchanged; 'knock-in' here means redeemed below par (a capital loss).
 
     A single-maturity note needs no seasoning state — its payoff reads the final
@@ -919,7 +926,7 @@ def price_note(
     start_basket:    float = 1.0,
 ) -> dict:
     """
-    Evaluate Phoenix Memory Autocallable payoffs across all simulated paths.
+    Evaluate Autocall Memory Autocallable payoffs across all simulated paths.
 
     Fully vectorized — no Python loop over paths.
 
@@ -1034,7 +1041,7 @@ def price_note(
     # Participation Note branch — a single maturity-level payoff profile
     # ------------------------------------------------------------------
     # Chosen downside × upside styles evaluated on the final basket level; the
-    # entire Phoenix waterfall (coupons / autocall / knock-in) is skipped. Routed
+    # entire Autocall waterfall (coupons / autocall / knock-in) is skipped. Routed
     # by the explicit note_type, or (legacy) by a positive capital_guarantee —
     # which from_dict already maps to note_type="participation" + protection_level.
     if (getattr(terms, "note_type", "") == "participation"
@@ -1269,7 +1276,7 @@ def price_note(
 
     # Redemption principal (par by default; Zenith adds upside participation).
     #
-    # Plain Phoenix: an autocall or a non-loss maturity redeems at par
+    # Plain Autocall: an autocall or a non-loss maturity redeems at par
     # (principal_protection, 100%) — no upside participation. A capital loss
     # (KI breached, not rescued) pays 1:1 the worst-of final level.
     #

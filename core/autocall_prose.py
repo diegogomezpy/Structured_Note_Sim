@@ -1,4 +1,4 @@
-"""Phoenix note description — two short paragraphs, generated from terms.
+"""Autocall note description — two short paragraphs, generated from terms.
 
 Deliberately terse. The features table beside it carries the numbers, so the
 prose only has to say how the note WORKS: what it is linked to, what it pays
@@ -347,7 +347,7 @@ def _t2_capital(c: Ctx, issuer: str | None) -> str:
     return s
 
 
-def describe_phoenix(terms, lang: str = "en", issuer: str | None = None) -> str:
+def describe_autocall(terms, lang: str = "en", issuer: str | None = None) -> str:
     """The two paragraphs, joined by a blank line."""
     c = Ctx(terms, lang)
     out = "\n\n".join([_t1_mechanics(c), _t2_capital(c, issuer)])

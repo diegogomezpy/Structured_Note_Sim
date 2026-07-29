@@ -13,7 +13,7 @@ Build the C++ module first, then run:
     pip install ./cpp
     python scripts/compare_engines.py [n_base_paths]
 
-Offline (no network): fixed Heston parameters, one sample Phoenix note.
+Offline (no network): fixed Heston parameters, one sample Autocall note.
 """
 from __future__ import annotations
 
@@ -72,7 +72,7 @@ def _stats(S_paths, terms):
 
 def main():
     n_base = int(sys.argv[1]) if len(sys.argv) > 1 else 25_000
-    terms = NoteTerms(name="Sample Phoenix", maturity=1.5, payment_freq="quarterly",
+    terms = NoteTerms(name="Sample Autocall", maturity=1.5, payment_freq="quarterly",
                       coupon_pa=0.12, coupon_barrier=0.7, autocall_barrier=1.0,
                       autocall_start_period=1, knock_in_barrier=0.6, memory=True,
                       tickers={"A": "AssetA", "B": "AssetB", "C": "AssetC"})

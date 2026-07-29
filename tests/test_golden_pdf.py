@@ -85,7 +85,7 @@ def _rasterise(pdf_bytes: bytes, dpi: int = DPI):
 
 
 # ── render ───────────────────────────────────────────────────────────────────
-def _render(theme: str, kind: str = "phoenix", *, real_figures: bool = False) -> bytes:
+def _render(theme: str, kind: str = "autocall", *, real_figures: bool = False) -> bytes:
     """Build one report. Delegates to the shared fixture renderer so the golden
     and the structural layout test (tests/test_pdf_layout.py) cannot drift into
     guarding two different documents."""

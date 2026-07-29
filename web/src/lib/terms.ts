@@ -111,7 +111,7 @@ export function isSecondary(t: NoteTerms): boolean {
 
 /** Term rows describing the POSITION (not the note) — only present once the note
     was actually bought on the secondary market, so a plain subscription's table
-    is unchanged. Shared by the phoenix and participation row builders. */
+    is unchanged. Shared by the autocall and participation row builders. */
 function positionRows(t: NoteTerms, tr: (k: string) => string): [string, string][] {
   const rows: [string, string][] = []
   if (isSecondary(t)) {

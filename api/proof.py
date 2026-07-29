@@ -144,7 +144,7 @@ def _memoised_hook(fig, width, height, *colors):
 
 def render_proof(*, branding: dict | None = None, terms: dict | None = None,
                  sections: list[str] | None = None, lang: str = "en",
-                 kind: str = "phoenix", scale: float = DEFAULT_SCALE,
+                 kind: str = "autocall", scale: float = DEFAULT_SCALE,
                  pages: list[int] | None = None,
                  figures: str = "stub") -> dict:
     """Render a proof and return `{pages: [b64 png], page_count, cached, figures}`.

@@ -232,7 +232,7 @@ def sample_paths(run_id: str, *, sample: int = 400, seed: int = 7) -> dict | Non
     irr = note.get("annualized_returns")
     red = note.get("nominal_payoffs")      # per-path redemption (participation)
 
-    _note_type = terms.get("note_type", "phoenix")
+    _note_type = terms.get("note_type", "autocall")
     _is_part = _note_type == "participation"
     # For a Participation note the payoff references the participation BASKET, not the
     # worst-of — reduce along assets with the note's basket type so the fan matches.
@@ -426,7 +426,7 @@ def _participation_line_and_markers(asset_paths, obs_steps, terms, tr):
 
 
 def _path_payload(worst_path, asset_paths, asset_names, obs_steps, autocall_q,
-                  marker_info, terms, note_type="phoenix") -> dict:
+                  marker_info, terms, note_type="autocall") -> dict:
     """Raw single-path data for the React inspector chart — per-asset + worst-of
     trajectories (truncated at the call, time-downsampled) plus observation markers
     and barriers. The client renders it in the app's own chart aesthetic, so the
@@ -531,7 +531,7 @@ def inspect_run(run_id: str, *, lang: str = "en", filters: dict | None = None,
         coupon_periods=_to_window(f.get("coupon_periods")))
     M = int(len(matches))
 
-    _note_type = getattr(terms, "note_type", "phoenix")
+    _note_type = getattr(terms, "note_type", "autocall")
     _is_part = _note_type == "participation"
     base = {"n_total": int(P), "n_matched": M, "ret_range": ret_range,
             "n_obs": int(n_obs), "period_offset": k_off,
@@ -686,7 +686,7 @@ def _seasoning(terms: NoteTerms, anchor) -> dict | None:
     perf_obs = (np.vstack(past_rows) / S0_fix) if past_rows else np.empty((0, len(S0_fix)))
 
     pending, received, start_basket = 0, 0.0, 1.0
-    if getattr(terms, "note_type", "phoenix") == "participation":
+    if getattr(terms, "note_type", "autocall") == "participation":
         if getattr(terms, "participation_periodic", False) and k:
             start_basket = float(_basket(perf_obs[-1:], terms.participation_basket)[0])
     else:
@@ -816,7 +816,7 @@ def _mc_figures(sf: dict, note: dict, terms: NoteTerms, tr) -> dict:
 
     _is_part = getattr(terms, "note_type", "") == "participation"
     # Participation never autocalls → the autocall outcome breakdown is meaningless;
-    # show the redemption distribution instead. Phoenix path unchanged.
+    # show the redemption distribution instead. Autocall path unchanged.
     _outcome_fig = (charts.build_redemption_distribution(note["nominal_payoffs"], terms, tr)
                     if _is_part else
                     charts.build_outcome_breakdown(
@@ -887,11 +887,11 @@ def _mc_summary(sf: dict, note: dict, terms: NoteTerms) -> dict:
         # position measures — cost_basis is 1.0 unless the note was bought on the
         # secondary market; prob_loss is P(negative return on that cost)
         "cost_basis", "prob_loss",
-        # participation-only (None on Phoenix → the client ignores them)
+        # participation-only (None on Autocall → the client ignores them)
         "prob_above_par", "prob_below_par", "prob_at_cap", "prob_knocked_out",
         "expected_gain", "expected_redemption", "p5_redemption", "p95_redemption",
         "cvar5_redemption", "breakeven_level", "up_capture", "dn_capture")}
-    summary["note_type"] = getattr(terms, "note_type", "phoenix")
+    summary["note_type"] = getattr(terms, "note_type", "autocall")
     # For a Participation run, send a downsample of the final-basket levels so the
     # client can redraw the payoff-profile distribution overlay and recompute the
     # what-if table (rate/cap/protection) instantly via the TS redemption mirror —
@@ -1088,7 +1088,7 @@ def _position_summary(terms: NoteTerms, settle_ts, holding_years: float,
 
     `income` is the coupon/locked-in income received SINCE settlement; `redemption`
     is the level the note currently indicates it would redeem at (par for a live
-    phoenix, the projected redemption for a participation note). From those:
+    autocall, the projected redemption for a participation note). From those:
       pull_to_par    — capital gain still to come if it redeems there, on cost
       return_on_cost — total return on cost if the position closed at that level now
 
@@ -1121,7 +1121,7 @@ def run_backtest_api(terms: NoteTerms, *, history_years: float | None = None,
     if bt.empty:
         return {"summary": {}, "issues": [], "figures": None}
 
-    _note_type = getattr(terms, "note_type", "phoenix")
+    _note_type = getattr(terms, "note_type", "autocall")
     _is_part = _note_type == "participation"
     _periodic = bool(getattr(terms, "participation_periodic", False))
     out_summary = {k: _f(v) for k, v in summary.items()
@@ -1213,7 +1213,7 @@ def backtest_paths(terms: NoteTerms, *, history_years: float | None = None,
     and filter them exactly like the MC fan."""
     prices = _prices(dict(terms.tickers), years=history_years, field="close")
     bt, summary = run_backtest(prices, terms, bt_start=_ts(bt_start), bt_end=_ts(bt_end))
-    _note_type = getattr(terms, "note_type", "phoenix")
+    _note_type = getattr(terms, "note_type", "autocall")
     _is_part = _note_type == "participation"
     if _is_part:
         periodic = bool(getattr(terms, "participation_periodic", False))
@@ -1297,7 +1297,7 @@ def backtest_inspect(terms: NoteTerms, *, lang: str = "en", filters: dict | None
     n_obs = terms.n_obs
     obs_times_rel = [0.0] + list(terms.obs_times())
 
-    _note_type = getattr(terms, "note_type", "phoenix")
+    _note_type = getattr(terms, "note_type", "autocall")
     _is_part = _note_type == "participation"
     base = {"n_total": int(len(bt)), "n_matched": 0, "ret_range": [0.0, 0.0],
             "n_obs": int(n_obs), "coupon_available": False, "note_type": _note_type,
@@ -1455,7 +1455,7 @@ def _participation_live_result(terms, tr, asset_names, disp_to_sym, obs_labels,
         settlement_date=(settle_ts if terms.is_secondary else None))
 
     if for_pdf:
-        # The PDF current-performance section is still phoenix-shaped; skip it for a
+        # The PDF current-performance section is still autocall-shaped; skip it for a
         # participation note rather than render coupon columns that don't apply.
         return {"available": False, "reason": "participation_pdf_unsupported"}
 
@@ -1592,10 +1592,10 @@ def run_live_api(terms: NoteTerms, *, lang: str = "en", for_pdf: bool = False) -
         perf_obs = np.empty((0, len(S0)))
 
     # ── Participation branch — a maturity-payoff note has no coupons / autocall /
-    # knock-in, so the phoenix replay below doesn't apply. Report where the note
+    # knock-in, so the autocall replay below doesn't apply. Report where the note
     # stands against its OWN payoff: the participation basket today, the redemption
     # it would pay if it settled now, and the distance to breakeven / floor / cap.
-    if getattr(terms, "note_type", "phoenix") == "participation":
+    if getattr(terms, "note_type", "autocall") == "participation":
         return _participation_live_result(
             terms, tr, asset_names, disp_to_sym, obs_labels, live_prices, full_prices,
             S0, perf_today, worst_asset, perf_obs, past_dates, obs_cal, obs_snapped,
@@ -1742,7 +1742,7 @@ def run_live_api(terms: NoteTerms, *, lang: str = "en", for_pdf: bool = False) -
             "alive":           not bool(replay["autocall_period"]),
             "coupon_at_autocall_only": bool(terms.coupon_at_autocall_only),
             "next_premium":    _f(terms.coupon_rate * (n_replayed + 1)),
-            # A live phoenix indicates par: it redeems at 100% on an autocall and on
+            # A live autocall indicates par: it redeems at 100% on an autocall and on
             # any maturity that doesn't knock in, so par is the reference the
             # discount/premium pulls to.
             **_position_summary(terms, settle_ts, holding_years, cost_basis,

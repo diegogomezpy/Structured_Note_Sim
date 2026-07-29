@@ -97,7 +97,7 @@ export default function MonteCarloPanel({ result, terms, sub, onSubChange, onPat
       {sub === 'summary' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }} className="stagger">
           <Panel title={isPart ? t('redemption_distribution') : t('outcomes')} right={`${summary.n_paths.toLocaleString()} ${t('paths').toLowerCase()} · ${summary.engine}`} pad={14}>
-            {/* Phoenix outcomes read as a proportional stacked bar + legend — the
+            {/* Autocall outcomes read as a proportional stacked bar + legend — the
                 same treatment as the backtest — not a cramped Plotly chart.
                 Participation has a genuine redemption histogram, so it keeps the
                 figure. */}

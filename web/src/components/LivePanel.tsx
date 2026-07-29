@@ -78,7 +78,7 @@ function PositionBand({ s }: { s: NonNullable<LiveResult['summary']> }) {
   )
 }
 
-/** Lifecycle timeline + optional gap warning — shared by the phoenix and
+/** Lifecycle timeline + optional gap warning — shared by the autocall and
     participation live views. */
 function Lifecycle({ s }: { s: NonNullable<LiveResult['summary']> }) {
   const { t } = useI18n()

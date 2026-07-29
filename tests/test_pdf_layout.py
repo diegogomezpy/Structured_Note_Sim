@@ -46,7 +46,7 @@ CONTENT = ["data_table", "logo_row_table", "kv_table", "metric_band", "figure",
            "callout", "body", "bullet"]
 
 
-def _orphans(theme: str, kind: str = "phoenix") -> list[str]:
+def _orphans(theme: str, kind: str = "autocall") -> list[str]:
     """Render, and return a description of every heading whose first following
     content landed on a different page."""
     import pdf_report
@@ -165,7 +165,7 @@ def test_no_orphaned_headings_across_table_sizes(n_obs):
 
     original = gf.note_terms
 
-    def monthly(kind="phoenix"):
+    def monthly(kind="autocall"):
         d = original(kind).to_dict()
         d["payment_freq"] = "monthly"
         d["maturity"] = n_obs / 12.0
@@ -229,7 +229,7 @@ def testtable_room_matches_data_table_break_rule(n_obs, expect_together):
 # membership (the Comparison chapter was numbered on the page but absent from
 # the list). These pin the agreement rather than either sequence.
 
-def _render_and_read(theme: str, *, kind: str = "phoenix",
+def _render_and_read(theme: str, *, kind: str = "autocall",
                      include_sections: list[str] | None = None):
     """Render, and return `(body_numbers, contents_numbers, cover_pages, pages)`.
 
@@ -374,7 +374,7 @@ def _toc_cells(n_assets: int = 3, theme: str = "mercator"):
     syms = ["AAA", "BBB", "CCC", "DDD", "EEE", "FFF", "GGG"]
     orig_terms = gf.note_terms
 
-    def terms(kind="phoenix"):
+    def terms(kind="autocall"):
         t = orig_terms(kind)
         t.tickers = {syms[i]: names[i] for i in range(n_assets)}
         return t

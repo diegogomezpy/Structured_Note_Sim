@@ -91,7 +91,7 @@ def _noise(w: int, h: int, seed: int) -> str:
     return base64.b64encode(buf.getvalue()).decode()
 
 
-def render_report(theme: str, kind: str = "phoenix", *, real_figures: bool = False,
+def render_report(theme: str, kind: str = "autocall", *, real_figures: bool = False,
                   lang: str = "en", include_sections: list[str] | None = None) -> bytes:
     """Build one report through the real ``_build_pdf_report`` entry point.
 

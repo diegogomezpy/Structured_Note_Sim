@@ -540,7 +540,7 @@ _GLOSSARY: dict[str, list[tuple[str, str]]] = {
         ("Knock-in", "The event of the knock-in barrier being breached. For a note with a One Star clause this does not by itself cause a loss."),
         ("Capital loss", "Redemption below par: the knock-in barrier was breached AND the One Star condition was not met."),
         ("Worst-of", "The payoff references the weakest-performing underlying on each observation date, rather than an average of the basket."),
-        ("Phoenix", "An autocallable paying conditional (often memory) coupons above a coupon barrier, with capital at risk below a knock-in barrier."),
+        ("Autocall", "An autocallable paying conditional (often memory) coupons above a coupon barrier, with capital at risk below a knock-in barrier."),
         ("One Star", "A clause whereby a single underlying at or above a set level redeems capital at par even when the worst performer breached its barrier; it can optionally also satisfy the coupon and autocall conditions on its own."),
         ("Strike / initial fixing", "The reference price of each underlying at issue, set to 100%; all performance levels are measured against it."),
         ("Total return", "The note's overall return at redemption as a fraction of par: all coupons received plus principal repaid, minus 1. Measured over the realised holding period and NOT annualised."),
@@ -573,7 +573,7 @@ _GLOSSARY: dict[str, list[tuple[str, str]]] = {
         ("Knock-in", "El evento de tocar la barrera de knock-in. En una nota con cláusula de rescate no provoca por sí solo una pérdida."),
         ("Pérdida de capital", "Rescate por debajo de la par: se tocó la barrera de knock-in Y no se cumplió la condición de redención final (rescate)."),
         ("Worst-of", "El pago se basa en el subyacente con peor rendimiento en cada observación, no en un promedio de la cesta."),
-        ("Phoenix", "Autocancelable que paga cupones condicionales (a menudo con memoria) sobre una barrera de cupón, con capital en riesgo bajo el knock-in."),
+        ("Autocall", "Autocancelable que paga cupones condicionales (a menudo con memoria) sobre una barrera de cupón, con capital en riesgo bajo el knock-in."),
         ("Redención final / rescate best-of", "Cláusula que rescata la nota a la par si el mejor subyacente termina en o sobre un nivel dado, incluso si se tocó el knock-in."),
         ("Strike / fijación inicial", "Precio de referencia de cada subyacente en la emisión, fijado al 100%; todos los niveles de rendimiento se miden contra él."),
         ("Retorno total", "El rendimiento global de la nota al rescate como fracción de la par: todos los cupones recibidos más el principal devuelto, menos 1. Medido sobre el período de tenencia real y NO anualizado."),
@@ -602,8 +602,8 @@ _GLOSSARY: dict[str, list[tuple[str, str]]] = {
 # One-Star / best-of-redemption clause in either language). A term only prints
 # when the content that needs it is in the report. "core" = always relevant when
 # there is a note at all.
-# "phx" = Phoenix-family mechanics (coupon/autocall/knock-in) — irrelevant to a
-# Participation note; "part" = Participation payoff terms — irrelevant to Phoenix.
+# "phx" = Autocall-family mechanics (coupon/autocall/knock-in) — irrelevant to a
+# Participation note; "part" = Participation payoff terms — irrelevant to Autocall.
 # "core" = shared by both families (worst-of, strike, total return, IRR).
 _GLOSSARY_TAGS: list[set[str]] = [
     {"phx"},         # 0  Autocallable note
@@ -616,7 +616,7 @@ _GLOSSARY_TAGS: list[set[str]] = [
     {"phx"},         # 7  Knock-in
     {"phx"},         # 8  Capital loss
     {"core"},        # 9  Worst-of
-    {"phx"},         # 10 Phoenix
+    {"phx"},         # 10 Autocall
     {"os"},          # 11 One Star / Redención final
     {"core"},        # 12 Strike / initial fixing
     {"mc", "bt"},    # 13 Total return
@@ -1241,7 +1241,7 @@ def _part_profile_str(terms, lang: str) -> str:
 def _participation_term_rows(terms, lang: str) -> list[tuple[str, str]]:
     """Note-terms table rows for a Participation note — its downside × upside payoff
     profile, protection, cap and strike — instead of the (irrelevant) coupon /
-    autocall / knock-in ladder used by the Phoenix family."""
+    autocall / knock-in ladder used by the Autocall family."""
     periodic = bool(getattr(terms, "participation_periodic", False))
     prot = float(getattr(terms, "protection_level", 1.0) or 1.0)
     rate = float(getattr(terms, "participation_rate", 1.0) or 1.0)
@@ -2884,7 +2884,7 @@ def _build_pdf_report(
     # the corresponding block uses further down, hoisted here so the list and the
     # headings are settled by one evaluation instead of two guesses.
     _show_terms = _inc("note_terms")
-    # The observation schedule (coupon / autocall ladder) is a Phoenix concept — a
+    # The observation schedule (coupon / autocall ladder) is a Autocall concept — a
     # Participation note is a single maturity payoff, so it doesn't apply there.
     _is_part_note = getattr(terms, "note_type", "") == "participation" or (getattr(terms, "capital_guarantee", 0) or 0) > 0
     _show_obs   = _inc("obs_schedule") and not _is_part_note
@@ -3476,7 +3476,7 @@ def _build_pdf_report(
     # only when the note uses them; MC/backtest/underlying/vol terms only when
     # those sections are present); "core" note mechanics always print.
     _g_active = {"core"}
-    # Phoenix mechanics vs participation payoff terms are mutually exclusive families.
+    # Autocall mechanics vs participation payoff terms are mutually exclusive families.
     if _is_participation(terms):
         _g_active.add("part")
     else:

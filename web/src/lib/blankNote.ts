@@ -25,7 +25,7 @@ export function blankNote(): NoteTerms {
     capital_guarantee: 0,
     upside_cap: null,
     principal_protection: 1.0,
-    note_type: 'phoenix',
+    note_type: 'autocall',
     participation_downside: 'full',
     participation_upside: 'linear',
     participation_basket: 'worst_of',

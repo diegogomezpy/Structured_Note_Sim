@@ -843,7 +843,7 @@ class ProofRequest(BaseModel):
     terms: dict | None = None
     sections: list[str] = Field(default_factory=list)
     lang: str = "en"
-    kind: str = "phoenix"                                # fixture family when terms is None
+    kind: str = "autocall"                                # fixture family when terms is None
     scale: float = Field(1.4, ge=0.3, le=3.0)
     pages: list[int] | None = None                       # viewport window; None = all
     figures: str = "stub"                                # 'stub' (fast) | 'real' (draws charts)

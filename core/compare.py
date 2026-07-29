@@ -63,10 +63,10 @@ def can_share_paths(terms_a: NoteTerms, terms_b: NoteTerms) -> bool:
 # the market risk cancels and only the term effect remains.
 
 def outcome_buckets(note: dict, terms: NoteTerms) -> tuple[np.ndarray, list[str]]:
-    """Per-path resolution as a small categorical, plus its labels. Phoenix
+    """Per-path resolution as a small categorical, plus its labels. Autocall
     resolves as called-early / redeemed-at-par / knocked-in; a participation note
     has no autocall, so it resolves by where the redemption landed."""
-    if getattr(terms, "note_type", "phoenix") == "participation":
+    if getattr(terms, "note_type", "autocall") == "participation":
         R = np.asarray(note["nominal_payoffs"], dtype=float)
         code = np.where(R < 1.0 - 1e-9, 0, np.where(R > 1.0 + 1e-9, 2, 1))
         return code, ["part_loss", "part_par", "part_gain"]
@@ -175,7 +175,7 @@ def compare_diff(sum_a: dict, sum_b: dict, terms_a: NoteTerms, terms_b: NoteTerm
     are combined in quadrature. A delta smaller than ~2×se is Monte-Carlo noise,
     and the client marks it as such instead of letting the reader over-read it."""
     both_part = sum_a.get("note_type") == "participation" and sum_b.get("note_type") == "participation"
-    # NB: for a Phoenix note `expected_nominal_payout` is just `expected_total_return
+    # NB: for a Autocall note `expected_nominal_payout` is just `expected_total_return
     # + 100%` (it folds coupons into "redemption"), so it's deliberately omitted here
     # — it's redundant with total return and its "redemption" label misleads. It's
     # kept for Participation, where there are no coupons and it IS the redemption.

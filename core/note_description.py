@@ -130,7 +130,7 @@ def _describe_participation(terms, lang, names, multi) -> str:
 def describe_note(terms, lang: str = "en", issuer: str | None = None) -> str:
     """Generate the prose note description from `terms` (en/es).
 
-    Phoenix notes get the six-paragraph scheme in `core/phoenix_prose.py`;
+    Autocall notes get the six-paragraph scheme in `core/autocall_prose.py`;
     participation notes keep their own single-paragraph payoff profile.
 
     Routing mirrors `price_note` exactly (core/note.py): a positive
@@ -138,17 +138,17 @@ def describe_note(terms, lang: str = "en", issuer: str | None = None) -> str:
     `note_type`, so the prose must follow or a note is described as one thing
     and priced as another.
     """
-    from core.phoenix_prose import describe_phoenix
+    from core.autocall_prose import describe_autocall
 
     names = list((terms.tickers or {}).values())
     multi = len(names) > 1
     cg = getattr(terms, "capital_guarantee", None)
     if getattr(terms, "note_type", "") == "participation" or (cg is not None and cg > 0):
         return _describe_participation(terms, lang, names, multi)
-    # A Phoenix with no observation schedule has nothing to describe — every
+    # A Autocall with no observation schedule has nothing to describe — every
     # sentence in the prose is about what happens ON an observation date, and
     # the generators index the schedule directly (`c.ac[c.start - 1]`), so a
     # zero-observation note raised IndexError and took the whole report with it.
     if getattr(terms, "n_obs", 0) < 1:
         return ""
-    return describe_phoenix(terms, lang, issuer)
+    return describe_autocall(terms, lang, issuer)

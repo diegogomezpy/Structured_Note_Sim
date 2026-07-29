@@ -45,7 +45,7 @@ export interface NoteTerms {
   upside_cap: number | null
   principal_protection: number
   // structure type — drives which menu / payoff / diagram applies
-  note_type: 'phoenix' | 'reverse_conv' | 'growth_autocall' | 'participation' | 'custom'
+  note_type: 'autocall' | 'reverse_conv' | 'growth_autocall' | 'participation' | 'custom'
   // Participation Note (note_type === 'participation'): one downside + one upside style
   participation_downside?: 'full' | 'buffer' | 'airbag' | 'bear'
   participation_upside?: 'linear' | 'shark_fin' | 'digital'
@@ -131,8 +131,8 @@ export interface SimSummary {
   obs_times: number[]
   t_dof: number | null
   calibration: HestonParam[]
-  // structure type + participation-only metrics (null/absent on Phoenix)
-  note_type?: 'phoenix' | 'reverse_conv' | 'growth_autocall' | 'participation' | 'custom'
+  // structure type + participation-only metrics (null/absent on Autocall)
+  note_type?: 'autocall' | 'reverse_conv' | 'growth_autocall' | 'participation' | 'custom'
   prob_above_par?: number | null
   prob_below_par?: number | null
   prob_at_cap?: number | null
@@ -291,7 +291,7 @@ export interface BacktestSummary {
   // position — every issue window is priced on the same cost basis
   cost_basis?: number | null
   prob_loss?: number | null
-  note_type?: 'phoenix' | 'reverse_conv' | 'growth_autocall' | 'participation' | 'custom'
+  note_type?: 'autocall' | 'reverse_conv' | 'growth_autocall' | 'participation' | 'custom'
   participation_periodic?: boolean
 }
 
@@ -306,7 +306,7 @@ export interface BacktestResult {
   summary: BacktestSummary
   issues: BacktestIssue[]
   figures: BacktestFigures | null
-  note_type?: 'phoenix' | 'reverse_conv' | 'growth_autocall' | 'participation' | 'custom'
+  note_type?: 'autocall' | 'reverse_conv' | 'growth_autocall' | 'participation' | 'custom'
 }
 
 /** Participation payoff reference levels carried on fan / inspector barriers. */
@@ -330,7 +330,7 @@ export interface ExplorerData {
   t: number[]
   paths: ExplorerPath[]
   n_total: number
-  note_type?: 'phoenix' | 'reverse_conv' | 'growth_autocall' | 'participation' | 'custom'
+  note_type?: 'autocall' | 'reverse_conv' | 'growth_autocall' | 'participation' | 'custom'
   period_offset?: number     // seasoned runs: term-sheet period of obs_times[0] − 1
   obs_times: number[]
   barriers: { knock_in?: number | null; autocall?: number | null; coupon?: number | null
@@ -352,7 +352,7 @@ export interface LiveSummary {
   wof_today?: number | null
   worst_asset: string
   worst_symbol: string
-  // phoenix
+  // autocall
   ki_buffer?: number | null
   ac_buffer?: number | null
   next_ac_barrier?: number | null
@@ -380,7 +380,7 @@ export interface LiveSummary {
   pull_to_par?: number | null       // capital gain still to come, on cost
   return_on_cost?: number | null    // total return on cost if it closed at that level now
   // participation
-  note_type?: 'phoenix' | 'reverse_conv' | 'growth_autocall' | 'participation' | 'custom'
+  note_type?: 'autocall' | 'reverse_conv' | 'growth_autocall' | 'participation' | 'custom'
   participation_periodic?: boolean
   participation_basket?: Basket
   basket_today?: number | null
@@ -520,7 +520,7 @@ export interface InspectResult {
   n_obs: number              // observations in the PRICED window (shorter when seasoned)
   period_offset?: number     // add to a window index for the term-sheet period number
   coupon_available: boolean
-  note_type?: 'phoenix' | 'reverse_conv' | 'growth_autocall' | 'participation' | 'custom'
+  note_type?: 'autocall' | 'reverse_conv' | 'growth_autocall' | 'participation' | 'custom'
   participation_periodic?: boolean
   position: number
   path_index: number | null

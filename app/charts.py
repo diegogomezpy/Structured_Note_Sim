@@ -482,7 +482,7 @@ def build_wof_fan(
         bands = np.percentile(worst_of_paths, pcts, axis=0)
     # index map: 0=1st 1=5th 2=25th 3=median 4=75th 5=95th 6=99th
     # Participation notes render in the green payoff palette (matching the redemption
-    # distribution / payoff-profile charts) rather than the phoenix blue.
+    # distribution / payoff-profile charts) rather than the autocall blue.
     _f_out, _f_mid, _f_in = ((_FILL_OUTERMOST_G, _FILL_OUTER_G, _FILL_INNER_G)
                              if participation else (_FILL_OUTERMOST, _FILL_OUTER, _FILL_INNER))
     fig = go.Figure()

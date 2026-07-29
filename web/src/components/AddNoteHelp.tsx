@@ -4,7 +4,7 @@ import Modal from './Modal'
 import Icon from './Icon'
 
 const TEMPLATE = {
-  name: 'My Bank XS000000000 — 2Y Quarterly Phoenix',
+  name: 'My Bank XS000000000 — 2Y Quarterly Autocall',
   issuer: 'My Bank',
   issuer_rating_sp: 'A+',
   issuer_rating_moody: 'A1',

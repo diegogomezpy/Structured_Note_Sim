@@ -18,13 +18,13 @@ import pytest
 
 from core.note import NoteTerms
 from core.note_description import describe_note
-from core.phoenix_prose import pct
+from core.autocall_prose import pct
 
 _ROOT = Path(__file__).resolve().parent.parent
 CONFIGS = sorted(glob.glob(str(_ROOT / "note_configs" / "*.json")))
 
 
-def _phoenix_terms():
+def _autocall_terms():
     for f in CONFIGS:
         try:
             t = NoteTerms.from_json(Path(f).read_text())
@@ -36,11 +36,11 @@ def _phoenix_terms():
         yield Path(f).name, t
 
 
-CASES = [(n, t, lang) for n, t in _phoenix_terms() for lang in ("en", "es")]
+CASES = [(n, t, lang) for n, t in _autocall_terms() for lang in ("en", "es")]
 IDS = [f"{n}-{lang}" for n, _, lang in CASES]
 
 if not CASES:
-    pytest.skip("no phoenix configs to check", allow_module_level=True)
+    pytest.skip("no autocall configs to check", allow_module_level=True)
 
 
 @pytest.mark.parametrize("name,terms,lang", CASES, ids=IDS)
@@ -92,7 +92,7 @@ def test_counts_are_digits_not_words(name, terms, lang):
 
 def test_number_helpers_are_numeric():
     """Guard the helpers directly, so the rule holds beyond the sampled configs."""
-    from core.phoenix_prose import num_word, ord_word
+    from core.autocall_prose import num_word, ord_word
     assert num_word(3, "es") == "3" and num_word(18, "en") == "18"
     assert ord_word(1, "en") == "1st" and ord_word(3, "en") == "3rd"
     assert ord_word(3, "es") == "3.ª" and ord_word(11, "en") == "11th"

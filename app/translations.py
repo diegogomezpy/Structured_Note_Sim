@@ -533,9 +533,9 @@ _STRINGS: dict[str, tuple[str, str]] = {
     "setup_step_down_help":     (
         "The autocall barrier declines by this amount each period "
         "from the first callable observation. 0 = constant barrier "
-        "(plain Phoenix).",
+        "(plain Autocall).",
         "La barrera de autocall disminuye en esta cantidad cada período desde la "
-        "primera observación rescatable. 0 = barrera constante (Phoenix estándar).",
+        "primera observación rescatable. 0 = barrera constante (Autocall estándar).",
     ),
     "setup_autocall_floor":     ("Autocall barrier floor (%)",         "Piso de la barrera de autocall (%)"),
     "setup_autocall_floor_help":(
@@ -621,12 +621,12 @@ _STRINGS: dict[str, tuple[str, str]] = {
     "setup_note_type":          ("What kind of note is this?",         "¿Qué tipo de nota es?"),
     "setup_note_type_help":     ("Pick a template to show only the fields this structure needs.",
                                  "Elija una plantilla para mostrar solo los campos que esta estructura necesita."),
-    "nt_phoenix":               ("Phoenix",                            "Phoenix"),
+    "nt_autocall":               ("Autocall",                            "Autocall"),
     "nt_reverse_conv":          ("Reverse Convertible",                "Reverse Convertible"),
     "nt_growth_autocall":       ("Growth Autocall",                    "Autocall creciente"),
     "nt_capital_protected":     ("Capital-Protected",                  "Capital protegido"),
     "nt_custom":                ("Custom",                             "Personalizado"),
-    "nt_phoenix_desc":          ("Periodic coupon when performance is above the coupon barrier; redeems early above the autocall barrier; capital at risk below the knock-in.",
+    "nt_autocall_desc":          ("Periodic coupon when performance is above the coupon barrier; redeems early above the autocall barrier; capital at risk below the knock-in.",
                                  "Cupón periódico cuando el rendimiento está sobre la barrera de cupón; rescate anticipado sobre la barrera de autocall; capital en riesgo bajo el knock-in."),
     "nt_reverse_conv_desc":     ("Guaranteed coupon every period (no coupon barrier); capital at risk below the knock-in at maturity.",
                                  "Cupón garantizado cada período (sin barrera de cupón); capital en riesgo bajo el knock-in al vencimiento."),
@@ -634,8 +634,8 @@ _STRINGS: dict[str, tuple[str, str]] = {
                                  "Sin cupón periódico — se paga una prima acumulada solo si la nota hace autocall. La barrera de autocall baja cada período."),
     "nt_capital_protected_desc":("No coupons. Redemption is the underlying performance clipped between a guaranteed capital floor and an upside cap.",
                                  "Sin cupones. El rescate es el rendimiento del subyacente acotado entre un piso de capital garantizado y un techo de subida."),
-    "nt_custom_desc":           ("All fields exposed — build any Phoenix-family structure (step-down, One Star, guaranteed coupon, …).",
-                                 "Todos los campos visibles — construya cualquier estructura de la familia Phoenix (step-down, rescate best-of, cupón garantizado, …)."),
+    "nt_custom_desc":           ("All fields exposed — build any Autocall-family structure (step-down, One Star, guaranteed coupon, …).",
+                                 "Todos los campos visibles — construya cualquier estructura de la familia Autocall (step-down, rescate best-of, cupón garantizado, …)."),
 
     # ── Setup section headers (regrouped form) ─────────────────────────────
     "setup_schedule_header":    ("Schedule & Maturity",                "Calendario y Vencimiento"),

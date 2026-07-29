@@ -20,7 +20,7 @@
   "autocall_floor": 0.75,
   "coupon_at_autocall_only": false,
   "zenith": false,
-  "note_type": "phoenix",
+  "note_type": "autocall",
   "participation_downside": "full",
   "participation_upside": "linear",
   "participation_basket": "worst_of",
