@@ -100,6 +100,22 @@ import reportkit.charts as _rk_charts  # noqa: E402
 import reportkit.fonts as _rk_fonts  # noqa: E402
 import reportkit.branding as _rk_branding  # noqa: E402
 import reportkit.outline as _rk_outline  # noqa: E402
+
+# reportkit installs a NullHandler and says nothing until a host opts in. Route
+# it to STDOUT: `print` (what it used before 0.7) went to stdout, `logging`
+# defaults to stderr, and Cloud Run maps stderr to ERROR severity — so without
+# this every routine DEBUG line would land in production logs as an error, and
+# detach from this app's own `_audit` lines on stdout.
+import logging as _logging  # noqa: E402
+import sys as _sys  # noqa: E402
+
+_rk_logger = _logging.getLogger("reportkit")
+if not any(isinstance(h, _logging.StreamHandler) and h.stream is _sys.stdout
+           for h in _rk_logger.handlers):
+    _h = _logging.StreamHandler(_sys.stdout)
+    _h.setFormatter(_logging.Formatter("[%(name)s] %(message)s"))
+    _rk_logger.addHandler(_h)
+    _rk_logger.setLevel(_logging.WARNING)
 from reportkit.document import ReportDocument  # noqa: E402
 from reportkit.text import _safe, _EMOJI_STRIP  # noqa: E402,F401
 from reportkit.color import (  # noqa: E402
@@ -1472,6 +1488,7 @@ def _front_cover_page(pdf: _NotePDF, terms, lang: str, report_title: str, websit
     # The frame — page opened chrome-free, themed background, optional photo,
     # brand tint over it — is reportkit's; only what sits ON the page is ours.
     with pdf.full_bleed_page(getattr(pdf, "cover_image_bytes", None)) as (W, H):
+        pdf.bookmark(_safe(terms.name) or _t("report_eyebrow", lang), level=0)
         ml = pdf.l_margin
         inner = W - 2 * ml
         # Sigil bleeding off an edge, then the white cover wordmark. Both are placed
@@ -1575,6 +1592,7 @@ def _full_bleed_disclaimer(pdf: _NotePDF, lang: str, text: str, website: str = "
     # The same frame as the front cover: a back page IS a cover that happens to
     # carry legal text, so it takes the same background / photo / tint treatment.
     with pdf.full_bleed_page(getattr(pdf, "back_image_bytes", None)) as (W, H):
+        pdf.bookmark(_t("disclaimer_title", lang), level=0)
         logo_b = getattr(pdf, "cover_logo_bytes", None) or pdf.firm_logo_bytes
         pdf.draw_logo_fit(logo_b, pdf.l_margin, 15, 12.0, 58.0, cover=True)
         pdf.set_draw_color(*pdf.section_rule_color)
@@ -3339,7 +3357,7 @@ def _build_pdf_report(
     # 5b. Price History — normalised underlying price paths over the window
     if bt_summary and bt_figures.get("prices") is not None and _inc("bt_prices"):
         _bt_div()
-        pdf.start_section(_t("bt_subtab_prices", lang))
+        pdf.open_section(_t("bt_subtab_prices", lang))
         pdf.figure(_fig_to_png(bt_figures.get("prices"), **_kw),
                    _t("fig_bt_prices", lang), _t("src_hist", lang))
 
@@ -3347,7 +3365,7 @@ def _build_pdf_report(
     # the user's panel title (or the issue date). Mirrors the on-screen explorer.
     if bt_summary and _inc("bt_path") and _bt_panels:
         _bt_div()
-        pdf.start_section(_t("bt_subtab_explorer", lang))
+        pdf.open_section(_t("bt_subtab_explorer", lang))
         for _p in _bt_panels:
             if _p.get("path") is None:
                 continue
@@ -3419,7 +3437,7 @@ def _build_pdf_report(
         # (Both tables are built by `_compare_tables`, above the contents page.)
         if _diff_terms:
             _cmp_div()
-            pdf.start_section(_t("cmp_terms_title", lang),
+            pdf.open_section(_t("cmp_terms_title", lang),
                               min_room=_table_room(len(_diff_terms)))
             pdf.data_table(
                 [_t("cmp_col_term", lang), _t("cmp_col_a", lang), _t("cmp_col_b", lang)],
@@ -3430,7 +3448,7 @@ def _build_pdf_report(
         # 6b-ii. Projected metrics — A · B · Δ.
         if _cmp_rows:
             _cmp_div()
-            pdf.start_section(_t("cmp_metrics_title", lang),
+            pdf.open_section(_t("cmp_metrics_title", lang),
                               min_room=_table_room(len(_cmp_rows)))
             pdf.data_table(
                 [_t("cmp_col_metric", lang), _t("cmp_col_a", lang),
@@ -3453,7 +3471,7 @@ def _build_pdf_report(
     # by its definition, wrapping naturally. Starts on its own fresh page so the
     # reference block is never stranded a few lines below an unrelated chart.
     pdf.add_page()
-    pdf.start_section(_t("glossary_title", lang), min_room=70.0)
+    pdf.open_section(_t("glossary_title", lang), min_room=70.0, level=0)
     # Only print terms whose content is actually in this report (memory/one-star
     # only when the note uses them; MC/backtest/underlying/vol terms only when
     # those sections are present); "core" note mechanics always print.
@@ -3507,7 +3525,7 @@ def _build_pdf_report(
         _full_bleed_disclaimer(pdf, lang, _disclaimer_text, website)
     else:
         pdf.add_page()
-        pdf.start_section(_t("disclaimer_title", lang), min_room=90.0)
+        pdf.open_section(_t("disclaimer_title", lang), min_room=90.0, level=0)
         pdf.set_text_color(*_TEXT_SOFT)
         _disclaimer_paras = _disclaimer_text.split("\n\n")
         for idx, para in enumerate(_disclaimer_paras):
