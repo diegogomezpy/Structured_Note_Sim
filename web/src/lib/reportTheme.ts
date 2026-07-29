@@ -104,12 +104,12 @@ export const HEXAGON_SPEC = {
   },
   divider: {
     style: 'banner', height: 30, shape: { kind: 'chamfer', c: 4.4, q: 1.3, r: 3.4 },
-    fill: { type: 'solid', color: 'ink' }, watermark: 'hexCluster',
+    fill: { type: 'solid', color: 'ink' },
     number: { size: 26, color: 'lime', x: 9 }, vline: true, vline_color: { mix: ['ink', 'white', 0.3] },
     kicker_color: 'lime', heading_color: 'white', heading_size: 16,
   },
   void: { decoration: 'hexCluster' },
-  cover_masthead: { shape: { kind: 'chamfer', c: 7.5, q: 2.0, r: 5.0 }, fill: { type: 'solid', color: 'ink' }, watermark: 'hexCluster' },
+  cover_masthead: { shape: { kind: 'chamfer', c: 7.5, q: 2.0, r: 5.0 }, fill: { type: 'solid', color: 'ink' } },
   cover_left_void: { decoration: 'hexCluster' },
   cover: { fill: { type: 'solid', color: 'primary' } },
 }
@@ -302,10 +302,6 @@ export function chamferPadMm(cMm?: number): number {
   return Math.max(9, (cMm ?? 0) + 1.5)
 }
 
-// (The client-side watermark/hex-cluster mirror was removed: the Studio proof
-// renders the REAL PDF server-side, so there is no browser watermark render to
-// keep in parity. The watermark is one server-resolved config — see
-// reportkit/theme.py resolve_watermark.)
 
 /** Gradient axis endpoints (objectBoundingBox 0..1) for an SVG linearGradient
     from a Python fill angle (90 = top→bottom, 0 = left→right). */

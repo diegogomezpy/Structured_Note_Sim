@@ -31,7 +31,7 @@ deep-translator>=1.11,<2
 # `[charts]` pulls plotly + kaleido, which this app needs because it hands over
 # Plotly figures rather than PNG bytes. fpdf2 and Pillow arrive as reportkit's
 # own dependencies; they stay listed because app/ and api/ import them directly.
-reportkit[charts] @ git+https://github.com/diegogomezpy/report_maker@v1.0.0
+reportkit[charts] @ git+https://github.com/diegogomezpy/report_maker@v1.1.0
 fpdf2>=2.8,<3
 kaleido>=1.3,<2
 Pillow>=12,<13

@@ -10,7 +10,7 @@ Three things make that fast enough to type against:
 * **Figures are stubbed.** Kaleido costs ~2s per figure regardless of resolution
   (it is Chrome IPC, not pixels), which would put a full document at 30s+. With
   the stub installed the whole build is ~0.3s. Every other surface — covers,
-  mastheads, section heads, dividers, tables, typography, logos, watermark,
+  mastheads, section heads, dividers, tables, typography, logos,
   gradients — is genuine. The stub is sized to the caller's exact request so
   pagination is identical to a real build.
 * **Analytics come from a fixture** when the note has not been simulated, so a

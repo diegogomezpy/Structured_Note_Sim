@@ -16,7 +16,7 @@ Design notes
   are stubbed out.
 * **Synthetic branding.** The real CADIEM config and its brand fonts are
   gitignored licensed assets. The fixtures here drive the *same* code paths
-  (hexagon chamfers, hex cluster, gradients, watermark, cover art) with
+  (hexagon chamfers, hex cluster, gradients, cover art) with
   generated images, so the harness runs on a clean checkout.
 * **Hashes, not images.** The baseline is a JSON of per-page SHA-256 digests —
   a few KB instead of ~25 MB of PNGs. On failure the run writes both renders to

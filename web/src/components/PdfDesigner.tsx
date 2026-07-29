@@ -229,52 +229,6 @@ export default function PdfDesigner({ studio, terms }: {
           <div style={{ fontSize: 11, color: 'var(--text-faint)', marginTop: 8 }}>{t('brand_font_hint')}</div>
         </Card>
 
-        <Card id="watermark" title={t('brand_watermark')} desc={t('brand_watermark_hint')}>
-          {/* The watermark: an uploaded image, else the theme's own mark
-              (e.g. CADIEM's hexagons). One appearance, applied identically on
-              every surface; the "Show on" toggles are the only on/off. */}
-          <UploadTile label={t('brand_watermark_img')} src={b.watermark_base64 as string} dark
-            onPick={(f) => studio.onImage('watermark_base64', f)} onClear={() => set('watermark_base64', '')} />
-
-          <div style={{ ...grid(150), marginTop: 14 }}>
-            <Field label={t('wm_opacity')}>
-              <NumberInput value={b.watermark_opacity as number | undefined} min={0} max={1} step={0.01}
-                placeholder="0.13" onChange={(v) => set('watermark_opacity', v as never)} />
-            </Field>
-            <Field label={t('wm_scale')}>
-              <NumberInput value={b.watermark_scale as number | undefined} min={0.05} max={1} step={0.02}
-                placeholder="0.58" onChange={(v) => set('watermark_scale', v as never)} />
-            </Field>
-          </div>
-
-          <div style={{ marginTop: 12 }}>
-            <span style={{ display: 'block', fontSize: 11, fontWeight: 600, color: 'var(--text-muted)', marginBottom: 5 }}>{t('wm_anchor')}</span>
-            <Segmented value={(b.watermark_anchor as string) ?? 'right'} ariaLabel={t('wm_anchor')}
-              options={[{ value: 'left', label: t('wm_left') }, { value: 'center', label: t('wm_center') }, { value: 'right', label: t('wm_right') }]}
-              onChange={(v) => set('watermark_anchor', v as never)} />
-          </div>
-
-          {/* The ONE gate. Uncheck every surface to turn the watermark off. */}
-          <div style={{ marginTop: 14 }}>
-            <span style={{ display: 'block', fontSize: 11, fontWeight: 600, color: 'var(--text-muted)', marginBottom: 6 }}>{t('wm_places')}</span>
-            <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap' }}>
-              {(['masthead', 'divider', 'void', 'cover'] as const).map((k) => {
-                const sel = (b.watermark_places as string[] | undefined) ?? ['masthead', 'divider', 'void', 'cover']
-                const on = sel.includes(k)
-                return (
-                  <label key={k} style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: 12.5, color: 'var(--text-muted)', cursor: 'pointer' }}>
-                    <input type="checkbox" checked={on} style={{ width: 'auto' }}
-                      onChange={() => set('watermark_places',
-                        (on ? sel.filter((x) => x !== k) : [...sel, k]) as never)} />
-                    {t(`wm_place_${k}`)}
-                  </label>
-                )
-              })}
-            </div>
-            <span style={{ display: 'block', fontSize: 10.5, color: 'var(--text-faint)', marginTop: 6, lineHeight: 1.4 }}>{t('wm_places_hint')}</span>
-          </div>
-        </Card>
-
         <Card id="legal" title={t('brand_legal')}>
           <Field label={t('brand_footer')}><TextInput value={b.footer_note} onChange={(v) => set('footer_note', v)} /></Field>
           <div style={{ marginTop: 12 }}>

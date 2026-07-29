@@ -197,7 +197,7 @@ Discipline to preserve: don't retain the float64 working set (raw S/V paths, sta
 
 The themed-PDF engine lives in its **own repository** and is installed as a
 dependency: [`report_maker`](https://github.com/diegogomezpy/report_maker),
-pinned by tag in `requirements.txt` (`reportkit[charts] @ git+…@v1.0.0`). It has
+pinned by tag in `requirements.txt` (`reportkit[charts] @ git+…@v1.1.0`). It has
 no imports from `app/`, `core/` or `data/` and knows nothing about structured
 notes — a different project can `pip install` it and build a report.
 

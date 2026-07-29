@@ -8,7 +8,7 @@ what the PDF Studio actually shows.
 What stays here is the *branding* half, which is test-only. The real CADIEM
 config and its brand fonts are gitignored licensed assets and must never enter
 the repo, so these fixtures drive the same code paths — hexagon chamfers, hex
-cluster, linear and radial gradients, watermark, cover art — using images
+cluster, linear and radial gradients, cover art — using images
 generated at test time.
 """
 from __future__ import annotations
@@ -30,11 +30,10 @@ def branding(theme: str) -> dict:
     """Load a committed brand fixture and attach generated imagery.
 
     ``theme="hexcluster"`` is a synthetic variant of the hexagon/cadiem theme
-    with NO uploaded watermark image and no filler-photo pool. It exercises the
-    drawn hex-cluster fallback — CADIEM's real image-less production look — on
-    the masthead / divider / empty-space surfaces. The other fixtures always
-    attach a watermark image, so without this case the whole image-less mark
-    path is unguarded and a refactor could silently break the deployed report.
+    with no filler-photo pool, so the empty-space band falls back to the theme's
+    own drawn composition rather than a photo. (It was named for the hex-cluster
+    watermark it used to guard; watermarks were removed in reportkit 1.1.0, and
+    the no-photo path it still covers is worth keeping.)
     """
     hexcluster = theme == "hexcluster"
     photos = theme == "photos"
@@ -50,17 +49,15 @@ def branding(theme: str) -> dict:
         # still becomes the back page. Without this fixture three branches of
         # the slot algorithm render in no baseline at all.
         cfg["filler_images_base64"] = ["", _noise(900, 600, 67), _noise(700, 460, 71)]
-        cfg["watermark_base64"] = _swatch(300, 300, (255, 255, 255), "WM")
         return cfg
     cfg["cover_image_base64"] = _noise(900, 600, 11)
     cfg["back_image_base64"] = _noise(900, 600, 29)
     if hexcluster:
-        # No watermark image → the drawn hex cluster renders; no filler pool → the
-        # empty-space band draws the cluster rather than a cover photo.
+        # No filler pool → the empty-space band falls back to the theme's own
+        # composition rather than a cover photo.
         cfg["filler_images_base64"] = []
     else:
         cfg["filler_images_base64"] = [_noise(700, 460, 41), _noise(700, 460, 53)]
-        cfg["watermark_base64"] = _swatch(300, 300, (255, 255, 255), "WM")
     return cfg
 
 

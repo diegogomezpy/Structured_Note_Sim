@@ -7,7 +7,7 @@ import {
 
 /* Freeform theme builder — edits a declarative theme spec (the same one the PDF
    and the live preview consume). Friendly per-surface controls for the common
-   knobs (shape / fill / gradient / watermark) plus a raw-JSON editor for the
+   knobs (shape / fill / gradient) plus a raw-JSON editor for the
    full spec (geometry and anything else). Writes to branding.report_theme. */
 
 type Spec = Record<string, unknown>
@@ -193,7 +193,7 @@ export default function ThemeBuilder({ spec, tokens, onChange }: { spec: Spec; t
       <Group title="Empty space" note="What fills the gap when a section ends short of the page.">
         <Row label="Decoration">
           <Segmented value={((spec.void as Any)?.decoration as string) || 'none'} ariaLabel="Void decoration"
-            options={[{ value: 'watermark', label: 'Watermark' }, { value: 'accentKeyline', label: 'Keyline' }, { value: 'none', label: 'None' }]}
+            options={[{ value: 'accentKeyline', label: 'Keyline' }, { value: 'none', label: 'None' }]}
             onChange={(v) => upd(['void', 'decoration'], v)} />
         </Row>
       </Group>

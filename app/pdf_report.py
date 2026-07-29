@@ -85,7 +85,7 @@ from fpdf import FPDF
 from reportkit.theme import (  # noqa: E402
     _dev_rgb, _chamfer_outline, _chamfer_dims,
     _fill_chamfer, _stroke_chamfer, _hex_cluster,
-    build_tokens, resolve_theme, paint_shape, resolve_color, resolve_watermark,
+    build_tokens, resolve_theme, paint_shape, resolve_color,
     blend as _blend,
     AMBER as _AMBER, AMBER_DARK as _AMBER_DARK, MUTED as _MUTED,
     BODY_INK as _BODY_INK, RULE_SOFT as _RULE_SOFT, FOOTNOTE_GREY as _FOOTNOTE_GREY,
@@ -2222,7 +2222,7 @@ def _cover_page(
     # Client / short reports leave a big empty band below the left stack — fill
     # the shorter left column with a tall brand photo when one is available
     # (client-version request), else compose the void with the lighter graphic
-    # treatment (sigil watermark + low-left hex-cluster).
+    # treatment (the theme's own low-left composition).
     _bottom = pdf.h - 18.0
     _void_top = max(ly, _toc_end) + 8.0
     _left_filled = False
@@ -2234,17 +2234,6 @@ def _cover_page(
         _vimg = _pool[0] if _pool else None
         if ly + 45 < _toc_end and _vimg is not None:
             _left_filled = pdf.draw_left_photo(x0, ly + 6.0, Lw, _bottom, _vimg)
-        # Sigil watermark — only in a void below BOTH stacks (rare on client
-        # reports, where the TOC runs long); harmless alongside the left photo.
-        _sig = getattr(pdf, "cover_sigil_bytes", None)
-        if _sig and _bottom - _void_top > 40:
-            from PIL import Image as _Img
-            _iw, _ih = _Img.open(io.BytesIO(_sig)).size
-            _sh = min((_bottom - _void_top) * 0.95, 150.0); _sw = _sh * _iw / _ih
-            with pdf.local_context(fill_opacity=0.07):
-                pdf.image(io.BytesIO(_sig), x=pdf.w - pdf.r_margin - _sw * 0.60,
-                          y=_void_top + ((_bottom - _void_top) - _sh) / 2.0,
-                          w=_sw, h=_sh)
         # No photo for the left column → fall back to the hex cluster.
         if not _left_filled and ly + 45 < _toc_end and _bottom - ly > 50:
             _sc = min((_bottom - ly) * 0.5, 54.0)
@@ -2662,7 +2651,7 @@ def _draw_note_diagram(pdf, terms, lang: str) -> None:
             pass
 
 
-# ── report attribution (invisible metadata watermark) ────────────────────────
+# ── report attribution (invisible document metadata) ─────────────────────────
 # Authorship baked into every generated PDF's (hidden) document metadata. The
 # string is stored base64-encoded, split across literals, and assembled at call
 # time so it isn't a grep-able plain-text string; `_stamp_attribution` is called

@@ -28,9 +28,6 @@ export default function ReportImages({ studio, terms, compact }: {
           onPick={(f) => studio.onImage('cover_logo_base64', f)} onClear={() => set('cover_logo_base64', '')} />
         <UploadTile label={t('brand_cover_sigil')} src={b.cover_sigil_base64} dark
           onPick={(f) => studio.onImage('cover_sigil_base64', f)} onClear={() => set('cover_sigil_base64', '')} />
-        {/* No watermark tile here — the watermark (image + appearance + which
-            surfaces show it) lives in one place: the Designer's Watermark card.
-            A second upload entry for the same field was a source of confusion. */}
         {/* The cover's colour is set once, under Report theme → "Cover page
             background" (solid/gradient/radial). This is only how strongly that
             fill tints a cover PHOTO — there is no second colour control. */}
