@@ -70,7 +70,12 @@ function PositionBand({ s }: { s: NonNullable<LiveResult['summary']> }) {
         <span>{t('live_held')} <span className="mono" style={{ color: 'var(--text)' }}>{num(monthsNum(s.holding_years ?? 0), 1)} {t('live_mo')}</span></span>
       </div>
       <div className="stagger" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: 14 }}>
-        <Stat label={t('live_income_since')} num={s.income_since} dp={2} help={t('live_tip_income_since')} />
+        {/* Coupon income since settlement — only on a note that pays coupons.
+            A participation note has none, so this tile showed a structural
+            0.00%, which reads as a measurement rather than as "not applicable". */}
+        {s.note_type !== 'participation' && (
+          <Stat label={t('live_income_since')} num={s.income_since} dp={2} help={t('live_tip_income_since')} />
+        )}
         <Stat label={t('live_pull_to_par')} num={s.pull_to_par} dp={2} signed subTone={tone(s.pull_to_par)} help={t('live_tip_pull_to_par')} />
         <Stat label={t('live_return_on_cost')} num={s.return_on_cost} dp={2} signed subTone={tone(s.return_on_cost)} help={t('live_tip_return_on_cost')} />
       </div>

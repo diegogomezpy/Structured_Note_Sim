@@ -316,6 +316,13 @@ _LABELS: dict[str, dict[str, str]] = {
     "period_cap":            {"en": "Per-period cap",                    "es": "Tope por período"},
     "participation_profile": {"en": "Payoff profile",                    "es": "Perfil de pago"},
     "participation_basket_lbl": {"en": "Basket",                         "es": "Cesta"},
+    "bk_worst_of":           {"en": "worst-of",                         "es": "peor de"},
+    "bk_best_of":            {"en": "best-of",                          "es": "mejor de"},
+    "bk_average":            {"en": "average",                          "es": "promedio"},
+    "pp_x_axis_bk":          {"en": "Final {b} basket level (% of initial)",
+                              "es": "Nivel final de la cesta ({b}) (% del inicial)"},
+    "pp_x_axis_period_bk":   {"en": "Period-end {b} basket level (% of period start)",
+                              "es": "Nivel de la cesta ({b}) al cierre del período (% del inicio)"},
     "downside_style":        {"en": "Downside",                          "es": "A la baja"},
     "upside_style":          {"en": "Upside",                            "es": "Al alza"},
     "digital_payout":        {"en": "Digital payout",                    "es": "Pago digital"},
@@ -441,6 +448,7 @@ _LABELS: dict[str, dict[str, str]] = {
     "live_wof_today":        {"en": "Worst-of today",                    "es": "Worst-of hoy"},
     "live_worst_asset":      {"en": "Worst asset",                       "es": "Peor activo"},
     "live_irr_to_date":      {"en": "Coupon IRR to date (ann.)",         "es": "TIR de cupones a fecha (anual)"},
+    "live_proj_redemption":  {"en": "Projected redemption",              "es": "Reembolso proyectado"},
     "live_elapsed":          {"en": "Elapsed (months)",                  "es": "Transcurrido (meses)"},
     "live_asset_perf":       {"en": "Current Asset Performance",         "es": "Rendimiento Actual por Activo"},
     "live_obs_history":      {"en": "Observation History",               "es": "Historial de Observaciones"},
@@ -1737,8 +1745,21 @@ def _compare_tables(terms, compare_data, lang: str):
         sgn = "+" if d >= 0 else ""
         return f"{sgn}{d * 12:.1f} mo" if kind == "months" else f"{sgn}{d:.2%}"
 
+    # Autocall machinery, structurally absent on a participation note: it has no
+    # autocall barrier to trigger, no periodic coupon, and no knock-in. The rows
+    # rendered as 0.0% / 0.0 mo, which reads as a measurement rather than as
+    # "this structure has none of that". Dropped when BOTH sides are
+    # participation — a cross-family A/B still shows them, because there the
+    # zero IS the comparison.
+    _AUTOCALL_ONLY = {"prob_autocall", "avg_time_to_autocall",
+                      "expected_coupon", "prob_knock_in_total"}
+    _both_part = (getattr(terms, "note_type", "") == "participation"
+                  and getattr(compare_data.get("terms_b"), "note_type", "") == "participation")
+
     cmp_rows = []
     for r in compare_data.get("diff", {}).get("rows", []):
+        if _both_part and r.get("key") in _AUTOCALL_ONLY:
+            continue
         m = _CMP_LBL.get(r.get("key"))
         if not m:
             continue
@@ -2399,7 +2420,19 @@ def _draw_participation_profile(pdf, terms, lang: str) -> None:
         # axis titles (x centred below, y rotated on the left)
         pdf.sf(7.5, "regular")
         pdf.set_text_color(90, 100, 120)
-        _xa = pdf.safe(_t("pp_x_axis_period" if periodic else "pp_x_axis", lang))
+        # Name WHICH basket the level is. "Final basket level" is ambiguous the
+        # moment there is more than one underlying — worst-of and average are
+        # different numbers, and the reader cannot tell which the curve is
+        # drawn against. Single-underlying notes keep the plain wording, since
+        # there is no basket rule to disambiguate.
+        _bk = str(getattr(terms, "participation_basket", "worst_of") or "worst_of")
+        _bk_word = _t(f"bk_{_bk}", lang)
+        _multi = len(getattr(terms, "tickers", {}) or {}) > 1
+        if _multi and _bk_word != f"bk_{_bk}":
+            _xa = pdf.safe(_t("pp_x_axis_period_bk" if periodic else "pp_x_axis_bk",
+                              lang).format(b=_bk_word))
+        else:
+            _xa = pdf.safe(_t("pp_x_axis_period" if periodic else "pp_x_axis", lang))
         pdf.text((x0 + x1) / 2 - pdf.get_string_width(_xa) / 2, bottom + 10.5, _xa)
         _ya = pdf.safe(_t("pp_y_axis", lang))
         with pdf.rotation(90, pdf.l_margin + 4.0, (top + bottom) / 2 + pdf.get_string_width(_ya) / 2):
@@ -3369,10 +3402,21 @@ def _build_pdf_report(
                                   _t("sec_live_heading", lang))
         if _inc("live_metrics"):
             _live_div()
+            # "Coupon IRR to date" is autocall machinery. A participation note
+            # pays no coupon, so the tile printed a structural 0.00% — which
+            # reads as a measurement rather than as "this note has no coupons".
+            # It is replaced by the projected redemption, which is the number a
+            # holder of one of these actually wants.
+            _live_part = live_data.get("note_type") == "participation"
+            _live_third = (
+                (_t("live_proj_redemption", lang),
+                 f"{live_data.get('projected_redemption', 1.0):.1%}")
+                if _live_part else
+                (_t("live_irr_to_date", lang), f"{live_data.get('irr_to_date', 0):.2%}"))
             pdf.metric_band([
                 (_t("live_wof_today",   lang), f"{live_data.get('wof_today', 0):.1%}"),
                 (_t("live_worst_asset", lang), str(live_data.get("worst_asset", ""))),
-                (_t("live_irr_to_date", lang), f"{live_data.get('irr_to_date', 0):.2%}"),
+                _live_third,
                 (_t("live_elapsed",     lang), f"{live_data.get('elapsed_years', 0) * 12:.1f}"),
             ])
 
