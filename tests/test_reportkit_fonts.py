@@ -15,7 +15,7 @@ import pytest
 pytest.importorskip("fpdf")
 
 import reportkit.fonts as F                                     # noqa: E402
-from reportkit.text import _safe                                # noqa: E402
+from reportkit.text import sanitise as _safe                                # noqa: E402
 
 
 class Doc:

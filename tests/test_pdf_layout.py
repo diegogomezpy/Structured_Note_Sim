@@ -8,7 +8,7 @@ looks at a render.
 
 The property here is the one that actually shipped broken: a heading must never
 be separated from the block it introduces. It happened because the room a
-sub-heading reserved (`_table_room`, capped at 130mm) and the room `data_table`
+sub-heading reserved (`table_room`, capped at 130mm) and the room `data_table`
 demanded (uncapped) were computed independently and disagreed for tables of
 roughly 16-29 rows — so the heading drew, the table bounced to the next page,
 and the heading was left alone on a page the void-decorator then filled with
@@ -98,7 +98,7 @@ def _orphans(theme: str, kind: str = "phoenix") -> list[str]:
 
             # The header/footer/void hooks fire mid-block via add_page; their ink
             # is chrome, not content, so flag them out.
-            _add, _dec = cls.add_page, cls._decorate_void
+            _add, _dec = cls.add_page, cls.decorate_void
 
             def add_page(s, *aa, **kk):
                 s._in_chrome = True
@@ -155,7 +155,7 @@ def test_no_orphaned_headings_participation():
 #   18 — the size that was reported broken (the 130mm cap vs the real height);
 #   27 — the largest table still kept whole under its heading;
 #   28 — the first that cannot be, and which the FIRST fix still orphaned
-#        because `_PAGE_CAP` measured a fresh page without the heading on it;
+#        because `PAGE_CAP` measured a fresh page without the heading on it;
 #   36, 60 — long enough to span pages, where the block legitimately splits
 #        under its heading and must NOT be reported as an orphan.
 @pytest.mark.parametrize("n_obs", [18, 27, 28, 36, 60])
@@ -180,7 +180,7 @@ def test_no_orphaned_headings_across_table_sizes(n_obs):
 
 
 def test_split_room_lets_a_long_table_start_under_its_heading():
-    """`_SPLIT_ROOM` is derived from data_table's own give-up threshold.
+    """`SPLIT_ROOM` is derived from data_table's own give-up threshold.
 
     A heading that draws at the very bottom of its reservation must still leave
     the cursor above the point where data_table breaks regardless — otherwise
@@ -188,34 +188,34 @@ def test_split_room_lets_a_long_table_start_under_its_heading():
     """
     import pdf_report as P
 
-    worst_y_after_heading = (297.0 - 28.0 - P._SPLIT_ROOM) + P._HEAD_ROOM
+    worst_y_after_heading = (297.0 - 28.0 - P.SPLIT_ROOM) + P.HEAD_ROOM
     assert worst_y_after_heading <= 297.0 - 55.0, (
-        f"_SPLIT_ROOM={P._SPLIT_ROOM} leaves the cursor at "
+        f"SPLIT_ROOM={P.SPLIT_ROOM} leaves the cursor at "
         f"{worst_y_after_heading:.1f}mm, past data_table's {297.0 - 55.0:.1f}mm "
         "give-up point — a long table would orphan its heading")
 
 
 @pytest.mark.parametrize("n_obs,expect_together", [(6, True), (18, True), (60, True)])
-def test_table_room_matches_data_table_break_rule(n_obs, expect_together):
-    """`_table_room` must predict `data_table`'s own break rule.
+def testtable_room_matches_data_table_break_rule(n_obs, expect_together):
+    """`table_room` must predict `data_table`'s own break rule.
 
     These are the two numbers that drifted apart. The heading reserves
-    `_table_room(n)`; the table then decides for itself whether to break. If the
+    `table_room(n)`; the table then decides for itself whether to break. If the
     table would break at the y the heading left the cursor on, the heading is
     stranded — so assert the reservation is at least what the table demands.
     """
     import pdf_report as P
 
-    reserved = P._table_room(n_obs)
-    full = P._TBL_HEAD_H + n_obs * P._TBL_ROW_H + P._TBL_PAD
-    if full <= P._PAGE_CAP:
+    reserved = P.table_room(n_obs)
+    full = P.TBL_HEAD_H + n_obs * P.TBL_ROW_H + P.TBL_PAD
+    if full <= P.PAGE_CAP:
         # Short table: kept whole, so the heading must reserve the whole thing
         # plus its own height.
         assert reserved >= full, f"{n_obs} rows: reserved {reserved} < table {full}"
     else:
         # Long table: splits anyway, so only a modest reservation is right —
         # demanding the full height would waste a page before every long table.
-        assert reserved < P._PAGE_CAP
+        assert reserved < P.PAGE_CAP
     assert expect_together
 
 

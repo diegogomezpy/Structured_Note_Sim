@@ -197,7 +197,7 @@ Discipline to preserve: don't retain the float64 working set (raw S/V paths, sta
 
 The themed-PDF engine lives in its **own repository** and is installed as a
 dependency: [`report_maker`](https://github.com/diegogomezpy/report_maker),
-pinned by tag in `requirements.txt` (`reportkit[charts] @ git+…@v0.7.0`). It has
+pinned by tag in `requirements.txt` (`reportkit[charts] @ git+…@v1.0.0`). It has
 no imports from `app/`, `core/` or `data/` and knows nothing about structured
 notes — a different project can `pip install` it and build a report.
 
@@ -250,6 +250,13 @@ profile, glossary, the `_LABELS` vocabulary, `_build_pdf_report`'s assembly).
   repo's `fonts/`, so the same bytes get embedded), the label table (`_t` wins
   over reportkit's nine chrome defaults), and `_rebrand_figure` (which knows
   *this* app's source chart palette).
+- **reportkit 1.0 froze the theme-author protocol.** The adapter calls
+  `pdf.sf` / `pdf.safe` / `pdf.eyebrow` / `pdf.fit_font`, `open_section` (NOT
+  `start_section` — that name is fpdf2's again and builds the outline),
+  `full_bleed`, `draw_cover_logo` / `draw_sigil` / `draw_left_photo`, and
+  `resolve_color(pdf, ref)` with pdf FIRST. A missed `start_section` call site
+  does not raise: it resolves to `FPDF.start_section`, registers a level-0
+  bookmark and draws no heading, so only the pixel goldens catch it.
 - **`_NotePDF` must not re-declare inherited methods.** `tests/test_pdf_layout.py`
   `setattr`s 14 method names (`HEADINGS` + `CONTENT`) onto **`_NotePDF` itself**
   to instrument pagination, restoring them in a `finally`. A subclass override

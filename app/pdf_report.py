@@ -92,7 +92,7 @@ from reportkit.theme import (  # noqa: E402
     TEXT as _TEXT, TEXT_SOFT as _TEXT_SOFT, ROW_ALT as _ROW_ALT,
     WHITE as _WHITE, BLACK as _BLACK,
 )
-from reportkit.images import _cover_crop  # noqa: E402
+from reportkit.images import cover_crop_uncached as _cover_crop  # noqa: E402
 # Colour parsing / palette remapping — core (no plotly); the chart layer that
 # consumes them is what moves behind the [charts] extra, not these.
 import reportkit.images as _rk_images  # noqa: E402
@@ -117,7 +117,7 @@ if not any(isinstance(h, _logging.StreamHandler) and h.stream is _sys.stdout
     _rk_logger.addHandler(_h)
     _rk_logger.setLevel(_logging.WARNING)
 from reportkit.document import ReportDocument  # noqa: E402
-from reportkit.text import _safe, _EMOJI_STRIP  # noqa: E402,F401
+from reportkit.text import sanitise as _safe, EMOJI_STRIP as _EMOJI_STRIP  # noqa: E402,F401
 from reportkit.color import (  # noqa: E402
     rgb_to_hue as _rgb_to_hue, parse_rgb as _parse_rgb, remap_color as _remap_color,
 )
@@ -709,8 +709,8 @@ class _NotePDF(ReportDocument):
         inner_w = w - 2 * pad
         name_h  = 9.0
         # Measure the description so the panel sizes to its content.
-        self._sf(8, "regular")
-        desc_lines = (self.multi_cell(inner_w, 4.2, self._safe(description),
+        self.sf(8, "regular")
+        desc_lines = (self.multi_cell(inner_w, 4.2, self.safe(description),
                                       dry_run=True, output="LINES")
                       if description else [])
         desc_h  = len(desc_lines) * 4.2
@@ -739,16 +739,16 @@ class _NotePDF(ReportDocument):
             except Exception:
                 pass
         self.set_xy(tx, cy + 1.0)
-        self._sf(13, "bold")
+        self.sf(13, "bold")
         self.set_text_color(*self.ink)
-        self.cell(inner_w, 6, self._safe(name))
+        self.cell(inner_w, 6, self.safe(name))
         cy += name_h
         # Description
         if description:
             self.set_xy(x0 + pad, cy + 2)
-            self._sf(8, "regular")
+            self.sf(8, "regular")
             self.set_text_color(*self.body_ink)
-            self.multi_cell(inner_w, 4.2, self._safe(description))
+            self.multi_cell(inner_w, 4.2, self.safe(description))
             cy = self.get_y()
         # Rating chips (white rounded boxes, label over value)
         if ratings:
@@ -763,13 +763,13 @@ class _NotePDF(ReportDocument):
                 except TypeError:
                     self.rect(cx, cy, chip_w, chip_h, style="F")
                 self.set_xy(cx, cy + 1.5)
-                self._sf(6.8, "body_bold")
+                self.sf(6.8, "body_bold")
                 self.set_text_color(*self.muted)
-                self.cell(chip_w, 3.5, self._safe(lbl), align="C")
+                self.cell(chip_w, 3.5, self.safe(lbl), align="C")
                 self.set_xy(cx, cy + 5.5)
-                self._sf(11, "bold")
+                self.sf(11, "bold")
                 self.set_text_color(*self.primary_color)
-                self.cell(chip_w, 5, self._safe(val), align="C")
+                self.cell(chip_w, 5, self.safe(val), align="C")
                 cx += chip_w + gap
         self.set_y(y0 + box_h + 4)
 
@@ -792,11 +792,11 @@ class _NotePDF(ReportDocument):
         self.add_page()
         self.secondary_head(self.chapter_nums.get("underlying", ""),
                             _t("kick_underlying", self.lang),
-                            self._safe(long_name), badge=ticker,
+                            self.safe(long_name), badge=ticker,
                             badge_color=(color or self.primary_color),
                             badge_logo=logo_bytes)
         if subtitle:
-            self._eyebrow(x0, self.get_y(), subtitle, self.muted,
+            self.eyebrow(x0, self.get_y(), subtitle, self.muted,
                           size=7.5, tracking=0.4, w=w)
             self.ln(6)
         # ECF1F6 metric tiles.
@@ -804,14 +804,14 @@ class _NotePDF(ReportDocument):
             self.metric_band(list(metrics))
         # Company description (justified body).
         if description:
-            self._sf(8.5, "regular")
+            self.sf(8.5, "regular")
             self.set_text_color(*self.body_ink)
-            self.multi_cell(w, 4.6, self._safe(description), align="J")
+            self.multi_cell(w, 4.6, self.safe(description), align="J")
             self.ln(3)
         # Analyst consensus bar (optional) — matches the web card.
         if analyst:
             cy = self.get_y() + 1
-            self._eyebrow(x0, cy, analyst_title, self.muted, size=7.0,
+            self.eyebrow(x0, cy, analyst_title, self.muted, size=7.0,
                           tracking=0.4, w=w)
             cy += 4.6
             bar_h = 2.8
@@ -839,7 +839,7 @@ class _NotePDF(ReportDocument):
                     self.rect(bx, cy, _wd, bar_h, style="F")
                 bx += _wd
             cy += bar_h + 3.0
-            self._sf(7, "regular")
+            self.sf(7, "regular")
             lx = x0
             for _lbl, _frac, _col in analyst:
                 self.set_fill_color(*_col)
@@ -847,13 +847,13 @@ class _NotePDF(ReportDocument):
                 self.set_xy(lx + 2.8, cy - 2.6)
                 self.set_text_color(*self.body_ink)
                 _txt = f"{_lbl} {_frac:.0%}"
-                self.cell(self.get_string_width(_txt) + 1, 3.2, self._safe(_txt))
+                self.cell(self.get_string_width(_txt) + 1, 3.2, self.safe(_txt))
                 lx += 2.8 + self.get_string_width(_txt) + 6
             self.set_y(cy + 3.0)
         # Trailing-12M price chart in a white bordered card.
         if chart_png:
             self.ln(2)
-            self._eyebrow(x0, self.get_y(), chart_caption, self.muted,
+            self.eyebrow(x0, self.get_y(), chart_caption, self.muted,
                           size=8.0, tracking=0.4, w=w)
             self.ln(5.5)
             try:
@@ -1487,27 +1487,27 @@ def _front_cover_page(pdf: _NotePDF, terms, lang: str, report_title: str, websit
     printed PDF says what kind of report it is. Unknown/None ⇒ no subtitle."""
     # The frame — page opened chrome-free, themed background, optional photo,
     # brand tint over it — is reportkit's; only what sits ON the page is ours.
-    with pdf.full_bleed_page(getattr(pdf, "cover_image_bytes", None)) as (W, H):
+    with pdf.full_bleed(getattr(pdf, "cover_image_bytes", None)) as (W, H):
         pdf.bookmark(_safe(terms.name) or _t("report_eyebrow", lang), level=0)
         ml = pdf.l_margin
         inner = W - 2 * ml
         # Sigil bleeding off an edge, then the white cover wordmark. Both are placed
         # by brand percentages of the page, so both are reportkit's to draw.
-        pdf.cover_sigil()
-        pdf.cover_logo()
+        pdf.draw_sigil()
+        pdf.draw_cover_logo()
 
         # Hero block, left-aligned in the lower-middle of the page.
         eb = (report_title or _t("report_eyebrow", lang)).upper()
         hero_y = H * 0.40
-        pdf._eyebrow(ml, hero_y, eb, pdf.section_rule_color,
+        pdf.eyebrow(ml, hero_y, eb, pdf.section_rule_color,
                      size=11.0, tracking=1.6, w=inner)
         # Big white Neulis title — wraps to as many lines as needed.
         _name = _safe(terms.name)
         _ts = 40.0
-        pdf._sf(_ts, "bold")
+        pdf.sf(_ts, "bold")
         while _ts > 22.0 and pdf.get_string_width(_name) > inner * 2.4:
             _ts -= 1.0
-            pdf._sf(_ts, "bold")
+            pdf.sf(_ts, "bold")
         pdf.set_xy(ml, hero_y + 9)
         pdf.set_text_color(255, 255, 255)
         pdf.multi_cell(inner, _ts * 0.40, _name, align="L")
@@ -1516,7 +1516,7 @@ def _front_cover_page(pdf: _NotePDF, terms, lang: str, report_title: str, websit
         if _tk:
             pdf.ln(2)
             pdf.set_x(ml)
-            pdf._sf(13, "regular")
+            pdf.sf(13, "regular")
             pdf.set_text_color(159, 196, 179)
             pdf.cell(inner, 7, _safe(_tk))
         # Short lime rule beneath.
@@ -1528,7 +1528,7 @@ def _front_cover_page(pdf: _NotePDF, terms, lang: str, report_title: str, websit
         _kind_lbl = _LABELS.get(f"kind_{report_kind}") if report_kind else None
         if _kind_lbl:
             pdf.ln(6)
-            pdf._eyebrow(ml, pdf.get_y(), _t(f"kind_{report_kind}", lang).upper(),
+            pdf.eyebrow(ml, pdf.get_y(), _t(f"kind_{report_kind}", lang).upper(),
                          pdf.section_rule_color, size=9.0, tracking=1.4, w=inner)
 
         # ── Bottom band: user-selectable key terms + website ──────────────────
@@ -1575,14 +1575,14 @@ def _front_cover_page(pdf: _NotePDF, terms, lang: str, report_title: str, websit
             cellw = step - 2.0
             kx = ml
             for lbl, val in _kt:
-                pdf._eyebrow(kx, band_y + 9, lbl, (159, 196, 179), size=7.5,
+                pdf.eyebrow(kx, band_y + 9, lbl, (159, 196, 179), size=7.5,
                              tracking=0.4, w=cellw)
                 pdf.set_xy(kx, band_y + 14)
-                pdf._sf(15, "bold"); pdf.set_text_color(255, 255, 255)
+                pdf.sf(15, "bold"); pdf.set_text_color(255, 255, 255)
                 pdf.cell(cellw, 8, _safe(val))
                 kx += step
         if website:
-            pdf._eyebrow(W - ml - 70, band_y + 12.5, website, pdf.section_rule_color,
+            pdf.eyebrow(W - ml - 70, band_y + 12.5, website, pdf.section_rule_color,
                          size=10.0, tracking=0.6, w=70, align="R")
 
 
@@ -1591,7 +1591,7 @@ def _full_bleed_disclaimer(pdf: _NotePDF, lang: str, text: str, website: str = "
     colour with the logo header and a footer, pairing the branded front cover."""
     # The same frame as the front cover: a back page IS a cover that happens to
     # carry legal text, so it takes the same background / photo / tint treatment.
-    with pdf.full_bleed_page(getattr(pdf, "back_image_bytes", None)) as (W, H):
+    with pdf.full_bleed(getattr(pdf, "back_image_bytes", None)) as (W, H):
         pdf.bookmark(_t("disclaimer_title", lang), level=0)
         logo_b = getattr(pdf, "cover_logo_bytes", None) or pdf.firm_logo_bytes
         pdf.draw_logo_fit(logo_b, pdf.l_margin, 15, 12.0, 58.0, cover=True)
@@ -1610,7 +1610,7 @@ def _full_bleed_disclaimer(pdf: _NotePDF, lang: str, text: str, website: str = "
             try:
                 from fpdf.enums import MethodReturnValue as _MRV
                 for _i, _para in enumerate(_paras):
-                    pdf._sf(7.6, "bold" if _i == len(_paras) - 1 else "regular")
+                    pdf.sf(7.6, "bold" if _i == len(_paras) - 1 else "regular")
                     body_h += pdf.multi_cell(inner, 4.0, _safe(_para), align="J",
                                              dry_run=True, output=_MRV.HEIGHT) + 2.6
             except Exception:
@@ -1628,7 +1628,7 @@ def _full_bleed_disclaimer(pdf: _NotePDF, lang: str, text: str, website: str = "
                     pass
 
         pdf.set_xy(pdf.l_margin, 41)
-        pdf._sf(16, "bold")
+        pdf.sf(16, "bold")
         pdf.set_text_color(255, 255, 255)
         pdf.cell(0, 8, _safe(_t("disclaimer_title", lang)), new_x="LMARGIN", new_y="NEXT")
         # Lime keyline under the title (mirrors the prototype).
@@ -1638,7 +1638,7 @@ def _full_bleed_disclaimer(pdf: _NotePDF, lang: str, text: str, website: str = "
         pdf.set_xy(pdf.l_margin, 55)
         for _i, _para in enumerate(_paras):
             pdf.set_x(pdf.l_margin)
-            pdf._sf(7.6, "bold" if _i == len(_paras) - 1 else "regular")
+            pdf.sf(7.6, "bold" if _i == len(_paras) - 1 else "regular")
             pdf.set_text_color(255, 255, 255)
             pdf.multi_cell(inner, 4.0, _safe(_para), align="J")
             pdf.ln(2.6)
@@ -1652,11 +1652,11 @@ def _full_bleed_disclaimer(pdf: _NotePDF, lang: str, text: str, website: str = "
             pdf.rect(pdf.l_margin, H - 26, W - 2 * pdf.l_margin, 0.4, style="F")
         if website:
             pdf.set_xy(0, H - 22)
-            pdf._sf(9, "bold")
+            pdf.sf(9, "bold")
             pdf.set_text_color(*pdf.section_rule_color)
             pdf.cell(W - pdf.r_margin, 5, _safe(website), align="R")
         pdf.set_xy(0, H - 15)
-        pdf._sf(7, "light")
+        pdf.sf(7, "light")
         pdf.set_text_color(159, 196, 179)
         pdf.cell(W - pdf.r_margin, 4,
                  _safe(f"© {datetime.date.today().year} {pdf.firm_name} — All Rights Reserved."),
@@ -1802,10 +1802,10 @@ def _cover_page(
             has_logo = False
     if not has_logo:
         pdf.set_xy(x0, 10)
-        pdf._sf(14, "bold"); pdf.set_text_color(*pdf.primary_color)
+        pdf.sf(14, "bold"); pdf.set_text_color(*pdf.primary_color)
         pdf.cell(120, 8, _safe(pdf.firm_name))
     rx, rw = pdf.w - pdf.r_margin - 95, 95
-    pdf._eyebrow(rx, 12.5, eyebrow, pdf.primary_color, size=8.0, tracking=0.8,
+    pdf.eyebrow(rx, 12.5, eyebrow, pdf.primary_color, size=8.0, tracking=0.8,
                  w=rw, align="R")
     pdf.set_draw_color(*pdf.primary_color); pdf.set_line_width(0.7)
     pdf.line(x0, 23.5, pdf.w - pdf.r_margin, 23.5)
@@ -1821,24 +1821,24 @@ def _cover_page(
     y_m, pad = 28.5, 9.0
     MH = 58.0 if _show_kpis else 34.0
     pdf.theme.cover_masthead(pdf, x0, y_m, W, MH)
-    pdf._eyebrow(x0 + pad, y_m + 7, eyebrow, pdf.lime,
+    pdf.eyebrow(x0 + pad, y_m + 7, eyebrow, pdf.lime,
                  size=8.0, tracking=0.9, w=W - 2 * pad)
     # Title (Neulis): one big line, shrinking to fit; if a very long note name
     # still overflows at the floor, wrap it onto two smaller lines.
     _name = _safe(terms.name)
     avail = W - 2 * pad
     _ts = 21.0
-    pdf._sf(_ts, "bold")
+    pdf.sf(_ts, "bold")
     while _ts > 13.0 and pdf.get_string_width(_name) > avail:
         _ts -= 0.4
-        pdf._sf(_ts, "bold")
+        pdf.sf(_ts, "bold")
     pdf.set_text_color(*_WHITE)
     if pdf.get_string_width(_name) <= avail:
         pdf.set_xy(x0 + pad, y_m + 12)
         pdf.cell(avail, 10, _name)
         _sub_y = y_m + 24
     else:
-        pdf._sf(14.0, "bold")
+        pdf.sf(14.0, "bold")
         pdf.set_xy(x0 + pad, y_m + 9.5)
         pdf.multi_cell(avail, 6.0, _name, align="L")
         _sub_y = pdf.get_y() + 1.5
@@ -1847,7 +1847,7 @@ def _cover_page(
     if _tk:
         _sub = f"{_sub}  ·  {_tk}"
     pdf.set_xy(x0 + pad, _sub_y)
-    pdf._sf(9.5, "regular"); pdf.set_text_color(*INK_SUB)
+    pdf.sf(9.5, "regular"); pdf.set_text_color(*INK_SUB)
     pdf.cell(W - 2 * pad, 5, _safe(_sub))
 
     # KPI strip — analytical only (Monte Carlo and/or backtest). Skipped for a
@@ -1883,10 +1883,10 @@ def _cover_page(
             pdf.set_fill_color(*pdf.lime)
             pdf.rect(cx, strip_y + 4, 0.8, 14, style="F")
             pdf.set_xy(cx + 3, strip_y + 4)
-            pdf._sf(6.3, "body_bold"); pdf.set_text_color(*INK_SUB)
+            pdf.sf(6.3, "body_bold"); pdf.set_text_color(*INK_SUB)
             pdf.multi_cell(kw - 4, 3.1, _safe(lbl.upper()), align="L")
             pdf.set_xy(cx + 3, strip_y + 12)
-            pdf._sf(13.5, "bold"); pdf.set_text_color(*_WHITE)
+            pdf.sf(13.5, "bold"); pdf.set_text_color(*_WHITE)
             pdf.cell(kw - 4, 7, _safe(val))
 
     # ── Body: two vertical stacks (left ≈ 100mm, right rail ≈ 70mm) ─────────
@@ -1895,7 +1895,7 @@ def _cover_page(
     ly = ry = y_body
 
     def _l_head(y, text):
-        pdf._eyebrow(x0, y, text, pdf.muted, size=8.0, tracking=0.6, w=Lw)
+        pdf.eyebrow(x0, y, text, pdf.muted, size=8.0, tracking=0.6, w=Lw)
         pdf.set_fill_color(*pdf.lime)
         pdf.rect(x0, y + 4.6, 18, 1.2, style="F")
         return y + 8.5
@@ -1908,7 +1908,7 @@ def _cover_page(
             pdf.set_fill_color(*pdf.primary_color)
             pdf.ellipse(x0, ly + 1.7, 1.5, 1.5, style="F")
             pdf.set_xy(x0 + 5, ly)
-            pdf._sf(8.2, "regular"); pdf.set_text_color(*pdf.body_ink)
+            pdf.sf(8.2, "regular"); pdf.set_text_color(*pdf.body_ink)
             pdf.multi_cell(Lw - 5, 4.4, _safe(txt), align="L")
             ly = pdf.get_y() + 2.0
         ly += 2.5
@@ -1916,7 +1916,7 @@ def _cover_page(
     # 2) About this report.
     ly = _l_head(ly, _t("about_report_head", lang))
     pdf.set_xy(x0, ly)
-    pdf._sf(8.0, "regular"); pdf.set_text_color(*pdf.body_ink)
+    pdf.sf(8.0, "regular"); pdf.set_text_color(*pdf.body_ink)
     pdf.multi_cell(Lw, 4.3, _safe(_about_this_report(
         lang, inc, results, bt_summary, live_data, len(asset_names or []))))
     ly = pdf.get_y() + 5.0
@@ -1946,9 +1946,9 @@ def _cover_page(
             pdf.rect(x0, ly, Lw, ph, style="F")
             pdf.set_fill_color(*pdf.primary_color)
             pdf.rect(x0, ly, Lw, 1.1, style="F")
-        pdf._eyebrow(x0 + 4, ly + 4, _t("redemption_outcomes", lang), pdf.muted,
+        pdf.eyebrow(x0 + 4, ly + 4, _t("redemption_outcomes", lang), pdf.muted,
                      size=7.0, tracking=0.4, w=70)
-        pdf._eyebrow(x0 + Lw - 30, ly + 4.2, _t("payoff_prob", lang),
+        pdf.eyebrow(x0 + Lw - 30, ly + 4.2, _t("payoff_prob", lang),
                      _FOOTNOTE_GREY, size=5.6, tracking=0.2, w=26, align="R")
         yy = ly + 10.5
         for lab, p, col in prows:
@@ -1957,17 +1957,17 @@ def _cover_page(
             pdf.set_fill_color(*col)
             pdf.rect(x0 + 4, yy + 2.7, 2.4, 2.4, style="F")
             pdf.set_xy(x0 + 9, yy + 1.5)
-            pdf._sf(8.2, "regular"); pdf.set_text_color(*pdf.body_ink)
+            pdf.sf(8.2, "regular"); pdf.set_text_color(*pdf.body_ink)
             pdf.cell(Lw - 9 - 30, 5, _safe(lab))
             pdf.set_xy(x0 + Lw - 32, yy + 1.4)
-            pdf._sf(10.0, "bold"); pdf.set_text_color(*col)
+            pdf.sf(10.0, "bold"); pdf.set_text_color(*col)
             pdf.cell(28, 5, _safe(p), align="R")
             yy += 8.0
         # Footer: expected redemption / IRR (whole-note aggregate).
         pdf.set_draw_color(*_RULE_SOFT); pdf.set_line_width(0.2)
         pdf.line(x0 + 4, yy, x0 + Lw - 4, yy)
         pdf.set_xy(x0 + 9, yy + 1.6)
-        pdf._sf(7.4, "regular"); pdf.set_text_color(*KV_GREY)
+        pdf.sf(7.4, "regular"); pdf.set_text_color(*KV_GREY)
         pdf.cell(Lw - 13, 5, _safe(_foot))
         ly += ph + 5.0
     elif _has_mc:
@@ -2000,11 +2000,11 @@ def _cover_page(
             pdf.rect(x0, ly, Lw, ph, style="F")
             pdf.set_fill_color(*pdf.primary_color)
             pdf.rect(x0, ly, Lw, 1.1, style="F")
-        pdf._eyebrow(x0 + 4, ly + 4, _t("payoff_scenarios", lang), pdf.muted,
+        pdf.eyebrow(x0 + 4, ly + 4, _t("payoff_scenarios", lang), pdf.muted,
                      size=7.0, tracking=0.4, w=52)
-        pdf._eyebrow(x0 + Lw - 44, ly + 4.2, _t("payoff_prob", lang),
+        pdf.eyebrow(x0 + Lw - 44, ly + 4.2, _t("payoff_prob", lang),
                      _FOOTNOTE_GREY, size=5.6, tracking=0.2, w=22, align="R")
-        pdf._eyebrow(x0 + Lw - 22, ly + 4.2, _t("payoff_irr", lang),
+        pdf.eyebrow(x0 + Lw - 22, ly + 4.2, _t("payoff_irr", lang),
                      _FOOTNOTE_GREY, size=5.6, tracking=0.2, w=18, align="R")
         yy = ly + 10.5
         for lab, p, v, col in prows:
@@ -2013,13 +2013,13 @@ def _cover_page(
             pdf.set_fill_color(*col)
             pdf.rect(x0 + 4, yy + 2.7, 2.4, 2.4, style="F")
             pdf.set_xy(x0 + 9, yy + 1.5)
-            pdf._sf(8.2, "regular"); pdf.set_text_color(*pdf.body_ink)
+            pdf.sf(8.2, "regular"); pdf.set_text_color(*pdf.body_ink)
             pdf.cell(Lw - 9 - 46, 5, _safe(lab))
             pdf.set_xy(x0 + Lw - 46, yy + 1.6)
-            pdf._sf(8.0, "regular"); pdf.set_text_color(*KV_GREY)
+            pdf.sf(8.0, "regular"); pdf.set_text_color(*KV_GREY)
             pdf.cell(22, 5, _safe(p), align="R")
             pdf.set_xy(x0 + Lw - 24, yy + 1.2)
-            pdf._sf(10.0, "bold"); pdf.set_text_color(*col)
+            pdf.sf(10.0, "bold"); pdf.set_text_color(*col)
             pdf.cell(20, 5, _safe(v), align="R")
             yy += 8.0
         ly += ph + 5.0
@@ -2072,7 +2072,7 @@ def _cover_page(
         pdf.set_fill_color(*pdf.primary_color)
         pdf.rect(Rx, ry, Rw, 1.1, style="F")
     yy = ry + 5.0
-    pdf._eyebrow(Rx + 5, yy, _t("underlyings", lang), pdf.muted,
+    pdf.eyebrow(Rx + 5, yy, _t("underlyings", lang), pdf.muted,
                  size=7.0, tracking=0.6, w=Rw - 10)
     yy += 5.5
     _cols = _ul_colors(n_a)
@@ -2110,12 +2110,12 @@ def _cover_page(
             except TypeError:
                 pdf.rect(Rx + 5, _box_y, _LS, _LS, style="F")
             pdf.set_xy(Rx + 5, _box_y + 2.3)
-            pdf._sf(6.0, "bold"); pdf.set_text_color(*_cols[i])
+            pdf.sf(6.0, "bold"); pdf.set_text_color(*_cols[i])
             pdf.cell(_LS, 4, _safe(tk[:4]), align="C")
         # Company name — larger and bolder so it reads as the primary label.
         pdf.set_xy(Rx + 18, yy + (_UL_ROW - 5.4) / 2.0)
         _nm_w = Rw - 18 - 4
-        pdf._fit_font(_safe(nm), _nm_w, 9.6, "bold", min_size=6.5)
+        pdf.fit_font(_safe(nm), _nm_w, 9.6, "bold", min_size=6.5)
         pdf.set_text_color(*pdf.ink)
         pdf.cell(_nm_w, 5.4, _safe(nm))
         yy += _UL_ROW
@@ -2123,14 +2123,14 @@ def _cover_page(
     pdf.set_draw_color(*_RULE_SOFT); pdf.set_line_width(0.2)
     pdf.line(Rx + 5, yy, Rx + Rw - 5, yy)
     yy += 4.0
-    pdf._eyebrow(Rx + 5, yy, _t("key_terms", lang), pdf.muted,
+    pdf.eyebrow(Rx + 5, yy, _t("key_terms", lang), pdf.muted,
                  size=7.0, tracking=0.6, w=Rw - 10)
     yy += 5.5
     for k, v in mini:
-        pdf.set_xy(Rx + 5, yy); pdf._sf(7.5, "regular"); pdf.set_text_color(*KV_GREY)
+        pdf.set_xy(Rx + 5, yy); pdf.sf(7.5, "regular"); pdf.set_text_color(*KV_GREY)
         pdf.cell((Rw - 10) * 0.5, 4.6, _safe(k))
         pdf.set_xy(Rx + 5, yy)
-        pdf._fit_font(_safe(v), (Rw - 10) * 0.5, 8.5, "bold", min_size=6.0)
+        pdf.fit_font(_safe(v), (Rw - 10) * 0.5, 8.5, "bold", min_size=6.0)
         pdf.set_text_color(*pdf.ink)
         pdf.cell(Rw - 10, 4.6, _safe(v), align="R")
         pdf.set_draw_color(*_RULE_SOFT)
@@ -2202,7 +2202,7 @@ def _cover_page(
     toc_groups.append((None, None, [(_t("glossary_title", lang), None),
                                     (_t("disclaimer_title", lang), None)]))
 
-    pdf._eyebrow(Rx, ry, _t("in_this_report", lang), pdf.muted,
+    pdf.eyebrow(Rx, ry, _t("in_this_report", lang), pdf.muted,
                  size=8.0, tracking=0.6, w=Rw)
     pdf.set_fill_color(*pdf.lime); pdf.rect(Rx, ry + 4.6, 18, 1.2, style="F")
     ry += 8.0
@@ -2233,7 +2233,7 @@ def _cover_page(
         _pool = getattr(pdf, "filler_image_list", None) or []
         _vimg = _pool[0] if _pool else None
         if ly + 45 < _toc_end and _vimg is not None:
-            _left_filled = pdf.cover_left_photo(x0, ly + 6.0, Lw, _bottom, _vimg)
+            _left_filled = pdf.draw_left_photo(x0, ly + 6.0, Lw, _bottom, _vimg)
         # Sigil watermark — only in a void below BOTH stacks (rare on client
         # reports, where the TOC runs long); harmless alongside the left photo.
         _sig = getattr(pdf, "cover_sigil_bytes", None)
@@ -2263,15 +2263,15 @@ def _cover_page(
 
 # Page-geometry constants shared by the heading reservation and the table's own
 # break rule. They MUST agree: the orphaned-heading bug was two independent
-# estimates of the same quantity. `_table_room` says how much room a heading has
+# estimates of the same quantity. `table_room` says how much room a heading has
 # to see before it may draw; `data_table` uses the same numbers to decide whether
 # to break. Change one, change both.
 # Page geometry + the heading-reservation rule now live in reportkit.document,
 # with the table code that breaks on the same numbers. Re-exported under their
 # original names: tests/test_pdf_layout.py reads all seven off this module.
 from reportkit.document import (  # noqa: E402
-    _TBL_ROW_H, _TBL_HEAD_H, _TBL_PAD, _PAGE_CAP, _HEAD_ROOM, _SPLIT_ROOM,
-    _table_room,
+    TBL_ROW_H, TBL_HEAD_H, TBL_PAD, PAGE_CAP, HEAD_ROOM, SPLIT_ROOM,
+    table_room,
 )
 
 def _draw_participation_profile(pdf, terms, lang: str) -> None:
@@ -2339,9 +2339,9 @@ def _draw_participation_profile(pdf, terms, lang: str) -> None:
 
         # periodic badge (centred, above the plot)
         if periodic:
-            pdf._sf(7.5, "bold")
+            pdf.sf(7.5, "bold")
             pdf.set_text_color(*pdf.accent_color)
-            _bl = pdf._safe(f"↻ {_t('pp_cliquet_badge', lang)}")
+            _bl = pdf.safe(f"↻ {_t('pp_cliquet_badge', lang)}")
             pdf.text((x0 + x1) / 2 - pdf.get_string_width(_bl) / 2, top - 1.0, _bl)
             top += 4.0
             bottom = top + plot_h
@@ -2355,14 +2355,14 @@ def _draw_participation_profile(pdf, terms, lang: str) -> None:
             pdf.set_draw_color(*( (150, 162, 180) if is_par else (223, 229, 237)))
             pdf.set_line_width(0.4 if is_par else 0.2)
             pdf.line(x0, gy, x1, gy)
-            pdf._sf(6.8, "regular")
+            pdf.sf(6.8, "regular")
             pdf.set_text_color(150, 162, 180)
             _tl = f"{r:.0%}"
             pdf.text(x0 - 2 - pdf.get_string_width(_tl), gy + 1.0, _tl)
             r += y_step
 
         # x tick labels (basket level %)
-        pdf._sf(6.8, "regular")
+        pdf.sf(6.8, "regular")
         pdf.set_text_color(150, 162, 180)
         _xt_b = math.ceil(x_min / x_step) * x_step
         while _xt_b <= x_max + 1e-9:
@@ -2408,11 +2408,11 @@ def _draw_participation_profile(pdf, terms, lang: str) -> None:
         pdf.line(x0, bottom, x1, bottom)
 
         # axis titles (x centred below, y rotated on the left)
-        pdf._sf(7.5, "regular")
+        pdf.sf(7.5, "regular")
         pdf.set_text_color(90, 100, 120)
-        _xa = pdf._safe(_t("pp_x_axis_period" if periodic else "pp_x_axis", lang))
+        _xa = pdf.safe(_t("pp_x_axis_period" if periodic else "pp_x_axis", lang))
         pdf.text((x0 + x1) / 2 - pdf.get_string_width(_xa) / 2, bottom + 10.5, _xa)
-        _ya = pdf._safe(_t("pp_y_axis", lang))
+        _ya = pdf.safe(_t("pp_y_axis", lang))
         with pdf.rotation(90, pdf.l_margin + 4.0, (top + bottom) / 2 + pdf.get_string_width(_ya) / 2):
             pdf.text(pdf.l_margin + 4.0, (top + bottom) / 2 + pdf.get_string_width(_ya) / 2, _ya)
 
@@ -2422,9 +2422,9 @@ def _draw_participation_profile(pdf, terms, lang: str) -> None:
 
         # periodic caption below the plot
         if periodic:
-            pdf._sf(7, "regular")
+            pdf.sf(7, "regular")
             pdf.set_text_color(150, 162, 180)
-            _cap = pdf._safe(_t("pp_periodic_caption", lang))
+            _cap = pdf.safe(_t("pp_periodic_caption", lang))
             usable = pdf.w - pdf.l_margin - pdf.r_margin
             pdf.set_x(pdf.l_margin)
             pdf.multi_cell(usable, 4.2, _cap, align="C")
@@ -2523,14 +2523,14 @@ def _draw_note_diagram(pdf, terms, lang: str) -> None:
         if start <= n:
             pdf.set_fill_color(*_blend(pdf.accent_color, _WHITE, 0.82))
             pdf.rect(acX, top, max(0.0, x1 - acX), max(0.0, ac_y - top), style="F")
-            pdf._sf(8, "bold")
+            pdf.sf(8, "bold")
             pdf.set_text_color(*pdf.accent_color)
             _wl = _t("diag_window", lang)
             _wy = min((top + ac_y) / 2 + 1.5, par_y - 2.0)
             pdf.text((acX + x1) / 2 - pdf.get_string_width(_wl) / 2, _wy, _wl)
 
         # y gridlines + tick labels (0 / 50 / 100%)
-        pdf._sf(6.8, "regular")
+        pdf.sf(6.8, "regular")
         for lvl in (0.0, 0.5, 1.0):
             gy = mapY(lvl)
             pdf.set_draw_color(223, 229, 237)
@@ -2541,7 +2541,7 @@ def _draw_note_diagram(pdf, terms, lang: str) -> None:
             pdf.text(x0 - 2 - pdf.get_string_width(_tl), gy + 1.0, _tl)
 
         # zone captions
-        pdf._sf(8, "bold")
+        pdf.sf(8, "bold")
         pdf.set_text_color(*C_PROT)
         pdf.text(x0 + 2.5, (par_y + ki_y) / 2 + 1.0, _t("diag_zone_protected", lang))
         if ki_y < bottom - 2:
@@ -2587,7 +2587,7 @@ def _draw_note_diagram(pdf, terms, lang: str) -> None:
         pdf.set_fill_color(150, 162, 180)
         pdf.polygon([(x0 - 1.4, top - 3), (x0 + 1.4, top - 3), (x0, top - 6)], style="F")
         pdf.polygon([(x1 + 4, bottom - 1.4), (x1 + 4, bottom + 1.4), (x1 + 7, bottom)], style="F")
-        pdf._sf(6.5, "bold")
+        pdf.sf(6.5, "bold")
         pdf.set_text_color(150, 162, 180)
         pdf.text(x0 - 3, top - 5.5, _t("diag_axis_level", lang))
 
@@ -2601,23 +2601,23 @@ def _draw_note_diagram(pdf, terms, lang: str) -> None:
             col = pdf.primary_color if is_mat else (pdf.accent_color if is_ac else (205, 214, 228))
             _dot(mapX(f), 1.7 if is_mat else 1.5, col)
             if show_coupon:
-                pdf._sf(6.5, "regular")
+                pdf.sf(6.5, "regular")
                 pdf.set_text_color(*C_COUPON)
                 _ct = f"+{coupon_per:.2%}"
                 pdf.text(mapX(f) - pdf.get_string_width(_ct) / 2, par_y - 3.5, _ct)
             if show_yr_ticks and not is_mat:
                 _yt = f"{round(f * _mat_yrs * 12)}M"   # months, matching the web yrTick
-                pdf._sf(6, "regular")
+                pdf.sf(6, "regular")
                 pdf.set_text_color(170, 180, 195)
                 pdf.text(mapX(f) - pdf.get_string_width(_yt) / 2, bottom + 4.6, _yt)
 
         # issue / maturity captions (below the x-axis) + the real date or tenor
-        pdf._sf(7.5, "regular")
+        pdf.sf(7.5, "regular")
         pdf.set_text_color(110, 122, 145)
         _iss, _mat = _t("diag_issue", lang), _t("diag_maturity", lang)
         pdf.text(x0 - pdf.get_string_width(_iss) / 2, bottom + 4.6, _iss)
         pdf.text(x1 - pdf.get_string_width(_mat) / 2, bottom + 4.6, _mat)
-        pdf._sf(6.5, "regular")
+        pdf.sf(6.5, "regular")
         pdf.set_text_color(150, 162, 180)
         if issue_lbl:
             pdf.text(x0 - pdf.get_string_width(issue_lbl) / 2, bottom + 8.6, issue_lbl)
@@ -2644,10 +2644,10 @@ def _draw_note_diagram(pdf, terms, lang: str) -> None:
             pdf.set_draw_color(190, 198, 210)
             pdf.set_line_width(0.2)
             pdf.line(x1 + 1, ty, lx - 1, ly - 1.0)
-            pdf._sf(7, "regular")
+            pdf.sf(7, "regular")
             pdf.set_text_color(*color)
             pdf.text(lx, ly, name)
-            pdf._sf(8.5, "bold")
+            pdf.sf(8.5, "bold")
             pdf.set_text_color(*pdf.primary_color)
             pdf.text(lx, ly + 4.0, val)
 
@@ -2986,7 +2986,7 @@ def _build_pdf_report(
             for _i, _para in enumerate([x for x in _nd.split("\n\n") if x.strip()]):
                 if _i:
                     pdf.ln(1.6)
-                pdf.multi_cell(usable, 5.0, pdf._safe(_para.strip()), align="J")
+                pdf.multi_cell(usable, 5.0, pdf.safe(_para.strip()), align="J")
             pdf.ln(3)
         if _show_diag:
             pdf.subsection(_t("note_diagram", lang))
@@ -2995,7 +2995,7 @@ def _build_pdf_report(
         if _show_terms:
             _term_data = _term_rows(terms, lang)
             pdf.subsection(_t("note_terms", lang),
-                           min_room=_table_room(len(_term_data)))
+                           min_room=table_room(len(_term_data)))
             pdf.data_table(
                 [_t("key_terms_col_characteristic", lang), _t("key_terms_col_description", lang)],
                 [[k, v] for k, v in _term_data],
@@ -3007,7 +3007,7 @@ def _build_pdf_report(
             # A sub-header under Note Terms (always a sub-label now — the 01 head
             # labels the section).
             pdf.subsection(_t("obs_schedule", lang),
-                           min_room=_table_room(terms.n_obs))
+                           min_room=table_room(terms.n_obs))
             obs_times = terms.obs_times()
             sched     = terms.autocall_barrier_schedule()
             ac_rows = []
@@ -3195,7 +3195,7 @@ def _build_pdf_report(
         _off = int(results.get("period_offset", results.get("periods_elapsed", 0)) or 0)
         _obs_times = list(terms.obs_times())[_off:]
         pdf.subsection(_t("autocall_by_period", lang),
-                       min_room=_table_room(len(prob_by_period)))
+                       min_room=table_room(len(prob_by_period)))
         rows = []
         for i, (t_obs, p_ac) in enumerate(zip(_obs_times, prob_by_period)):
             _abs = _off + i + 1                       # term-sheet period number
@@ -3391,7 +3391,7 @@ def _build_pdf_report(
         if perf_today and _inc("live_asset_table"):
             _live_div()
             pdf.subsection(_t("live_asset_perf", lang),
-                           min_room=_table_room(len(perf_today), row_h=10.0))
+                           min_room=table_room(len(perf_today), row_h=10.0))
             _perf_logos = {
                 nm: (_logo_ovr.get(nm)
                      or _load_ticker_logo(nm, (logo_urls or {}).get(nm, ""),
@@ -3410,7 +3410,7 @@ def _build_pdf_report(
         if obs_rows and _inc("live_obs_table"):
             _live_div()
             pdf.subsection(_t("live_obs_history", lang),
-                           min_room=_table_room(len(obs_rows)))
+                           min_room=table_room(len(obs_rows)))
             obs_headers = list(obs_rows[0].keys())
             obs_data    = [[str(r.get(h, "")) for h in obs_headers] for r in obs_rows]
             n_cols = len(obs_headers)
@@ -3438,7 +3438,7 @@ def _build_pdf_report(
         if _diff_terms:
             _cmp_div()
             pdf.open_section(_t("cmp_terms_title", lang),
-                              min_room=_table_room(len(_diff_terms)))
+                              min_room=table_room(len(_diff_terms)))
             pdf.data_table(
                 [_t("cmp_col_term", lang), _t("cmp_col_a", lang), _t("cmp_col_b", lang)],
                 _diff_terms,
@@ -3449,7 +3449,7 @@ def _build_pdf_report(
         if _cmp_rows:
             _cmp_div()
             pdf.open_section(_t("cmp_metrics_title", lang),
-                              min_room=_table_room(len(_cmp_rows)))
+                              min_room=table_room(len(_cmp_rows)))
             pdf.data_table(
                 [_t("cmp_col_metric", lang), _t("cmp_col_a", lang),
                  _t("cmp_col_b", lang), _t("cmp_col_delta", lang)],
@@ -3500,20 +3500,20 @@ def _build_pdf_report(
         with pdf.text_columns(ncols=2, gutter=9, balance=True) as _cols:
             for _term, _defn in _entries:
                 _par = _cols.paragraph(bottom_margin=2.4, line_height=1.35)
-                pdf._sf(8, "semibold"); pdf.set_text_color(*pdf.primary_color)
-                _par.write(pdf._safe(f"{_term} — "))
-                pdf._sf(8, "regular"); pdf.set_text_color(*pdf.body_ink)
-                _par.write(pdf._safe(_defn))
+                pdf.sf(8, "semibold"); pdf.set_text_color(*pdf.primary_color)
+                _par.write(pdf.safe(f"{_term} — "))
+                pdf.sf(8, "regular"); pdf.set_text_color(*pdf.body_ink)
+                _par.write(pdf.safe(_defn))
                 _cols.end_paragraph()
     except Exception as _e:                     # robust fallback to single-column flow
         print(f"[report] glossary columns fell back: {_e}")
         for _term, _defn in _entries:
             if pdf.get_y() > pdf.h - 34:
                 pdf.add_page()
-            pdf._sf(8, "semibold"); pdf.set_text_color(*pdf.primary_color)
-            pdf.write(4.4, pdf._safe(f"{_term} — "))
-            pdf._sf(8, "regular"); pdf.set_text_color(*pdf.body_ink)
-            pdf.write(4.4, pdf._safe(_defn))
+            pdf.sf(8, "semibold"); pdf.set_text_color(*pdf.primary_color)
+            pdf.write(4.4, pdf.safe(f"{_term} — "))
+            pdf.sf(8, "regular"); pdf.set_text_color(*pdf.body_ink)
+            pdf.write(4.4, pdf.safe(_defn))
             pdf.ln(6.2)
     pdf.set_text_color(*_TEXT)
 
@@ -3529,14 +3529,14 @@ def _build_pdf_report(
         pdf.set_text_color(*_TEXT_SOFT)
         _disclaimer_paras = _disclaimer_text.split("\n\n")
         for idx, para in enumerate(_disclaimer_paras):
-            pdf._sf(7.5, "bold" if idx == len(_disclaimer_paras) - 1 else "regular")
+            pdf.sf(7.5, "bold" if idx == len(_disclaimer_paras) - 1 else "regular")
             pdf.multi_cell(0, 3.8, _safe(para))
             pdf.ln(2.5)
         pdf.set_text_color(*_TEXT)
 
     # The final page never triggers add_page, so decorate its void directly
     # (no-op on a full-bleed disclaimer / cover page).
-    pdf._decorate_void()
+    pdf.decorate_void()
     _stamp_attribution(pdf)
     _stamp_provenance(pdf, terms, report_title)
     return bytes(pdf.output())
