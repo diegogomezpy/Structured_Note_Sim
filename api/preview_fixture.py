@@ -286,6 +286,47 @@ def compare_data(terms) -> dict:
     }
 
 
+
+def live_figure(terms, *, real: bool = False, lang: str = "en"):
+    """The Current Performance chart — realised prices from issue to today.
+
+    In real mode this now builds `build_live_performance_chart`, the SAME
+    builder the report uses. It used to hand back the Monte-Carlo worst-of FAN,
+    so the preview showed a projection fan under a heading about realised
+    performance — a different chart from the one the document renders.
+    """
+    if not real:
+        return object()
+    import charts
+    import pandas as pd
+    import translations
+
+    tr = translations.Translator(lang)
+    closes = underlying_closes(terms)
+    hist = pd.DataFrame(closes)
+    issue = hist.index[0]
+    today = hist.index[-1]
+    maturity = issue + pd.Timedelta(days=int(365.25 * terms.maturity))
+    n_obs = max(1, terms.n_obs)
+    step = max(1, len(hist) // (n_obs + 1))
+    markers, future = [], []
+    for i in range(n_obs):
+        when = issue + (maturity - issue) * (i + 1) / n_obs
+        if when <= today:
+            # Keys are the builder's contract (`api/engine.py` builds the same
+            # dict): `autocalled` / `paid`, not `autocall` / `coupon`.
+            markers.append({"date": hist.index[min((i + 1) * step, len(hist) - 1)],
+                            "label": str(i + 1), "wof": float(0.98 - 0.01 * i),
+                            "autocalled": False, "paid": bool(i % 3),
+                            "amount": terms.coupon_rate if i % 3 else 0.0,
+                            "released": 0})
+        else:
+            future.append((str(i + 1), when))
+    return charts.build_live_performance_chart(
+        hist, issue, today, maturity, markers, future,
+        terms.knock_in_barrier, terms.autocall_barrier, terms.coupon_barrier, tr)
+
+
 def _panels(n: int = 1) -> list[dict]:
     """Captured path-explorer panels (MC and backtest use the same shape)."""
     return [{"title": "", "issue": "2019-04-01", "path": object(), "price": object()}
@@ -392,7 +433,7 @@ def extras(terms, *, real: bool = False, lang: str = "en",
         "bt_summary": bt_summary(terms),
         "bt_figures": figs,
         "live_data": live_data(terms),
-        "live_figure": (figs.get("prices") if real else stub()),
+        "live_figure": live_figure(terms, real=real, lang=lang),
         "compare_data": compare_data(terms) if want_cmp else None,
         "compare_figures": cmp_figs if want_cmp else None,
         "underlying_metrics": underlying_metrics(terms),

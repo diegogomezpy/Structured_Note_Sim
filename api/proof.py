@@ -43,7 +43,8 @@ for _p in (str(_REPO), str(_REPO / "app")):
         sys.path.insert(0, _p)
 
 from core.note import NoteTerms                    # noqa: E402
-import charts                                      # noqa: E402
+import charts
+import underlyings                                      # noqa: E402
 import pdf_report                                  # noqa: E402  (bare name — see above)
 
 from . import preview_fixture as fixture           # noqa: E402
@@ -182,8 +183,17 @@ def render_proof(*, branding: dict | None = None, terms: dict | None = None,
             branding=branding,
             include_sections=(expand_section_keys(sections, len(note.tickers or {}))
                               if sections else None),
-            logo_urls=None,
-            issuer_logo_url=None,
+            # Resolving these is what puts company logos in the preview. They
+            # were None, so the proof drew the ticker-initial fallback while the
+            # real report drew logos — the preview disagreeing with the document
+            # it previews. `logo_for` only BUILDS a URL; the fetch happens in
+            # `_load_ticker_logo`, which caches successes process-wide, so the
+            # cost is one round-trip per ticker per process.
+            logo_urls={nm: underlyings.logo_for(sym)
+                       for sym, nm in note.tickers.items()},
+            issuer_logo_url=underlyings.issuer_logo_for(
+                (getattr(note, "issuer_id", "") or getattr(note, "issuer", "") or "").strip())
+                or None,
             logo_tickers={name: sym for sym, name in note.tickers.items()},
             # Stand-in data for every section gated on something other than the
             # Monte Carlo run — backtest, current performance, A/B comparison,
