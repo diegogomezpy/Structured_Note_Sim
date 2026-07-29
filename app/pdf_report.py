@@ -85,7 +85,7 @@ from fpdf import FPDF
 from reportkit.theme import (  # noqa: E402
     _dev_rgb, _chamfer_outline, _chamfer_dims,
     _fill_chamfer, _stroke_chamfer, _hex_cluster,
-    build_tokens, resolve_theme, paint_shape, resolve_color,
+    build_tokens, resolve_theme, paint_shape, resolve_color, shape_inset,
     blend as _blend,
     AMBER as _AMBER, AMBER_DARK as _AMBER_DARK, MUTED as _MUTED,
     BODY_INK as _BODY_INK, RULE_SOFT as _RULE_SOFT, FOOTNOTE_GREY as _FOOTNOTE_GREY,
@@ -1880,27 +1880,53 @@ def _cover_page(
                     (_t("expected_irr", lang),        f"{results.get('expected_irr', 0):.2%}"),
                     (_t("p_below_par", lang),         f"{results.get('prob_knock_in_total', 0):.2%}"),
                     (_t("p_above_par", lang),         f"{results.get('prob_above_par', 0):.1%}")]
+            _kpi_keys = ["expected_redemption", "expected_irr", "p_below_par", "p_above_par"]
         elif _has_mc:
             kpis = [(_t("expected_irr", lang),  f"{results.get('expected_irr', 0):.2%}"),
                     (_t("prob_autocall", lang), f"{results.get('prob_autocall', 0):.1%}"),
                     (_t("prob_knock_in", lang), f"{results.get('prob_knock_in_total', 0):.2%}")]
+            _kpi_keys = ["expected_irr", "prob_autocall", "prob_knock_in"]
             if bt_summary:
                 kpis.append((_t("mean_hist_irr", lang), f"{bt_summary.get('mean_irr', 0):.2%}"))
+                _kpi_keys.append("mean_hist_irr")
             else:
                 kpis.append((_t("expected_total_return", lang),
                              f"{results.get('expected_total_return', 0):.2%}"))
+                _kpi_keys.append("expected_total_return")
         else:  # backtest only
             kpis = [(_t("mean_hist_irr", lang),  f"{bt_summary.get('mean_irr', 0):.2%}"),
                     (_t("p_autocall", lang),     f"{bt_summary.get('prob_called', 0):.1%}"),
                     (_t("prob_knock_in", lang),  f"{bt_summary.get('prob_knock_in', 0):.2%}"),
                     (_t("coupon_pa", lang),      f"{terms.coupon_pa * 100:.2f}%")]
+            _kpi_keys = ["mean_hist_irr", "p_autocall", "prob_knock_in", "coupon_pa"]
+
+        # Inset by the masthead's CUT, not by the fixed text padding. A chamfer
+        # removes a triangle from each bottom corner and the cut scales with the
+        # panel, so enlarging it clipped the first and last KPI — the strip was
+        # drawn at a constant `pad` that knew nothing about the shape.
+        _cm = getattr(getattr(pdf, "theme", None), "spec", None) or {}
+        _shape = ((_cm.get("cover_masthead") or {}).get("shape")
+                  if isinstance(_cm, dict) else None)
+        _kpi_pad = max(pad, shape_inset(_shape, W, MH) + 3.0)
+
+        # Which KPIs, and whether any — the branding's `masthead_metrics`, the
+        # same contract as `cover_metrics` on the cover footer band: absent =>
+        # the defaults above; an explicit (possibly empty) list => exactly those,
+        # so the whole strip can be turned off.
+        _sel = getattr(pdf, "masthead_metrics", None)
+        if _sel is not None:
+            _by_key = dict(zip(_kpi_keys, kpis))
+            kpis = [_by_key[k] for k in _sel if k in _by_key]
 
         strip_y = y_m + MH - 24
-        pdf.set_fill_color(*_blend(pdf.ink, _WHITE, 0.18))
-        pdf.rect(x0 + pad, strip_y, W - 2 * pad, 0.3, style="F")
-        kw = (W - 2 * pad) / len(kpis)
+        if not kpis:                       # an explicit empty selection
+            pass
+        else:
+            pdf.set_fill_color(*_blend(pdf.ink, _WHITE, 0.18))
+        pdf.rect(x0 + _kpi_pad, strip_y, W - 2 * _kpi_pad, 0.3, style="F")
+        kw = (W - 2 * _kpi_pad) / max(1, len(kpis))
         for i, (lbl, val) in enumerate(kpis):
-            cx = x0 + pad + i * kw
+            cx = x0 + _kpi_pad + i * kw
             pdf.set_fill_color(*pdf.lime)
             pdf.rect(cx, strip_y + 4, 0.8, 14, style="F")
             pdf.set_xy(cx + 3, strip_y + 4)
@@ -2898,6 +2924,11 @@ def _build_pdf_report(
     pdf.cover_metrics = list(_cm) if isinstance(_cm, (list, tuple)) else None
     pdf.underlying_labels = ("name" if _brand.extras.get("underlying_labels") == "name"
                              else "ticker")
+    # Which masthead KPIs, if any. Same contract as `cover_metrics`: absent =>
+    # the analytical defaults; an explicit (possibly empty) list => exactly
+    # those, so the strip can be turned off entirely.
+    _mm = _brand.extras.get("masthead_metrics")
+    pdf.masthead_metrics = list(_mm) if isinstance(_mm, (list, tuple)) else None
 
     # ── Outline ────────────────────────────────────────────────────────────
     # Decide which chapters this report actually contains BEFORE the contents

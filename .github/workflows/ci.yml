@@ -53,7 +53,7 @@ jobs:
       # free from the checkout; now they do not.
       - name: Unit tests (quant core)
         run: |
-          pip install pytest numpy pandas scipy "reportkit @ git+https://github.com/diegogomezpy/report_maker@v1.1.0"
+          pip install pytest numpy pandas scipy "reportkit @ git+https://github.com/diegogomezpy/report_maker@v1.2.0"
           python -m pytest tests/ -q
 
   golden-pdf:
@@ -74,5 +74,5 @@ jobs:
       # named here they run nowhere, which is what happened to the layout test.
       - name: Render the report, diff the baseline, check layout invariants
         run: |
-          pip install pytest numpy pandas scipy fpdf2 plotly Pillow pypdfium2 "reportkit @ git+https://github.com/diegogomezpy/report_maker@v1.1.0"
+          pip install pytest numpy pandas scipy fpdf2 plotly Pillow pypdfium2 "reportkit @ git+https://github.com/diegogomezpy/report_maker@v1.2.0"
           python -m pytest tests/test_golden_pdf.py tests/test_pdf_layout.py -q
