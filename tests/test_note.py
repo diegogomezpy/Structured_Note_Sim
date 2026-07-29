@@ -301,3 +301,64 @@ def test_replay_note_window_uses_absolute_periods():
     assert [row["period"] for row in r["rows"]] == [3, 4]
     assert r["rows"][0]["coupon_amount"] == pytest.approx(0.04)   # 1 arrear + 1 current
     assert r["autocall_period"] == 0                              # 80% never hits 100%
+
+
+# ── participation: the protection floor ──────────────────────────────────────
+
+def _prot_note(prot, downside="full", strike=1.0, rate=1.0, cap=0.30):
+    from core.note import NoteTerms
+    return NoteTerms.from_dict({
+        "name": "P", "maturity": 3.0, "payment_freq": "annual", "coupon_pa": 0.0,
+        "coupon_barrier": 0.0, "autocall_barrier": 0.0, "autocall_start_period": 1,
+        "knock_in_barrier": 0.0, "memory": False, "coupon_basket": "worst_of",
+        "autocall_basket": "worst_of", "note_type": "participation",
+        "participation_downside": downside, "participation_upside": "linear",
+        "participation_rate": rate, "participation_strike": strike,
+        "protection_level": prot, "upside_cap": cap, "tickers": {"A": "A"},
+    })
+
+
+def test_full_protection_is_a_floor_not_a_flat_payout():
+    """"Protected at 90%" means never LESS than 90% — not always exactly 90%.
+
+    The redemption used to be a flat `protection_level` for every basket level
+    below the strike, so a basket that finished at 95% paid 90% and the holder
+    lost 5 points they had actually earned.
+    """
+    import numpy as np
+    from core.note import _participation_redemption
+    t = _prot_note(0.90)
+    B = np.array([0.70, 0.85, 0.90, 0.95, 0.99])
+    R = _participation_redemption(B, t)
+    assert list(np.round(R, 6)) == [0.90, 0.90, 0.90, 0.95, 0.99]
+
+
+def test_the_protection_floor_has_no_step_at_the_strike():
+    """The defect the flat floor produced: a 10-point jump between a basket at
+    99.9% and one at 100%. A term sheet describes no such cliff."""
+    import numpy as np
+    from core.note import _participation_redemption
+    t = _prot_note(0.90)
+    just_under, at_strike = _participation_redemption(np.array([0.9999, 1.0]), t)
+    assert abs(at_strike - just_under) < 1e-3, (
+        f"discontinuity at the strike: {just_under:.4f} -> {at_strike:.4f}")
+
+
+def test_full_capital_protection_is_unchanged():
+    """prot >= 1 is the common case and must price exactly as it always did:
+    flat par below the strike."""
+    import numpy as np
+    from core.note import _participation_redemption
+    R = _participation_redemption(np.array([0.4, 0.7, 0.95, 1.0]), _prot_note(1.0))
+    assert list(np.round(R, 6)) == [1.0, 1.0, 1.0, 1.0]
+
+
+def test_buffer_and_airbag_are_untouched_by_the_floor_fix():
+    """They have their own shapes; only `full` changed."""
+    import numpy as np
+    from core.note import _participation_redemption
+    B = np.array([0.95, 0.85])
+    buf = _participation_redemption(B, _prot_note(0.90, downside="buffer"))
+    air = _participation_redemption(B, _prot_note(0.90, downside="airbag"))
+    assert list(np.round(buf, 6)) == [1.0, 0.95]          # par in the buffer, then 1:1
+    assert list(np.round(air, 6)) == [1.0, round(0.85 / 0.90, 6)]   # geared below

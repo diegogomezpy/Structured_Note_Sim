@@ -27,7 +27,11 @@ export function participationRedemption(B: number, t: NoteTerms): number {
   let Rdn: number
   if (pd === 'buffer') Rdn = B >= prot ? 1 : 1 - (prot - B)
   else if (pd === 'airbag') Rdn = B >= prot ? 1 : (prot > 0 ? B / prot : 0)
-  else Rdn = Math.min(prot, 1)
+  // `full` is a FLOOR under the basket, not a flat payout: R = max(B, prot).
+  // "Protected at 90%" means never less than 90%, not always exactly 90% — at
+  // B = 95% the holder keeps 95%. A flat floor jumped to par AT the strike, a
+  // discontinuity the diagram drew as a step. Identical when prot >= 1.
+  else Rdn = Math.max(B, Math.min(prot, 1))
 
   return Math.max(B >= strike ? Rup : Rdn, 0)
 }

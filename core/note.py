@@ -671,8 +671,15 @@ def _participation_redemption(B: np.ndarray, terms: "NoteTerms") -> np.ndarray:
     elif dn_style == "airbag":
         R_dn = np.where(B >= prot, 1.0,
                         np.divide(B, prot, out=np.zeros_like(B), where=(prot > 0)))
-    else:  # full — flat protection floor (par when prot >= 1)
-        R_dn = np.full_like(B, min(prot, 1.0))
+    else:  # full — a FLOOR under the basket, not a flat payout
+        # R = max(B, prot). "Protected at 90%" means you never get less than
+        # 90%, not that you always get exactly 90%: at B = 95% the holder keeps
+        # 95%. The old `full_like(B, prot)` paid a flat 90% for every basket
+        # level below the strike and then jumped to par AT the strike — a 10-point
+        # discontinuity at B = 100%, which is a cliff no term sheet describes.
+        # Identical for prot >= 1 (full capital protection), so a 100%-protected
+        # note prices exactly as before.
+        R_dn = np.maximum(B, min(prot, 1.0))
 
     R = np.where(B >= strike, R_up, R_dn)
     return np.maximum(R, 0.0)
