@@ -2374,7 +2374,31 @@ def _build_report_pdf(terms: NoteTerms, *, sections: list[str] | None = None, la
             "wof_fan": charts.build_wof_fan(
                 None, t_grid, terms.knock_in_barrier, obs_pairs, tr,
                 autocall_barrier=terms.autocall_barrier, bands=wof_bands,
-                participation=(getattr(terms, "note_type", "") == "participation")),
+                participation=_rep_part),
+            # Held notes only: the realised stretch joined to the simulated envelope,
+            # the report's counterpart to the path explorer's fan. None otherwise,
+            # and the PDF block is skipped rather than drawing an empty axis.
+            "position_fan": (
+                charts.build_position_fan(
+                    sf["hist_t"],
+                    # The SAME reduction the fan and the inspector use, so the
+                    # report's realised line is the same quantity as the app's.
+                    _reduce_to_line(np.asarray(sf["hist_perf"], dtype=float),
+                                    getattr(terms, "note_type", ""),
+                                    getattr(terms, "participation_basket", None)),
+                    wof_bands, t_grid, terms.knock_in_barrier, obs_pairs, tr,
+                    autocall_barrier=terms.autocall_barrier,
+                    settle_t=sf.get("settle_t"), participation=_rep_part)
+                if sf.get("hist_perf") is not None else None),
+            # Cliquet only: one payoff mini per reset period. The builder returns
+            # None when the note isn't periodic, so this is safe for every type.
+            "cliquet": (
+                charts.build_cliquet_profiles(
+                    terms, note.get("period_move_mean", []),
+                    note.get("period_income_mean", []),
+                    note.get("period_move_p25", []),
+                    note.get("period_move_p75", []), tr)
+                if getattr(terms, "participation_periodic", False) else None),
             "individual": [(nm, charts.build_fan_chart(None, nm, t_grid, obs_pairs, tr,
                                                        bands=asset_bands[i]))
                            for i, nm in enumerate(asset_names)],

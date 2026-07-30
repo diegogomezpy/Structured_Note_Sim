@@ -154,6 +154,14 @@ def test_held_position_report_is_pixel_identical(theme):
 
 
 @pytest.mark.parametrize("theme", THEMES)
+def test_cliquet_report_is_pixel_identical(theme):
+    """A periodic participation note is the only shape that draws the per-period
+    payoff minis, so without this case that chart is guarded by nothing."""
+    _assert_pixel_identical(f"{theme}:cliquet",
+                            _rasterise(_render(theme, kind="cliquet")))
+
+
+@pytest.mark.parametrize("theme", THEMES)
 def test_participation_report_renders(theme):
     """The participation payoff branch draws a different summary and profile."""
     pages = _rasterise(_render(theme, kind="participation"))

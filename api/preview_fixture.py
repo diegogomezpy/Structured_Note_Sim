@@ -41,6 +41,22 @@ def note_terms(kind: str = "autocall"):
     """A representative note of each family the report can render."""
     from core.note import NoteTerms
 
+    if kind == "cliquet":
+        # A periodic participation note: the ONLY shape that draws the per-period
+        # payoff minis, so without this fixture that chart is guarded by nothing.
+        return NoteTerms.from_dict({
+            "name": "Sample Cliquet Note",
+            "maturity": 2.0, "payment_freq": "quarterly", "coupon_pa": 0.0,
+            "coupon_barrier": 0.0, "autocall_barrier": 0.0,
+            "autocall_start_period": 1, "knock_in_barrier": 0.0,
+            "memory": False, "coupon_basket": "worst_of",
+            "autocall_basket": "worst_of", "note_type": "participation",
+            "participation_downside": "buffer", "participation_upside": "linear",
+            "participation_rate": 1.0, "participation_strike": 1.0,
+            "protection_level": 0.90, "participation_periodic": True,
+            "period_cap": 0.06,
+            "tickers": {"AAA": "Alpha Corp", "BBB": "Beta SA"},
+        })
     if kind == "participation":
         return NoteTerms.from_dict({
             "name": "Sample Participation Note",
@@ -121,6 +137,13 @@ def results(terms) -> dict:
         # Position state, echoed exactly as price_note echoes it. 0 / absent for a
         # note with no owner, so the unheld fixtures are byte-for-byte unchanged.
         "periods_elapsed": k,
+        # Cliquet per-reset stats. Present only for a periodic note, exactly as
+        # price_note returns them, so every other fixture is unchanged.
+        **({"period_move_mean":   [0.021, -0.014, 0.038, 0.006, 0.029, -0.031, 0.012, 0.045][:n_obs],
+            "period_income_mean": [0.019, 0.000, 0.034, 0.006, 0.026, 0.000, 0.011, 0.038][:n_obs],
+            "period_move_p25":    [-0.042, -0.071, -0.019, -0.055, -0.030, -0.088, -0.048, -0.011][:n_obs],
+            "period_move_p75":    [0.084, 0.052, 0.101, 0.068, 0.093, 0.037, 0.075, 0.112][:n_obs]}
+           if getattr(terms, "participation_periodic", False) else {}),
         "realised_income": HELD_INCOME_SINCE_SETTLEMENT if held else 0.0,
         "elapsed_years": HELD_ELAPSED_YEARS if held else 0.0,
         "cost_basis": float(terms.cost_basis),
@@ -186,6 +209,15 @@ def figures(terms=None) -> dict:
     # previewed rather than silently skipped.
     d["panels"] = [{"title": None, "wof": object(), "num": 1}]
     d["single_path_num"] = 1
+    # Two figures that exist only for a note of the right SHAPE, so they are keyed
+    # off `terms` rather than always present. Without this the golden renders a
+    # document with neither and cannot see them at all — the same blind spot the
+    # position band had before the "position" fixture existed.
+    if terms is not None:
+        if getattr(terms, "is_held", False):
+            d["position_fan"] = object()
+        if getattr(terms, "participation_periodic", False):
+            d["cliquet"] = object()
     return d
 
 

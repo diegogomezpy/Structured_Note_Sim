@@ -38,6 +38,13 @@ _STRINGS: dict[str, tuple[str, str]] = {
     "time_months":              ("Time (months)",                    "Tiempo (meses)"),
     "price":                    ("Price",                            "Precio"),
     "median":                   ("Median",                           "Mediana"),
+    # Held position — the realised half of build_position_fan, and its markers.
+    "fan_realised":             ("What already happened",            "Lo que ya ocurrio"),
+    "fan_today":                ("today",                            "hoy"),
+    "fan_bought":               ("bought",                           "comprado"),
+    # Cliquet small multiples (build_cliquet_profiles).
+    "cliquet_period":           ("Period {k}",                       "Periodo {k}"),
+    "cliquet_locked":           ("locks in {v}",                     "fija {v}"),
     "pct_1_99":                 ("1st–99th pct",                     "Pct 1–99"),
     "pct_5_95":                 ("5th–95th pct",                     "Pct 5–95"),
     "pct_25_75":                ("25th–75th pct",                    "Pct 25–75"),

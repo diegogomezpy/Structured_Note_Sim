@@ -44,6 +44,11 @@ _BLUE_LIGHT   = "#60a5fa"   # light blue secondary series
 _RED          = "#dc2626"   # barrier / loss / negative
 _GREY         = "#6b7280"   # warm grey — secondary lines/text
 _GREEN        = "#16a34a"   # coupon paid / positive event
+_INK_LINE     = "#2c3e50"   # realised history. In plotlyTheme's remap table and
+                            # _rebrand_figure's, so it lands on the ink token in
+                            # both surfaces — near-black on paper, near-white in
+                            # dark mode. Do not swap for a colour outside those
+                            # tables; an unmapped literal survives untouched.
 _WHITE        = "white"
 # Brand-neutral green/teal categorical ramp for discrete multi-slice charts
 # (e.g. the worst-asset donut) so they read on-brand instead of a clashing blue.
@@ -535,6 +540,174 @@ def build_wof_fan(
                     font=dict(size=10), bgcolor="rgba(0,0,0,0)", bordercolor="rgba(0,0,0,0)"),
         margin=dict(l=60, r=30, t=50, b=78),
     )
+    return fig
+
+
+def build_cliquet_profiles(
+    terms,
+    period_move_mean:   list[float],
+    period_income_mean: list[float],
+    period_move_p25:    list[float],
+    period_move_p75:    list[float],
+    tr:                 Translator,
+    max_cols:           int = 4,
+) -> "go.Figure | None":
+    """A cliquet as a SERIES of payoff curves — one mini per reset period.
+
+    Each period is an independent participation bet on that period's basket move
+    (the strike resets to par, capped by `period_cap`), and the locked-in P&Ls sum
+    into the final redemption. Each mini marks where that period typically lands
+    (the mean simulated move, as a dot on its own curve) inside its inter-quartile
+    band, so the reader sees both the shape of the bet and where it usually falls.
+
+    The curve is evaluated by `_participation_redemption` — the SAME function that
+    prices the payoff — on per-period effective terms, so this cannot drift from
+    what was priced. The web mirror is web/src/components/CliquetProfiles.tsx,
+    which builds the identical effective terms through participation.ts.
+
+    Returns None when there is nothing to draw, so the caller can skip the block
+    rather than emit an empty figure.
+    """
+    from dataclasses import replace as _replace
+
+    from core.note import _participation_redemption
+
+    n = min(len(period_move_mean), len(period_income_mean),
+            len(period_move_p25), len(period_move_p75))
+    if n < 1:
+        return None
+
+    # Per-period effective terms: the strike resets to par each period and the
+    # per-period cap stands in for the note's overall upside cap. `_replace` keeps
+    # every other field, so a buffer/airbag/bear downside carries through.
+    eff = _replace(terms, participation_periodic=False, participation_strike=1.0,
+                   upside_cap=getattr(terms, "period_cap", None))
+
+    b = np.linspace(0.6, 1.4, 81)
+    r = _participation_redemption(b, eff)
+
+    cols = min(max_cols, n)
+    rows = int(np.ceil(n / cols))
+    titles = [tr("cliquet_period", k=i + 1) for i in range(n)]
+    fig = make_subplots(rows=rows, cols=cols, subplot_titles=titles,
+                        horizontal_spacing=0.06,
+                        vertical_spacing=0.16 if rows > 1 else 0.0,
+                        shared_yaxes=True)
+
+    for i in range(n):
+        rr, cc = i // cols + 1, i % cols + 1
+        lo = float(np.clip(1.0 + period_move_p25[i], b[0], b[-1]))
+        hi = float(np.clip(1.0 + period_move_p75[i], b[0], b[-1]))
+        fig.add_trace(go.Scatter(x=b, y=r, mode="lines", showlegend=False,
+                                 line=dict(color=_GREEN, width=1.8),
+                                 hovertemplate="%{x:.0%} → %{y:.1%}<extra></extra>"),
+                      row=rr, col=cc)
+        # IQR of the period's move, as a band behind the curve.
+        #
+        # Two ordering traps here, both SILENT. `add_vrect(row=, col=)` drops the
+        # shape entirely if that subplot has no trace yet — no error, it just
+        # doesn't appear — so the curve must be added first. And the axis cannot be
+        # named by hand: subplot 1's y axis is "y", not "y1", so an f"y{i+1} domain"
+        # reference raises for exactly the first mini and works for every other one.
+        # `add_vrect` spans the subplot's height on its own; `layer="below"` keeps
+        # it behind the curve despite being added after it.
+        fig.add_vrect(x0=lo, x1=hi, fillcolor=_FILL_INNER_G, line_width=0,
+                      layer="below", row=rr, col=cc)
+        mb = float(np.clip(1.0 + period_move_mean[i], b[0], b[-1]))
+        fig.add_trace(go.Scatter(
+            x=[mb], y=[float(_participation_redemption(np.array([mb]), eff)[0])],
+            mode="markers", showlegend=False,
+            marker=dict(color=_INK_LINE, size=7, line=dict(color="#fff", width=1.4)),
+            hovertemplate=tr("cliquet_locked", v=f"{period_income_mean[i]:+.2%}")
+                          + "<extra></extra>"),
+            row=rr, col=cc)
+        fig.add_hline(y=1.0, line_color=_GREY, line_width=0.6, row=rr, col=cc)
+
+    fig.update_xaxes(tickformat=".0%", tickvals=[0.6, 1.0, 1.4], tickfont=dict(size=9))
+    fig.update_yaxes(tickformat=".0%", tickfont=dict(size=9))
+    fig.update_annotations(font=dict(size=10))
+    fig.update_layout(showlegend=False,
+                      margin=dict(l=48, r=20, t=42, b=40),
+                      height=190 * rows + 40)
+    _apply_theme(fig)
+    return fig
+
+
+def build_position_fan(
+    hist_t:           np.ndarray,          # years relative to TODAY (negative)
+    hist_line:        np.ndarray,          # realised level, on the payoff's own basket
+    bands:            np.ndarray,          # (7, N+1) simulated percentile envelope
+    t_grid:           np.ndarray,          # years from today (0 …)
+    knock_in_barrier: float,
+    obs_labels:       list[tuple[str, float]],
+    tr:               Translator,
+    autocall_barrier: float | None = None,
+    settle_t:         float | None = None,  # years relative to today (negative)
+    participation:    bool = False,
+) -> go.Figure:
+    """A HELD note in one picture: what already happened, then what is left.
+
+    The realised stretch sits at negative time and the simulated envelope opens at
+    0. Because both are measured against the SAME original fixings, the realised
+    line ends exactly where the envelope begins — no step at the join — so a reader
+    sees the whole life instead of a projection that appears from nowhere at today's
+    level.
+
+    The web mirror is web/src/components/PathExplorer.tsx:PathFan. It overlays
+    sampled paths where this draws percentile bands: a PDF page cannot carry two
+    thousand translucent lines legibly, and the envelope says the same thing at
+    print resolution.
+    """
+    hist_t = np.asarray(hist_t, dtype=float) * 12.0
+    hist_line = np.asarray(hist_line, dtype=float)
+    t_grid = np.asarray(t_grid, dtype=float) * 12.0
+    obs_labels = [(lbl, tv * 12.0) for lbl, tv in obs_labels]
+
+    _f_out, _f_mid, _f_in = ((_FILL_OUTERMOST_G, _FILL_OUTER_G, _FILL_INNER_G)
+                             if participation else (_FILL_OUTERMOST, _FILL_OUTER, _FILL_INNER))
+    fig = go.Figure()
+    for lo, hi, fill, key in ((0, 6, _f_out, "pct_1_99"), (1, 5, _f_mid, "pct_5_95"),
+                              (2, 4, _f_in, "pct_25_75")):
+        fig.add_trace(go.Scatter(
+            x=np.concatenate([t_grid, t_grid[::-1]]),
+            y=np.concatenate([bands[hi], bands[lo][::-1]]),
+            fill="toself", fillcolor=fill,
+            line=dict(color="rgba(0,0,0,0)"), name=tr(key)))
+    fig.add_trace(go.Scatter(
+        x=t_grid, y=bands[3], mode="lines", name=tr("median"),
+        line=dict(color=_GREEN if participation else _BLUE, width=2)))
+    # Added last so it reads above the envelope: this half is fact, not projection.
+    fig.add_trace(go.Scatter(
+        x=hist_t, y=hist_line, mode="lines", name=tr("fan_realised"),
+        line=dict(color=_INK_LINE, width=2.4)))
+
+    if not participation:
+        fig.add_hline(y=knock_in_barrier, line_dash="dash", line_color=_RED,
+                      annotation_text=tr("chart_ki_barrier", lvl=f"{knock_in_barrier:.0%}"),
+                      annotation_position="bottom right")
+        # The barrier must reach back across the realised stretch — it applied then
+        # too, and a line starting at today would imply the note was unprotected.
+        _add_autocall_barrier(fig, autocall_barrier, None, tr,
+                              x0=float(hist_t[0]) if len(hist_t) else 0.0)
+    fig.add_vline(x=0.0, line_color=_GREY, line_width=1,
+                  annotation_text=tr("fan_today"), annotation_position="top")
+    if settle_t is not None and settle_t < -1e-6:
+        fig.add_vline(x=float(settle_t) * 12.0, line_dash="dot", line_color=_GREY,
+                      line_width=1, annotation_text=tr("fan_bought"),
+                      annotation_position="top")
+    for label, t_val in obs_labels:
+        fig.add_vline(x=t_val, line_dash="dot", line_color="#aaa",
+                      annotation_text=label, annotation_position="top")
+
+    fig.update_layout(
+        xaxis=dict(title=tr("time_months"), tickformat=".0f"),
+        yaxis=dict(title=tr("perf_vs_initial"), tickformat=".0%"),
+        hovermode="x unified",
+        legend=dict(orientation="h", yanchor="top", y=-0.18, xanchor="center", x=0.5,
+                    font=dict(size=10), bgcolor="rgba(0,0,0,0)", bordercolor="rgba(0,0,0,0)"),
+        margin=dict(l=60, r=30, t=50, b=78),
+    )
+    _apply_theme(fig)
     return fig
 
 

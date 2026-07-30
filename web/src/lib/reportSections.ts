@@ -23,6 +23,10 @@ export const TREE: Group[] = [
     ['mc_wof', 'Worst-of fan chart', 'Abanico del peor de'],
     ['mc_sample', 'Sample paths', 'Trayectorias de muestra'],
     ['mc_single_wof', 'Selected path(s)', 'Trayectoria(s) seleccionada(s)'],
+    // Held notes only — realised history joined to the simulated envelope.
+    ['mc_position_fan', 'Realised + projected', 'Realizado + proyectado'],
+    // Cliquet notes only — one payoff mini per reset period.
+    ['mc_cliquet', 'Per-period payoffs (cliquet)', 'Pagos por periodo (cliquet)'],
     ['mc_fans', 'Per-underlying fans', 'Abanicos por activo'],
     ['calib_corr', 'Correlation diagnostics', 'Diagnóstico de correlación'],
     ['calib_table', 'Calibration table', 'Tabla de calibración'],

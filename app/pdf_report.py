@@ -417,6 +417,10 @@ _LABELS: dict[str, dict[str, str]] = {
     "cmp_col_delta":         {"en": "Δ (B − A)",                    "es": "Δ (B − A)"},
     "cmp_fig_irr":           {"en": "IRR p.a. distribution — A vs B",
                              "es": "Distribución de TIR anual — A vs B"},
+    "fig_position_fan":      {"en": "What already happened, and what is left",
+                              "es": "Lo que ya ocurrio, y lo que queda"},
+    "fig_cliquet":           {"en": "Each reset period as its own payoff",
+                              "es": "Cada periodo de reinicio como su propio pago"},
     "cmp_fig_wof":           {"en": "Worst-of envelope with both barrier sets",
                               "es": "Envolvente del peor con ambas barreras"},
     "cmp_fig_delta":         {"en": "Where B's edge comes from, by outcome",
@@ -3329,6 +3333,22 @@ def _build_pdf_report(
             aligns=["L", "R", "R", "R"],
             rounded=True,
         )
+
+    # A HELD note's forward fan starts at today's level with no sign of the life the
+    # note already lived. This draws both halves — the app's path explorer in report
+    # form. Skipped entirely for a note nobody holds (the figure is None then).
+    if figures.get("position_fan") is not None and _inc("mc_position_fan"):
+        _sec()
+        pdf.figure(_fig_to_png(figures["position_fan"], **_kw),
+                   _t("fig_position_fan", lang), src_mc)
+
+    # A cliquet is a SERIES of bets, and a single cumulative chart hides that. One
+    # payoff mini per reset period says what the note actually does. None for every
+    # non-periodic note, so this costs other reports nothing.
+    if figures.get("cliquet") is not None and _inc("mc_cliquet"):
+        _sec()
+        pdf.figure(_fig_to_png(figures["cliquet"], **_kw),
+                   _t("fig_cliquet", lang), src_mc)
 
     # 3b. Price Paths — worst-of fan + per-underlying simulated distributions
     _sec = _lazy_section(_t("mc_subtab_paths", lang), before=_mc_div)
