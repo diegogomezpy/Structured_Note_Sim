@@ -33,7 +33,30 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
-from core.note import NoteTerms, price_note
+from core.note import NoteTerms, price_note, replay_note, _basket
+
+
+def hold_gap(terms: NoteTerms) -> tuple[int, float] | None:
+    """How far into the note's life this position was bought — ``(observations already
+    fixed, years)`` — or None for a note held from issue (or not held at all).
+
+    Both are read off the note's OWN calendar so the backtest replicates the real
+    position: if you bought 14 months into a 3y quarterly note, four observations had
+    fixed and belonged to the seller, and your holding period starts 14 months in.
+    Everything after that is what the historical windows should measure.
+
+    Clamped to leave at least one observation to price — a settlement date past the
+    final observation is a matured note, not a position.
+    """
+    if not (terms.settlement_date and terms.issue_date):
+        return None
+    issue  = pd.Timestamp(terms.issue_date)
+    settle = pd.Timestamp(terms.settlement_date)
+    if settle <= issue:
+        return None                                  # held from issue: nothing elapsed
+    obs_cal = [pd.Timestamp(d) for d in terms.obs_calendar_dates(issue)]
+    k = min(sum(1 for d in obs_cal if d <= settle), terms.n_obs - 1)
+    return k, max(0.0, (settle - issue).days / 365.0)
 
 
 def run_backtest(
@@ -124,13 +147,72 @@ def run_backtest(
     # ── Evaluate with the shared payoff engine ─────────────────────────────
     # With N = n_obs, terms.obs_steps(n_obs) == [1..n_obs]: every column after
     # the fixing is an observation, the last one is final valuation.
-    res = price_note(perf, terms, seed=seed)
+    #
+    # For a POSITION bought after issue, replicate the same gap in every historical
+    # window: price only the observations after the purchase point, carry in whatever
+    # arrears that window had reached, and measure the holding period from the
+    # purchase — not from issue. Without this the earlier coupons counted as the
+    # buyer's and the on-cost IRR was annualised over the whole note life.
+    gap = hold_gap(terms)
+    skipped_called = 0
+    if gap is None:
+        res = price_note(perf, terms, seed=seed)
+    else:
+        k_off, gap_years = gap
+        # A note that had already autocalled by the purchase date could not have been
+        # bought at all, so those windows leave the sample. This is a real selection
+        # effect — you can only buy a note that is still alive — but it biases what
+        # remains toward the windows that did NOT call early, so the count is reported.
+        elapsed_perf = perf[:, 1:k_off + 1, :]                    # (n_issues, k_off, n_assets)
+        alive        = np.ones(n_issues, dtype=bool)
+        pending      = np.zeros(n_issues, dtype=int)
+        opening      = np.ones(n_issues, dtype=float)
+        is_part      = getattr(terms, "note_type", "") == "participation"
+        for i in range(n_issues):
+            if is_part:
+                if getattr(terms, "participation_periodic", False) and k_off:
+                    opening[i] = float(_basket(elapsed_perf[i, -1:, :],
+                                               terms.participation_basket)[0])
+                continue
+            rep = replay_note(elapsed_perf[i], terms) if k_off else None
+            if rep and rep["autocall_period"]:
+                alive[i] = False
+            elif rep:
+                pending[i] = int(rep["pending_coupons"])
+        skipped_called = int((~alive).sum())
+        if not alive.any():
+            # Nothing to measure, but WHY matters — say it rather than showing an
+            # empty backtest that looks like missing data.
+            return pd.DataFrame(), {"n_issues": 0, "skipped_called": skipped_called,
+                                    "purchase_gap_periods": k_off,
+                                    "purchase_gap_years": float(gap_years)}
+
+        # Remaining observation times, measured from the PURCHASE date.
+        rem_times = [t - gap_years for t in terms.obs_times()[k_off:]]
+        res = price_note(perf[alive], terms, seed=seed,
+                         obs_steps=list(range(k_off + 1, n_obs + 1)),
+                         obs_times=rem_times,
+                         periods_elapsed=k_off,
+                         pending_coupons=pending[alive],
+                         start_basket=opening[alive])
+        # Every row below is built from `res`, so the frame must be the same subset.
+        perf         = perf[alive]
+        issue_dates  = [d for d, a in zip(issue_dates, alive) if a]
+        n_issues     = int(alive.sum())
 
     perf_mat = perf[:, -1, :]                                     # (n_issues, n_assets)
+    k_off    = gap[0] if gap else 0
+
+    # `res`'s per-period arrays are aligned to the PRICED window, so an autocall at
+    # window index 1 is term-sheet period k_off+1. The frame reports the TERM SHEET's
+    # numbering (0 still means "reached maturity"), which is what every display layer
+    # and the eligibility check downstream assume.
+    called_abs = np.where(res["autocall_period"] > 0,
+                          res["autocall_period"] + k_off, 0)
 
     bt = pd.DataFrame({
         "Issue Date":       pd.to_datetime(issue_dates),
-        "Call Quarter":     res["autocall_period"],
+        "Call Quarter":     called_abs,
         "Principal":        res["principal_payoffs"],
         "Knock-in":         res["knock_in_triggered"],
         "Total Coupons":    res["coupon_payoffs"],
@@ -139,8 +221,8 @@ def run_backtest(
         "Worst Asset":      [asset_names[j] for j in perf_mat.argmin(axis=1)],
         "Worst Final Perf": perf_mat.min(axis=1),
     })
-    for k, name in enumerate(asset_names):
-        bt[f"{name} Perf"] = perf_mat[:, k]
+    for j, name in enumerate(asset_names):
+        bt[f"{name} Perf"] = perf_mat[:, j]
 
     knock_in_mask = bt["Knock-in"]
 
@@ -166,16 +248,38 @@ def run_backtest(
         # secondary-market purchase price is reflected across every issue window.
         "cost_basis":            float(res["cost_basis"]),
         "prob_loss":             float(res["prob_loss"]),
+        # ── The position the windows replicate ──────────────────────────────
+        # `period_offset` is the same contract as the Monte Carlo's: every
+        # per-period array above describes term-sheet period offset+i+1.
+        "period_offset":          k_off,
+        "purchase_gap_periods":   k_off,
+        "purchase_gap_years":     float(gap[1]) if gap else 0.0,
+        # Every historical window assumes the SAME entry price you actually paid —
+        # no valuation model is applied, so the windows are comparable to each other
+        # but 82% was not necessarily a fair price in each of them. Stated here so a
+        # display layer can say so rather than implying the price was derived.
+        "entry_price":            float(terms.purchase_price or 1.0),
+        # Windows dropped because the note had already autocalled by the purchase
+        # date — you could not have bought it. A real selection effect, and one that
+        # biases the survivors toward the windows that did NOT call early.
+        "skipped_called":         skipped_called,
         # Average time (years) to early redemption over the historical windows that
         # autocalled — None when none did. Same shared-engine measure as the MC run.
         "avg_time_to_autocall":  res["avg_time_to_autocall"],
-        # Per-issue × per-period coupon matrix (n_issues, n_obs), row-aligned with
-        # `bt` (bt is built from `res` in this same order). Powers the path
-        # explorer's "coupon paid at period t" filter over historical issues.
+        # Per-issue × per-period coupon matrix, row-aligned with `bt` (bt is built
+        # from `res` in this same order). Powers the path explorer's "coupon paid at
+        # period t" filter. Width is the PRICED window, so with a purchase gap it is
+        # (n_issues, n_obs − period_offset) and column i is period offset+i+1.
         "coupon_amounts":        res["coupon_amounts"],
-        # Per-issue worst-of trajectory at each observation column (incl. the
-        # t=0 fixing), in note-relative time. Row-aligned with `bt`. Powers the
-        # backtest path explorer's overlaid worst-of fan.
+        # Per-issue worst-of trajectory at each observation column (incl. the t=0
+        # fixing), in note-relative time. Row-aligned with `bt`. Powers the backtest
+        # path explorer's overlaid worst-of fan.
+        #
+        # Deliberately the FULL life, even with a purchase gap — the pre-purchase
+        # stretch is exactly the "what had already happened" context the explorer
+        # wants, and `obs_times_rel` stays years-since-issue to match. So these two
+        # are full-width while `coupon_amounts` is window-width; `period_offset` is
+        # what reconciles them.
         "wof_obs":               perf.min(axis=2),                 # (n_issues, n_obs+1)
         "obs_times_rel":         [0.0] + list(terms.obs_times()),  # years since issue
     }

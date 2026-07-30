@@ -857,7 +857,11 @@ def _participation_periodic_payoff(perf_paths, terms, obs_steps, t_maturity, n_o
     # is the basket's gross
     # return over each reset interval (the reset strike is par).
     B      = np.stack([_basket(perf_paths[:, s, :], terms.participation_basket) for s in obs_steps], axis=1)  # (n_paths, n_obs)
-    B_prev = np.concatenate([np.full((n_paths, 1), float(start_basket)), B[:, :-1]], axis=1)
+    # Scalar for one note (the Monte Carlo) or per-path (the backtest, where each
+    # historical window opens on its own last elapsed reset).
+    opening = np.broadcast_to(np.asarray(start_basket, dtype=float).reshape(-1, 1),
+                              (n_paths, 1))
+    B_prev = np.concatenate([opening, B[:, :-1]], axis=1)
     level  = np.divide(B, B_prev, out=np.ones_like(B), where=(B_prev != 0))   # (n_paths, n_obs)
     # Evaluate each period with the full participation profile (cap = period_cap,
     # strike reset to par). One-period notes, so no periodic flag / maturity cap.
@@ -1020,14 +1024,18 @@ def price_note(
         ABSOLUTE periods, so a note at P5 of P12 behaves like P5 of P12 and not
         like a fresh P1. See api/engine.py:_position_state for how it is derived.
 
-    pending_coupons : int
+    pending_coupons : int or array (n_paths,)
         Memory-coupon arrears carried into the window (unpaid observations before
         the pricing date). The first coupon that pays inside the window releases
-        them, exactly as memory does within it. Ignored without `memory`.
+        them, exactly as memory does within it. Ignored without `memory`. A scalar
+        describes one note's state (the Monte Carlo); an array lets each PATH carry
+        its own, which is what the backtest needs — every historical window reaches
+        the purchase date with a different number of missed coupons.
 
-    start_basket : float
+    start_basket : float or array (n_paths,)
         Cliquet only: the participation basket at the last elapsed reset, so the
         first remaining period measures its move from there instead of from par.
+        Scalar or per-path, for the same reason as `pending_coupons`.
 
     realised_income : float
         Income the HOLDER has already banked on this position — coupons that fixed
@@ -1268,8 +1276,12 @@ def price_note(
         # outstanding until the first coupon inside it pays — group_shifted counts
         # payments strictly before j, so it is 0 exactly on those cells, including
         # the paying one itself (which therefore releases them). 0 by default.
-        if pending_coupons:
-            pending_before = pending_before + int(pending_coupons) * (group_shifted == 0)
+        # `pending_coupons` may be a scalar (one note, one state — the Monte Carlo)
+        # or per-path (the backtest, where every historical window carries in its own
+        # arrears). Reshaped to a column so both broadcast identically.
+        carried_in = np.asarray(pending_coupons, dtype=int).reshape(-1, 1)
+        if carried_in.any():
+            pending_before = pending_before + carried_in * (group_shifted == 0)
 
         coupon_amounts = np.where(
             paid_mask,

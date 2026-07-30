@@ -505,8 +505,8 @@ def inspect_run(run_id: str, *, lang: str = "en", filters: dict | None = None,
     obs_steps = list(run["obs_steps"])
     obs_times = list(run["obs_times"])
     asset_names = run["asset_names"]
-    # A seasoned run priced only the tail of the note, so the window is shorter
-    # than the term sheet and its first column is period `k_off + 1`.
+    # A held run priced only the tail of the note, so the window is shorter than the
+    # term sheet and its first column is period `k_off + 1`.
     k_off   = int(run.get("period_offset", 0))
     n_obs   = terms.n_obs - k_off
     obs_labels = [f"P{k_off + i + 1}" for i in range(n_obs)]
@@ -1159,7 +1159,11 @@ def run_backtest_api(terms: NoteTerms, *, history_years: float | None = None,
     prices = _prices(dict(terms.tickers), years=history_years, field="close")
     bt, summary = run_backtest(prices, terms, bt_start=_ts(bt_start), bt_end=_ts(bt_end))
     if bt.empty:
-        return {"summary": {}, "issues": [], "figures": None}
+        # A position bought after issue can empty the sample entirely — every window
+        # had already autocalled by the purchase date. That is a finding, not missing
+        # data, so the reason travels with the empty result.
+        return {"summary": {k: _f(v) for k, v in (summary or {}).items()},
+                "issues": [], "figures": None}
 
     _note_type = getattr(terms, "note_type", "autocall")
     _is_part = _note_type == "participation"
@@ -1167,6 +1171,9 @@ def run_backtest_api(terms: NoteTerms, *, history_years: float | None = None,
     out_summary = {k: _f(v) for k, v in summary.items()
                    if not isinstance(v, (list, np.ndarray))}
     out_summary["n_issues"] = int(len(bt))
+    # Counts, not measurements — keep them ints through _f's float rounding.
+    for _k in ("period_offset", "purchase_gap_periods", "skipped_called"):
+        out_summary[_k] = int(summary.get(_k, 0) or 0)
     out_summary["note_type"] = _note_type
     out_summary["participation_periodic"] = _periodic
     bt = bt.copy()
@@ -1299,6 +1306,11 @@ def backtest_paths(terms: NoteTerms, *, history_years: float | None = None,
         "note_type": _note_type,
         "obs_times": [round(x, 4) for x in t[1:]],
         "barriers":  barriers,
+        # Where the position was bought, on the same note-relative axis as `t`, so the
+        # explorer can mark it: everything left of the line belonged to the seller.
+        # 0 for a subscription, which draws nothing.
+        "period_offset":      int(summary.get("period_offset", 0) or 0),
+        "purchase_gap_years": _f(summary.get("purchase_gap_years", 0.0) or 0.0),
     }
 
 
