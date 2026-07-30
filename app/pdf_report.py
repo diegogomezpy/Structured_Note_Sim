@@ -165,8 +165,14 @@ _DEFAULT_SECONDARY = (198, 148, 38) # warm institutional gold #C69426 — 2nd ch
 # Brand-config resolution lives in reportkit.branding. Two things stay here
 # because they are ours, not a library's: the note-specific config keys, and the
 # default firm name that reaches the running header.
+#
+# This set is ALSO the allowlist for `Brand.extras`: reportkit copies only
+# `extra_keys` out of the config, so a key read via `_brand.extras.get(...)` but
+# missing here resolves to None forever — silently, since the reader just falls
+# back to its default. That is exactly how `masthead_metrics` shipped inert.
 _NOTE_BRANDING_KEYS = {
     "cover_metrics",       # which key-TERM chips the cover footer band shows
+    "masthead_metrics",    # which KPIs the summary page's dark banner shows
     "underlying_labels",   # "ticker" (default) or "name" for the underlying sub-lines
 }
 _DEFAULT_FIRM_NAME = "Structured Note Analytics"

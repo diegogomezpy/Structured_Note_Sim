@@ -21,6 +21,8 @@ orphan. That is exact, and it fails with the heading's own text in the message.
 """
 from __future__ import annotations
 
+import io
+import pathlib
 import re
 
 import pytest
@@ -447,3 +449,51 @@ def test_comparison_leaves_follow_the_built_tables():
     assert terms_leaf not in cover, (
         f"contents lists {terms_leaf!r} but the body renders no terms table")
     assert metrics_leaf in cover, "the metrics table is rendered but not listed"
+
+
+
+# ── branding extras actually reach the renderer ──────────────────────────────
+def _page_texts(raw: bytes) -> list[str]:
+    """Per-page text of a rendered report. Skips when no rasteriser is installed,
+    same policy as the pixel golden — absent tooling is not a failing test."""
+    pdfium = pytest.importorskip("pypdfium2")
+    doc = pdfium.PdfDocument(io.BytesIO(raw))
+    return [doc[i].get_textpage().get_text_range() for i in range(len(doc))]
+
+
+def test_every_extras_key_the_renderer_reads_is_allowlisted():
+    """`_NOTE_BRANDING_KEYS` doubles as the allowlist reportkit copies into
+    `Brand.extras`. A key read via `_brand.extras.get(...)` but missing from that
+    set resolves to None forever and the reader silently falls back to its default
+    — which is exactly how `masthead_metrics` shipped inert: the PDF Designer's
+    pill row wrote it and the report never saw it. Nothing raised; the toggles
+    simply did nothing."""
+    import app.pdf_report as pr
+
+    src = pathlib.Path(pr.__file__).read_text()
+    read = set(re.findall(r"_brand\.extras\.get\(\s*[\"']([a-z_]+)[\"']", src))
+    assert read, "no _brand.extras.get(...) call sites found — has the pattern changed?"
+    missing = sorted(read - set(pr._NOTE_BRANDING_KEYS))
+    assert not missing, (
+        f"read from Brand.extras but absent from _NOTE_BRANDING_KEYS: {missing}. "
+        "reportkit copies only allowlisted keys, so these resolve to None always.")
+
+
+@pytest.mark.parametrize("sel,expected", [
+    (None,                  None),                 # untouched => the defaults
+    (["prob_knock_in"],     {"P(KNOCK-IN)"}),
+    ([],                    set()),                # explicit none => no strip
+])
+def test_masthead_metrics_selection_reaches_the_strip(sel, expected):
+    """End to end: a selection in the branding config must change what the summary
+    page's KPI strip draws, including turning it off entirely."""
+    brand = dict(gf.branding("mercator"))
+    if sel is not None:
+        brand["masthead_metrics"] = sel
+    page = _page_texts(render_report("mercator", branding_override=brand))[1].upper()
+    shown = {k for k in ("EXPECTED IRR", "P(AUTOCALL)", "P(KNOCK-IN)",
+                         "MEAN HISTORICAL IRR") if k in page}
+    if expected is None:
+        assert len(shown) >= 3, f"expected the default strip, got {shown}"
+    else:
+        assert shown == expected

@@ -89,7 +89,8 @@ def _noise(w: int, h: int, seed: int) -> str:
 
 
 def render_report(theme: str, kind: str = "autocall", *, real_figures: bool = False,
-                  lang: str = "en", include_sections: list[str] | None = None) -> bytes:
+                  lang: str = "en", include_sections: list[str] | None = None,
+                  branding_override: dict | None = None) -> bytes:
     """Build one report through the real ``_build_pdf_report`` entry point.
 
     The single render path for every PDF test — the golden's pixel diff and the
@@ -114,7 +115,12 @@ def render_report(theme: str, kind: str = "autocall", *, real_figures: bool = Fa
             asset_names=res["asset_names"],
             figures=figures(terms),
             lang=lang,
-            branding=branding(theme),
+            # `branding_override` REPLACES the fixture brand wholesale — a test that
+            # wants one extra key passes {**branding(theme), key: value}. Kept as a
+            # replacement rather than a merge so a test can also assert what a brand
+            # WITHOUT a key does, which is the default-vs-explicit distinction that
+            # `cover_metrics` / `masthead_metrics` turn on.
+            branding=(branding(theme) if branding_override is None else branding_override),
             # None ⇒ every section, which is what the golden pins. A list lets a
             # structural test render a report with chapters switched off — the
             # case where the contents list and the body headings have to agree
