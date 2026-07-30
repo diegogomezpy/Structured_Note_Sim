@@ -63,34 +63,40 @@ By default `call_steepness=None` → hard trigger: `autocall_prob()` returns exa
 
 Simple annualisation: `total_return / t_held`. **Not** compound. This matches how structured note coupons are quoted as simple p.a. rates. Expected IRR ≠ ratio of expected total return to expected time held (it's the mean of per-path ratios).
 
-### Secondary-market position (cost basis)
+### The position — what you paid, and what gets modelled
 
-A note can be held as a **position bought after issue at a price away from par**, described by three `NoteTerms` fields: `settlement_date`, `purchase_price` (the CLEAN price as a fraction of nominal) and `accrued_at_purchase` (coupon settled on top). `cost_basis` = `purchase_price + accrued_at_purchase` (a `@property`, never stored) and `is_secondary` is the display switch. The defaults — no settlement date, price 1.0, accrued 0.0 — are a primary subscription at par, so **every existing config prices exactly as before**.
+A note can be held as a **position**: `settlement_date` (when this holder's position started), `purchase_price` (the CLEAN price as a fraction of nominal) and `accrued_at_purchase` (coupon settled on top). `cost_basis` = `purchase_price + accrued_at_purchase` (a `@property`, never stored). The defaults — no settlement date, price 1.0, accrued 0.0 — are a hypothetical note with no owner, so **every existing config prices exactly as before**.
 
-- **`core/note.py:_position_returns()` is the only place the cost basis enters the payoff.** It turns per-path `nominal_payoffs` into `(payoff − cost) / cost` and annualises that over the same `t_held`. All three payoff branches (Phoenix, participation, cliquet) call it, so the Monte Carlo and the backtest — which share `price_note` — can never disagree about a position. `price_note` also returns `cost_basis` and `prob_loss` (P(negative return **on cost**) — distinct from `prob_knock_in_total`, since coupons can carry a knocked-in path back into profit and a discount can rescue a below-par redemption).
-- **Payoffs, barriers and probabilities are untouched** — the cost basis only re-bases the return denominator. `prob_above_par` / `prob_below_par` / the participation breakeven stay measured against par, because they describe the *note*, not the holder.
-- **`settlement_date` only affects the live tab** (`api/engine.py:run_live_api` + `_participation_live_result` via `_settlement_ts` / `_position_summary`): coupons fixed at or before settlement went to the previous holder, so they are excluded from `income_since` and each observation row is tagged `held`. Holding time runs from settlement, and `irr_to_date` becomes income / cost / holding-years — which reduces exactly to the old formula for a par subscription. The band also reports `pull_to_par` and `return_on_cost`.
-- The cost basis is orthogonal to **seasoning** (below): one says what you paid, the other says what gets simulated.
+**`settlement_date` is the single switch.** Set it (with an `issue_date`) and `NoteTerms.is_held` is true, which changes what gets modelled: the app stops pricing "a hypothetical note issued today for the full tenor" and models **what is left of this note**. There is no separate toggle — the old stored `seasoned` flag was a second, independently-settable source of truth for a question the position already answers, and configs could disagree with themselves. `from_dict` migrates legacy `seasoned: true` to `settlement_date = issue_date` (held since issue, at par), which prices identically.
 
-### Seasoning — pricing the remaining life
+`is_secondary` is the narrower **display** switch: bought away from par, or after issue. Holding since issue at par is a plain subscription, so it shows the note's own numbers.
 
-`NoteTerms.seasoned` (**default `False`**) switches the Monte Carlo from "a hypothetical note issued today for the full tenor" — the historical behaviour of every config, and still the default — to "what is left of *this* note". It needs a past `issue_date`; the toggle lives in the setup overlay's Position card.
-
-**What changes when it's on** (`api/engine.py:_seasoning` resolves the state, `_simulate_full` applies it):
+**What being held changes** (`api/engine.py:_position_state` resolves it, `_simulate_full` applies it):
 
 - The grid runs **today → the ORIGINAL maturity** (issue + tenor), not today + tenor.
 - `perf_paths = sim_prices / S0_fix` where `S0_fix` is the **fixing at the issue anchor**, read from the full price history. So the paths open at today's level (e.g. 0.82) instead of 1.0 and the term sheet's barriers keep their meaning. This is the whole point — a knock-in at 60% must mean 60% of the original fixing.
 - Only the observations still to come are priced, with **`price_note(..., periods_elapsed=k, pending_coupons=p, start_basket=b)`**. Inside, `k` shifts every per-period quantity onto **absolute** term-sheet periods: autocall eligibility (`abs_periods >= autocall_start_period`), the step-down rungs (`autocall_barrier_schedule()[k:]`), and the growth-autocall accrual (`coupon_rate * (autocall_period + k)`). Memory arrears carried in are released by the first coupon that pays inside the window. `start_basket` is the cliquet's last elapsed reset level.
 - `replay_note(perf_obs, terms, start_period=…, pending=…)` replays a window the same way — it derives the arrears from realised prices, and the single-path inspector reuses it.
-- Coupons already paid are **realised, not part of the forward payoff**; the summary reports them as `coupons_received` for context only.
 
-**Indexing contract.** Every per-period array `price_note` returns (`coupon_amounts`, `prob_autocall_by_period`, `autocall_period`, …) is aligned to the *priced window*, all sharing width `len(obs_steps)`. The result carries `periods_elapsed`, and the run summary exposes it as **`period_offset`**: column *i* describes term-sheet period `period_offset + i + 1`. Display layers add the offset (`MCTables`, `OutcomeWaterfall`, `HeroMetrics`, `obs_pairs` labels, the inspector); `inspect_run` also shifts client-sent period filters back into window space.
+**Two anchors, and conflating them is the easy mistake.** `periods_elapsed` / `pending_coupons` / `start_basket` are anchored on **today** (which observations are still to be simulated). `realised_income` / `elapsed_years` are anchored on **settlement** (what this holder banked, and how long they have owned it). `_position_kwargs` passes both.
 
-**Refusals.** Seasoning is silently skipped — the run falls back to from-issue and reports `seasoning_reason` — when there is no issue date, the issue date is in the future, price history doesn't reach the fixing, the note has matured, or it **already autocalled on realised prices** (nothing left to simulate).
+**Returns are the position's, not a forward stub.** `core/note.py:_position_returns()` is the only place the cost basis enters the payoff: `(payoff + realised_income − cost) / cost`, annualised over `t_held + elapsed_years`. Only the remaining life is simulated, so without those two terms the reported "return on cost" silently dropped the coupons banked since settlement from the numerator and the time already held from the denominator. All three payoff branches (autocall, participation, cliquet) call it, so the Monte Carlo and the backtest — which share `price_note` — can never disagree. `price_note` also returns `cost_basis`, `prob_loss` (P(negative return **on cost**)), `realised_income` and `elapsed_years`.
 
-**A/B compare.** `_can_share_paths()` gates path sharing: seasoning changes both the grid and the performance scale, so B can only ride A's paths when both are seasoned off the same `issue_date`. Otherwise B is simulated independently.
+**Payoffs, barriers and probabilities are untouched** — the cost basis only re-bases the return. `prob_above_par` / `prob_below_par` / the participation breakeven stay measured against par, because they describe the *note*, not the holder.
 
-**Not seasoned:** the historical backtest (each issue window is a full life by construction) and the live tab (which reads realised prices, not simulation).
+**Income is split by settlement, not by issue.** `_position_state` reports `coupons_received` (since issue, context only — some went to the seller) and `income_since_settlement` (this holder's, and the piece inside every return figure). Same split in the live tab via `_settlement_ts` / `_position_summary`, which also report `pull_to_par` and `return_on_cost`.
+
+**Indexing contract.** Every per-period array `price_note` returns (`coupon_amounts`, `prob_autocall_by_period`, `autocall_period`, …) is aligned to the *priced window*, all sharing width `len(obs_steps)`. The result carries `periods_elapsed`, and the run summary exposes it as **`period_offset`**: column *i* describes term-sheet period `period_offset + i + 1`. Display layers add the offset (`MCTables`, `OutcomeWaterfall`, `HeroMetrics`, `obs_pairs` labels, `PathInspector`'s outcome line); `inspect_run` also shifts client-sent period filters back into window space.
+
+**Refusals.** The remaining-life treatment is silently skipped — the run falls back to from-issue and reports `held_reason` — when the issue date is in the future, price history doesn't reach the fixing, the note has matured, or it **already autocalled on realised prices** (nothing left to model).
+
+**The path explorer draws both halves.** `_position_state` also captures `hist_perf` / `hist_t` — daily realised performance from issue to today, on the SAME scale as the simulated paths (both divide by the original fixings) — and `sample_paths` serves it as a `realised` block with times relative to today (so negative). `PathFan` draws it as one ink line with `bought` / `today` markers and the fan continuing from its end; because both go through one `_line()` reduction, the join is exact rather than approximate. Chart colours there must be **hex literals present in `plotlyTheme`'s remap table** — Plotly does not resolve `var(--…)` and falls back silently.
+
+**A/B compare.** `share_blockers` gates path sharing: being held changes both the grid and the performance scale, so B can only ride A's paths when both are held off the very same `issue_date`. Otherwise B is simulated independently.
+
+**The backtest replicates the purchase gap** (`core/backtest.py:hold_gap`). Each historical issue window is measured from the same point in the note's life at which the position was bought — earlier coupons belong to the seller, and returns annualise over the holding period, not the full tenor. `price_note` therefore accepts **per-path** `pending_coupons` and `start_basket`: every window reaches the purchase date with its own arrears and its own last cliquet reset, and a scalar would apply one window's state to all of them. `Call Quarter` carries TERM-SHEET period numbers (`period_offset` added back). Windows that had **already autocalled by the purchase date** leave the sample — you could not have bought the note — which is a real selection effect that biases the survivors toward windows that did not call early, so `skipped_called` reports it and the PDF states it. Every window assumes the entry price actually paid; no valuation model is applied, and `entry_price` says so.
+
+**Not affected by the position:** the live tab's chart (it reads realised prices, not simulation).
 
 ## Note JSON config format
 
@@ -115,11 +121,10 @@ Configs live in `note_configs/`. Required fields for `NoteTerms.from_dict`:
   "settlement_date": null,
   "purchase_price": 1.0,
   "accrued_at_purchase": 0.0,
-  "seasoned": false
 }
 ```
 
-`issue_date` is optional; when set and on/before today, the app shows a "Current Performance" tab. `call_steepness: null` means hard trigger. The position fields are optional and default to a primary subscription at par — see [Secondary-market position](#secondary-market-position-cost-basis); `seasoned` defaults to off — see [Seasoning](#seasoning--pricing-the-remaining-life).
+`issue_date` is optional; when set and on/before today, the app shows a "Current Performance" tab. `call_steepness: null` means hard trigger. The position fields are optional and default to no position at all — see [The position](#the-position--what-you-paid-and-what-gets-modelled). A legacy `seasoned: true` is migrated on load, not stored.
 
 ## Basket types and the One Star feature
 
@@ -156,7 +161,7 @@ Plus `participation_strike` and `participation_basket`. `_participation_redempti
 
 The statistics live in **`core/compare.py`**, not the API layer — they are pure numpy over `price_note` payoff dicts, so they import without plotly/yfinance and stay testable in CI's light job (`api/engine.py` imports them under their old private names; it owns only the figures and serialisation).
 
-- **`share_blockers(a, b)`** returns *why* the paths can't be shared — `underlyings` / `maturity` / `seasoning` / `issue_date` — so the UI names the term to change instead of only reporting that the comparison is noisier. `can_share_paths` is the boolean wrapper; both `run_compare` and `_compare_for_pdf` use it.
+- **`share_blockers(a, b)`** returns *why* the paths can't be shared — `underlyings` / `maturity` / `held` / `issue_date` — so the UI names the term to change instead of only reporting that the comparison is noisier. `can_share_paths` is the boolean wrapper; both `run_compare` and `_compare_for_pdf` use it.
 - **`paired_stats()`** (shared paths only, else `None`) is the head-to-head: win/tie/loss rate, mean and median edge on total return and IRR, the 5th–95th percentile edge, the paired standard error, an **outcome transition matrix** (`outcome_buckets` → called / at-par / knocked-in, or below/at/above par for participation) and conditional tails (*when A loses, what does B do?*). The win rate is the headline the summary means can't give: a +0.8% mean edge that wins on 51% of paths is a different product from one that wins on 88%.
 - **Error bars.** Every `compare_diff` row carries `se`, the standard error **of the delta** — the paired SE when paths are shared (market risk cancels, so it is far tighter), otherwise the two independent errors in quadrature. `metric_samples` maps a summary key to its per-path array; quantiles and conditional means return `None` and the row shows no ±. The client greys any delta inside ±2 se and labels it noise.
 - **Payload discipline.** The compare response deliberately carries **summaries only** — no per-side figure sets, no `run_id`s. It used to build the full 7-figure set for each side (fans, per-asset fans, correlations) that the panel never rendered, and store both runs in a store capped at `_MAX_RUNS`. Overlay histograms are also **pre-binned server-side** (`_bin_edges` / `_pct_bar` in `app/charts.py`): `go.Histogram` ships every raw path value, which at 20 000 antithetic paths was 426 KB for a picture with 60 bars. Net effect 802 KB → 150 KB *with six charts instead of two*. If you add a compare chart, bin it.

@@ -289,6 +289,24 @@ _LABELS: dict[str, dict[str, str]] = {
     "income_banked":         {"en": "Income banked since settlement",    "es": "Ingresos cobrados desde la liquidacion"},
     "return_on_cost":        {"en": "Return on cost",                    "es": "Rentabilidad sobre coste"},
     "pull_to_par":           {"en": "Pull to par",                       "es": "Recorrido hasta el nominal"},
+    "held_band":             {"en": "Your position",                     "es": "Tu posicion"},
+    "held_remaining_obs":    {"en": "Observations left",                 "es": "Observaciones restantes"},
+    "held_note":             {"en": "About these figures",               "es": "Sobre estas cifras"},
+    "held_note_body":        {"en": "This note is held, so the projection covers only the life that is "
+                                    "left: from today to the original maturity, against the original "
+                                    "fixings, so the term sheet's barriers keep their meaning. Every "
+                                    "return above is measured from the settlement date on what was "
+                                    "actually paid, and includes the income banked since then. Coupons "
+                                    "that fixed before settlement went to the previous holder and are "
+                                    "excluded.",
+                              "es": "Esta nota esta en cartera, asi que la proyeccion cubre solo la vida "
+                                    "restante: desde hoy hasta el vencimiento original, contra las "
+                                    "fijaciones originales, de modo que las barreras del term sheet "
+                                    "mantienen su significado. Toda rentabilidad arriba se mide desde la "
+                                    "fecha de liquidacion sobre lo realmente pagado, e incluye los "
+                                    "ingresos cobrados desde entonces. Los cupones fijados antes de la "
+                                    "liquidacion fueron del tenedor anterior y quedan excluidos."},
+    "bt_gap_note":           {"en": "How these windows were measured",   "es": "Como se midieron estas ventanas"},
     "issuer":                {"en": "Issuer",                            "es": "Emisor"},
     "expected_irr":          {"en": "Expected IRR p.a.",                 "es": "TIR esperada anual"},
     "expected_total_return": {"en": "Expected total return",             "es": "Retorno total esperado"},
@@ -3230,6 +3248,24 @@ def _build_pdf_report(
                 (_t("loss_given_ki",      lang), _lgki_str),
                 (_t("n_paths",            lang), f"{n_paths_val:,}"),
             ])
+        # A HELD note's numbers mean something different from a hypothetical note
+        # priced today, so say what the position is and what the figures cover.
+        # `realised_income` / `elapsed_years` come from price_note itself (they are
+        # inside the returns above), so this band cannot drift from what was priced.
+        if getattr(terms, "is_held", False):
+            _elapsed = float(results.get("elapsed_years") or 0.0)
+            _banked  = float(results.get("realised_income") or 0.0)
+            _k       = int(results.get("periods_elapsed") or 0)
+            _hb = [(_t("settlement_date", lang), str(terms.settlement_date))]
+            if getattr(terms, "is_secondary", False):
+                _hb.append((_t("cost_basis", lang), f"{terms.cost_basis:.3%}"))
+            _hb += [
+                (_t("holding_period", lang), f"{_elapsed * 12:.1f} mo"),
+                (_t("income_banked", lang), f"{_banked:.2%}"),
+                (_t("held_remaining_obs", lang), f"{max(0, terms.n_obs - _k)} / {terms.n_obs}"),
+            ]
+            pdf.metric_band(_hb)
+            pdf.callout(_t("held_note", lang), _t("held_note_body", lang))
     if _inc("mc_outcome") and figures.get("outcome") is not None:
         _sec()
         _outcome_cap = "fig_redemption" if getattr(terms, "note_type", "") == "participation" else "fig_outcome"
@@ -3397,6 +3433,43 @@ def _build_pdf_report(
                 (_t("bt_loss_given_ki",   lang), _bt_lgki_pdf),
                 (_t("bt_n_issues",        lang), str(bt_summary.get("n_issues", 0))),
             ])
+        # With a purchase gap the windows are NOT full lives — they replicate the
+        # real position. Two things a reader must be told rather than infer: the
+        # entry price is assumed, not modelled, and windows that had already called
+        # by the purchase date left the sample (which biases what remains).
+        _gap_p = int(bt_summary.get("purchase_gap_periods", 0) or 0)
+        if _gap_p:
+            _gap_m = float(bt_summary.get("purchase_gap_years", 0.0) or 0.0) * 12
+            _entry = float(bt_summary.get("entry_price", 1.0) or 1.0)
+            _skip  = int(bt_summary.get("skipped_called", 0) or 0)
+            _body = (
+                f"Each issue window is measured from the same point in the note's life at "
+                f"which this position was bought — {_gap_m:.0f} months in, after {_gap_p} "
+                f"observation(s) had already fixed. Coupons before that point went to the "
+                f"seller and are excluded, and every return is annualised over the holding "
+                f"period rather than the full tenor. Each window assumes the same "
+                f"{_entry:.2%} entry price actually paid; no valuation model is applied, so "
+                f"the windows are comparable with each other but that price was not "
+                f"necessarily fair in every one of them."
+                if lang != "es" else
+                f"Cada ventana de emision se mide desde el mismo punto de la vida de la nota "
+                f"en que se compro esta posicion — {_gap_m:.0f} meses despues, con {_gap_p} "
+                f"observacion(es) ya fijadas. Los cupones anteriores fueron del vendedor y se "
+                f"excluyen, y toda rentabilidad se anualiza sobre el periodo de tenencia y no "
+                f"sobre el plazo completo. Cada ventana asume el mismo precio de entrada del "
+                f"{_entry:.2%} realmente pagado; no se aplica ningun modelo de valoracion."
+            )
+            if _skip:
+                _body += (
+                    f" {_skip} window(s) were excluded because the note had already autocalled "
+                    f"by the purchase date — it could not have been bought. That is a real "
+                    f"selection effect: it removes the windows that redeemed early."
+                    if lang != "es" else
+                    f" Se excluyeron {_skip} ventana(s) porque la nota ya se habia autocancelado "
+                    f"en la fecha de compra — no se habria podido comprar. Es un sesgo de "
+                    f"seleccion real: elimina las ventanas que se amortizaron pronto."
+                )
+            pdf.callout(_t("bt_gap_note", lang), _body)
     if bt_summary and _inc("bt_outcome") and bt_figures.get("outcome") is not None:
         _sec()
         _bt_out_cap = "fig_redemption" if _is_participation(terms) else "fig_bt_outcome"
