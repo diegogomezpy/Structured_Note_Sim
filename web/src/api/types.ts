@@ -328,6 +328,16 @@ export interface ExplorerPath {
   issue_date?: string   // backtest explorer only — the historical issue date
 }
 
+/** What already happened, for a note that is HELD. `t` is years relative to TODAY,
+    so it runs negative and the simulated fan continues from t = 0; `line` is the same
+    quantity the fan draws (worst-of, or the participation basket), so the two join
+    without a step. `settle_t` marks where this holder's position began. */
+export interface RealisedHistory {
+  t: number[]
+  line: number[]
+  settle_t?: number | null
+}
+
 export interface ExplorerData {
   t: number[]
   paths: ExplorerPath[]
@@ -335,6 +345,8 @@ export interface ExplorerData {
   note_type?: 'autocall' | 'reverse_conv' | 'growth_autocall' | 'participation' | 'custom'
   period_offset?: number     // held runs: term-sheet period of obs_times[0] − 1
   obs_times: number[]
+  realised?: RealisedHistory | null
+  purchase_gap_years?: number | null   // backtest explorer: where the purchase sits
   barriers: { knock_in?: number | null; autocall?: number | null; coupon?: number | null
               participation?: PartBarriers }
 }

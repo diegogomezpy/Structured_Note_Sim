@@ -323,6 +323,9 @@ export const S: Dict = {
   hint_on_cost:     { en: 'on cost {v}', es: 'sobre coste {v}' },
 
   // A HELD note — modelled from where it stands, measured on what you paid
+  fan_realised:     { en: 'What already happened', es: 'Lo que ya ocurrio' },
+  fan_today:        { en: 'today', es: 'hoy' },
+  fan_bought:       { en: 'bought', es: 'comprado' },
   held_horizon:     { en: 'Projection covers', es: 'La proyeccion cubre' },
   held_horizon_row: { en: 'Remaining life only', es: 'Solo la vida restante' },
   held_needs_issue: { en: 'A settlement date needs an issue date in the past to model the remaining life — set one above. Without it the note is priced as if issued today.',

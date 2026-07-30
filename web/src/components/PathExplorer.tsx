@@ -78,9 +78,18 @@ export function PathFan({
       .map((g) => group(data.paths.filter((p) => classify(p, isPart) === g.kind), data.t, KIND_COLOR[g.kind], g.label))
       .filter((tr) => tr.x.length > 0)
 
-    const x0 = monthsNum(data.t[0]), x1 = monthsNum(data.t[data.t.length - 1])
+    // A held note's realised stretch sits at negative time, so the axis starts before
+    // the simulation does. Its last point IS today's level — the same level every
+    // simulated path opens at — so the two halves join exactly.
+    const hist = data.realised
+    const x0 = monthsNum(hist?.t.length ? hist.t[0] : data.t[0])
+    const x1 = monthsNum(data.t[data.t.length - 1])
     const hline = (yv: number | null | undefined, color: string, dash: string) => yv == null ? null : ({
       type: 'line', x0, x1, y0: yv, y1: yv, line: { color, width: 1, dash },
+    })
+    const vline = (xv: number, color: string, dash: string) => ({
+      type: 'line', x0: xv, x1: xv, yref: 'paper', y0: 0, y1: 1,
+      line: { color, width: 1, dash },
     })
     const shapes = (isPart
       ? [hline(1, '#94a3b8', 'dot'),
@@ -90,7 +99,41 @@ export function PathFan({
          hline(data.barriers.knock_in, '#ef4444', 'dash'),
          data.barriers.autocall != null && data.barriers.autocall !== 1
            ? hline(data.barriers.autocall, '#94a3b8', 'dash') : null]
-    ).filter(Boolean)
+    // Colours are HEX LITERALS FROM plotlyTheme's remap table, never CSS variables:
+    // Plotly does not resolve var(--…) and silently falls back, which is how the
+    // realised line first rendered alarm-red inside a viridian chart. #2c3e50 maps to
+    // the ink token (near-black in light, near-white in dark) and #64748b to mid grey.
+    ).concat(hist ? [
+      vline(0, '#64748b', 'solid'),                        // today
+      ...(hist.settle_t != null && hist.settle_t < -1e-6
+        ? [vline(monthsNum(hist.settle_t), '#64748b', 'dot')]  // bought here
+        : []),
+    // The backtest fan has no realised stretch — its windows are all historical — but
+    // it does replicate the purchase gap, so mark where the position started on its
+    // own note-relative axis. Everything left of the line belonged to the seller.
+    ] : (data.purchase_gap_years
+      ? [vline(monthsNum(data.purchase_gap_years), '#64748b', 'dot')]
+      : [])).filter(Boolean)
+
+    const markAt = hist ? hist.settle_t : data.purchase_gap_years
+    const annos = [
+      ...(hist ? [{ x: 0, yref: 'paper', y: 1.02, text: t('fan_today'), showarrow: false,
+                    font: { size: 10 }, xanchor: 'center' as const }] : []),
+      ...(markAt != null && Math.abs(markAt) > 1e-6
+        ? [{ x: monthsNum(markAt), yref: 'paper', y: 1.02, text: t('fan_bought'),
+             showarrow: false, font: { size: 10 }, xanchor: 'center' as const }]
+        : []),
+    ]
+
+    // Drawn last so it sits above the fan — this line is what actually happened, and
+    // it should read as fact against the cloud of possibilities.
+    if (hist) {
+      traces.push({
+        x: hist.t.map(monthsNum), y: hist.line, mode: 'lines', type: 'scattergl',
+        name: t('fan_realised'), line: { color: '#2c3e50', width: 2.4 },
+        hovertemplate: '%{y:.1%}<extra></extra>',
+      } as unknown as typeof traces[number])
+    }
 
     return {
       data: traces,
@@ -98,6 +141,7 @@ export function PathFan({
         xaxis: { title: { text: xLabel ?? t('chart_time_years') }, range: [x0, x1], zeroline: false },
         yaxis: { title: { text: isPart ? t('fan_basket_axis') : t('chart_wof') }, tickformat: '.0%', zeroline: false },
         shapes,
+        annotations: annos,
         showlegend: true,
         legend: { orientation: 'h', y: 1.06, x: 0 },
         hovermode: 'closest',

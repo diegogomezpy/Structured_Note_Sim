@@ -348,7 +348,12 @@ function InspectorPanel({ fetcher, terms, label, onRemove, panelId, reportImage 
           : (o.is_loss
               ? t('insp_part_loss', { r: pct(o.redemption, 1), b: pct(o.final_basket, 1) })
               : t('insp_part_ok', { r: pct(o.redemption, 1), b: pct(o.final_basket, 1) })))
-    : o.autocall_q > 0 ? t('insp_autocalled', { q: o.autocall_q, t: num((o.call_time ?? 0) * 12, 1) })
+    // `autocall_q` indexes the PRICED WINDOW, so a held run that opens at P5 reports
+    // its first observation as 1. Every display layer adds period_offset (see the
+    // indexing contract in CLAUDE.md) — this line did not, and printed the window
+    // index as if it were a term-sheet period: "Autocalled at P3" for a call at P7.
+    : o.autocall_q > 0 ? t('insp_autocalled', { q: o.autocall_q + (data?.period_offset ?? 0),
+                                                t: num((o.call_time ?? 0) * 12, 1) })
     : o.knock_in ? t('insp_mat_ki', { wof: pct(o.worst_final, 1) })
     : t('insp_mat_ok', { wof: pct(o.worst_final, 1) })
 

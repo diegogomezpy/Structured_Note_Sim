@@ -236,13 +236,17 @@ def sample_paths(run_id: str, *, sample: int = 400, seed: int = 7) -> dict | Non
     _is_part = _note_type == "participation"
     # For a Participation note the payoff references the participation BASKET, not the
     # worst-of — reduce along assets with the note's basket type so the fan matches.
-    _sel = np.asarray(perf[idx], dtype=np.float32)
-    if _is_part and terms.get("participation_basket") == "best_of":
-        line_sel = _sel.max(axis=2)
-    elif _is_part and terms.get("participation_basket") == "average":
-        line_sel = _sel.mean(axis=2)
-    else:
-        line_sel = _sel.min(axis=2)               # (k, N+1) worst-of / worst-of basket
+    def _line(a):
+        """Reduce (..., n_assets) to the line the note's payoff actually references.
+        Used for BOTH the simulated paths and the realised history, so the two halves
+        of the explorer's chart are the same quantity and join without a step."""
+        if _is_part and terms.get("participation_basket") == "best_of":
+            return a.max(axis=-1)
+        if _is_part and terms.get("participation_basket") == "average":
+            return a.mean(axis=-1)
+        return a.min(axis=-1)                     # worst-of / worst-of basket
+
+    line_sel = _line(np.asarray(perf[idx], dtype=np.float32))   # (k, N+1)
     paths = []
     for j, i in enumerate(idx):
         row = {
@@ -264,12 +268,32 @@ def sample_paths(run_id: str, *, sample: int = 400, seed: int = 7) -> dict | Non
         barriers = {"knock_in": _f(terms.get("knock_in_barrier")),
                     "autocall": _f(terms.get("autocall_barrier")),
                     "coupon":   _f(terms.get("coupon_barrier"))}
+    # What already happened, on the same axis and the same scale: times are years
+    # relative to today, so this stretch is negative and the simulated fan continues
+    # from t=0. Downsampled to ~120 points; the last point IS today's level, which is
+    # where every simulated path starts, so the join is exact rather than approximate.
+    realised = None
+    hp, ht = run.get("hist_perf"), run.get("hist_t")
+    if hp is not None and ht is not None and len(ht) > 1:
+        hline = _line(np.asarray(hp, dtype=np.float32))         # (D,)
+        hstep = max(1, len(ht) // 120)
+        hcols = list(range(0, len(ht), hstep))
+        if hcols[-1] != len(ht) - 1:
+            hcols.append(len(ht) - 1)
+        realised = {
+            "t":        [round(float(ht[c]), 4) for c in hcols],
+            "line":     [round(float(hline[c]), 4) for c in hcols],
+            "settle_t": _f(run.get("settle_t")),
+        }
+
     return {
         "t":        [round(float(t_grid[c]), 4) for c in tcols],
         "paths":    paths,
         "n_total":  int(P),
         "note_type": _note_type,
         "obs_times": run.get("obs_times", []),
+        # Realised history for a held note (None for a note priced from issue).
+        "realised": realised,
         # Term-sheet period of the window's first observation − 1 (0 unless seasoned),
         # so the explorer's markers and filters read P6… rather than P1….
         "period_offset": int(run.get("period_offset", 0)),
@@ -727,6 +751,7 @@ def _position_state(terms: NoteTerms, anchor) -> dict | None:
                                  for r, d in zip(replay["rows"], obs_cal[:k])
                                  if d > settle_anchor))
 
+    hist = full.loc[issue_anchor:anchor]
     return {
         "ok": True,
         "fixings":         fixings,
@@ -741,6 +766,14 @@ def _position_state(terms: NoteTerms, anchor) -> dict | None:
         "elapsed_years":   max(0.0, (anchor - settle_anchor).days / 365.0),
         "start_basket":    start_basket,
         "perf_now":        full.iloc[-1].to_numpy(dtype=float) / S0_fix,
+        # The stretch that ALREADY HAPPENED, daily, on the same performance scale as
+        # the simulated paths (both divide by the original fixings). This is what
+        # lets the path explorer draw one continuous picture: realised up to today,
+        # simulated after it, with no jump at the join. Times are years relative to
+        # TODAY, so they run negative — the simulated grid starts at 0.
+        "hist_perf":       hist.to_numpy(dtype=float) / S0_fix,     # (D, n_assets)
+        "hist_t":          -(anchor - hist.index).days.to_numpy(dtype=float) / 365.0,
+        "settle_t":        -max(0.0, (anchor - settle_anchor).days / 365.0),
     }
 
 
@@ -829,6 +862,10 @@ def _simulate_full(terms: NoteTerms, *, n_paths: int, seed: int, calib_years: fl
         "perf_paths": perf_paths, "wof_paths": wof_paths, "sim_prices": sim_prices,
         "wof_bands": wof_bands, "asset_bands": asset_bands, "t_grid": t_grid,
         "obs_steps": obs_steps, "obs_times": obs_times, "obs_pairs": obs_pairs,
+        # Realised history (held notes only) — the explorer's "what already happened".
+        "hist_perf": (held["hist_perf"] if held else None),
+        "hist_t":    (held["hist_t"]    if held else None),
+        "settle_t":  (held["settle_t"]  if held else None),
         "asset_names": asset_names, "eng_used": eng_used,
         # Position state: the resolved context when the note is held and modellable,
         # else the raw result (None, or an {"ok": False, "reason"} the summary reports).
@@ -979,10 +1016,18 @@ def _store_mc_run(sf: dict, note: dict, terms: NoteTerms) -> str:
         "t_grid":     sf["t_grid"],
         "asset_names": sf["asset_names"],
         "terms":      terms.to_dict(),
-        # Seasoning offset + carried arrears, so the explorer and the single-path
-        # inspector replay the same window the run priced.
+        # Elapsed-period offset + carried arrears, so the explorer and the
+        # single-path inspector replay the same window the run priced.
         "period_offset":   int(note.get("periods_elapsed", 0)),
         "pending_coupons": int((sf.get("held") or {}).get("pending_coupons", 0)),
+        # Realised daily performance since issue, float32 (display only — nothing is
+        # priced off it). One asset-line per day, so this is kilobytes, not the
+        # megabytes perf_paths would be.
+        "hist_perf": (None if sf.get("hist_perf") is None
+                      else np.asarray(sf["hist_perf"], dtype=np.float32)),
+        "hist_t":    (None if sf.get("hist_t") is None
+                      else np.asarray(sf["hist_t"], dtype=np.float32)),
+        "settle_t":  sf.get("settle_t"),
         "note":       {k: np.asarray(v) for k, v in note.items()
                        if isinstance(v, np.ndarray) and v.ndim <= 2},
     })
