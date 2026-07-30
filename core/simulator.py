@@ -13,7 +13,9 @@ Improvements over basic Euler-Maruyama:
 1. Milstein discretization (variance process)
    Adds the O(dt) correction term to the variance step:
        V_{t+dt} = V_t + kappa*(theta-V)*dt + xi*sqrt(V)*dW_V
-                + 0.5*xi²*dt*(dW_V²/dt - 1)
+                + (xi²/4)*(dW_V² - dt)
+   The coefficient is xi²/4 = ½·b·b′ for b(V)=xi·sqrt(V). It shipped as xi²/2
+   (twice Milstein) until it was measured against the exact CIR moments.
    Reduces discretization bias, especially near V=0. Price step
    remains log-Euler (exact for geometric Brownian motion).
    Full truncation (V floored at 0) is applied after the Milstein step.
@@ -445,7 +447,7 @@ class HestonMultiSimulator:
                 # Without this rescale every Brownian increment is inflated by
                 # sqrt(ν/(ν-2)) — e.g. +29% vol at ν=5, +41% at ν=4 — so the
                 # simulation runs at a much higher vol than the calibrated
-                # theta/V0, and the Milstein term 0.5·ξ²·(dW² − dt) picks up a
+                # theta/V0, and the Milstein term (ξ²/4)·(dW² − dt) picks up a
                 # spurious positive drift (E[dW²] > dt). Rescaling restores
                 # unit-variance shocks while preserving the t tail dependence.
                 Z = Z * np.sqrt((self.t_dof - 2.0) / self.t_dof)
@@ -463,12 +465,20 @@ class HestonMultiSimulator:
             sqV   = np.sqrt(V_pos)
 
             # --- Milstein variance step + full truncation (all assets at once) ---
-            # dV = kappa*(theta-V)*dt + xi*sqrt(V)*dW_V + 0.5*xi²*(dW_V² - dt)
+            # dV = kappa*(theta-V)*dt + xi*sqrt(V)*dW_V + (xi²/4)*(dW_V² - dt)
+            #
+            # The correction is ½·b·b′ with b(V)=xi·sqrt(V), so b′=xi/(2·sqrt(V))
+            # and ½·b·b′ = xi²/4 — NOT xi²/2, which is what this shipped with and
+            # is exactly twice the Milstein term. The term has zero mean, so it
+            # never showed up as a drift; it inflated the VARIANCE of the variance.
+            # Measured against the exact CIR moments at the parameters this app
+            # actually calibrates (xi pinned at the 2.0 bound, Feller margin 0.01):
+            # Var[V_T] came out +9.2% vs exact at 0.5, +4.6% at 0.25.
             V[t + 1] = np.maximum(
                 V_t
                 + kappa * (theta - V_t) * dt
                 + xi * sqV * dW_V
-                + 0.5 * xi2 * (dW_V ** 2 - dt),
+                + 0.25 * xi2 * (dW_V ** 2 - dt),
                 0.0,
             )
 

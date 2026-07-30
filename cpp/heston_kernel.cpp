@@ -228,7 +228,7 @@ py::tuple simulate(
                         const double dWv = wV[p] * sdtt, dWs = wS[p] * sdtt;
                         const double vp = Vbp[p] > 0.0 ? Vbp[p] : 0.0, sq = std::sqrt(vp);
                         const double vn = Vbp[p] + ka * (tha - Vbp[p]) * dtt
-                                          + xa * sq * dWv + 0.5 * x2 * (dWv * dWv - dtt);
+                                          + xa * sq * dWv + 0.25 * x2 * (dWv * dWv - dtt);
                         Vbp[p] = vn > 0.0 ? vn : 0.0;
                         Sbp[p] = Sbp[p] * std::exp(ma * dtt - 0.5 * vp * dtt + sq * dWs) * drop;
                     }
@@ -237,7 +237,7 @@ py::tuple simulate(
                         const double dWv = wV[p] * sdtt, dWs = wS[p] * sdtt;
                         const double vp = Vap[p] > 0.0 ? Vap[p] : 0.0, sq = std::sqrt(vp);
                         const double vn = Vap[p] + ka * (tha - Vap[p]) * dtt
-                                          - xa * sq * dWv + 0.5 * x2 * (dWv * dWv - dtt);
+                                          - xa * sq * dWv + 0.25 * x2 * (dWv * dWv - dtt);
                         Vap[p] = vn > 0.0 ? vn : 0.0;
                         Sap[p] = Sap[p] * std::exp(ma * dtt - 0.5 * vp * dtt - sq * dWs) * drop;
                     }

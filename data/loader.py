@@ -190,7 +190,16 @@ def _from_yfinance(
         )
 
     col = "Close" if field == "close" else "Adj Close"
-    if col not in raw.columns.get_level_values(0) if isinstance(raw.columns, pd.MultiIndex) else raw.columns:
+    # The parentheses are load-bearing: `A if C else B` binds LOOSER than `not in`,
+    # so without them this parsed as `(col not in ...) if isinstance(...) else raw.columns`
+    # and the flat-columns branch evaluated an Index as a truth value —
+    # "ValueError: The truth value of a Index is ambiguous" instead of the clear
+    # message below. Latent only because yfinance 1.4 returns a MultiIndex even for
+    # a single-ticker list; the `else` branch further down exists for the flat case,
+    # so the author expected it to be reachable.
+    have = (raw.columns.get_level_values(0) if isinstance(raw.columns, pd.MultiIndex)
+            else raw.columns)
+    if col not in have:
         raise ValueError(
             f"yfinance response is missing the '{col}' column. "
             f"Columns present: {list(raw.columns)}. "
@@ -271,6 +280,25 @@ def _align(prices: pd.DataFrame, source_label: str) -> pd.DataFrame:
             f"Only {n_after} overlapping observations after alignment "
             f"(source='{source_label}'). "
             f"Increase years= or check that your files cover an overlapping date range."
+        )
+
+    # Non-positive prices survive dropna() — 0.0 is not NaN — and the very first
+    # thing the calibrator does is log(p[1:]/p[:-1]). One zero anywhere in the
+    # column turns two returns into ±inf, which makes the rolling variance NaN,
+    # which makes theta NaN, which makes EVERY parameter and every simulated path
+    # NaN. Nothing raises; the app just reports blanks. Yahoo does occasionally
+    # serve a 0.0 for an illiquid or newly-delisted symbol, and the CSV / DataFrame
+    # sources are user-supplied, so fail here with the ticker and date instead.
+    bad = prices.le(0).any()
+    if bool(bad.any()):
+        names = [str(c) for c in bad[bad].index]
+        first = {n: str(prices.index[prices[n].le(0)][0].date()) for n in names}
+        raise ValueError(
+            f"Non-positive prices (source='{source_label}') in: "
+            + ", ".join(f"{n} (first on {first[n]})" for n in names)
+            + ". Prices must be > 0 — log-returns are undefined otherwise, and the "
+              "calibration would silently produce NaN parameters. Check the ticker "
+              "symbol, or the data file if you supplied one."
         )
     return prices
 
