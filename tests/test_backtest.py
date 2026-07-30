@@ -60,12 +60,24 @@ def test_hold_gap_is_none_when_held_from_issue():
     ("2020-02-01", 0),   # before the first quarterly observation
     ("2020-04-05", 1),   # just past observation 1 (2020-04-02)
     ("2020-08-01", 2),   # past observations 1 and 2
-    ("2021-06-01", 3),   # past the final observation → clamped to n_obs - 1
 ])
 def test_hold_gap_counts_observations_already_fixed(settle, periods):
     k, years = hold_gap(_terms(settlement_date=settle))
     assert k == periods
     assert years == pytest.approx((pd.Timestamp(settle) - pd.Timestamp(ISSUE)).days / 365.0)
+
+
+def test_hold_gap_refuses_a_settlement_past_the_final_observation():
+    """Settling after the last observation is a MATURED note, not a position.
+
+    This case previously asserted the old `min(k, n_obs - 1)` clamp, which capped
+    the observation count but left `gap_years` past maturity — so the first
+    remaining observation time came out NEGATIVE (1.000 - 1.414 = -0.414 years for
+    this fixture) and every historical window annualised a real payoff over a
+    negative holding period. The test was encoding the bug; refusing is correct,
+    and the caller falls back to full-life windows.
+    """
+    assert hold_gap(_terms(settlement_date="2021-06-01")) is None
 
 
 # ── a subscription is unchanged ────────────────────────────────────────────────

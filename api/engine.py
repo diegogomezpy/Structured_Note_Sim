@@ -359,8 +359,12 @@ def _build_path_marker_info(rows, autocall_q, n_obs, wof_levels, knock_in, terms
         row         = rows[i] if i < len(rows) else None
         amt         = float(row["coupon_amount"]) if row else 0.0
         pending     = int(row["pending_after"]) if row else 0
-        called      = (autocall_q == period)
-        reached_mat = (autocall_q == 0 and period == n_obs)
+        # `autocall_q` and `n_obs` are WINDOW-indexed; `period` carries the term
+        # sheet's offset. Comparing across the two spaces made both tests
+        # permanently false on a held note, so the called / matured marker silently
+        # vanished from the inspector while the outcome line still reported it.
+        called      = (autocall_q == i + 1)
+        reached_mat = (autocall_q == 0 and i + 1 == n_obs)
 
         parts = [f"P{period}", tr("leg_wof", v=f"{wof_levels[i]:.0%}")]
         if called:
@@ -1456,12 +1460,23 @@ def backtest_inspect(terms: NoteTerms, *, lang: str = "en", filters: dict | None
     base["coupon_available"] = (coupon_m is not None) and not _is_part
 
     f = filters or {}
+    # Two DIFFERENT indexing spaces in one call, which is why only one of these
+    # gets shifted. `Call Quarter` already carries TERM-SHEET period numbers
+    # (run_backtest adds period_offset back), so the autocall filter matches the
+    # client's numbers directly. `coupon_amounts` is WINDOW-width whenever the
+    # position has a purchase gap, so a coupon filter on term-sheet P5 must become
+    # column 1. Passing it through unshifted selected the wrong column — or, past
+    # the window width, silently matched nothing.
+    _bt_off = int(summary.get("period_offset", 0) or 0)
+
+    def _to_window(ps):
+        return [int(p) - _bt_off for p in (ps or []) if int(p) - _bt_off >= 1] or None
     matches = _path_filter_matches(
         ac, ki, irr, coupon_m,
         outcome=f.get("outcome", "any"), ac_periods=f.get("ac_periods"),
         ki_choice=f.get("ki_choice", "any"),
         ret_lo=f.get("ret_lo"), ret_hi=f.get("ret_hi"),
-        coupon_periods=f.get("coupon_periods"))
+        coupon_periods=_to_window(f.get("coupon_periods")))
     M = int(len(matches))
     base["n_matched"] = M
     if M == 0:
@@ -2200,8 +2215,11 @@ def _compare_for_pdf(sf_a: dict, terms_a: NoteTerms, terms_b: NoteTerms, tr, *,
         if _pd and _pd.get("transition") is not None:
             # `labels`, not `transition_labels` — paired_stats names it the short way,
             # and an empty list here draws an unlabelled grid rather than failing.
+            # paired_stats returns translation KEYS ("out_called" / "part_gain" / …),
+            # and build_transition_heatmap uses its `labels` verbatim as tick text —
+            # so passing them through printed the keys on the axes of a client report.
             figs["transition"] = charts.build_transition_heatmap(
-                _pd["transition"], list(_pd.get("labels") or []), tr)
+                _pd["transition"], [tr(k) for k in (_pd.get("labels") or [])], tr)
     return data, figs
 
 

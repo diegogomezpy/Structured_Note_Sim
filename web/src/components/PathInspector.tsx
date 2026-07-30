@@ -296,10 +296,19 @@ function Segmented<T extends string>({ value, options, onChange }: {
   )
 }
 
-function PeriodChips({ n, selected, onToggle }: { n: number; selected: number[]; onToggle: (p: number) => void }) {
+/** Period filter chips.
+ *
+ *  `offset` is the run's `period_offset`, and it is load-bearing rather than
+ *  cosmetic: the chips must both LABEL and SEND term-sheet period numbers, because
+ *  the server shifts what it receives back into window space. Labelling P1..Pn on
+ *  a held run showed periods that do not exist (a note 4 observations in shows
+ *  P1..P8 when the real remaining ones are P5..P12) and sent numbers the server
+ *  then shifted a second time, selecting the wrong column or nothing at all. */
+function PeriodChips({ n, offset = 0, selected, onToggle }:
+  { n: number; offset?: number; selected: number[]; onToggle: (p: number) => void }) {
   return (
     <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-      {Array.from({ length: n }, (_, i) => i + 1).map((p) => {
+      {Array.from({ length: n }, (_, i) => i + 1 + offset).map((p) => {
         const on = selected.includes(p)
         return (
           <button key={p} onClick={() => onToggle(p)}
@@ -357,6 +366,9 @@ function InspectorPanel({ fetcher, terms, label, onRemove, panelId, reportImage 
   const [renorm, setRenorm] = useState(false)   // cliquet: per-period renormalised view
 
   const nObs = data?.n_obs ?? 0
+  // Term-sheet numbering for the filter chips: they must label and send the
+  // same numbers the server shifts back into window space.
+  const periodOffset = data?.period_offset ?? 0
   const filterKey = JSON.stringify({ outcome, acPeriods, ki, couponPeriods, band, atBounds: !bounds })
 
   const filters = (): InspectFilters => {
@@ -469,7 +481,7 @@ function InspectorPanel({ fetcher, terms, label, onRemove, panelId, reportImage 
                 {outcome === 'autocalled' && nObs > 0 && (
                   <div style={{ marginTop: 10 }}>
                     <div style={{ fontSize: 11, color: 'var(--text-faint)', marginBottom: 6 }}>{t('insp_ac_periods')}</div>
-                    <PeriodChips n={nObs} selected={acPeriods}
+                    <PeriodChips n={nObs} offset={periodOffset} selected={acPeriods}
                       onToggle={(p) => setAcPeriods((s) => s.includes(p) ? s.filter((x) => x !== p) : [...s, p])} />
                   </div>
                 )}
@@ -490,7 +502,7 @@ function InspectorPanel({ fetcher, terms, label, onRemove, panelId, reportImage 
             )}
             {data?.coupon_available && nObs > 0 && (
               <FilterRow label={t('insp_coupon')}>
-                <PeriodChips n={nObs} selected={couponPeriods}
+                <PeriodChips n={nObs} offset={periodOffset} selected={couponPeriods}
                   onToggle={(p) => setCouponPeriods((s) => s.includes(p) ? s.filter((x) => x !== p) : [...s, p])} />
               </FilterRow>
             )}

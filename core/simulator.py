@@ -575,17 +575,26 @@ class HestonMultiSimulator:
         # correlation (Forbes-Rigobon bias). It is therefore NOT directly
         # comparable to the calibrated corr_SS and should not be flagged as
         # "error vs input".
-        effective_corr = _pooled_corr(daily)
+        # N == 1 (a single step) leaves no return-to-return pairs, so `denom` is 0 and
+        # _pooled_corr divides by zero. Reachable: a held note whose final observation
+        # is the next business day is not refused by _position_state, and the grid is
+        # then two days wide — the whole simulation would complete and then die on a
+        # bare ZeroDivisionError inside a DIAGNOSTIC no payoff depends on. Report the
+        # correlations as unknown and let the run finish.
+        if denom <= 0:
+            effective_corr = realized_corr = np.full((n, n), np.nan)
+        else:
+            effective_corr = _pooled_corr(daily)
 
         # (b) REALIZED (instantaneous) correlation — standardize each step's
         # return by its own sqrt(V_t) before pooling. This removes the stochastic-
         # vol heteroskedasticity and recovers the Brownian correlation that was
         # actually fed into the Cholesky, so "realized vs input (corr_SS)" is a
         # like-for-like check of the engine (matches corr_SS to <0.3% in tests).
-        realized_corr = _pooled_corr([
-            daily[i] / np.sqrt(np.maximum(V[i][:n_diag, :-1], 1e-12))
-            for i in range(n)
-        ])
+            realized_corr = _pooled_corr([
+                daily[i] / np.sqrt(np.maximum(V[i][:n_diag, :-1], 1e-12))
+                for i in range(n)
+            ])
 
         results = {
             "S_paths":               S,

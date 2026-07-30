@@ -3030,6 +3030,12 @@ def _build_pdf_report(
                  or any(pi.get("png") for pi in (figures.get("panel_images") or []))))
         or (params and _inc("calib_table"))
         or (_inc("calib_corr") and figures.get("corr") is not None)
+        # Both gate their block on a figure the engine only builds for a note of the
+        # right shape, so the presence flag has to test the figure too — otherwise a
+        # selection of just one of these renders the picture inside a chapter the
+        # cover never listed and _plan_chapters never numbered.
+        or (_inc("mc_position_fan") and figures.get("position_fan") is not None)
+        or (_inc("mc_cliquet") and figures.get("cliquet") is not None)
     )
     _has_bt = bool(bt_summary) and bool(
         _inc("bt_metrics")

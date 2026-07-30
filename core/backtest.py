@@ -55,7 +55,14 @@ def hold_gap(terms: NoteTerms) -> tuple[int, float] | None:
     if settle <= issue:
         return None                                  # held from issue: nothing elapsed
     obs_cal = [pd.Timestamp(d) for d in terms.obs_calendar_dates(issue)]
-    k = min(sum(1 for d in obs_cal if d <= settle), terms.n_obs - 1)
+    k = sum(1 for d in obs_cal if d <= settle)
+    if k >= terms.n_obs:
+        # Settled at or after the final observation: there is nothing left to buy,
+        # so this is a matured note rather than a position. Refuse instead of
+        # clamping — the old `min(k, n_obs-1)` capped k but left gap_years past
+        # maturity, so rem_times[0] = obs_times()[k] - gap_years went NEGATIVE and
+        # every window annualised a real payoff over a negative holding period.
+        return None
     return k, max(0.0, (settle - issue).days / 365.0)
 
 

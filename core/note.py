@@ -852,6 +852,11 @@ def _participation_periodic_payoff(perf_paths, terms, obs_steps, t_maturity, n_o
     airbag / bear) is summed; capital rolls at par. The per-period stream maps onto
     the coupon machinery so the path explorer and coupon stats work unchanged."""
     n_paths = perf_paths.shape[0]
+    # Window offset + what the holder banked, for the echo keys below. `n_obs` here
+    # is the WINDOW width, so the elapsed count is the difference from the term
+    # sheet's total.
+    _pos = pos or {}
+    k_elapsed = max(0, terms.n_obs - int(n_obs))
     # Basket level at each reset date; B_0 = 1.0 at inception, or the basket at the
     # last elapsed reset for a note already part-way through its life. period_level
     # is the basket's gross
@@ -903,6 +908,14 @@ def _participation_periodic_payoff(perf_paths, terms, obs_steps, t_maturity, n_o
         "avg_time_to_autocall":     None,
         "cost_basis":               cost_basis,
         "prob_loss":                float((total_return < 0).mean()),
+        # The same three keys the Phoenix branch returns. api/engine.py reads
+        # periods_elapsed for `period_offset`, and the report's position band reads
+        # elapsed_years / realised_income — omitting them made a HELD participation
+        # run store offset 0 (mislabelling every per-period column) and draw a blank
+        # band, even though _position_returns had already used the real values.
+        "periods_elapsed":          int(k_elapsed),
+        "realised_income":          float(_pos.get("realised_income", 0.0) or 0.0),
+        "elapsed_years":            float(_pos.get("elapsed_years", 0.0) or 0.0),
         "period_move_mean":         period_move_mean,
         "period_income_mean":       period_income_mean,
         "period_move_p25":          period_move_p25,
@@ -925,6 +938,11 @@ def _participation_payoff(perf_paths, terms, obs_steps, t_maturity, n_obs,
         return _participation_periodic_payoff(perf_paths, terms, obs_steps, t_maturity,
                                               n_obs, start_basket=start_basket, pos=pos)
     n_paths    = perf_paths.shape[0]
+    # Window offset + what the holder banked, for the echo keys below. `n_obs` here
+    # is the WINDOW width, so the elapsed count is the difference from the term
+    # sheet's total.
+    _pos = pos or {}
+    k_elapsed = max(0, terms.n_obs - int(n_obs))
     final_step = obs_steps[-1]
     B          = _basket(perf_paths[:, final_step, :], terms.participation_basket)  # (n_paths,)
     R          = _participation_redemption(B, terms)
@@ -957,6 +975,14 @@ def _participation_payoff(perf_paths, terms, obs_steps, t_maturity, n_obs,
         "avg_time_to_autocall":     None,
         "cost_basis":               cost_basis,
         "prob_loss":                float((total_return < 0).mean()),
+        # The same three keys the Phoenix branch returns. api/engine.py reads
+        # periods_elapsed for `period_offset`, and the report's position band reads
+        # elapsed_years / realised_income — omitting them made a HELD participation
+        # run store offset 0 (mislabelling every per-period column) and draw a blank
+        # band, even though _position_returns had already used the real values.
+        "periods_elapsed":          int(k_elapsed),
+        "realised_income":          float(_pos.get("realised_income", 0.0) or 0.0),
+        "elapsed_years":            float(_pos.get("elapsed_years", 0.0) or 0.0),
         # Final basket per path — surfaced so the API can send a downsample to the
         # client, which recomputes redemption (via the TS mirror) for the payoff-
         # profile distribution overlay and the what-if sensitivity table.
@@ -1122,8 +1148,17 @@ def price_note(
     # entire Autocall waterfall (coupons / autocall / knock-in) is skipped. Routed
     # by the explicit note_type, or (legacy) by a positive capital_guarantee —
     # which from_dict already maps to note_type="participation" + protection_level.
-    if (getattr(terms, "note_type", "") == "participation"
-            or (terms.capital_guarantee is not None and terms.capital_guarantee > 0)):
+    # The capital_guarantee fallback exists for configs that PREDATE note_type, so it
+    # may only apply when note_type is absent. It used to be an unconditional OR,
+    # which silently routed an explicit note_type="autocall" carrying a leftover
+    # capital_guarantee>0 into the participation branch — no coupons, no autocall,
+    # and that branch reads protection_level (default 1.0), never the guarantee it
+    # keyed off. from_dict cannot save you: its migration is gated on
+    # `if not d.get("note_type")`, and the web always sends note_type.
+    _nt = getattr(terms, "note_type", "") or ""
+    if (_nt == "participation"
+            or (not _nt and terms.capital_guarantee is not None
+                and terms.capital_guarantee > 0)):
         return _participation_payoff(perf_paths, terms, obs_steps, t_maturity, n_obs,
                                      start_basket=start_basket, pos=pos)
 
