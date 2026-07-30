@@ -294,6 +294,79 @@ def test_held_window_rejects_a_matured_note():
         price_note(np.ones((1, 5, 1)), _q(), **_held_kw(4))
 
 
+# ── the position's return: settlement → redemption, on what was paid ─────────────
+def test_realised_income_enters_the_return_but_not_the_payoff():
+    """Coupons banked between settlement and today are the holder's money, but only
+    the remaining life is simulated — so they have to be added back. Without this the
+    reported 'return on cost' silently drops income the holder actually received."""
+    t = _q()
+    perf = np.ones((1, 5, 1)) * 0.8                      # coupons pay, never calls
+    bare = price_note(perf, t, **_held_kw(2))
+    with_income = price_note(perf, t, **_held_kw(2, realised_income=0.04))
+    # The PAYOFF is untouched — realised income is not a future cash flow.
+    assert with_income["nominal_payoffs"] == pytest.approx(bare["nominal_payoffs"])
+    assert with_income["coupon_payoffs"] == pytest.approx(bare["coupon_payoffs"])
+    # The RETURN moves by exactly the banked income, divided by the cost basis.
+    assert (with_income["total_returns"] - bare["total_returns"]) == pytest.approx([0.04])
+    assert with_income["realised_income"] == pytest.approx(0.04)
+
+
+def test_realised_income_is_measured_on_cost_not_on_par():
+    """The banked income divides by what was PAID, like every other return here."""
+    t = _q(purchase_price=0.80)                          # cost basis 0.80
+    perf = np.ones((1, 5, 1)) * 0.8
+    bare = price_note(perf, t, **_held_kw(2))
+    banked = price_note(perf, t, **_held_kw(2, realised_income=0.04))
+    assert (banked["total_returns"] - bare["total_returns"]) == pytest.approx([0.04 / 0.80])
+
+
+def test_elapsed_years_annualises_over_the_whole_holding_period():
+    """A forward-only denominator overstates the annualised figure: 6 months left of a
+    position held 18 months is a 2-year investment, not a 6-month one.
+
+    `obs_times` here are measured from TODAY, which is what a held run passes (the
+    engine builds them off a grid that starts at the anchor, see _snap_obs). The
+    _held_kw helper above keeps them anchored at issue instead, so it is deliberately
+    not used — the two anchors are the easy thing to conflate."""
+    t = _q()
+    perf = np.ones((1, 5, 1)) * 0.8
+    win = {"obs_steps": [3, 4], "obs_times": [0.25, 0.5], "periods_elapsed": 2}
+    fwd = price_note(perf, t, **win)                              # 0.5y still to run
+    held = price_note(perf, t, **win, elapsed_years=1.5)          # + 1.5y already held
+    # Same total return, spread over 4× the time (0.5y → 2.0y) → a quarter of the IRR.
+    assert held["total_returns"] == pytest.approx(fwd["total_returns"])
+    assert held["annualized_returns"] == pytest.approx(fwd["annualized_returns"] / 4.0)
+    assert held["elapsed_years"] == pytest.approx(1.5)
+
+
+def test_position_args_default_to_a_no_op():
+    """Every note priced from issue must be byte-identical to before these existed."""
+    t = _q()
+    perf = np.ones((1, 5, 1)) * 0.9
+    kw = {"obs_steps": [1, 2, 3, 4], "obs_times": [.25, .5, .75, 1.0]}
+    plain = price_note(perf, t, **kw)
+    zeroed = price_note(perf, t, realised_income=0.0, elapsed_years=0.0, **kw)
+    assert zeroed["total_returns"] == pytest.approx(plain["total_returns"])
+    assert zeroed["annualized_returns"] == pytest.approx(plain["annualized_returns"])
+
+
+def test_participation_position_return_includes_banked_income():
+    """The participation branch runs through the same _position_returns, so a held
+    participation note must pick both anchors up too (its own payoff has no coupons —
+    a cliquet's locked-in per-period income is what `realised_income` carries)."""
+    t = _autocall(note_type="participation", participation_downside="full",
+                  participation_upside="linear", protection_level=0.9,
+                  participation_rate=1.0, participation_strike=1.0)
+    perf = np.ones((1, 3, 1)) * 1.10
+    kw = {"obs_steps": [1, 2], "obs_times": [0.5, 1.0]}
+    bare = price_note(perf, t, **kw)
+    held = price_note(perf, t, realised_income=0.05, elapsed_years=1.0, **kw)
+    assert held["nominal_payoffs"] == pytest.approx(bare["nominal_payoffs"])
+    assert (held["total_returns"] - bare["total_returns"]) == pytest.approx([0.05])
+    assert held["annualized_returns"] == pytest.approx(
+        held["total_returns"] / 2.0)                      # 1y remaining + 1y held
+
+
 def test_replay_note_window_uses_absolute_periods():
     t = _q(autocall_start_period=3, autocall_barrier=1.0, memory=True, coupon_barrier=0.7)
     perf_obs = np.ones((2, 1)) * 0.8             # two observations, coupon-paying
