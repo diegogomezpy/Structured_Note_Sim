@@ -40,6 +40,18 @@ export const TREE: Group[] = [
     ['live_obs_table', 'Observation history', 'Historial de observaciones'],
     ['live_chart', 'Performance chart', 'Gráfico de rendimiento'],
   ] },
+  // A/B comparison charts. The chapter only exists when a Note B is set, and the
+  // verdict band + term diff + metric table are always drawn — these are the
+  // PICTURES, which the report used to omit entirely except for the two overlaid
+  // distributions. The paired three need A and B priced on ONE simulation (a
+  // per-path edge between independent runs is not a quantity), so they are skipped
+  // silently when the notes can't share paths.
+  { key: 'cmp', en: 'A/B comparison', es: 'Comparación A/B', items: [
+    ['cmp_wof', 'Worst-of envelope, both barriers', 'Envolvente del peor, ambas barreras'],
+    ['cmp_delta', 'Where B\u2019s edge comes from', 'De dónde viene la ventaja de B'],
+    ['cmp_scatter', 'Per-path IRR scatter', 'Dispersión de TIR por trayectoria'],
+    ['cmp_transition', 'Outcome transition matrix', 'Matriz de transición de resultados'],
+  ] },
 ]
 
 // Report presets — one click selects a set of sections for an audience. Keys are
@@ -60,7 +72,8 @@ export const DEFAULT_PRESET_KEYS: Record<string, string[]> = {
   risk: ['note_terms', 'note_diagram', 'issuer_info',
          'mc_metrics', 'mc_outcome', 'mc_autocall', 'mc_irr', 'mc_wof', 'mc_fans', 'calib_corr', 'calib_table',
          'bt_metrics', 'bt_outcome', 'bt_pie', 'bt_irr',
-         'live_metrics', 'live_obs_table'],
+         'live_metrics', 'live_obs_table',
+         'cmp_wof', 'cmp_delta', 'cmp_scatter', 'cmp_transition'],
 }
 export const PRESET_ORDER = ['full', 'advisor', 'client', 'ic', 'risk', 'custom'] as const
 export type Preset = (typeof PRESET_ORDER)[number]

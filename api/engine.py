@@ -2174,10 +2174,34 @@ def _compare_for_pdf(sf_a: dict, terms_a: NoteTerms, terms_b: NoteTerms, tr, *,
         "name_a": terms_a.name, "name_b": terms_b.name,
         "terms_b": terms_b,   # NoteTerms object (in-process) for the side-by-side terms table
     }
+    # The report used to carry two of the six charts the Compare panel shows, which
+    # made the chapter a metrics table with a picture rather than the comparison the
+    # app presents. The four below are exactly the ones a summary table CANNOT say:
+    # where the edge comes from, whether it is uniform across paths, which outcomes
+    # the swap actually moves, and where the two barrier sets sit against the same
+    # market. The paired ones only exist on shared paths.
+    _pd = data.get("paired")
     figs = {
         "irr": charts.build_irr_compare(note_a, note_b, tr),
         "outcome": charts.build_outcome_compare(note_a, note_b, terms_a, terms_b, tr),
+        # Worst-of envelope with BOTH notes' barriers. Shared paths => one market
+        # drawn once with two barrier sets across it, which is the comparison.
+        "wof": charts.build_wof_fan_compare(
+            sf_a["wof_bands"], sf_b["wof_bands"], sf_a["t_grid"],
+            terms_a.knock_in_barrier, tr,
+            autocall_barrier=terms_a.autocall_barrier, shared=shared,
+            knock_in_b=terms_b.knock_in_barrier,
+            autocall_barrier_b=terms_b.autocall_barrier),
     }
+    if shared:
+        figs["delta"] = charts.build_paired_delta(note_a, note_b, tr)
+        figs["scatter"] = charts.build_paired_scatter(
+            note_a["annualized_returns"], note_b["annualized_returns"], tr)
+        if _pd and _pd.get("transition") is not None:
+            # `labels`, not `transition_labels` — paired_stats names it the short way,
+            # and an empty list here draws an unlabelled grid rather than failing.
+            figs["transition"] = charts.build_transition_heatmap(
+                _pd["transition"], list(_pd.get("labels") or []), tr)
     return data, figs
 
 

@@ -323,6 +323,16 @@ export const S: Dict = {
   hint_on_cost:     { en: 'on cost {v}', es: 'sobre coste {v}' },
 
   // A HELD note — modelled from where it stands, measured on what you paid
+  // PDF Studio — masthead KPI strip + the metric names its chips use
+  masthead_metrics: { en: 'Summary masthead KPIs', es: 'KPIs de la cabecera del resumen' },
+  masthead_metrics_hint: { en: 'Which figures run across the dark banner on the summary page. Untouched uses the defaults for the note type; keys that do not apply to a given report are skipped.',
+                      es: 'Que cifras aparecen en la banda oscura de la pagina de resumen. Sin tocar usa los valores por defecto del tipo de nota; las claves que no apliquen se omiten.' },
+  masthead_metrics_off: { en: 'All off — the report will draw no KPI strip.',
+                      es: 'Todo desactivado — el informe no dibujara la banda de KPIs.' },
+  masthead_metrics_reset: { en: 'Reset to default', es: 'Restablecer' },
+  prob_autocall:    { en: 'P(autocall)', es: 'P(autocancelacion)' },
+  prob_knock_in:    { en: 'P(knock-in)', es: 'P(knock-in)' },
+  mean_hist_irr:    { en: 'Mean historical IRR', es: 'TIR historica media' },
   fan_realised:     { en: 'What already happened', es: 'Lo que ya ocurrio' },
   fan_today:        { en: 'today', es: 'hoy' },
   fan_bought:       { en: 'bought', es: 'comprado' },

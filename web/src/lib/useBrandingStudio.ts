@@ -17,6 +17,16 @@ export const COVER_METRIC_KEYS = [
 ] as const
 export const COVER_METRIC_DEFAULT = ['coupon_pa', 'maturity', 'knock_in_barrier']
 export const COVER_METRIC_MAX = 4
+
+/** The masthead KPI strip on the summary page. Mirrors
+    app/pdf_report.py:MASTHEAD_METRIC_KEYS — the renderer picks whichever of these
+    the report at hand actually has, so a selection spanning note types is fine.
+    Unlike the cover band there is no cap: the strip divides its width evenly.
+    Absent => the per-note-type defaults; an explicit [] turns the strip OFF. */
+export const MASTHEAD_METRIC_KEYS = [
+  'expected_irr', 'expected_total_return', 'prob_autocall', 'prob_knock_in',
+  'mean_hist_irr', 'coupon_pa', 'expected_redemption', 'p_below_par', 'p_above_par',
+] as const
 const MAX_PHOTOS = 12
 
 // Fonts the PDF can actually render, discovered by the API from fonts/ and
@@ -50,6 +60,12 @@ export interface BrandingStudio {
   fontCount: (field: 'title_font_files' | 'body_font_files') => number
   coverMetricsSel: string[]
   toggleCoverMetric: (k: string) => void
+  /** What the strip WILL show (selection, or the per-note-type defaults). */
+  mastheadShown: readonly string[]
+  /** The raw stored selection: undefined = untouched, [] = deliberately none. */
+  mastheadMetricsSel: string[] | undefined
+  toggleMastheadMetric: (k: string) => void
+  resetMastheadMetrics: () => void
   metricLabel: (k: string) => string
   refs: {
     logo: React.RefObject<HTMLInputElement | null>
@@ -193,11 +209,31 @@ export function useBrandingStudio(): BrandingStudio {
     setBrand((b) => ({ ...b, cover_metrics: next }))
   }
 
+  // Masthead KPIs. `undefined` (never touched) and `[]` (deliberately none) are
+  // DIFFERENT: the first means "use the defaults for this note type", the second
+  // turns the strip off. So the first toggle has to materialise the current
+  // defaults before removing from them, or clicking one chip would read as
+  // "select only that one".
+  const mastheadDefaults = MASTHEAD_METRIC_KEYS.filter(
+    (k) => k === 'expected_irr' || k === 'prob_autocall' || k === 'prob_knock_in')
+  const mastheadMetricsSel = (brand.masthead_metrics as string[] | undefined)
+  const mastheadShown = mastheadMetricsSel ?? mastheadDefaults
+  const toggleMastheadMetric = (k: string) => {
+    const base = mastheadShown
+    const next = base.includes(k)
+      ? base.filter((m) => m !== k)
+      : [...MASTHEAD_METRIC_KEYS].filter((m) => base.includes(m) || m === k)
+    setBrand((b) => ({ ...b, masthead_metrics: next }))
+  }
+  const resetMastheadMetrics = () =>
+    setBrand((b) => { const { masthead_metrics: _drop, ...rest } = b; return rest })
+
   return {
     brand, setBrand, setBrandField, themeIsCustom, presets, reportFonts, brandFolder,
     brandLocalName, setBrandLocalName, brandSaving, error, setError,
     applyBranding, newBranding, loadPreset, onUploadBranding, saveBrandingToFolder, downloadBranding,
     onImage, onFillerUpload, onFontFiles, fontCount,
     coverMetricsSel, toggleCoverMetric, metricLabel, refs,
+    mastheadShown, mastheadMetricsSel, toggleMastheadMetric, resetMastheadMetrics,
   }
 }

@@ -8,7 +8,8 @@ import ReportImages from './ReportImages'
 import BrandConfigBar from './BrandConfigBar'
 import { Card, ColorWell, Field, NumberInput, TextInput, UploadTile, grid, inputStyle } from './designerFields'
 import { resolveSpec, buildTokens, writeSpec, specBase, diffSpec } from '../lib/reportTheme'
-import { COVER_METRIC_KEYS, COVER_METRIC_MAX, type BrandingStudio } from '../lib/useBrandingStudio'
+import { COVER_METRIC_KEYS, COVER_METRIC_MAX, MASTHEAD_METRIC_KEYS,
+         type BrandingStudio } from '../lib/useBrandingStudio'
 import type { Branding, NoteTerms } from '../api/types'
 
 /* PDF Designer — a bespoke, from-scratch branding studio. Every input here is
@@ -153,6 +154,34 @@ export default function PdfDesigner({ studio, terms }: {
                     onClick={() => studio.toggleCoverMetric(k)}>{studio.metricLabel(k)}</button>
                 )
               })}
+            </div>
+          </div>
+
+          {/* The masthead KPI strip on the summary page. Same contract as the cover
+              band above, with one difference worth the extra control: leaving it
+              untouched means "the defaults for this note type", while turning every
+              chip off means "no strip at all" — two states a pill row cannot show
+              on its own, hence the reset. Keys that don't apply to the report at
+              hand are simply skipped by the renderer, so a selection can span note
+              types safely. */}
+          <div style={{ marginTop: 16 }}>
+            <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginBottom: 2 }}>
+              <div style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>{t('masthead_metrics')}</div>
+              {studio.mastheadMetricsSel != null && (
+                <button type="button" className="btn btn--ghost"
+                        style={{ padding: '2px 8px', fontSize: 10.5, marginLeft: 'auto' }}
+                        onClick={studio.resetMastheadMetrics}>{t('masthead_metrics_reset')}</button>
+              )}
+            </div>
+            <div style={{ fontSize: 11, color: 'var(--text-faint)', marginBottom: 8, lineHeight: 1.5 }}>
+              {studio.mastheadShown.length === 0 ? t('masthead_metrics_off') : t('masthead_metrics_hint')}
+            </div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7 }}>
+              {MASTHEAD_METRIC_KEYS.map((k) => (
+                <button key={k} type="button" className="preset-pill"
+                        data-on={studio.mastheadShown.includes(k)}
+                        onClick={() => studio.toggleMastheadMetric(k)}>{studio.metricLabel(k)}</button>
+              ))}
             </div>
           </div>
 

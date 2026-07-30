@@ -417,6 +417,14 @@ _LABELS: dict[str, dict[str, str]] = {
     "cmp_col_delta":         {"en": "Δ (B − A)",                    "es": "Δ (B − A)"},
     "cmp_fig_irr":           {"en": "IRR p.a. distribution — A vs B",
                              "es": "Distribución de TIR anual — A vs B"},
+    "cmp_fig_wof":           {"en": "Worst-of envelope with both barrier sets",
+                              "es": "Envolvente del peor con ambas barreras"},
+    "cmp_fig_delta":         {"en": "Where B's edge comes from, by outcome",
+                              "es": "De donde viene la ventaja de B, por resultado"},
+    "cmp_fig_scatter":       {"en": "Per-path IRR — A vs B",
+                              "es": "TIR por trayectoria — A vs B"},
+    "cmp_fig_transition":    {"en": "How each path resolves — A vs B",
+                              "es": "Como se resuelve cada trayectoria — A vs B"},
     "cmp_fig_outcome":       {"en": "Outcome / redemption — A vs B",
                              "es": "Resultado / reembolso — A vs B"},
     "cmp_shared_note":       {"en": "Both notes priced on one shared simulation — differences are pure term effects.",
@@ -1317,6 +1325,18 @@ def _participation_term_rows(terms, lang: str) -> list[tuple[str, str]]:
     return rows
 
 
+# Every measure the masthead KPI strip can show, across all three branches
+# (participation / Monte Carlo / backtest-only). `branding["masthead_metrics"]`
+# names a subset of these; keys absent from the report at hand are skipped, and an
+# explicit empty list turns the strip off. The web Studio mirrors this list —
+# web/src/lib/useBrandingStudio.ts:MASTHEAD_METRIC_KEYS.
+MASTHEAD_METRIC_KEYS = (
+    "expected_irr", "expected_total_return", "prob_autocall", "prob_knock_in",
+    "mean_hist_irr", "coupon_pa",
+    "expected_redemption", "p_below_par", "p_above_par",
+)
+
+
 def _position_rows(terms, lang: str) -> list[tuple[str, str]]:
     """Term rows describing the POSITION rather than the note — present only for a
     secondary-market purchase, so a plain subscription's table is unchanged (and
@@ -1896,6 +1916,14 @@ def _cover_page(
     # KPI strip — analytical only (Monte Carlo and/or backtest). Skipped for a
     # client / terms-only report (compact masthead), where these would just echo
     # the key-terms rail.
+    #
+    # `_kpi_keys` are SELECTION keys (what `masthead_metrics` names), deliberately
+    # separate from the label keys `_t()` looks up — they only happen to coincide
+    # for most of them. Every branch must spell a given measure the SAME way or a
+    # selection silently drops it: the backtest-only branch used to say
+    # "p_autocall" where the Monte Carlo one said "prob_autocall", so selecting the
+    # autocall probability produced a strip missing it on a backtest-only report.
+    # The vocabulary is MASTHEAD_METRIC_KEYS below.
     if _show_kpis:
         if _has_mc and getattr(terms, "note_type", "") == "participation":
             kpis = [(_t("expected_redemption", lang), f"{results.get('expected_nominal_payout', 1):.2%}"),
@@ -1920,7 +1948,7 @@ def _cover_page(
                     (_t("p_autocall", lang),     f"{bt_summary.get('prob_called', 0):.1%}"),
                     (_t("prob_knock_in", lang),  f"{bt_summary.get('prob_knock_in', 0):.2%}"),
                     (_t("coupon_pa", lang),      f"{terms.coupon_pa * 100:.2f}%")]
-            _kpi_keys = ["mean_hist_irr", "p_autocall", "prob_knock_in", "coupon_pa"]
+            _kpi_keys = ["mean_hist_irr", "prob_autocall", "prob_knock_in", "coupon_pa"]
 
         # Inset by the masthead's CUT, not by the fixed text padding. A chamfer
         # removes a triangle from each bottom corner and the cut scales with the
@@ -3605,6 +3633,19 @@ def _build_pdf_report(
         if _cmp_figs.get("outcome") is not None:
             _cmp_div()
             pdf.figure(_fig_to_png(_cmp_figs["outcome"], **_kw), _t("cmp_fig_outcome", lang), src_mc)
+
+        # 6b-iv. The four the app shows that a metrics table cannot say. `wof` is
+        # always available; the paired three exist only when A and B were priced on
+        # ONE simulation, because a per-path edge between two independent runs is
+        # not a quantity. Each is its own toggle so a short comparison can still be
+        # short — but they are present, which they were not.
+        for _key, _lbl in (("wof",        "cmp_fig_wof"),
+                           ("delta",      "cmp_fig_delta"),
+                           ("scatter",    "cmp_fig_scatter"),
+                           ("transition", "cmp_fig_transition")):
+            if _cmp_figs.get(_key) is not None and _inc(f"cmp_{_key}"):
+                _cmp_div()
+                pdf.figure(_fig_to_png(_cmp_figs[_key], **_kw), _t(_lbl, lang), src_mc)
 
     # ── 7. Glossary ────────────────────────────────────────────────────────
     # Reference list of the financial terms used throughout the report. Always
