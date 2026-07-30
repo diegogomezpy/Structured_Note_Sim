@@ -42,7 +42,7 @@ def test_identical_notes_can_share_paths():
 @pytest.mark.parametrize("over,blocker", [
     ({"tickers": {"AAPL": "Apple"}},                      "underlyings"),
     ({"maturity": 2.0},                                   "maturity"),
-    ({"seasoned": True, "issue_date": "2024-01-15"},      "seasoning"),
+    ({"settlement_date": "2024-01-15", "issue_date": "2024-01-15"}, "held"),
 ])
 def test_share_blockers_name_the_offending_term(over, blocker):
     assert share_blockers(_terms(), _terms(**over)) == [blocker]
@@ -57,12 +57,25 @@ def test_reordered_underlyings_still_share_paths():
     assert share_blockers(a, b) == []
 
 
-def test_seasoned_notes_need_the_same_issue_date():
-    a = _terms(seasoned=True, issue_date="2024-01-15")
-    b = _terms(seasoned=True, issue_date="2024-06-15")
-    # Both seasoned, so the grid and the fixings differ only through the date.
+def test_held_notes_need_the_same_issue_date():
+    a = _terms(settlement_date="2024-01-15", issue_date="2024-01-15")
+    b = _terms(settlement_date="2024-06-15", issue_date="2024-06-15")
+    # Both held, so the grid and the fixings differ only through the issue date.
     assert share_blockers(a, b) == ["issue_date"]
-    assert share_blockers(a, _terms(seasoned=True, issue_date="2024-01-15")) == []
+    assert share_blockers(a, _terms(settlement_date="2024-01-15",
+                                    issue_date="2024-01-15")) == []
+
+
+def test_legacy_seasoned_flag_migrates_to_a_position():
+    """`seasoned` was a stored flag; it is now derived from settlement_date. A legacy
+    config must keep modelling the remaining life — as a note held since issue at par,
+    which is what it always meant — and must NOT become a secondary purchase."""
+    t = _terms(seasoned=True, issue_date="2024-01-15")
+    assert t.settlement_date == "2024-01-15"
+    assert t.is_held is True
+    assert t.is_secondary is False          # held since issue at par is a subscription
+    assert t.cost_basis == 1.0
+    assert "seasoned" not in t.to_dict()    # the flag is gone from the schema
 
 
 # ── paired statistics ──────────────────────────────────────────────────────────

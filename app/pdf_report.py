@@ -283,8 +283,12 @@ _LABELS: dict[str, dict[str, str]] = {
     # below-par redemption. Only the A/B comparison table quotes it, which is why
     # a missing entry went unnoticed: it printed the raw key "p_loss" as a label.
     "p_loss":                {"en": "P(loss on cost)",                   "es": "P(pérdida sobre coste)"},
-    "seasoned":              {"en": "Modelled horizon",                  "es": "Horizonte modelado"},
-    "seasoned_row":          {"en": "Remaining life only",               "es": "Solo la vida restante"},
+    "held_horizon":          {"en": "Projection covers",                 "es": "La proyeccion cubre"},
+    "held_horizon_row":      {"en": "Remaining life only",               "es": "Solo la vida restante"},
+    "holding_period":        {"en": "Held for",                          "es": "En cartera"},
+    "income_banked":         {"en": "Income banked since settlement",    "es": "Ingresos cobrados desde la liquidacion"},
+    "return_on_cost":        {"en": "Return on cost",                    "es": "Rentabilidad sobre coste"},
+    "pull_to_par":           {"en": "Pull to par",                       "es": "Recorrido hasta el nominal"},
     "issuer":                {"en": "Issuer",                            "es": "Emisor"},
     "expected_irr":          {"en": "Expected IRR p.a.",                 "es": "TIR esperada anual"},
     "expected_total_return": {"en": "Expected total return",             "es": "Retorno total esperado"},
@@ -1310,8 +1314,8 @@ def _position_rows(terms, lang: str) -> list[tuple[str, str]]:
             rows.append((_t("cost_basis", lang), f"{terms.cost_basis:.3%}"))
     # Seasoning belongs on the term sheet's face: it is why the modelled horizon
     # is shorter than the tenor printed above it.
-    if getattr(terms, "seasoned", False):
-        rows.append((_t("seasoned", lang), _t("seasoned_row", lang)))
+    if getattr(terms, "is_held", False):
+        rows.append((_t("held_horizon", lang), _t("held_horizon_row", lang)))
     return rows
 
 
@@ -3238,13 +3242,13 @@ def _build_pdf_report(
     # meaningless there, and `obs_times` isn't bound (the obs schedule is hidden).
     if _inc("mc_autocall") and any(p > 0 for p in prob_by_period):
         _sec()
-        # Seasoning indexing contract (see CLAUDE.md): every per-period array is
+        # Held-window indexing contract (see CLAUDE.md): every per-period array is
         # aligned to the PRICED WINDOW, and column i describes term-sheet period
         # `period_offset + i + 1`. Display layers add the offset — the web ones
         # did, this table did not. It labelled window indices as term-sheet
         # periods, zipped the FIRST observation times against the REMAINING
-        # probabilities, and tested eligibility on the window index, so a
-        # seasoned note's report was wrong in three ways at once.
+        # probabilities, and tested eligibility on the window index, so a held
+        # note's report was wrong in three ways at once.
         _off = int(results.get("period_offset", results.get("periods_elapsed", 0)) or 0)
         _obs_times = list(terms.obs_times())[_off:]
         pdf.subsection(_t("autocall_by_period", lang),

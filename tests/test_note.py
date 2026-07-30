@@ -220,8 +220,8 @@ def test_zero_cost_basis_rejected():
         _autocall(purchase_price=0.0)
 
 
-# ── seasoning: pricing only the remaining window of a partially-elapsed note ─────
-def _seasoned_kw(k, **over):
+# ── held notes: pricing only the remaining window of a partially-elapsed note ────
+def _held_kw(k, **over):
     """price_note args for the last `4 - k` observations of a 4-period note."""
     return {"obs_steps": list(range(k + 1, 5)),
             "obs_times": [(j + 1) / 4 for j in range(k, 4)],
@@ -233,11 +233,11 @@ def _q(**over) -> NoteTerms:
     return _autocall(payment_freq="quarterly", coupon_pa=0.08, **over)
 
 
-def test_seasoning_prices_only_the_remaining_window():
+def test_held_window_prices_only_the_remaining_window():
     t = _q()
     perf = np.ones((1, 5, 1)) * 0.8              # flat at 80%: coupons pay, no autocall
     full = price_note(perf, t, obs_steps=[1, 2, 3, 4], obs_times=[.25, .5, .75, 1.0])
-    tail = price_note(perf, t, **_seasoned_kw(3))    # only P4 left
+    tail = price_note(perf, t, **_held_kw(3))    # only P4 left
     assert full["coupon_amounts"].shape[1] == 4
     assert tail["coupon_amounts"].shape[1] == 1
     assert tail["periods_elapsed"] == 3
@@ -246,52 +246,52 @@ def test_seasoning_prices_only_the_remaining_window():
     assert tail["coupon_payoffs"] == pytest.approx([0.02])
 
 
-def test_seasoning_counts_autocall_lockout_in_absolute_periods():
+def test_held_window_counts_autocall_lockout_in_absolute_periods():
     """A note locked out until P3 is callable at EVERY remaining observation once
     the window opens at P3 — the lock-out is a term-sheet period, not an offset."""
     t = _q(autocall_start_period=3, autocall_barrier=1.0)
     perf = np.ones((1, 5, 1))                    # at the barrier throughout
     fresh = price_note(perf, t, obs_steps=[1, 2, 3, 4], obs_times=[.25, .5, .75, 1.0])
     assert fresh["autocall_period"] == pytest.approx([3])       # first callable period
-    tail = price_note(perf, t, **_seasoned_kw(2))              # window opens at P3
+    tail = price_note(perf, t, **_held_kw(2))              # window opens at P3
     assert tail["autocall_period"] == pytest.approx([1])        # = absolute P3
     # Opening at P1 of the window must NOT re-apply the lock-out from the window.
     assert tail["prob_autocall"] == 1.0
 
 
-def test_seasoning_carries_memory_arrears():
+def test_held_window_carries_memory_arrears():
     """Arrears accrued before the window are released by the first coupon in it."""
     t = _q(memory=True, coupon_barrier=0.7)
     perf = np.ones((1, 5, 1)) * 0.8              # above the coupon barrier
-    clean = price_note(perf, t, **_seasoned_kw(2))
-    owed2 = price_note(perf, t, **_seasoned_kw(2, pending_coupons=2))
+    clean = price_note(perf, t, **_held_kw(2))
+    owed2 = price_note(perf, t, **_held_kw(2, pending_coupons=2))
     # P3 pays 1 coupon clean, 3 with two quarters of arrears; P4 pays 1 either way.
     assert clean["coupon_amounts"][0].tolist() == pytest.approx([0.02, 0.02])
     assert owed2["coupon_amounts"][0].tolist() == pytest.approx([0.06, 0.02])
 
 
-def test_seasoning_growth_premium_accrues_from_issue():
-    """coupon_at_autocall_only pays for every period SINCE ISSUE, so a seasoned
+def test_held_window_growth_premium_accrues_from_issue():
+    """coupon_at_autocall_only pays for every period SINCE ISSUE, so a held
     note called at its next observation still collects the full accrual."""
     t = _q(coupon_at_autocall_only=True, autocall_barrier=1.0)
     perf = np.ones((1, 5, 1))
-    tail = price_note(perf, t, **_seasoned_kw(2))   # calls at the window's P1 = absolute P3
+    tail = price_note(perf, t, **_held_kw(2))   # calls at the window's P1 = absolute P3
     assert tail["autocall_period"] == pytest.approx([1])
     assert tail["coupon_payoffs"] == pytest.approx([0.06])      # 3 × 2%, not 1 × 2%
 
 
-def test_seasoning_uses_the_remaining_step_down_rungs():
+def test_held_window_uses_the_remaining_step_down_rungs():
     t = _q(autocall_barrier=1.0, autocall_step_down=0.05, autocall_start_period=1)
     perf = np.ones((1, 5, 1)) * 0.92             # below P1/P2 rungs, above P3's 0.90
     fresh = price_note(perf, t, obs_steps=[1, 2, 3, 4], obs_times=[.25, .5, .75, 1.0])
     assert fresh["autocall_period"] == pytest.approx([3])
-    tail = price_note(perf, t, **_seasoned_kw(2))   # window starts on the 0.90 rung
+    tail = price_note(perf, t, **_held_kw(2))   # window starts on the 0.90 rung
     assert tail["autocall_period"] == pytest.approx([1])
 
 
-def test_seasoning_rejects_a_matured_note():
+def test_held_window_rejects_a_matured_note():
     with pytest.raises(ValueError, match="already reached maturity"):
-        price_note(np.ones((1, 5, 1)), _q(), **_seasoned_kw(4))
+        price_note(np.ones((1, 5, 1)), _q(), **_held_kw(4))
 
 
 def test_replay_note_window_uses_absolute_periods():

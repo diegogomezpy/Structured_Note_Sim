@@ -47,7 +47,6 @@ export function blankNote(): NoteTerms {
     settlement_date: null,
     purchase_price: 1.0,
     accrued_at_purchase: 0,
-    seasoned: false,
     underlyings: {},
   }
 }

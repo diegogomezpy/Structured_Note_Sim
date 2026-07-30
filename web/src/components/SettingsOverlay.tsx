@@ -102,7 +102,8 @@ export default function SettingsOverlay({
   const secondary = !!terms.settlement_date || (terms.purchase_price ?? 1) !== 1
                     || (terms.accrued_at_purchase ?? 0) !== 0
   const costBasis = (terms.purchase_price ?? 1) + (terms.accrued_at_purchase ?? 0)
-  // Seasoning has nothing to season to without a note that has already been issued.
+  // Modelling the remaining life needs a note that has already been issued — there
+  // are no original fixings to measure the barriers against otherwise.
   const issuedInPast = !!terms.issue_date && terms.issue_date <= today()
 
   return (
@@ -353,16 +354,17 @@ export default function SettingsOverlay({
           </div>
         </>)}
 
-        {/* Seasoning — independent of the purchase price: it changes WHAT is
-            simulated (the remaining life, off the original fixings), not what the
-            position cost. Needs a past issue date to have anything to season to. */}
-        <div style={{ marginTop: 16, paddingTop: 14, borderTop: '1px solid var(--border)' }}>
-          <ToggleField label={t('seasoned')} tip={t('tip_seasoned')} checked={!!terms.seasoned}
-                       onChange={(v) => set('seasoned', v)} />
-          <div style={{ fontSize: 11.5, color: 'var(--text-faint)', marginTop: 4, lineHeight: 1.5 }}>
-            {!issuedInPast ? t('seasoned_needs_issue')
-              : terms.seasoned ? t('seasoned_on_hint') : t('seasoned_off_hint')}
-          </div>
+        {/* What holding a position implies for the modelling. There is no toggle:
+            a settlement date IS the statement that this note is owned, and a note
+            you own is modelled from where it stands. Stating the consequence beats
+            a second switch that could disagree with the dates above. */}
+        <div style={{ marginTop: 16, paddingTop: 14, borderTop: '1px solid var(--border)',
+                      fontSize: 11.5, color: 'var(--text-faint)', lineHeight: 1.55 }}>
+          {/* The switch is the SETTLEMENT DATE, not the secondary toggle: a price
+              away from par with no settlement date still prices from issue. */}
+          {!terms.settlement_date ? t('held_off_hint')
+            : !issuedInPast ? t('held_needs_issue')
+            : t('held_on_hint')}
         </div>
       </Group>
 

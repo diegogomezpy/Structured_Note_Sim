@@ -613,51 +613,63 @@ def _snap_obs(grid, N: int, obs_dates) -> tuple[list[int], list[float]]:
     return obs_steps, obs_times
 
 
-# ── seasoning: pricing a partially-elapsed note from where it stands ───────────
-# Reasons seasoning was asked for but could not be applied; the run falls back to
-# the from-issue simulation and reports the reason so the UI can explain itself.
-_SEASON_REASONS = ("no_issue_date", "not_issued", "no_fixing", "matured", "called")
+# ── a HELD note: modelling the life that is left, from where it stands ─────────
+# Reasons a held note could not be modelled that way; the run falls back to the
+# from-issue simulation and reports the reason so the UI can explain itself.
+_UNHELD_REASONS = ("not_issued", "no_fixing", "matured", "called")
 
 
-def _obs_dates(terms: NoteTerms, anchor, live: dict | None) -> list:
-    """The observation calendar this run prices — the remaining dates of a seasoned
+def _obs_dates(terms: NoteTerms, anchor, held: dict | None) -> list:
+    """The observation calendar this run prices — the remaining dates of a held
     note, otherwise the full schedule counted from `anchor`."""
-    return live["obs_dates"] if live else list(terms.obs_calendar_dates(anchor))
+    return held["obs_dates"] if held else list(terms.obs_calendar_dates(anchor))
 
 
-def _season_kwargs(live: dict | None) -> dict:
-    """price_note's seasoning arguments for a resolved state (empty when the note
-    is priced from issue, so the call is byte-for-byte the old one)."""
-    if not live:
+def _position_kwargs(held: dict | None) -> dict:
+    """price_note's held-position arguments for a resolved state (empty when the
+    note is priced from issue, so the call is byte-for-byte the old one).
+
+    Two distinct anchors are in play and conflating them is the easy mistake:
+    `periods_elapsed` / `pending_coupons` / `start_basket` are anchored on TODAY
+    (they describe which observations are still to be simulated), while
+    `realised_income` / `elapsed_years` are anchored on SETTLEMENT (they describe
+    what this holder has banked and how long they have owned it)."""
+    if not held:
         return {}
-    return {"periods_elapsed": live["periods_elapsed"],
-            "pending_coupons": live["pending_coupons"],
-            "start_basket":    live["start_basket"]}
+    return {"periods_elapsed": held["periods_elapsed"],
+            "pending_coupons": held["pending_coupons"],
+            "start_basket":    held["start_basket"],
+            "realised_income": held["income_since_settlement"],
+            "elapsed_years":   held["elapsed_years"]}
 
 
-def _seasoning(terms: NoteTerms, anchor) -> dict | None:
-    """Resolve a seasoned note's state at `anchor` (the last trading day priced).
+def _position_state(terms: NoteTerms, anchor) -> dict | None:
+    """Resolve a HELD note's state at `anchor` (the last trading day priced).
 
-    Returns None when the note isn't marked `seasoned`; ``{"ok": False, "reason":
-    …}`` when it is but can't be (see _SEASON_REASONS); otherwise the state the
-    simulation needs:
+    Returns None when the note isn't held (`NoteTerms.is_held` — no settlement date,
+    or no issue date to fix barriers against), ``{"ok": False, "reason": …}`` when it
+    is held but the remaining life can't be modelled (see _UNHELD_REASONS), otherwise
+    the state the simulation needs:
 
       fixings          {asset name: original fixing price} — barriers are levels
-                       against THESE, which is the whole point of seasoning
+                       against THESE, which is the whole point of modelling a note
+                       already part-way through its life
       issue_anchor     the trading day the note actually fixed on
+      settle_anchor    the trading day this holder's position started
       maturity_date    the ORIGINAL maturity (issue + tenor), not today + tenor
       obs_dates        only the observations still to come
       periods_elapsed  how many already fixed  → price_note's window offset
       pending_coupons  memory arrears carried in
-      coupons_received realised income so far (reporting only — it is NOT part of
-                       the forward payoff, which is what the MC prices)
+      coupons_received realised income since ISSUE (context only — some of it went
+                       to the previous holder)
+      income_since_settlement  realised income that is THIS holder's, which the
+                       forward payoff would otherwise drop entirely
+      elapsed_years    years already held (settlement → anchor)
       start_basket     cliquet: basket at the last elapsed reset
       perf_now         today's per-asset performance against the fixings
     """
-    if not getattr(terms, "seasoned", False):
+    if not terms.is_held:
         return None
-    if not terms.issue_date:
-        return {"ok": False, "reason": "no_issue_date"}
     issue_ts = pd.Timestamp(terms.issue_date)
     anchor = pd.Timestamp(anchor)
     if issue_ts > anchor:
@@ -685,26 +697,48 @@ def _seasoning(terms: NoteTerms, anchor) -> dict | None:
                  for d in obs_cal[:k]]
     perf_obs = (np.vstack(past_rows) / S0_fix) if past_rows else np.empty((0, len(S0_fix)))
 
-    pending, received, start_basket = 0, 0.0, 1.0
+    # When THIS holder's position started. Coupons that fixed at or before it went
+    # to the previous holder; the holding clock starts here too.
+    settle_anchor = _settlement_ts(terms, issue_anchor, anchor)
+
+    pending, received, since_settle, start_basket = 0, 0.0, 0.0, 1.0
     if getattr(terms, "note_type", "autocall") == "participation":
         if getattr(terms, "participation_periodic", False) and k:
             start_basket = float(_basket(perf_obs[-1:], terms.participation_basket)[0])
+            # A cliquet locks in each reset's income as it happens, so the elapsed
+            # resets are realised money exactly as coupons are. Measure the same
+            # per-period profile the payoff uses, over the moves that already fixed.
+            B_hist = _basket(perf_obs, terms.participation_basket)              # (k,)
+            prev   = np.concatenate([[1.0], B_hist[:-1]])
+            levels = np.divide(B_hist, prev, out=np.ones_like(B_hist), where=(prev != 0))
+            income = participation_period_income(levels.reshape(1, -1), terms)[0]
+            received = float(income.sum())
+            since_settle = float(income[[d > settle_anchor for d in obs_cal[:k]]].sum())
     else:
         replay = replay_note(perf_obs, terms)
         if replay["autocall_period"]:
             return {"ok": False, "reason": "called"}
         pending  = int(replay["pending_coupons"])
         received = float(replay["total_coupons"])
+        # Only the coupons that fixed AFTER settlement are this holder's money.
+        # For a note held since issue that is all of them, so `received` and
+        # `since_settle` coincide and nothing changes for a plain subscription.
+        since_settle = float(sum(r["coupon_amount"]
+                                 for r, d in zip(replay["rows"], obs_cal[:k])
+                                 if d > settle_anchor))
 
     return {
         "ok": True,
         "fixings":         fixings,
         "issue_anchor":    issue_anchor,
+        "settle_anchor":   settle_anchor,
         "maturity_date":   issue_anchor + pd.DateOffset(months=round(terms.maturity * 12)),
         "obs_dates":       remaining,
         "periods_elapsed": k,
         "pending_coupons": pending,
         "coupons_received": received,
+        "income_since_settlement": since_settle,
+        "elapsed_years":   max(0.0, (anchor - settle_anchor).days / 365.0),
         "start_basket":    start_basket,
         "perf_now":        full.iloc[-1].to_numpy(dtype=float) / S0_fix,
     }
@@ -730,19 +764,19 @@ def _simulate_full(terms: NoteTerms, *, n_paths: int, seed: int, calib_years: fl
         if p.name in raw_last.index:
             p.S0 = float(raw_last[p.name])
 
-    # Trading-day grid to maturity. Unseasoned (the default) that is today +
-    # tenor, pricing the note as if issued today; seasoned it runs today → the
-    # ORIGINAL maturity, covering only the observations still to come.
+    # Trading-day grid to maturity. Not held (the default) that is today + tenor,
+    # pricing the note as if issued today; held it runs today → the ORIGINAL
+    # maturity, covering only the observations still to come.
     anchor   = prices_raw.index[-1]
-    seas     = _seasoning(terms, anchor)
-    live     = seas if (seas and seas.get("ok")) else None
+    pstate   = _position_state(terms, anchor)
+    held     = pstate if (pstate and pstate.get("ok")) else None
     mat_date = pd.offsets.BDay().rollforward(
-        live["maturity_date"] if live
+        held["maturity_date"] if held
         else anchor + pd.DateOffset(months=round(terms.maturity * 12)))
     grid     = pd.bdate_range(anchor, mat_date)
     dt_grid  = np.diff(grid.values).astype("timedelta64[D]").astype(float) / 365.0
     N        = len(grid) - 1
-    obs_steps, obs_times = _snap_obs(grid, N, _obs_dates(terms, anchor, live))
+    obs_steps, obs_times = _snap_obs(grid, N, _obs_dates(terms, anchor, held))
 
     # Pre-programmed dividend jumps (graceful if the pull fails).
     try:
@@ -767,26 +801,26 @@ def _simulate_full(terms: NoteTerms, *, n_paths: int, seed: int, calib_years: fl
 
     n_assets   = len(cal_result.params)
     sim_prices = np.stack(sim_results["S_paths"], axis=2)
-    # Performance is measured against the ORIGINAL fixings for a seasoned note, so
-    # the simulated paths open at today's level (e.g. 0.82) rather than at 1.0 and
-    # the term sheet's barriers keep their meaning. Unseasoned, the fixing IS
-    # today's price and the paths open at par exactly as before.
-    S0_vec     = np.array([(live["fixings"][p.name] if live else p.S0)
+    # Performance is measured against the ORIGINAL fixings for a held note, so the
+    # simulated paths open at today's level (e.g. 0.82) rather than at 1.0 and the
+    # term sheet's barriers keep their meaning. Not held, the fixing IS today's
+    # price and the paths open at par exactly as before.
+    S0_vec     = np.array([(held["fixings"][p.name] if held else p.S0)
                            for p in cal_result.params]).reshape(1, 1, n_assets)
     perf_paths = sim_prices / S0_vec
     wof_paths  = perf_paths.min(axis=2)
 
     note = price_note(perf_paths, terms, seed=seed + 1,
                       obs_steps=obs_steps, obs_times=obs_times,
-                      **_season_kwargs(live))
+                      **_position_kwargs(held))
 
     wof_bands   = np.percentile(wof_paths, _PCTS, axis=0)
     asset_bands = np.stack([np.percentile(sim_prices[:, :, i], _PCTS, axis=0)
                             for i in range(n_assets)])
     t_grid      = np.concatenate([[0.0], np.cumsum(dt_grid)])
-    # Chart/table period labels carry the TERM SHEET's numbering, so a seasoned run
+    # Chart/table period labels carry the TERM SHEET's numbering, so a held run
     # that starts at the 6th observation says P6, not P1.
-    k_off       = live["periods_elapsed"] if live else 0
+    k_off       = held["periods_elapsed"] if held else 0
     obs_pairs   = [(f"P{k_off+i+1}", t) for i, t in enumerate(obs_times)]
     asset_names = list(tickers.values())
 
@@ -796,9 +830,9 @@ def _simulate_full(terms: NoteTerms, *, n_paths: int, seed: int, calib_years: fl
         "wof_bands": wof_bands, "asset_bands": asset_bands, "t_grid": t_grid,
         "obs_steps": obs_steps, "obs_times": obs_times, "obs_pairs": obs_pairs,
         "asset_names": asset_names, "eng_used": eng_used,
-        # Seasoning state: the resolved context when it applied, else the raw
-        # result (None, or an {"ok": False, "reason"} the summary reports).
-        "seasoning": seas, "live_season": live,
+        # Position state: the resolved context when the note is held and modellable,
+        # else the raw result (None, or an {"ok": False, "reason"} the summary reports).
+        "position": pstate, "held": held,
         # Grid internals so a second note (A/B compare) can be RE-PRICED on the very
         # same simulated paths — recomputing only its own observation schedule.
         "grid": grid, "anchor": anchor, "N": N, "seed": seed,
@@ -846,30 +880,36 @@ def _mc_figures(sf: dict, note: dict, terms: NoteTerms, tr) -> dict:
     }
 
 
-def _seasoning_summary(sf: dict, terms: NoteTerms) -> dict:
-    """The seasoning block of a run summary. `period_offset` is the key one: the
+def _held_summary(sf: dict, terms: NoteTerms) -> dict:
+    """The held-position block of a run summary. `period_offset` is the key one: the
     per-period arrays (autocall_by_period, obs_times) are aligned to the REMAINING
     observations, so a display layer labels column i as period offset+i+1.
 
-    `seasoning_reason` is set when seasoning was requested but couldn't be applied
-    — the run fell back to pricing from issue and the UI should say why."""
-    live, raw = sf.get("live_season"), sf.get("seasoning")
-    if not live:
-        out = {"seasoned": False, "period_offset": 0}
+    `held_reason` is set when the note IS held but its remaining life couldn't be
+    modelled — the run fell back to pricing from issue and the UI should say why."""
+    held, raw = sf.get("held"), sf.get("position")
+    if not held:
+        out = {"is_held": False, "period_offset": 0}
         if raw and not raw.get("ok"):
-            out["seasoning_reason"] = raw.get("reason")
+            out["held_reason"] = raw.get("reason")
         return out
-    perf_now = np.asarray(live["perf_now"], dtype=float)
+    perf_now = np.asarray(held["perf_now"], dtype=float)
     return {
-        "seasoned":          True,
-        "period_offset":     int(live["periods_elapsed"]),
-        "periods_elapsed":   int(live["periods_elapsed"]),
-        "periods_remaining": int(terms.n_obs - live["periods_elapsed"]),
-        "issue_date":        pd.Timestamp(live["issue_anchor"]).date().isoformat(),
-        "maturity_date":     pd.Timestamp(live["maturity_date"]).date().isoformat(),
+        "is_held":           True,
+        "period_offset":     int(held["periods_elapsed"]),
+        "periods_elapsed":   int(held["periods_elapsed"]),
+        "periods_remaining": int(terms.n_obs - held["periods_elapsed"]),
+        "issue_date":        pd.Timestamp(held["issue_anchor"]).date().isoformat(),
+        "settlement_date":   pd.Timestamp(held["settle_anchor"]).date().isoformat(),
+        "maturity_date":     pd.Timestamp(held["maturity_date"]).date().isoformat(),
         "remaining_years":   _f(sf["obs_times"][-1]),
-        "pending_coupons":   int(live["pending_coupons"]),
-        "coupons_received":  _f(live["coupons_received"]),
+        "pending_coupons":   int(held["pending_coupons"]),
+        # Income since ISSUE (context — part of it may have gone to a previous
+        # holder) vs income since SETTLEMENT (this holder's, and the piece that is
+        # inside every return figure the run reports).
+        "coupons_received":  _f(held["coupons_received"]),
+        "income_since_settlement": _f(held["income_since_settlement"]),
+        "elapsed_years":     _f(held["elapsed_years"]),
         # Where the note stands today, on the same scale as every barrier.
         "start_level":       _f(float(perf_now.min())),
     }
@@ -916,7 +956,7 @@ def _mc_summary(sf: dict, note: dict, terms: NoteTerms) -> dict:
     summary["autocall_by_period"] = [float(x) for x in
                                      note.get("prob_autocall_by_period", [])]
     summary["obs_times"] = [float(x) for x in obs_times]
-    summary.update(_seasoning_summary(sf, terms))
+    summary.update(_held_summary(sf, terms))
     # Calibrated Heston parameters per asset (+ Feller margin) for the calibration
     # table, and the Student-t copula dof.
     summary["t_dof"] = _f(cal_result.t_dof)
@@ -942,7 +982,7 @@ def _store_mc_run(sf: dict, note: dict, terms: NoteTerms) -> str:
         # Seasoning offset + carried arrears, so the explorer and the single-path
         # inspector replay the same window the run priced.
         "period_offset":   int(note.get("periods_elapsed", 0)),
-        "pending_coupons": int((sf.get("live_season") or {}).get("pending_coupons", 0)),
+        "pending_coupons": int((sf.get("held") or {}).get("pending_coupons", 0)),
         "note":       {k: np.asarray(v) for k, v in note.items()
                        if isinstance(v, np.ndarray) and v.ndim <= 2},
     })
@@ -970,18 +1010,18 @@ def _reprice_on_paths(sf: dict, terms: NoteTerms, *, seed: int) -> dict:
     the shared trading-day grid, then returns a fresh `sf`-shaped dict whose `note`
     and obs metadata are for `terms` but whose paths/bands/calibration are shared."""
     grid, anchor, N = sf["grid"], sf["anchor"], sf["N"]
-    # B gets its OWN seasoning state — same fixings and grid (guaranteed by the
+    # B gets its OWN position state — same fixings and grid (guaranteed by the
     # shared-paths guard in run_compare), but its own observation calendar, elapsed
     # count and arrears, since those follow from its own frequency and barriers.
-    seas = _seasoning(terms, anchor)
-    live = seas if (seas and seas.get("ok")) else None
-    obs_steps, obs_times = _snap_obs(grid, N, _obs_dates(terms, anchor, live))
+    pstate = _position_state(terms, anchor)
+    held   = pstate if (pstate and pstate.get("ok")) else None
+    obs_steps, obs_times = _snap_obs(grid, N, _obs_dates(terms, anchor, held))
     note = price_note(sf["perf_paths"], terms, seed=seed + 1,
                       obs_steps=obs_steps, obs_times=obs_times,
-                      **_season_kwargs(live))
-    k_off = live["periods_elapsed"] if live else 0
+                      **_position_kwargs(held))
+    k_off = held["periods_elapsed"] if held else 0
     return {**sf, "note": note, "obs_steps": obs_steps, "obs_times": obs_times,
-            "seasoning": seas, "live_season": live,
+            "position": pstate, "held": held,
             "obs_pairs": [(f"P{k_off+i+1}", t) for i, t in enumerate(obs_times)]}
 
 

@@ -33,9 +33,9 @@ def share_blockers(terms_a: NoteTerms, terms_b: NoteTerms) -> list[str]:
     """Why an A/B compare can NOT price both notes on ONE set of simulated paths.
 
     They must live on the same trading-day grid AND the same performance scale.
-    Seasoning changes both — the grid runs to the ORIGINAL maturity and performance
-    is measured against the ORIGINAL fixings — so a seasoned B can only ride A's
-    paths when it seasons off the very same issue date.
+    Being HELD changes both — the grid runs to the ORIGINAL maturity and performance
+    is measured against the ORIGINAL fixings — so a held B can only ride A's paths
+    when it is held off the very same issue date.
 
     Empty list = shareable. Otherwise the reasons, so the UI can say what to change
     rather than just reporting that the comparison is noisier."""
@@ -44,9 +44,9 @@ def share_blockers(terms_a: NoteTerms, terms_b: NoteTerms) -> list[str]:
         out.append("underlyings")
     if abs(float(terms_a.maturity) - float(terms_b.maturity)) >= 1e-9:
         out.append("maturity")
-    if bool(terms_a.seasoned) != bool(terms_b.seasoned):
-        out.append("seasoning")
-    elif terms_a.seasoned and terms_a.issue_date != terms_b.issue_date:
+    if bool(terms_a.is_held) != bool(terms_b.is_held):
+        out.append("held")
+    elif terms_a.is_held and terms_a.issue_date != terms_b.issue_date:
         out.append("issue_date")
     return out
 

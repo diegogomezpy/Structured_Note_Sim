@@ -312,29 +312,30 @@ class NoteTerms:
     issuer_rating_fitch:    str         = ""      # Fitch credit rating, e.g. "AA-"
     tickers:                dict | None  = None
     issue_date:             str  | None = None   # "YYYY-MM-DD" — enables Current Performance tab
-    # ── Secondary-market position (defaults = subscribed at issue, at par) ─────
-    # A note bought on the secondary market settles on `settlement_date` at
-    # `purchase_price` (the CLEAN price, as a fraction of nominal) plus
-    # `accrued_at_purchase` (coupon accrued since the last payment date, also a
-    # fraction of nominal). Together they are the position's COST BASIS, and every
-    # return the app reports — Monte Carlo, backtest, live — is measured against
-    # that cost instead of par, so a note bought at 95% shows the BUYER's
-    # economics rather than the original subscriber's. `settlement_date` further
-    # sets where the live tab starts counting coupons and holding time; it does
-    # not re-season the Monte Carlo, which always prices a note running from today
-    # (same convention as `issue_date`).
-    settlement_date:        str  | None = None   # "YYYY-MM-DD"; None = held from issue
+    # ── The position: do you actually HOLD this note, and what did it cost? ────
+    # `settlement_date` is the single switch. Set it and the note is a POSITION —
+    # something owned since that date — which changes what gets modelled:
+    #
+    #   settlement_date is None   a hypothetical note issued TODAY, priced over a
+    #                             full `maturity`. The default, and what every
+    #                             config without a position does.
+    #   settlement_date is set    a note you own. Modelling runs from where it
+    #                             actually stands: today → the ORIGINAL maturity,
+    #                             performance measured against the ORIGINAL
+    #                             fixings so the term sheet's barriers keep their
+    #                             meaning, only the observations still to come
+    #                             priced, memory arrears carried in, and every
+    #                             return measured from settlement on what you paid.
+    #                             See `is_held` and api/engine.py:_position_state.
+    #
+    # `purchase_price` is the CLEAN price as a fraction of nominal; the accrued
+    # coupon settled on top is `accrued_at_purchase`. Together they are the
+    # position's COST BASIS, and every return the app reports — Monte Carlo,
+    # backtest, live — is measured against that cost instead of par, so a note
+    # bought at 82% shows the BUYER's economics, not the original subscriber's.
+    settlement_date:        str  | None = None   # "YYYY-MM-DD"; None = not held
     purchase_price:         float       = 1.0    # clean price paid (1.0 = par)
     accrued_at_purchase:    float       = 0.0    # accrued coupon paid at settlement
-    # ── Seasoning: price the note from where it actually stands ────────────────
-    # OFF by default, in which case the Monte Carlo prices a note issued TODAY at
-    # today's fixings for a full `maturity` (the historical behaviour of every
-    # config). Turned on — and only meaningful with a past `issue_date` — the
-    # simulation instead runs from today to the ORIGINAL maturity date, measures
-    # performance against the ORIGINAL fixings (so the barriers sit where the term
-    # sheet put them), prices only the observations still to come, and carries in
-    # any memory-coupon arrears. See api/engine.py:_seasoning.
-    seasoned:               bool        = False
     # ── Per-underlying display info (powers the PDF "Underlying Breakdown") ──
     # Keyed by DISPLAY NAME: {"Microsoft": {"description": "...", "sector": "..."}}.
     # 'description' mirrors issuer_description — JSON-preloaded, editable in the UI.
@@ -390,11 +391,36 @@ class NoteTerms:
         return p + a
 
     @property
+    def is_held(self) -> bool:
+        """True when the note is a POSITION — owned since `settlement_date` — and
+        so is modelled from where it actually stands rather than as a hypothetical
+        note issued today. Needs an `issue_date` too: without one there are no
+        original fixings to measure the term sheet's barriers against.
+
+        This is the single switch behind the whole remaining-life treatment (see
+        api/engine.py:_position_state). It is DERIVED, never stored — the old
+        `seasoned` flag was a second, independently-settable source of truth for
+        the same question, and configs disagreed with themselves."""
+        return bool(self.settlement_date) and bool(self.issue_date)
+
+    @property
     def is_secondary(self) -> bool:
-        """True when this is a secondary-market position — bought away from par,
-        after issue, or both. Purely a display switch; the maths always runs
-        through `cost_basis`, which is 1.0 for a primary subscription."""
-        return abs(self.cost_basis - 1.0) > 1e-9 or bool(self.settlement_date)
+        """True when the position was bought ON THE SECONDARY MARKET — away from
+        par, after issue, or both. Purely a display switch: holding since issue at
+        par is a plain subscription and shows the note's own numbers, while anything
+        else shows the buyer's. The maths always runs through `cost_basis`, which
+        is 1.0 for a primary subscription."""
+        if abs(self.cost_basis - 1.0) > 1e-9:
+            return True
+        s, i = self.settlement_date, self.issue_date
+        if not s:
+            return False
+        # A settlement date is the user's explicit statement that they bought this,
+        # so it means "secondary" UNLESS it coincides with issue — which is what the
+        # legacy `seasoned` migration writes for a note held since issue at par, and
+        # is a plain subscription. ISO "YYYY-MM-DD" sorts lexicographically; str()
+        # also tolerates a caller that handed us date objects.
+        return (not i) or str(s) > str(i)
 
     # ------------------------------------------------------------------
     # Schedule helpers
@@ -491,7 +517,6 @@ class NoteTerms:
             "settlement_date":        self.settlement_date,
             "purchase_price":         self.purchase_price,
             "accrued_at_purchase":    self.accrued_at_purchase,
-            "seasoned":               self.seasoned,
             "underlyings":            self.underlyings,
         }
 
@@ -517,11 +542,11 @@ class NoteTerms:
         # participation — the closest equivalent). Otherwise label the autocall /
         # reverse-convertible / growth-autocall family (menu label only; those
         # share the one waterfall). protection_level inherits capital_guarantee.
-        # "autocall" was the family's name until it was renamed to the plainer
+        # "phoenix" was the family's name until it was renamed to the plainer
         # "autocall". Accept it forever: it is written into every note_config
         # saved before the rename, and a config that stops loading is a worse
         # outcome than an alias that never goes away.
-        if d.get("note_type") == "autocall":
+        if d.get("note_type") == "phoenix":
             d["note_type"] = "autocall"
 
         if not d.get("note_type"):
@@ -536,6 +561,18 @@ class NoteTerms:
                 d["note_type"] = "reverse_conv"
             else:
                 d["note_type"] = "autocall"
+
+        # ── Seasoning → held position ─────────────────────────────────
+        # `seasoned` used to be a stored flag meaning "model the remaining life",
+        # settable independently of whether anyone owned the note. It is now DERIVED
+        # from `settlement_date` (see NoteTerms.is_held), because a seasoned note
+        # with nobody holding it was a valuation exercise the app never did.
+        #
+        # A seasoned config with no settlement date was, in substance, "held since
+        # issue at par" — so migrate it to exactly that. Same fixings, same
+        # remaining-life window, and cost_basis stays 1.0, so it prices identically.
+        if d.pop("seasoned", False) and not d.get("settlement_date"):
+            d["settlement_date"] = d.get("issue_date")
 
         # Shark-fin drop level was briefly a rebate (extra above par); it is now an
         # absolute knock-out payout (the level it drops to).
@@ -590,7 +627,8 @@ class NoteTerms:
 # Position layer — returns measured on what the holder actually paid
 # ---------------------------------------------------------------------------
 
-def _position_returns(nominal_payoffs, t_held, terms: "NoteTerms"):
+def _position_returns(nominal_payoffs, t_held, terms: "NoteTerms",
+                      *, realised_income: float = 0.0, elapsed_years: float = 0.0):
     """Per-path (total return, simple annualised IRR, cost basis) MEASURED ON COST.
 
     A note bought on the secondary market at `purchase_price` (+ accrued) costs
@@ -603,12 +641,23 @@ def _position_returns(nominal_payoffs, t_held, terms: "NoteTerms"):
     maturity-only payoff); the IRR convention stays simple annualisation, as
     documented on price_note.
 
+    ``realised_income`` / ``elapsed_years`` close the gap for a position that has
+    already been held for a while. When only the REMAINING life is simulated, the
+    payoff array covers just the future — so coupons that already fixed while you
+    owned the note are missing from the numerator, and the time you have already
+    held it is missing from the denominator. Adding both makes the reported figure
+    the position's actual return, settlement → redemption, rather than a
+    forward-only stub wearing the label "return on cost". Both default to 0, so a
+    note priced from issue is unchanged.
+
     This is the ONE place the cost basis enters the payoff, so the Monte Carlo
     and the historical backtest — which share price_note — can never disagree.
     """
     cost = float(getattr(terms, "cost_basis", 1.0) or 1.0)
-    total_return = (np.asarray(nominal_payoffs, dtype=float) - cost) / cost
-    irr = total_return / np.maximum(t_held, 1.0 / 252.0)
+    banked = float(realised_income or 0.0)
+    total_return = (np.asarray(nominal_payoffs, dtype=float) + banked - cost) / cost
+    held = np.asarray(t_held, dtype=float) + float(elapsed_years or 0.0)
+    irr = total_return / np.maximum(held, 1.0 / 252.0)
     return total_return, irr, cost
 
 
@@ -793,7 +842,7 @@ def _participation_stats(R: np.ndarray, terms: "NoteTerms", B: np.ndarray | None
 
 
 def _participation_periodic_payoff(perf_paths, terms, obs_steps, t_maturity, n_obs,
-                                   start_basket: float = 1.0) -> dict:
+                                   start_basket: float = 1.0, pos: dict | None = None) -> dict:
     """Cliquet / ratchet participation: a series of back-to-back participation notes.
     Each reset period is a self-contained participation note on that period's move —
     the SAME downside × upside profile as a single-maturity note (full / buffer /
@@ -804,7 +853,8 @@ def _participation_periodic_payoff(perf_paths, terms, obs_steps, t_maturity, n_o
     the coupon machinery so the path explorer and coupon stats work unchanged."""
     n_paths = perf_paths.shape[0]
     # Basket level at each reset date; B_0 = 1.0 at inception, or the basket at the
-    # last elapsed reset for a seasoned note. period_level is the basket's gross
+    # last elapsed reset for a note already part-way through its life. period_level
+    # is the basket's gross
     # return over each reset interval (the reset strike is par).
     B      = np.stack([_basket(perf_paths[:, s, :], terms.participation_basket) for s in obs_steps], axis=1)  # (n_paths, n_obs)
     B_prev = np.concatenate([np.full((n_paths, 1), float(start_basket)), B[:, :-1]], axis=1)
@@ -821,7 +871,7 @@ def _participation_periodic_payoff(perf_paths, terms, obs_steps, t_maturity, n_o
     period_move_p75    = np.percentile(level, 75, axis=0) - 1.0
     principal     = np.ones(n_paths)                     # capital rolls at par each period
     nominal       = np.maximum(principal + total_income, 0.0)
-    total_return, irr, cost_basis = _position_returns(nominal, t_maturity, terms)
+    total_return, irr, cost_basis = _position_returns(nominal, t_maturity, terms, **(pos or {}))
     loss          = nominal < 1.0
     return {
         "nominal_payoffs":      nominal,
@@ -858,23 +908,23 @@ def _participation_periodic_payoff(perf_paths, terms, obs_steps, t_maturity, n_o
 
 
 def _participation_payoff(perf_paths, terms, obs_steps, t_maturity, n_obs,
-                          start_basket: float = 1.0) -> dict:
+                          start_basket: float = 1.0, pos: dict | None = None) -> dict:
     """price_note() branch for note_type == 'participation'. A pure maturity payoff:
     no coupons, no autocall, no periodic knock-in. Returns the same result schema as
     the Autocall path so everything downstream (stats, plots, path explorer) is
     unchanged; 'knock-in' here means redeemed below par (a capital loss).
 
-    A single-maturity note needs no seasoning state — its payoff reads the final
-    basket against the original fixings, which `perf_paths` already carries. Only
-    the cliquet does, via `start_basket` (the last elapsed reset level)."""
+    A single-maturity note carries no elapsed-period state — its payoff reads the
+    final basket against the original fixings, which `perf_paths` already carries.
+    Only the cliquet does, via `start_basket` (the last elapsed reset level)."""
     if getattr(terms, "participation_periodic", False):
         return _participation_periodic_payoff(perf_paths, terms, obs_steps, t_maturity,
-                                              n_obs, start_basket=start_basket)
+                                              n_obs, start_basket=start_basket, pos=pos)
     n_paths    = perf_paths.shape[0]
     final_step = obs_steps[-1]
     B          = _basket(perf_paths[:, final_step, :], terms.participation_basket)  # (n_paths,)
     R          = _participation_redemption(B, terms)
-    total_return, irr, cost_basis = _position_returns(R, t_maturity, terms)
+    total_return, irr, cost_basis = _position_returns(R, t_maturity, terms, **(pos or {}))
     loss       = R < 1.0                                    # redeemed below par
     zeros      = np.zeros(n_paths)
     return {
@@ -924,6 +974,8 @@ def price_note(
     periods_elapsed: int   = 0,
     pending_coupons: int   = 0,
     start_basket:    float = 1.0,
+    realised_income: float = 0.0,
+    elapsed_years:   float = 0.0,
 ) -> dict:
     """
     Evaluate Autocall Memory Autocallable payoffs across all simulated paths.
@@ -936,7 +988,8 @@ def price_note(
         Per-asset performance paths (price / initial FIXING).
         Produced by stacking sim_prices / S0_vector.
         For a note priced at issue, perf_paths[:, 0, :] is all 1.0. For a
-        SEASONED note it is today's performance against the original fixings —
+        HELD note part-way through its life it is today's performance against the
+        ORIGINAL fixings —
         the barriers are levels on this same scale either way, which is exactly
         why the division uses the original fixing rather than today's price.
 
@@ -965,7 +1018,7 @@ def price_note(
         that many periods shorter, while autocall eligibility, the step-down
         barrier schedule and the growth-autocall accrual all keep counting in
         ABSOLUTE periods, so a note at P5 of P12 behaves like P5 of P12 and not
-        like a fresh P1. See api/engine.py:_seasoning for how it is derived.
+        like a fresh P1. See api/engine.py:_position_state for how it is derived.
 
     pending_coupons : int
         Memory-coupon arrears carried into the window (unpaid observations before
@@ -975,6 +1028,18 @@ def price_note(
     start_basket : float
         Cliquet only: the participation basket at the last elapsed reset, so the
         first remaining period measures its move from there instead of from par.
+
+    realised_income : float
+        Income the HOLDER has already banked on this position — coupons that fixed
+        between settlement and the pricing date. Only the remaining life is
+        simulated, so without this the reported return on cost silently drops money
+        the holder actually received. Added to every path's payoff.
+
+    elapsed_years : float
+        Years the position has already been held (settlement → pricing date). Added
+        to each path's holding time so the annualised figure spans the whole
+        investment rather than only the part still to come. Both default to 0, which
+        is exactly right for a note priced from issue.
 
     Returns
     -------
@@ -1037,6 +1102,11 @@ def price_note(
     t_maturity = float(obs_times[-1])   # = terms.maturity unless overridden
     rng = np.random.default_rng(seed)
 
+    # What the holder has already banked and how long they have already held, for
+    # _position_returns. Empty (and so a no-op) for a note priced from issue.
+    pos = {"realised_income": float(realised_income or 0.0),
+           "elapsed_years":   float(elapsed_years or 0.0)}
+
     # ------------------------------------------------------------------
     # Participation Note branch — a single maturity-level payoff profile
     # ------------------------------------------------------------------
@@ -1047,7 +1117,7 @@ def price_note(
     if (getattr(terms, "note_type", "") == "participation"
             or (terms.capital_guarantee is not None and terms.capital_guarantee > 0)):
         return _participation_payoff(perf_paths, terms, obs_steps, t_maturity, n_obs,
-                                     start_basket=start_basket)
+                                     start_basket=start_basket, pos=pos)
 
     # ------------------------------------------------------------------
     # Build ConditionRegistry from NoteTerms (backward-compatible factory)
@@ -1100,7 +1170,7 @@ def price_note(
     # Autocall trigger
     # ------------------------------------------------------------------
     # Autocall mask: only eligible from autocall_start_period onward, counted in
-    # ABSOLUTE periods — a seasoned note already past the lock-out is callable at
+    # ABSOLUTE periods — a held note already past the lock-out is callable at
     # every remaining observation.
     autocall_eligible = abs_periods >= autocall_cond.start_period      # (n_obs,)
 
@@ -1194,7 +1264,7 @@ def price_note(
         )
         pending_before = active_cumsum_shifted - last_paid_cumsum_shifted  # (n_paths, n_obs)
         pending_before = np.maximum(pending_before, 0)  # guard against rounding
-        # Arrears carried in from before the window (seasoned notes) stay
+        # Arrears carried in from before the window (a partly-elapsed note) stay
         # outstanding until the first coupon inside it pays — group_shifted counts
         # payments strictly before j, so it is 0 exactly on those cells, including
         # the paying one itself (which therefore releases them). 0 by default.
@@ -1225,7 +1295,7 @@ def price_note(
     # accrues from inception at coupon_rate per period). Paths that reach maturity
     # without autocalling receive no premium.
     if terms.coupon_at_autocall_only:
-        # The premium accrues from ISSUE, so a seasoned note called at its next
+        # The premium accrues from ISSUE, so a held note called at its next
         # observation pays for every period since issue, not since the window start.
         total_coupons = np.where(
             any_autocalled,
@@ -1331,7 +1401,7 @@ def price_note(
     # bought on the secondary market); _position_returns also guards against a
     # degenerate near-zero holding time (QW5).
     total_return, annualized_irr, cost_basis = _position_returns(
-        nominal_payoffs, t_held_arr, terms)
+        nominal_payoffs, t_held_arr, terms, **pos)
 
     # ------------------------------------------------------------------
     # Summary statistics
@@ -1387,10 +1457,14 @@ def price_note(
         # bought at a discount can profit even on a below-par redemption.
         "cost_basis":               cost_basis,
         "prob_loss":                float((total_return < 0).mean()),
-        # Observations that fixed before this window (0 unless seasoned). Every
+        # Observations that fixed before this window (0 unless held). Every
         # per-period array above is indexed from period `periods_elapsed + 1`, so
         # a display layer that labels periods must add this offset.
         "periods_elapsed":          k,
+        # What the holder had already banked / already held when this window was
+        # priced, echoed so a display layer can say so rather than infer it.
+        "realised_income":          pos["realised_income"],
+        "elapsed_years":            pos["elapsed_years"],
         # Average time (years) to early redemption, over the paths that actually
         # autocalled (None when none do). Uses the real observation times.
         "avg_time_to_autocall": (
@@ -1427,7 +1501,7 @@ def replay_note(perf_obs: np.ndarray, terms: NoteTerms, *,
 
     start_period : int
         Term-sheet period number of the FIRST row (1-indexed). 1 (default)
-        replays from issue; a higher value replays a window of a seasoned note,
+        replays from issue; a higher value replays a window of a held note,
         so autocall eligibility, the step-down schedule and the growth-autocall
         accrual all key off the real period number.
 

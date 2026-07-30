@@ -17,7 +17,7 @@ export function AutocallByPeriodTable({ summary, autocallStart }: { summary: Sim
         </tr></thead>
         <tbody>
           {summary.autocall_by_period.map((p, i) => {
-            // Rows are the periods this run PRICED; a seasoned run starts partway
+            // Rows are the periods this run PRICED; a held run starts partway
             // through the schedule, so shift onto the term sheet's numbering.
             const period = i + 1 + (summary.period_offset ?? 0)
             const eligible = period >= autocallStart

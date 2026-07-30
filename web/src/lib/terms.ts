@@ -122,9 +122,12 @@ function positionRows(t: NoteTerms, tr: (k: string) => string): [string, string]
       rows.push([tr('cost_basis'), pct(costBasis(t), 3)])
     }
   }
-  // Seasoning changes what the simulation covers, so it belongs on the term
-  // sheet's face — it is why the modelled horizon isn't the full tenor.
-  if (t.seasoned) rows.push([tr('seasoned'), tr('seasoned_row')])
+  // Being held changes what the projection covers, so it belongs on the term
+  // sheet's face — it is why the modelled horizon isn't the full tenor. Mirrors
+  // NoteTerms.is_held and app/pdf_report.py:_term_rows.
+  if (t.settlement_date && t.issue_date) {
+    rows.push([tr('held_horizon'), tr('held_horizon_row')])
+  }
   return rows
 }
 
@@ -226,7 +229,6 @@ const DIFF_FIELDS: [string, string, DiffFmt][] = [
   ['settlement_date', 'settlement_date', 'text'],
   ['purchase_price', 'purchase_price', 'pct'],
   ['accrued_at_purchase', 'accrued_at_purchase', 'pct'],
-  ['seasoned', 'seasoned', 'bool'],
 ]
 
 /** i18n key for an enum value, so 'worst_of' renders as "Worst-of". */

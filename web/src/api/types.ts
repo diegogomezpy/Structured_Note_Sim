@@ -74,10 +74,6 @@ export interface NoteTerms {
   settlement_date?: string | null
   purchase_price?: number
   accrued_at_purchase?: number
-  // Price the note from where it stands rather than as if issued today: needs a
-  // past issue_date, and makes the Monte Carlo run today → the ORIGINAL maturity
-  // against the ORIGINAL fixings. See core/note.py.
-  seasoned?: boolean
   underlyings: Record<string, UnderlyingOverride> | null
   [k: string]: unknown
 }
@@ -109,18 +105,24 @@ export interface SimSummary {
   // position: what a unit of nominal cost (1 = par) and P(negative return on it)
   cost_basis?: number | null
   prob_loss?: number | null
-  // seasoning. `period_offset` shifts DISPLAY labels only: autocall_by_period[i]
-  // and obs_times[i] describe term-sheet period `period_offset + i + 1`.
-  seasoned?: boolean
+  // A HELD note (settlement_date + issue_date set) models the life that is LEFT.
+  // `period_offset` shifts DISPLAY labels only: autocall_by_period[i] and
+  // obs_times[i] describe term-sheet period `period_offset + i + 1`.
+  is_held?: boolean
   period_offset?: number
-  seasoning_reason?: 'no_issue_date' | 'not_issued' | 'no_fixing' | 'matured' | 'called'
+  held_reason?: 'not_issued' | 'no_fixing' | 'matured' | 'called'
   periods_elapsed?: number
   periods_remaining?: number
   issue_date?: string
+  settlement_date?: string
   maturity_date?: string
   remaining_years?: number | null
   pending_coupons?: number
+  // Income since ISSUE (context) vs since SETTLEMENT (this holder's, and inside
+  // every return figure the run reports).
   coupons_received?: number | null
+  income_since_settlement?: number | null
+  elapsed_years?: number | null
   start_level?: number | null    // worst-of today, vs the original fixings
   coupon_pa: number | null
   n_obs: number
@@ -232,7 +234,7 @@ export interface ComparePaired {
 }
 
 /** Why the two notes couldn't be priced on one simulation. */
-export type ShareBlocker = 'underlyings' | 'maturity' | 'seasoning' | 'issue_date'
+export type ShareBlocker = 'underlyings' | 'maturity' | 'held' | 'issue_date'
 
 /** Compare sides carry the summary only — the panel renders overlay charts, so
     per-side figure sets and run ids aren't fetched. */
@@ -331,7 +333,7 @@ export interface ExplorerData {
   paths: ExplorerPath[]
   n_total: number
   note_type?: 'autocall' | 'reverse_conv' | 'growth_autocall' | 'participation' | 'custom'
-  period_offset?: number     // seasoned runs: term-sheet period of obs_times[0] − 1
+  period_offset?: number     // held runs: term-sheet period of obs_times[0] − 1
   obs_times: number[]
   barriers: { knock_in?: number | null; autocall?: number | null; coupon?: number | null
               participation?: PartBarriers }
@@ -517,7 +519,7 @@ export interface InspectResult {
   n_total: number
   n_matched: number
   ret_range: [number, number]
-  n_obs: number              // observations in the PRICED window (shorter when seasoned)
+  n_obs: number              // observations in the PRICED window (shorter when held)
   period_offset?: number     // add to a window index for the term-sheet period number
   coupon_available: boolean
   note_type?: 'autocall' | 'reverse_conv' | 'growth_autocall' | 'participation' | 'custom'

@@ -20,35 +20,43 @@ import type { NoteTerms, SimResult } from '../api/types'
 
 const CHART_H = 320
 
-/** What the run actually priced, when that isn't "a note issued today". A seasoned
-    run covers only the remaining life against the original fixings, which changes
-    how every number below should be read — so it says so up front. Also carries the
-    fallback notice when seasoning was asked for but couldn't be applied. */
-function SeasoningBanner({ summary }: { summary: SimResult['summary'] }) {
+/** What the run actually priced, when that isn't "a note issued today". A HELD note
+    projects only the life that is left, against the original fixings, and reports its
+    returns on what the holder paid from the date they paid it — which changes how
+    every number below should be read, so it says so up front. Also carries the
+    fallback notice when the note is held but the remaining life couldn't be modelled. */
+function PositionBanner({ summary }: { summary: SimResult['summary'] }) {
   const { t } = useI18n()
-  if (summary.seasoning_reason) {
+  if (summary.held_reason) {
     return (
       <div role="status" style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px',
                                   background: 'var(--amber-weak)', border: '1px solid var(--amber)',
                                   borderRadius: 11, fontSize: 12.5 }}>
-        <Icon name="info" size={15} /> {t(`season_no_${summary.seasoning_reason}`)}
+        <Icon name="info" size={15} /> {t(`held_no_${summary.held_reason}`)}
       </div>
     )
   }
-  if (!summary.seasoned) return null
+  if (!summary.is_held) return null
+  const cost = summary.cost_basis ?? 1
   const facts: [string, string][] = [
-    [t('season_priced'), t('season_periods', {
+    [t('held_priced'), t('held_periods', {
       a: String((summary.period_offset ?? 0) + 1), b: String(summary.periods_remaining ?? 0) })],
-    [t('season_remaining'), `${num(monthsNum(summary.remaining_years ?? 0), 1)} ${t('live_mo')}`],
-    [t('season_start_level'), pct(summary.start_level, 1)],
-    ...(summary.coupons_received ? [[t('season_received'), pct(summary.coupons_received, 2)] as [string, string]] : []),
-    ...(summary.pending_coupons ? [[t('season_arrears'), String(summary.pending_coupons)] as [string, string]] : []),
+    [t('held_remaining'), `${num(monthsNum(summary.remaining_years ?? 0), 1)} ${t('live_mo')}`],
+    [t('held_start_level'), pct(summary.start_level, 1)],
+    // Only shown when they actually differ from a plain subscription at par, so a
+    // note held since issue at 100% doesn't get three tiles saying "nothing special".
+    ...(Math.abs(cost - 1) > 1e-9 ? [[t('held_cost'), pct(cost, 2)] as [string, string]] : []),
+    ...(summary.elapsed_years ? [[t('held_for'),
+      `${num(monthsNum(summary.elapsed_years), 1)} ${t('live_mo')}`] as [string, string]] : []),
+    ...(summary.income_since_settlement ? [[t('held_banked'),
+      pct(summary.income_since_settlement, 2)] as [string, string]] : []),
+    ...(summary.pending_coupons ? [[t('held_arrears'), String(summary.pending_coupons)] as [string, string]] : []),
   ]
   return (
     <div style={{ padding: '12px 16px', background: 'var(--accent-weak)', border: '1px solid var(--accent)',
                   borderRadius: 11 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12.5, fontWeight: 600, marginBottom: 8 }}>
-        <Icon name="info" size={15} /> {t('season_banner')}
+        <Icon name="info" size={15} /> {t('held_banner')}
       </div>
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 20px', fontSize: 12, color: 'var(--text-muted)' }}>
         {facts.map(([k, v]) => (
@@ -87,7 +95,7 @@ export default function MonteCarloPanel({ result, terms, sub, onSubChange, onPat
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }} className="fade-up">
-      <SeasoningBanner summary={summary} />
+      <PositionBanner summary={summary} />
       <HeroMetrics summary={summary} />
 
       <div className="nav-mobile-only" style={{ marginTop: 2 }}>
