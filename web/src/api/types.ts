@@ -525,6 +525,14 @@ export interface PathData {
   barriers: { knock_in?: number | null; autocall?: number | null
               autocall_schedule?: [number, number][] | null
               participation?: PartBarriers }
+  /** Monte Carlo, held notes only. What already happened, in the same trading-day x
+      units as the simulated path but NEGATIVE — the last point is x = 0 = today,
+      which is where the simulated path starts, so the two lines meet exactly.
+      `settle_x` marks where this holder's position began. */
+  realised?: { x: number[]; line: number[]; settle_x?: number | null } | null
+  /** Backtest, held notes only. The window is realised end to end, so instead of a
+      prefix it carries the purchase point: everything left of it was the seller's. */
+  purchase_x?: number | null
 }
 
 export interface InspectResult {

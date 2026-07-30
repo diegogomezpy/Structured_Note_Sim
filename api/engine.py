@@ -39,7 +39,8 @@ from core.note import (NoteTerms, price_note, replay_note,        # noqa: E402
                        participation_period_income)
 from core.calibrator import HestonCalibrator                      # noqa: E402
 from core.simulator import HestonMultiSimulator                   # noqa: E402
-from core.backtest import run_backtest, snapped_obs_dates         # noqa: E402
+from core.backtest import (run_backtest, snapped_obs_dates,        # noqa: E402
+                           hold_gap)
 # A/B comparison statistics live in core/ — they are pure numpy over price_note
 # payoff dicts, so they stay testable without the plotly/yfinance stack.
 from core.compare import (share_blockers as _share_blockers,      # noqa: E402
@@ -237,14 +238,7 @@ def sample_paths(run_id: str, *, sample: int = 400, seed: int = 7) -> dict | Non
     # For a Participation note the payoff references the participation BASKET, not the
     # worst-of — reduce along assets with the note's basket type so the fan matches.
     def _line(a):
-        """Reduce (..., n_assets) to the line the note's payoff actually references.
-        Used for BOTH the simulated paths and the realised history, so the two halves
-        of the explorer's chart are the same quantity and join without a step."""
-        if _is_part and terms.get("participation_basket") == "best_of":
-            return a.max(axis=-1)
-        if _is_part and terms.get("participation_basket") == "average":
-            return a.mean(axis=-1)
-        return a.min(axis=-1)                     # worst-of / worst-of basket
+        return _reduce_to_line(a, _note_type, terms.get("participation_basket"))
 
     line_sel = _line(np.asarray(perf[idx], dtype=np.float32))   # (k, N+1)
     paths = []
@@ -449,6 +443,47 @@ def _participation_line_and_markers(asset_paths, obs_steps, terms, tr):
     return basket_line, info
 
 
+def _reduce_to_line(arr, note_type: str, participation_basket: str | None):
+    """Reduce a (..., n_assets) array to the line the note's payoff references.
+
+    ONE definition, used by the fan, the realised-history prefix and the single-path
+    inspector — so every picture of "the level" is the same quantity and a realised
+    stretch joins a simulated one without a step. Worst-of unless the note is a
+    participation note with a best-of / average basket."""
+    if note_type == "participation" and participation_basket == "best_of":
+        return arr.max(axis=-1)
+    if note_type == "participation" and participation_basket == "average":
+        return arr.mean(axis=-1)
+    return arr.min(axis=-1)
+
+
+def _realised_prefix(run: dict, note_type: str, participation_basket: str | None,
+                     max_pts: int = 120) -> dict | None:
+    """What already happened, in the inspector's own x units.
+
+    The inspector's x axis is a TRADING-DAY INDEX with the simulation starting at 0,
+    and the realised history is daily trading days too — so the elapsed stretch is
+    simply the negative side of the same axis, ending at 0. That shared endpoint IS
+    today's level, which is where every simulated path starts, so the two lines meet
+    exactly. None for a note nobody holds."""
+    hp = run.get("hist_perf")
+    if hp is None or len(hp) < 2:
+        return None
+    line = _reduce_to_line(np.asarray(hp, dtype=np.float32), note_type,
+                           participation_basket)
+    D = len(line)
+    step = max(1, D // max_pts)
+    cols = list(range(0, D, step))
+    if cols[-1] != D - 1:
+        cols.append(D - 1)
+    settle_i = run.get("hist_settle_i")
+    return {
+        "x":        [c - (D - 1) for c in cols],          # ends at 0 = today
+        "line":     [round(float(line[c]), 4) for c in cols],
+        "settle_x": (None if settle_i is None else int(settle_i) - (D - 1)),
+    }
+
+
 def _path_payload(worst_path, asset_paths, asset_names, obs_steps, autocall_q,
                   marker_info, terms, note_type="autocall") -> dict:
     """Raw single-path data for the React inspector chart — per-asset + worst-of
@@ -595,12 +630,18 @@ def inspect_run(run_id: str, *, lang: str = "en", filters: dict | None = None,
                    "call_time": _f(obs_times[autocall_q - 1]) if autocall_q > 0 else None,
                    "knock_in": ki_pn, "worst_final": _f(float(worst_path[-1]))}
 
+    _path = _path_payload(line_path, asset_paths, asset_names,
+                          obs_steps, autocall_q, marker_info, terms, _note_type)
+    # The elapsed stretch, so the inspector shows this path as a continuation of what
+    # actually happened rather than as a note that sprang into existence today.
+    _hist = _realised_prefix(run, _note_type, getattr(terms, "participation_basket", None))
+    if _hist:
+        _path["realised"] = _hist
     return {
         **base,
         "position":   position,
         "path_index": pn,
-        "path":       _path_payload(line_path, asset_paths, asset_names,
-                                    obs_steps, autocall_q, marker_info, terms, _note_type),
+        "path":       _path,
         "outcome": outcome,
         "metrics": {
             "principal":    _f(note["principal_payoffs"][pn]),
@@ -774,6 +815,9 @@ def _position_state(terms: NoteTerms, anchor) -> dict | None:
         "hist_perf":       hist.to_numpy(dtype=float) / S0_fix,     # (D, n_assets)
         "hist_t":          -(anchor - hist.index).days.to_numpy(dtype=float) / 365.0,
         "settle_t":        -max(0.0, (anchor - settle_anchor).days / 365.0),
+        # Settlement's INDEX within hist, so a display layer that works in trading-day
+        # units (the single-path inspector) can mark it without redoing date maths.
+        "hist_settle_i":   int(hist.index.searchsorted(settle_anchor)),
     }
 
 
@@ -866,6 +910,7 @@ def _simulate_full(terms: NoteTerms, *, n_paths: int, seed: int, calib_years: fl
         "hist_perf": (held["hist_perf"] if held else None),
         "hist_t":    (held["hist_t"]    if held else None),
         "settle_t":  (held["settle_t"]  if held else None),
+        "hist_settle_i": (held["hist_settle_i"] if held else None),
         "asset_names": asset_names, "eng_used": eng_used,
         # Position state: the resolved context when the note is held and modellable,
         # else the raw result (None, or an {"ok": False, "reason"} the summary reports).
@@ -1028,6 +1073,7 @@ def _store_mc_run(sf: dict, note: dict, terms: NoteTerms) -> str:
         "hist_t":    (None if sf.get("hist_t") is None
                       else np.asarray(sf["hist_t"], dtype=np.float32)),
         "settle_t":  sf.get("settle_t"),
+        "hist_settle_i": sf.get("hist_settle_i"),
         "note":       {k: np.asarray(v) for k, v in note.items()
                        if isinstance(v, np.ndarray) and v.ndim <= 2},
     })
@@ -1459,12 +1505,24 @@ def backtest_inspect(terms: NoteTerms, *, lang: str = "en", filters: dict | None
                    "call_time": _f(obs_times_rel[autocall_q]) if autocall_q > 0 else None,
                    "knock_in": ki_pn, "worst_final": _f(float(worst_path[-1]))}
 
+    _path = _path_payload(line_path, perf_daily, asset_names,
+                          obs_steps, autocall_q, marker_info, terms, _note_type)
+    # A backtest window is realised end to end, so there is no simulated half to join.
+    # What it DOES need is the purchase point: with a hold gap, everything left of it
+    # was the seller's, and only the stretch to its right is what this position would
+    # have earned. Same trading-day x units as the rest of the window.
+    _gap = hold_gap(terms)
+    if _gap:
+        _buy_ts = anchor + (pd.Timestamp(terms.settlement_date)
+                            - pd.Timestamp(terms.issue_date))
+        _buy_i = int(window.index.searchsorted(_buy_ts))
+        if 0 < _buy_i < len(window):
+            _path["purchase_x"] = _buy_i
     return {
         **base,
         "position":   position,
         "path_index": row_i,
-        "path":       _path_payload(line_path, perf_daily, asset_names,
-                                    obs_steps, autocall_q, marker_info, terms, _note_type),
+        "path":       _path,
         "outcome": outcome,
         "metrics": {
             "principal":    _f(row["Principal"]),

@@ -49,6 +49,7 @@ interface PathLabels {
   x: string; y: string; wof: string
   par: string; ki: string; ac: string
   floor: string; cap: string; strike: string
+  realised: string; today: string; bought: string
   ev: Record<string, string>
 }
 
@@ -135,7 +136,11 @@ function buildPathFig(path: PathData, labels: PathLabels, renorm = false) {
   traces.push({ x: gw.x, y: gw.y, mode: 'lines', name: labels.wof, type: 'scatter', connectgaps: false, line: { color: WOF_COLOR, width: 2 } })
 
   // Reference levels as named, non-hovering line traces (so they appear in the legend).
-  const x0 = 0, x1 = path.x_max
+  // A held note's realised stretch sits at NEGATIVE x, so the axis starts before the
+  // simulation does and the barriers have to reach back across it.
+  const hist = path.realised
+  const x0 = hist?.x.length ? hist.x[0] : 0
+  const x1 = path.x_max
   const level = (y: number, name: string, color: string, dash: string) => ({
     x: [x0, x1], y: [y, y], mode: 'lines', type: 'scatter', name, hoverinfo: 'skip',
     line: { color, width: 1, dash },
@@ -184,20 +189,57 @@ function buildPathFig(path: PathData, labels: PathLabels, renorm = false) {
     })
   })
 
-  const pad = Math.max(1, x1 * 0.015)
+  // What already happened, drawn last so it sits above the simulated line. Its final
+  // point IS the simulated path's first, so the two meet without a step. Hex literals
+  // from plotlyTheme's remap table — Plotly does not resolve var(--…) and falls back
+  // silently. #2c3e50 maps to the ink token, #64748b to mid grey.
+  if (hist) {
+    traces.push({
+      x: hist.x, y: hist.line, mode: 'lines', type: 'scatter',
+      name: labels.realised, line: { color: '#2c3e50', width: 2.4 },
+      hovertemplate: '%{y:.1%}<extra></extra>',
+    })
+  }
+
+  const pad = Math.max(1, (x1 - x0) * 0.015)
+  const vline = (xv: number, dash: string) => ({
+    type: 'line', xref: 'x', yref: 'paper', x0: xv, x1: xv, y0: 0, y1: 1,
+    line: { color: '#64748b', width: 1, dash }, layer: 'below',
+  })
+  const noteAt = (xv: number, text: string) => ({
+    x: xv, yref: 'paper', y: 1.02, text, showarrow: false,
+    font: { size: 10 }, xanchor: 'center',
+  })
+  // MC: a "today" split with the position's start behind it. Backtest: the window is
+  // realised end to end, so only the purchase point is meaningful — everything left
+  // of it was the seller's.
+  const marks: any[] = []
+  const notes: any[] = []
+  if (hist) {
+    marks.push(vline(0, 'solid'))
+    notes.push(noteAt(0, labels.today))
+    if (hist.settle_x != null && hist.settle_x < 0) {
+      marks.push(vline(hist.settle_x, 'dot'))
+      notes.push(noteAt(hist.settle_x, labels.bought))
+    }
+  } else if (path.purchase_x) {
+    marks.push(vline(path.purchase_x, 'dot'))
+    notes.push(noteAt(path.purchase_x, labels.bought))
+  }
   // Per-period view: a faint dashed vertical divider at each reset makes the period
   // boundaries explicit (they line up with the locked-in-gain markers and the line
   // breaks). yref 'paper' so each spans the full plot height regardless of y-range.
-  const shapes = on ? resetXs.map((rx) => ({
+  const shapes = (on ? resetXs.map((rx) => ({
     type: 'line', xref: 'x', yref: 'paper', x0: rx, x1: rx, y0: 0, y1: 1,
     line: { color: '#94a3b8', width: 1, dash: 'dot' }, layer: 'below',
-  })) : []
+  })) : []).concat(marks)
   return {
     data: traces,
     layout: {
       xaxis: { title: { text: labels.x }, range: [x0 - pad, x1 + pad], zeroline: false },
       yaxis: { title: { text: labels.y }, tickformat: '.0%', zeroline: false },
       shapes,
+      annotations: notes,
       showlegend: true, hovermode: 'closest',
       legend: { orientation: 'h', y: 1.14, x: 0, font: { size: 11 }, itemwidth: 30 },
       margin: { l: 58, r: 26, t: 50, b: 46 },
@@ -364,6 +406,7 @@ function InspectorPanel({ fetcher, terms, label, onRemove, panelId, reportImage 
         wof: isPart ? t('insp_basket_name') : t('insp_wof_name'),
         par: t('insp_lvl_par'), ki: t('insp_lvl_ki'), ac: t('insp_lvl_autocall'),
         floor: t('insp_lvl_floor'), cap: t('insp_lvl_cap'), strike: t('insp_lvl_strike'),
+        realised: t('fan_realised'), today: t('fan_today'), bought: t('fan_bought'),
         ev: { coupon: t('insp_ev_coupon'), missed: t('insp_ev_missed'), call: t('insp_ev_call'),
               redeem: t('insp_ev_redeem'), knock_in: t('insp_ev_knock_in'),
               part_hold: t('insp_ev_basket'), part_redeem: t('insp_ev_redeem'),
