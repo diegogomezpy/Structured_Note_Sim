@@ -40,7 +40,7 @@ _BASELINE = Path(
 )
 
 THEMES = ["mercator", "hexagon", "custom", "hexcluster", "photos"]
-KINDS = ["autocall", "participation"]
+KINDS = ["autocall", "participation", "position"]
 LANGS = ["en", "es"]
 
 # Three metadata fields change every run by design; nothing else may.

@@ -97,37 +97,60 @@ def _load_baseline() -> dict:
 
 
 # ── tests ────────────────────────────────────────────────────────────────────
-@pytest.mark.parametrize("theme", THEMES)
-def test_report_is_pixel_identical(theme):
-    """The rendered pages must match the committed baseline exactly."""
-    pages = _rasterise(_render(theme))
+def _assert_pixel_identical(key: str, pages):
+    """Diff one render against its committed per-page digests.
+
+    `key` names the baseline entry — the theme alone for the default autocall
+    document, `theme:kind` for anything else — so a new case ADDS an entry rather
+    than re-basing an existing one.
+    """
     digests = [h for h, _ in pages]
 
     if os.environ.get("GOLDEN_UPDATE"):
         base = _load_baseline()
-        base[theme] = digests
+        base[key] = digests
         BASELINE.parent.mkdir(parents=True, exist_ok=True)
         BASELINE.write_text(json.dumps(base, indent=2) + "\n")
-        pytest.skip(f"baselined {theme}: {len(digests)} pages")
+        pytest.skip(f"baselined {key}: {len(digests)} pages")
 
     base = _load_baseline()
-    assert theme in base, (
-        f"no baseline for '{theme}' — run: GOLDEN_UPDATE=1 pytest {__file__}")
-    expected = base[theme]
+    assert key in base, (
+        f"no baseline for '{key}' — run: GOLDEN_UPDATE=1 pytest {__file__}")
+    expected = base[key]
 
     if digests != expected:
-        out = Path(tempfile.mkdtemp(prefix=f"golden_{theme}_"))
+        out = Path(tempfile.mkdtemp(prefix=f"golden_{key.replace(':', '_')}_"))
         for i, (_, png) in enumerate(pages, 1):
             (out / f"p{i:02d}.png").write_bytes(png)
         if len(digests) != len(expected):
             pytest.fail(
-                f"{theme}: page COUNT changed {len(expected)} → {len(digests)}. "
+                f"{key}: page COUNT changed {len(expected)} → {len(digests)}. "
                 f"Rendered pages written to {out}")
         bad = [i + 1 for i, (a, b) in enumerate(zip(digests, expected)) if a != b]
         pytest.fail(
-            f"{theme}: {len(bad)} page(s) changed: {bad}. Rendered pages "
+            f"{key}: {len(bad)} page(s) changed: {bad}. Rendered pages "
             f"written to {out}. If the change is intended, review it image by "
             f"image, then re-baseline with GOLDEN_UPDATE=1.")
+
+
+@pytest.mark.parametrize("theme", THEMES)
+def test_report_is_pixel_identical(theme):
+    """The rendered pages must match the committed baseline exactly."""
+    _assert_pixel_identical(theme, _rasterise(_render(theme)))
+
+
+@pytest.mark.parametrize("theme", THEMES)
+def test_held_position_report_is_pixel_identical(theme):
+    """A HELD note draws blocks no other fixture reaches: the position metric band
+    and its "About these figures" callout in the Monte Carlo lens, the
+    purchase-gap caveat in the backtest lens, and the "Projection covers /
+    Remaining life only" term-sheet row.
+
+    Without this case the gate could pass byte-identical while every one of those
+    blocks was broken — which is exactly the state the position work shipped in
+    until this fixture existed."""
+    _assert_pixel_identical(f"{theme}:position",
+                            _rasterise(_render(theme, kind="position")))
 
 
 @pytest.mark.parametrize("theme", THEMES)

@@ -26,6 +26,17 @@ N_PATHS = 4000
 N_STEPS = 394
 
 
+# The held position's fixed state. Constants, not clock arithmetic — the golden
+# renders these into a metric band, so anything derived from `today` would change
+# the document daily.
+HELD_PERIODS_ELAPSED = 2            # of 6 quarterly observations
+HELD_ELAPSED_YEARS = 0.63           # settlement -> the pricing date
+HELD_INCOME_SINCE_SETTLEMENT = 0.062
+HELD_GAP_PERIODS = 2                # backtest: same gap replicated per window
+HELD_GAP_YEARS = 0.52
+HELD_SKIPPED_CALLED = 37
+
+
 def note_terms(kind: str = "autocall"):
     """A representative note of each family the report can render."""
     from core.note import NoteTerms
@@ -43,7 +54,7 @@ def note_terms(kind: str = "autocall"):
             "protection_level": 0.7, "upside_cap": 1.6,
             "tickers": {"AAA": "Alpha Corp", "BBB": "Beta SA"},
         })
-    return NoteTerms.from_dict({
+    base = {
         "name": "Sample Autocall Note XS0000000000",
         "maturity": 1.5, "payment_freq": "quarterly", "coupon_pa": 0.124,
         "coupon_barrier": 0.60, "autocall_barrier": 1.0,
@@ -51,7 +62,21 @@ def note_terms(kind: str = "autocall"):
         "memory": True, "coupon_basket": "worst_of",
         "autocall_basket": "worst_of", "note_type": "autocall",
         "tickers": {"AAA": "Alpha Corp", "BBB": "Beta SA", "CCC": "Gamma Inc"},
-    })
+    }
+    if kind == "position":
+        # The same note, HELD: bought on the secondary market at a discount, two
+        # quarters into its life. Every date and quantity here is a FIXED literal —
+        # a fixture that derived "held for" from today's date would re-render
+        # differently every day and the pixel golden would rot overnight.
+        return NoteTerms.from_dict({
+            **base,
+            "name": "Sample Autocall Position XS0000000000",
+            "issue_date": "2024-03-15",
+            "settlement_date": "2024-09-20",
+            "purchase_price": 0.915,
+            "accrued_at_purchase": 0.0185,
+        })
+    return NoteTerms.from_dict(base)
 
 
 def results(terms) -> dict:
@@ -60,7 +85,14 @@ def results(terms) -> dict:
 
     rng = np.random.default_rng(SEED)
     names = list(terms.tickers.values())
-    n_obs = max(1, terms.n_obs)
+    # A held note prices only what is LEFT, so every per-period array below is
+    # window-width and `period_offset` reconciles it with the term sheet — the same
+    # indexing contract price_note follows. Fixed constants, never derived from
+    # today: see note_terms("position").
+    held = getattr(terms, "is_held", False)
+    k = HELD_PERIODS_ELAPSED if held else 0
+    n_obs = max(1, terms.n_obs - k)
+    horizon = terms.maturity * n_obs / max(1, terms.n_obs)
 
     called = rng.random(N_PATHS) < 0.62
     period = np.where(called, rng.integers(1, n_obs + 1, N_PATHS), 0)
@@ -68,7 +100,7 @@ def results(terms) -> dict:
 
     ann = rng.normal(0.09, 0.13, N_PATHS)
     ann[ki] -= 0.42
-    total = ann * np.clip(period / max(1, n_obs) * terms.maturity, 0.25, None)
+    total = ann * np.clip(period / max(1, n_obs) * horizon, 0.25, None)
 
     return {
         "asset_names": names,
@@ -84,8 +116,14 @@ def results(terms) -> dict:
         "principal_payoffs": np.clip(1.0 + total, 0.0, 1.0),
         "worst_of_paths": np.cumprod(
             1 + rng.normal(0.0002, 0.011, (N_PATHS, N_STEPS)), axis=1),
-        "t_grid_years": np.linspace(0, terms.maturity, N_STEPS),
-        "obs_times": [terms.maturity * (i + 1) / n_obs for i in range(n_obs)],
+        "t_grid_years": np.linspace(0, horizon, N_STEPS),
+        "obs_times": [horizon * (i + 1) / n_obs for i in range(n_obs)],
+        # Position state, echoed exactly as price_note echoes it. 0 / absent for a
+        # note with no owner, so the unheld fixtures are byte-for-byte unchanged.
+        "periods_elapsed": k,
+        "realised_income": HELD_INCOME_SINCE_SETTLEMENT if held else 0.0,
+        "elapsed_years": HELD_ELAPSED_YEARS if held else 0.0,
+        "cost_basis": float(terms.cost_basis),
         "prob_autocall": float(called.mean()),
         "prob_autocall_by_period": [
             float(x) for x in
@@ -225,6 +263,16 @@ def bt_summary(terms) -> dict:
         "prob_below_par": 0.19,
         "loss_given_ki": -0.263,
         "avg_time_to_autocall": 0.71,
+        # A held note's backtest replicates the purchase gap, so the chapter carries
+        # the caveat block: how far in each window starts, the assumed entry price,
+        # and the windows dropped because the note had already called by then.
+        # Absent for a note with no owner, so the unheld fixtures are unchanged.
+        **({"purchase_gap_periods": HELD_GAP_PERIODS,
+            "purchase_gap_years": HELD_GAP_YEARS,
+            "period_offset": HELD_GAP_PERIODS,
+            "entry_price": float(terms.purchase_price or 1.0),
+            "skipped_called": HELD_SKIPPED_CALLED}
+           if getattr(terms, "is_held", False) else {}),
     }
 
 
