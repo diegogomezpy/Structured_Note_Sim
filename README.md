@@ -16,7 +16,7 @@ The project covers the full quantitative workflow:
 2. **Simulation** — simulate correlated multi-asset paths under the physical measure with Milstein discretisation, antithetic variates, and a Student-t copula
 3. **Pricing** — evaluate the note payoff across every simulated scenario through one payoff engine covering two families: the **Autocall** waterfall (Phoenix-style memory coupon, One-Star best-of overlay, uncapped **Zenith** upside on an in-the-money redemption) and the **Participation** note (composable downside × upside styles + a periodic cliquet mode)
 4. **Backtesting** — replay the note on every historical issue date using realized prices, through the same payoff engine
-5. **Web app** — interactive bilingual (EN/ES) React single-page app (FastAPI backend) that frames the note through six tabs — **Monte Carlo**, **Historical Backtest**, **Current Performance** (live), **Compare** (A/B two notes on shared paths), **Report** (branded one-click PDF), and **Batch** (many notes zipped) — with a setup page and live barrier tracking
+5. **Web app** — interactive bilingual (EN/ES) React single-page app (FastAPI backend) that frames the note through five tabs — **Monte Carlo**, **Historical Backtest**, **Current Performance** (live), **Compare** (A/B two notes on shared paths) and **Report** (branded PDF; **Batch** is a sub-tab of Report, not a tab of its own) — with a setup page and live barrier tracking
 
 ---
 
@@ -84,7 +84,9 @@ The project covers the full quantitative workflow:
 │   └── README.md             #   build / benchmark / wiring notes
 ├── scripts/
 │   ├── verify_pdf.py         # Standalone PDF-render harness (needs PyMuPDF)
-│   ├── compare_engines.py    # Validate + benchmark the C++ engine vs numpy
+│   ├── compare_engines.py    # Benchmark the C++ engine vs numpy (see cpp/README)
+│   ├── pdf_baseline.py       # capture/check the 40-document fingerprint matrix
+│   ├── extraction_gate.sh    # suite + goldens + fingerprints; local, not CI
 │   └── audit_tail.py         # Pretty-print the Cloud Run generation audit trail
 │
 ├── design_lang/              # Design-system reference (Mercator tokens + page snapshots)
@@ -481,7 +483,7 @@ intro band stating the question it answers.
 - Summary metrics — expected IRR, total return, expected coupon, P(autocalled), P(knock-in), and the autocall breakdown by period
 - IRR distribution — a discrete two-panel chart (expected total return and mean IRR p.a. per scenario: each autocall period vs held-to-maturity). Structured-note IRRs cluster on a few discrete outcomes, so a continuous histogram collapses to spikes — the discrete view is the default for all notes
 - Price-path fan charts — worst-of basket + per-asset fans (1/5/25/50/75/95/99th percentile bands, precomputed once per run) with observation markers
-- Path explorer — query and step through individual simulated paths (filter by outcome, autocall period, knock-in, total-return band, or "coupon paid at period t"), with side-by-side comparison panels and per-observation note-mechanic legends
+- Path explorer — query and step through individual simulated paths (filter by outcome, autocall period, knock-in, total-return band, or "coupon paid at period t"), with side-by-side comparison panels and per-observation note-mechanic legends. On a **held** note the period filters are stated in term-sheet numbering and shifted into the priced window for you, and the par-relative outcome buckets read the nominal payoff rather than the return on cost — otherwise a position bought at 85 would file a 90% redemption under "above par"
 - Correlation diagnostics — input vs realised correlation heatmaps + the Heston parameter table
 
 **Historical Backtest — _"what would have happened?"_**
@@ -492,11 +494,17 @@ intro band stating the question it answers.
 
 **Compare — _A/B, two variants on shared paths_**
 - Seed a Variant B by duplicating the current note or loading a saved config, then edit it through the same settings overlay. The backend prices Monte Carlo for A and B on **one shared simulation** whenever they share underlyings + maturity, so the differences are pure term effects — a provenance banner states whether the run used shared or independent paths.
-- A difference table (A / B / Δ, colour-signed), overlay IRR and outcome charts, and side-by-side structure diagrams. The historical backtest and current-performance comparisons are run on demand, each as side-by-side metric tables and charts.
-- The comparison can be embedded in the PDF from the Report tab.
+- **Paired statistics, not two independent averages** (`core/compare.py:paired_stats`). Because index *i* is the same simulated world for both notes, the per-path difference is a real quantity: win / tie / loss rate, mean and median edge on both total return and IRR, the 5th–95th percentile edge, an **outcome transition matrix** (called / at-par / knocked-in, or below/at/above par for participation) and conditional tails — *when A loses, what does B do?* The win rate is the headline a mean can't give: a +0.8% mean edge that wins on 51% of paths is a different product from one that wins on 88%.
+- **Every delta carries an error bar, and noise is labelled as such.** Each row reports `se` — the paired standard error when paths are shared (market risk cancels, so it is far tighter), otherwise the two independent errors added in quadrature. A delta inside ±2 se is greyed and tagged as noise rather than presented as a term effect. Quantiles and conditional means have no sample array, so they show no ±.
+- **Win rate has a basis, and the two differ.** The Monte Carlo band measures it on **total return**; the backtest head-to-head measures it on **IRR** over paired issue dates. A note that calls sooner earns the same money in less time, so it can lose the first and win the second by a wide margin — both tiles name their basis.
+- **When paths can't be shared, the UI names the term.** `share_blockers` returns *why* — `underlyings` / `maturity` / `held` / `issue_date` — so you know which field to change instead of just being told the comparison is noisier.
+- A term-sheet diff (which fields actually differ, so the metric deltas are attributable), CSV export, side-by-side structure diagrams, and on-demand backtest and current-performance head-to-heads. The comparison can be embedded in the PDF from the Report tab.
+- **Note B loads from your connected folder or an upload** — deliberately *not* from `/api/configs`, which returns `[]` by design.
 
 **Report — _branded bilingual PDF_**
-- A dedicated tab builds a branded one-click export. Audience **presets** (Full, Client, Term sheet, Marketing, IC, Analyst, Quant, plus Custom) and a fine-grained **section tree** grouped by lens (Note details / Monte Carlo / Historical backtest / Current performance) pick exactly which sections and figures to include; a custom selection persists across sessions.
+- A dedicated tab builds a branded one-click export. Audience **presets** — `full`, `advisor`, `client`, `ic`, `risk`, `custom` — and a fine-grained **section tree** in five groups (Note details · Monte Carlo · Historical backtest · Current performance · A/B comparison) pick exactly which sections and figures to include; a custom selection persists across sessions.
+- **Presets are editable.** `full` and `custom` are special, but the other four are just stored key lists: redefine one in the UI and the override persists (`loadPresetOverrides` / `savePresetOverride`). Every consumer reads them through `presetKeys()`, so an edit applies to the Report tab and the Batch tab alike.
+- **The tree only offers what the loaded note can actually produce.** `sectionCtx(terms)` derives the note's shape — live / participation / cliquet / held / compare — and `REQUIRES` filters the items against it: the position fan needs a held note, the cliquet minis need a periodic participation note, and the autocall table is hidden for participation (that payoff never calls, so the table would be structurally all-zero). Groups that end up empty disappear entirely. Previously you could tick a figure the run would never build and get a silently missing section.
 - The report can be generated **without running the simulation first** — a terms-only report needs no run, while analytical sections use the latest run. The PDF mirrors the three-lens structure with numbered part dividers and a grouped table of contents, and can carry through the A/B comparison when a Variant B exists. An in-app **tutorial** walks through the builder.
 - The in-app builder renders **synchronously** in the request (Cloud Run only allocates CPU while a request is in flight); async start/poll endpoints (`/api/report/start`, `/api/report/status`, `/api/report/result`) also exist for always-on deployments.
 
@@ -581,6 +589,18 @@ All optional — the app runs with none set.
   Redis so the path explorer / inspector / report survive load-balancing across
   instances. Best-effort: if it's unreachable the app falls back to in-memory (see
   [API & runtime](#api--runtime)).
+
+Developer-only, not read by the server:
+
+- **`HESTON_NUM_THREADS`** / **`OMP_NUM_THREADS`** — cap the C++ engine's thread
+  pool. It otherwise sizes itself from the real CPU budget (affinity mask ∩ cgroup
+  quota), which is what makes it behave in a container. Output is identical at any
+  thread count, so this is purely a speed knob.
+- **`SNSIM_PDF_BASELINE`** — where `scripts/pdf_baseline.py` keeps the document
+  fingerprints (default `~/.cache/snsim/pdf_baseline.json`).
+- **`GOLDEN_UPDATE=1`** re-baselines `tests/golden/hashes.json`;
+  **`GOLDEN_REAL_FIGURES=1`** runs the stub-vs-real pagination check, which needs
+  Kaleido and Chrome.
 
 The compiled C++ engine is built into the image, so `engine="cpp"` works in
 production and falls back to numpy if ever absent.
@@ -707,26 +727,49 @@ trace who is *using* the tool (and, for reports, who *exports* one):
 incompatible major release (see [Deployment](#deployment)):
 
 ```
-numpy >= 2.4, < 3
-pandas >= 3.0, < 4
-scipy >= 1.17, < 2
-matplotlib >= 3.7, < 4       # notebook-only; lazy-imported, never loaded by the app
-plotly >= 6.8, < 7
-yfinance >= 1.4, < 2         # most fragile dep — bump first if live data stops loading
-deep-translator >= 1.11, < 2 # optional EN→ES machine translation of Yahoo descriptions
-fpdf2 >= 2.8, < 3            # PDF report
-kaleido >= 1.3, < 2          # Plotly figure export for the PDF
-Pillow >= 12, < 13           # image handling in the PDF
-redis >= 5, < 7              # optional shared run store; only used when REDIS_URL is set
-fastapi >= 0.137, < 1        # api/requirements.txt
-uvicorn[standard] >= 0.49, < 1
+numpy>=2.4,<3
+pandas>=3.0,<4
+scipy>=1.17,<2
+matplotlib>=3.7,<4    # notebook-only; lazy-imported, never loaded by the app
+plotly>=6.8,<7
+yfinance>=1.4,<2      # most fragile dep — bump first if live data stops loading
+deep-translator>=1.11,<2   # optional EN→ES translation of Yahoo descriptions
+reportkit[charts] @ git+https://github.com/diegogomezpy/report_maker@v1.2.0
+fpdf2>=2.8,<3         # PDF engine (arrives via reportkit too)
+kaleido>=1.3,<2       # Plotly figure export for the PDF
+Pillow>=12,<13        # image handling in the PDF
+redis>=5,<7           # optional shared run store; only when REDIS_URL is set
+pypdfium2>=5,<6       # PDF rasterisation for the golden-page digests
+
+# api/requirements.txt
+fastapi>=0.137,<1
+uvicorn[standard]>=0.49,<1
 ```
+
+**`reportkit` is the one dependency that is not a version range.** The themed-PDF
+engine lives in its own repo ([report_maker](https://github.com/diegogomezpy/report_maker))
+and is pinned **by git tag**, so a bump is a deliberate edit in three places that
+must agree: `requirements.txt` and **both** install lines in
+`.github/workflows/ci.yml`. Pin them apart and CI validates a different library
+than production ships. Bumping the tag is a production change — re-run
+`scripts/extraction_gate.sh` afterwards.
 
 **Front-end** — React 19 + TypeScript + Vite + Plotly.js, with `jszip` for the
 Batch tab's multi-report ZIP download (see `web/package.json`).
 
-`PyMuPDF` is **not** a runtime dependency — it is only used by
-`scripts/verify_pdf.py` to rasterise PDFs for eyeballing. Install it ad hoc.
+**Two PDF rasterisers, and the split is a licensing decision.** `pypdfium2`
+(BSD/Apache, manylinux wheels) is the pinned one, used by the PDF Studio's live
+proof (`api/proof.py`) and by the golden page-digest tests. `PyMuPDF` (`fitz`) is
+**AGPL**, so it is deliberately *not* a runtime dependency and never enters the
+shipped image — it is a lazy import inside `scripts/verify_pdf.py` for eyeballing
+pages locally, installed ad hoc:
+
+```bash
+pip install "PyMuPDF>=1.27,<2"
+```
+
+Keep it that way. Pulling AGPL code into a redistributable, white-label report
+generator is a licensing problem, not a convenience.
 
 ---
 
