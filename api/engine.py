@@ -898,6 +898,20 @@ def _simulate_full(terms: NoteTerms, *, n_paths: int, seed: int, calib_years: fl
     wof_bands   = np.percentile(wof_paths, _PCTS, axis=0)
     asset_bands = np.stack([np.percentile(sim_prices[:, :, i], _PCTS, axis=0)
                             for i in range(n_assets)])
+
+    # Everything the raw simulation output was needed for is now computed, so drop
+    # it — deliberately HERE rather than by falling out of scope at `return`, so the
+    # cubes are freed before the caller builds figures and stores the run.
+    #
+    # `sim_results` holds the full float64 S_paths AND V_paths; `sim_prices` is a
+    # third cube of the same shape. All three used to be handed back in the returned
+    # dict and stayed alive for the whole request: the only thing ever read from them
+    # afterwards was the n x n `realized_corr`, and `sim_prices` had no reader at all
+    # outside this function. At 50 000 base paths (100k antithetic), N=392, 3 assets
+    # that is ~940 MB of float64 retained for a matrix worth a few hundred bytes.
+    realized_corr = sim_results["realized_corr"]
+    del sim_results, sim_prices
+
     t_grid      = np.concatenate([[0.0], np.cumsum(dt_grid)])
     # Chart/table period labels carry the TERM SHEET's numbering, so a held run
     # that starts at the 6th observation says P6, not P1.
@@ -906,8 +920,8 @@ def _simulate_full(terms: NoteTerms, *, n_paths: int, seed: int, calib_years: fl
     asset_names = list(tickers.values())
 
     return {
-        "cal_result": cal_result, "sim_results": sim_results, "note": note,
-        "perf_paths": perf_paths, "wof_paths": wof_paths, "sim_prices": sim_prices,
+        "cal_result": cal_result, "realized_corr": realized_corr, "note": note,
+        "perf_paths": perf_paths, "wof_paths": wof_paths,
         "wof_bands": wof_bands, "asset_bands": asset_bands, "t_grid": t_grid,
         "obs_steps": obs_steps, "obs_times": obs_times, "obs_pairs": obs_pairs,
         # Realised history (held notes only) — the explorer's "what already happened".
@@ -930,7 +944,7 @@ def _mc_figures(sf: dict, note: dict, terms: NoteTerms, tr) -> dict:
     underlying figures (worst-of fan, per-asset fans, correlations) depend only on
     the shared simulated paths; the note figures (outcome, IRR) depend on the
     priced note — so an A/B compare that shares paths rebuilds these cheaply."""
-    cal_result, sim_results = sf["cal_result"], sf["sim_results"]
+    cal_result, realized_corr = sf["cal_result"], sf["realized_corr"]
     wof_bands, asset_bands = sf["wof_bands"], sf["asset_bands"]
     t_grid, obs_pairs, asset_names = sf["t_grid"], sf["obs_pairs"], sf["asset_names"]
 
@@ -959,9 +973,9 @@ def _mc_figures(sf: dict, note: dict, terms: NoteTerms, tr) -> dict:
         "corr_input":    _fig(charts.build_corr_heatmap(
             cal_result.corr_SS, asset_names, tr("corr_input"))),
         "corr_realized": _fig(charts.build_corr_heatmap(
-            sim_results["realized_corr"], asset_names, tr("corr_realized"))),
+            realized_corr, asset_names, tr("corr_realized"))),
         "corr_diff": _fig(charts.build_corr_heatmap(
-            np.asarray(cal_result.corr_SS) - np.asarray(sim_results["realized_corr"]),
+            np.asarray(cal_result.corr_SS) - np.asarray(realized_corr),
             asset_names, "Δ  input − realized", zmin=-0.1, zmax=0.1)),
     }
 

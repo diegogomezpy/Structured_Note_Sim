@@ -18,6 +18,8 @@ only thing a doubled correction term visibly violates.
 """
 from __future__ import annotations
 
+import importlib.util
+
 import numpy as np
 import pytest
 
@@ -129,3 +131,90 @@ def test_nearest_psd_projects_and_keeps_unit_diagonal():
     assert np.linalg.eigvalsh(fixed).min() >= -1e-10, "projection must be PSD"
     assert np.allclose(np.diag(fixed), 1.0), "must remain a correlation matrix"
     assert np.allclose(fixed, fixed.T)
+
+
+# ── the C++ kernel, in the configuration production actually uses ────────────
+# `engine="cpp"` is the default on /api/simulate, /api/compare and /api/report and
+# the Docker image installs the wheel, but nothing exercised it: every test here
+# hard-codes engine="numpy", and scripts/compare_engines.py builds its comparison
+# with t_dof=None and div_schedule=None — the two defaults production NEVER takes
+# (the calibrator always returns an int t_dof, and the engine always passes a
+# dividend schedule). So the Student-t block and the dividend drop in the kernel
+# were compared to the reference by nothing, manual or automated.
+#
+# The contract is convergence of statistics, not bit-equality: the kernel uses its
+# own xoshiro256++ stream, so the two engines are deliberately not comparable path
+# by path. Tolerances are sized for that.
+# A module-level importorskip would skip this WHOLE file when the wheel is absent,
+# silently taking the numpy tests with it — and CI does not install heston_cpp, so
+# that is precisely where the coverage would disappear. Mark only the cpp tests.
+_HAS_CPP = importlib.util.find_spec("heston_cpp") is not None
+requires_cpp = pytest.mark.skipif(
+    not _HAS_CPP,
+    reason="heston_cpp not built — `pip install ./cpp` into this interpreter")
+
+
+def _both_engines(*, n_paths=20_000, seed=21, n_steps=252, t_dof=None, divs=False):
+    """Run the SAME configuration through both engines and return (numpy, cpp)."""
+    T = 1.0
+    p = [HestonParams(name="A", S0=100.0, kappa=2.0, theta=0.04, xi=0.30,
+                      rho=-0.6, V0=0.04, mu=0.05)]
+    div = None
+    if divs:
+        # Four 1% ex-date drops, as build_dividend_schedule produces: (n_assets, N).
+        div = np.zeros((1, n_steps))
+        div[0, [40, 100, 160, 220]] = 0.01
+    out = []
+    for eng in ("numpy", "cpp"):
+        sim = HestonMultiSimulator(
+            params=p, corr_SS=np.eye(1), corr_VV=np.eye(1), corr_SV=np.eye(1) * -0.6,
+            n_paths=n_paths, seed=seed, t_dof=t_dof,
+            dt_grid=np.full(n_steps, T / n_steps), div_schedule=div)
+        out.append(sim.run(engine=eng))
+    return out
+
+
+@requires_cpp
+@pytest.mark.parametrize("t_dof,divs,label", [
+    (None, False, "gaussian, no dividends"),
+    (4,    False, "student-t copula"),
+    (None, True,  "dividend drops"),
+    (4,    True,  "PRODUCTION: t-copula + dividends"),
+])
+def test_cpp_engine_matches_numpy_statistically(t_dof, divs, label):
+    """Both engines must agree on the distribution they produce. The last case is
+    the one every real run takes and the one nothing covered."""
+    npy, cp = _both_engines(t_dof=t_dof, divs=divs)
+    for key, tol in (("S_paths", 0.02), ("V_paths", 0.05)):
+        a = npy[key][0][:, -1]
+        b = cp[key][0][:, -1]
+        assert b.mean() == pytest.approx(a.mean(), rel=tol), f"{label}: {key} mean"
+        assert b.std() == pytest.approx(a.std(), rel=3 * tol), f"{label}: {key} std"
+    assert np.all(np.isfinite(cp["S_paths"][0])) and np.all(cp["S_paths"][0] > 0)
+
+
+@requires_cpp
+def test_cpp_applies_the_dividend_drops():
+    """The kernel's dividend multiply is a branch `compare_engines.py` never took.
+    Four 1% ex-date drops must pull the terminal mean down by ~(1-0.01)^4 relative
+    to the same seed with no dividends — in BOTH engines, by the same factor."""
+    expected = 0.99 ** 4
+    for eng_pair, tag in ((0, "numpy"), (1, "cpp")):
+        with_d = _both_engines(divs=True)[eng_pair]["S_paths"][0][:, -1].mean()
+        no_d = _both_engines(divs=False)[eng_pair]["S_paths"][0][:, -1].mean()
+        assert with_d / no_d == pytest.approx(expected, rel=0.02), (
+            f"{tag}: dividend drop factor {with_d / no_d:.4f}, expected ~{expected:.4f}")
+
+
+@requires_cpp
+def test_cpp_standardises_the_t_copula_like_numpy():
+    """An unstandardised t(4) inflates every shock by ~41%. If the kernel skipped
+    the sqrt((v-2)/v) rescale the numpy engine applies, its terminal dispersion
+    would blow out relative to the Gaussian case while numpy's stayed put."""
+    g_np, g_cp = _both_engines(t_dof=None)
+    t_np, t_cp = _both_engines(t_dof=4)
+    ratio_np = t_np["S_paths"][0][:, -1].std() / g_np["S_paths"][0][:, -1].std()
+    ratio_cp = t_cp["S_paths"][0][:, -1].std() / g_cp["S_paths"][0][:, -1].std()
+    assert ratio_cp == pytest.approx(ratio_np, rel=0.10), (
+        f"t-copula dispersion ratio numpy={ratio_np:.3f} vs cpp={ratio_cp:.3f}")
+    assert ratio_cp < 1.30, f"cpp t(4) shocks look unstandardised ({ratio_cp:.3f}x)"
