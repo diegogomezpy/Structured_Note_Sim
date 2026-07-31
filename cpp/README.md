@@ -31,9 +31,18 @@ pip install ./cpp          # builds heston_cpp via scikit-build-core + CMake
 
 ### Threads
 
-Auto-detects all logical cores. Override with the `nthreads=` argument (0 = auto)
-or the `HESTON_NUM_THREADS` / `OMP_NUM_THREADS` env vars. The output is **identical
-for any thread count** (per-block RNG seeding), so this is purely a speed knob.
+The pool is sized from the process's **real CPU budget**, not `hardware_concurrency()`:
+`cpu_budget()` intersects the affinity mask (`sched_getaffinity`) with the cgroup
+limit (v2 `cpu.max`, v1 `cfs_quota_us`/`cfs_period_us`). Non-Linux falls back to
+`hardware_concurrency`.
+
+This matters in a container, where the two differ badly. A 2-vCPU Cloud Run
+instance on a 64-core host reports **64** — so the engine span 64 workers to share
+two cores, and they spent their time context-switching rather than simulating.
+
+Override with the `nthreads=` argument (0 = auto) or the `HESTON_NUM_THREADS` /
+`OMP_NUM_THREADS` env vars. The output is **identical for any thread count**
+(per-block RNG seeding), so this is purely a speed knob.
 
 ## Validate
 
@@ -43,6 +52,15 @@ python scripts/compare_engines.py 25000
 
 Confirms the terminal moments, cross-asset correlation, and a priced note's
 payoff stats match numpy to Monte-Carlo error, and reports the speedup.
+
+**But this script is not the real gate** — it builds with `t_dof=None,
+div_schedule=None`, so it never exercises the configuration production always
+takes (Student-t copula + dividend schedule). `tests/test_simulator.py` runs four
+configurations through **both** engines, including that one, and also pins the
+Milstein variance correction against the exact CIR conditional moments. Those
+tests skip individually when the wheel is absent (a module-level `importorskip`
+would take the numpy tests down with it, and CI is exactly where the wheel is
+absent).
 
 ## Using it
 
@@ -56,9 +74,9 @@ sim.run(engine="cpp")     # compiled engine; raises ImportError if not built
 
 Both return the identical results dict (`S_paths`, `V_paths`, `realized_corr`, …),
 so everything downstream (`price_note`, charts, backtest) is unchanged — the
-boundary is `arrays in → arrays out`. The app calls `run()` with no argument, so
-it is unaffected unless you opt in. To offer it as a user choice, pass the flag
-through from a Streamlit toggle to the cached `sim.run(...)` call.
+boundary is `arrays in → arrays out`. The app exposes the choice in the run
+settings and echoes the engine that actually ran as `engine` in the run summary —
+worth checking, because an unbuilt wheel falls back to numpy silently.
 
 ## Status
 

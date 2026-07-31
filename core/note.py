@@ -979,7 +979,7 @@ def _participation_periodic_payoff(perf_paths, terms, obs_steps, t_maturity, n_o
         "avg_time_to_autocall":     None,
         "cost_basis":               cost_basis,
         "prob_loss":                float((total_return < 0).mean()),
-        # The same three keys the Phoenix branch returns. api/engine.py reads
+        # The same three keys the Autocall branch returns. api/engine.py reads
         # periods_elapsed for `period_offset`, and the report's position band reads
         # elapsed_years / realised_income — omitting them made a HELD participation
         # run store offset 0 (mislabelling every per-period column) and draw a blank
@@ -1046,7 +1046,7 @@ def _participation_payoff(perf_paths, terms, obs_steps, t_maturity, n_obs,
         "avg_time_to_autocall":     None,
         "cost_basis":               cost_basis,
         "prob_loss":                float((total_return < 0).mean()),
-        # The same three keys the Phoenix branch returns. api/engine.py reads
+        # The same three keys the Autocall branch returns. api/engine.py reads
         # periods_elapsed for `period_offset`, and the report's position band reads
         # elapsed_years / realised_income — omitting them made a HELD participation
         # run store offset 0 (mislabelling every per-period column) and draw a blank

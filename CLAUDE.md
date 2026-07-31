@@ -15,11 +15,21 @@ uvicorn api.main:app --reload --port 8010
 cd web && npm install && npm run dev
 ```
 
-Production is a single Docker image (`Dockerfile`): Vite build + compiled C++ wheel + uvicorn serving the API and the built bundle. The Python side has no tests/linter; the front-end lints with `oxlint` (`npm run lint`) and type-checks with `tsc -b` (part of `npm run build`). Python 3.12+ required (f-strings use nested same-quote syntax introduced in 3.12).
+Production is a single Docker image (`Dockerfile`): Vite build + compiled C++ wheel + uvicorn serving the API and the built bundle. Python 3.12+ required (f-strings use nested same-quote syntax introduced in 3.12).
+
+**Checks.** Python has **no linter**, but it does have tests — `tests/` is 15 modules / ~420 cases, run in CI:
+
+```bash
+python3 -m pytest tests/ -q
+```
+
+The front-end lints with `oxlint` (`npm run lint`) and type-checks with `tsc -b` (part of `npm run build`). CI (`.github/workflows/ci.yml`) runs exactly three jobs: **web** (lint + build), **python** (`py_compile` over every tracked `.py`, then the suite), and **golden-pdf** (`tests/test_golden_pdf.py`). `scripts/extraction_gate.sh` is the heavier local gate and is **not** in CI — see the reportkit section for what its third step does and does not prove.
 
 ## Architecture
 
-The project is split into a pure-quant library (`core/`, `data/`), quant-only helpers shared with the API (`app/charts.py`, `app/pdf_report.py`, `app/translations.py`, `app/underlyings.py`), a FastAPI backend (`api/`), and a React front-end (`web/`). `core/` has no web, Plotly, or file I/O imports and can be used in notebooks independently. (The legacy Streamlit UI was removed — the `app/` package now holds only those framework-free helpers.)
+The project is split into a pure-quant library (`core/`, `data/`), quant-only helpers shared with the API (`app/charts.py`, `app/pdf_report.py`, `app/translations.py`, `app/underlyings.py`, `app/cover_photos.py`), a FastAPI backend (`api/`), and a React front-end (`web/`). (The legacy Streamlit UI was removed — the `app/` package now holds only those framework-free helpers.)
+
+**What `core/` purity actually means:** no Plotly, no web framework, and **no filesystem access at all** — nothing in `core/` calls `open()` or touches a `Path`, and `NoteTerms.from_json` takes a JSON *string*, not a path. So it imports cleanly and runs in a notebook. The one caveat: `core/calibrator.py` has an **optional, lazily-imported yfinance fetch** for the standalone case where you construct `HestonCalibrator` without data. It is inside a function, so importing the module never pulls yfinance or `requests` — and the app never reaches it, because `api/engine.py` always passes `prices_df=`. Don't read "pure" as "cannot reach the network"; read it as "the app's path through it doesn't, and importing it doesn't".
 
 ### Data flow
 
@@ -187,15 +197,17 @@ Two opt-in flags extend the same best-of overlay to the periodic checks, **both 
 - `one_star_coupon` — a single underlying ≥ `one_star_level` also pays that period's coupon (even if the worst-of is below the coupon barrier).
 - `one_star_autocall` — a single underlying ≥ `one_star_level` also forces the autocall.
 
-Set both `True` for a BNP-style "One Star" note (see `note_configs/bnp_paribas_pr00529720.json`), where the overlay lifts coupon, autocall AND final redemption. In `price_note()` the final-redemption rescue always uses `one_star_met` (via `protection_cond`); the coupon/autocall overlays use the flag-gated `one_star_coupon_met` / `one_star_autocall_met`. When `one_star_level` is `null` the note is plain worst-of throughout regardless of the flags.
+Set both `True` for a BNP-style "One Star" note, where the overlay lifts coupon, autocall AND final redemption. **No config in `note_configs/` exercises this** — every shipped note leaves `one_star_level` null, so the overlay's only worked examples are the four tests in `tests/test_note.py` (`test_one_star_*`). Read those before changing it; there is no config to eyeball. In `price_note()` the final-redemption rescue always uses `one_star_met` (via `protection_cond`); the coupon/autocall overlays use the flag-gated `one_star_coupon_met` / `one_star_autocall_met`. When `one_star_level` is `null` the note is plain worst-of throughout regardless of the flags.
 
 Legacy configs that used `final_basket="best_of"` + `final_redemption_barrier` are migrated by `NoteTerms.from_dict` to `one_star_level` (best-of → the barrier value; worst-of/average → `null`), with both overlay flags off — exactly reproducing the old final-redemption-only rescue.
 
 ## Note types (structure families)
 
-`NoteTerms.note_type` (`phoenix | reverse_conv | growth_autocall | participation | custom`) is an **explicit stored field** that drives the dedicated setup menus (`SettingsOverlay` expanded / `SetupRail` sidebar both branch on it), the payoff branch, the structure diagram (`NoteTimeline` → `ParticipationProfile` for participation) and the prose. `from_dict` **infers** it for configs that predate the field (legacy `capital_guarantee>0` → `participation`), so old JSON still loads. The phoenix / reverse-conv / growth-autocall family all share the one Phoenix waterfall in `price_note()` — for them `note_type` is a menu/label distinction only. Only `participation` has its own payoff branch. The plan is to give each family its own good payoff + menus one at a time; participation is the first.
+`NoteTerms.note_type` (`autocall | reverse_conv | growth_autocall | participation | custom`) is an **explicit stored field** that drives the dedicated setup menus (`SettingsOverlay` expanded / `SetupRail` sidebar both branch on it), the payoff branch, the structure diagram (`NoteTimeline` → `ParticipationProfile` for participation) and the prose. `from_dict` **infers** it for configs that predate the field (legacy `capital_guarantee>0` → `participation`), so old JSON still loads. The autocall / reverse-conv / growth-autocall family all share the one Autocall waterfall in `price_note()` — for them `note_type` is a menu/label distinction only. Only `participation` has its own payoff branch. The plan is to give each family its own good payoff + menus one at a time; participation is the first.
 
-**Currently exposed: only `phoenix` and `participation`.** `reverse_conv`, `growth_autocall` and `custom` are **parked** — removed from the pickable `web/src/lib/noteType.ts:NOTE_TYPES` until each is redesigned with its own trusted payoff + menus. They stay in the `NoteType` union and `applyPreset`, and `from_dict` still infers/prices them, so existing configs of those types load and price via the Phoenix waterfall — they just aren't selectable in the UI (`detectNoteType` collapses any non-participation type to `phoenix` for the picker). Reintroduce one at a time; intended behaviour is noted in the `noteType.ts` header (reverse convertible = guaranteed coupon/no barrier/no memory; growth autocall = no periodic coupon, premium accrues and pays as a lump at autocall, often step-down barrier; custom = leave every field as-is).
+**`phoenix` was this family's original name.** It was renamed to the plainer `autocall`, and `from_dict` accepts the old value **forever** (`core/note.py`) — it is stored in every config saved before the rename, and a config that stops loading is worse than an alias that never goes away. Nothing else in the codebase says `phoenix`.
+
+**Currently exposed: only `autocall` and `participation`.** `reverse_conv`, `growth_autocall` and `custom` are **parked** — removed from the pickable `web/src/lib/noteType.ts:NOTE_TYPES` until each is redesigned with its own trusted payoff + menus. They stay in the `NoteType` union and `applyPreset`, and `from_dict` still infers/prices them, so existing configs of those types load and price via the Autocall waterfall — they just aren't selectable in the UI (`detectNoteType` collapses any non-participation type to `autocall` for the picker). Reintroduce one at a time; intended behaviour is noted in the `noteType.ts` header (reverse convertible = guaranteed coupon/no barrier/no memory; growth autocall = no periodic coupon, premium accrues and pays as a lump at autocall, often step-down barrier; custom = leave every field as-is).
 
 ### Participation Note
 
@@ -339,6 +351,17 @@ profile, glossary, the `_LABELS` vocabulary, `_build_pdf_report`'s assembly).
   LANGS — 40 today: 5 themes x {autocall, participation, position, cliquet} x {en, es}). `scripts/pdf_baseline.py
   capture` re-baselines, deliberately by hand.
 
+  **The gate is LOCAL, and step 3 is only as good as your own cache.** The
+  document fingerprints live at `~/.cache/snsim/pdf_baseline.json`
+  (`SNSIM_PDF_BASELINE` overrides) — deliberately outside the repo, since they are
+  a transient record of "what this machine rendered last time", not a shared
+  artifact. Two consequences. **No CI job runs this script**: `.github/workflows/ci.yml`
+  is web build+lint, python compile+unit tests, and `golden-pdf` (which runs
+  `tests/test_golden_pdf.py`, i.e. the 15 committed page digests — not the 40
+  documents). And on a fresh clone step 3 finds no baseline and reports that
+  instead of comparing, so a gate run that has never captured is **not** evidence
+  the documents are unchanged. Capture first, then change something, then check.
+
 **`_NOTE_BRANDING_KEYS` is also the allowlist for `Brand.extras`.** reportkit copies
 only `extra_keys` out of the config, so a key read via `_brand.extras.get(...)` but
 missing from that set resolves to None on every render and the reader silently falls
@@ -361,13 +384,15 @@ The report has exactly **seven possible numbered chapters**, in this order: Note
 
 ## PDF report themes (pluggable visual identity)
 
-The report's *look* is a swappable **theme**, separate from its *content*. `reportkit/theme.py` owns the visual-identity layer; `app/pdf_report.py` owns the content (tables, metric bands, figures, glossary, cover copy, chart rebranding) and delegates every chrome surface to the active theme.
+The report's *look* is a swappable **theme**, separate from its *content*. The `reportkit.theme` module owns the visual-identity layer — it lives in the [separate reportkit repo](https://github.com/diegogomezpy/report_maker), not here, so grepping this tree for it finds nothing; `app/pdf_report.py` owns the content (tables, metric bands, figures, glossary, cover copy, chart rebranding) and delegates every chrome surface to the active theme.
 
 - **`ReportTheme`** is the interface. Each hook — `header` / `footer`, `eyebrow`, `section_title`, `secondary_head` (numbered reference heads), `section_divider` (analytical-lens chapter heads), `subsection`, `decorate_void` / `decorate_void_photo` (empty-space fillers), `cover_masthead`, `cover_left_void_fill` — receives the live `_NotePDF` instance (`pdf`) and draws through it. `_NotePDF.header()/footer()/section_title()/secondary_head()/…` are thin wrappers that call `self.theme.<hook>(self, …)`, so call sites never change when the theme changes. The theme reaches translations via `pdf.t(key)` and text sanitisation via `pdf._safe`; the photo-band hook uses `reportkit.images.cover_crop`. `app/pdf_report.py` imports the theme layer from `reportkit.theme` (and re-exports the chamfer primitives + neutral tokens under their original `_NAMES`).
 - **Palette-driven tokens.** `build_tokens(primary, accent, section_rule, panel, sidebar_bar) -> ThemeTokens` derives `ink/lime/teal/amber/panel/sidebar_bar/…` from the resolved brand palette (single source for the derivation that `_NotePDF.__init__` used to inline). The brand-neutral constants (`AMBER`, `RULE_SOFT`, `TEXT`, …) and the chamfer-hexagon shape primitives also live here and are re-imported into `pdf_report.py` under their original `_NAMES`.
 - **Themes.** `HexagonTheme` (`"hexagon"` / `"cadiem"`) is CADIEM's original chamfer-hexagon language, moved **verbatim**. `MercatorTheme` (`"mercator"`) is the website-inspired language (rounded number-chips, a light editorial chapter opener with a big ghosted numeral, thin accent keylines, airy voids — no chamfers/hexagons).
 - **Selection.** `branding["report_theme"]` → `resolve_theme()` → registry; unknown/absent falls back to `DEFAULT_THEME`, which is **`"mercator"`** (so a generic un-themed brand gets the clean airy report). **CADIEM must set `"report_theme": "cadiem"` in its branding config** to keep the hexagon look — the deployed CADIEM config carries this key (it is otherwise gitignored). The web branding form exposes the picker (`brand_theme` in `ReportPanel.tsx`).
-- **Byte-identity contract.** A change to a drawing routine must not move pixels it did not intend to. `tests/test_golden_pdf.py` proves it: a hermetic harness (no network, no Chrome — figures are stubbed *inside* `_fig_to_png` at the caller's exact pixel size so pagination is unchanged) that renders the full report under every fixture in its own `THEMES` list — today `mercator` (default), `hexagon` (resolves the built-in CADIEM theme), `custom` (an inline SpecTheme with linear/radial gradients), `hexcluster` (no watermark image, so the drawn hex-cluster fallback renders) and `photos` (the positional image-slot path, with a deliberate blank in slot 0) — and diffs per-page SHA-256 digests against `tests/golden/hashes.json`. Each theme is rendered **twice**: the default autocall note, `kind="position"` and `kind="cliquet"` — `position` is the only fixture that reaches the position metric band, its callout, the backtest's purchase-gap caveat and the "Projection covers" term-sheet row. Baseline keys are the theme alone for the autocall document and `theme:position` for the held one, so a new case ADDS an entry instead of re-basing one. The held fixture's dates and quantities are FIXED literals (`HELD_*` in `api/preview_fixture.py`) — anything derived from `today` would re-render the document daily — and its per-period arrays are window-width, because that is the contract price_note actually follows.
+- **Byte-identity contract.** A change to a drawing routine must not move pixels it did not intend to. `tests/test_golden_pdf.py` proves it: a hermetic harness (no network, no Chrome — figures are stubbed *inside* `_fig_to_png` at the caller's exact pixel size so pagination is unchanged) that renders the full report under every fixture in its own `THEMES` list — today `mercator` (default), `hexagon` (resolves the built-in CADIEM theme), `custom` (an inline SpecTheme with linear/radial gradients), `hexcluster` (no watermark image, so the drawn hex-cluster fallback renders) and `photos` (the positional image-slot path, with a deliberate blank in slot 0) — and diffs per-page SHA-256 digests against `tests/golden/hashes.json`. Each theme is pixel-guarded over **three** documents — the default autocall note, `kind="position"` and `kind="cliquet"` — for **15 baselines** in `hashes.json`. `position` is the only fixture that reaches the position metric band, its callout, the backtest's purchase-gap caveat and the "Projection covers" term-sheet row; `cliquet` is the only one that draws the per-period payoff minis. Baseline keys are the theme alone for the autocall document and `theme:position` / `theme:cliquet` for the others, so a new case ADDS an entry instead of re-basing one.
+
+**`kind="participation"` is rendered but NOT pixel-guarded.** `test_participation_report_renders` only asserts the document is ≥3 pages — it has no entry in `hashes.json`. So the participation summary and payoff profile are covered against *crashing*, not against *moving*. Their byte-identity is checked only by `scripts/extraction_gate.sh` (below), which is manual. Adding a `theme:participation` baseline is the obvious way to close that, and would take the golden from 15 to 20 keys. The held fixture's dates and quantities are FIXED literals (`HELD_*` in `api/preview_fixture.py`) — anything derived from `today` would re-render the document daily — and its per-period arrays are window-width, because that is the contract price_note actually follows.
 
 ```bash
 python -m pytest tests/test_golden_pdf.py -q

@@ -14,7 +14,7 @@ The project covers the full quantitative workflow:
 
 1. **Calibration** — estimate Heston parameters and tail dependence from historical price data via method of moments
 2. **Simulation** — simulate correlated multi-asset paths under the physical measure with Milstein discretisation, antithetic variates, and a Student-t copula
-3. **Pricing** — evaluate the note payoff across every simulated scenario through one payoff engine covering two families: the **Phoenix** autocall waterfall (memory coupon, One-Star best-of overlay, uncapped **Zenith** upside on an in-the-money redemption) and the **Participation** note (composable downside × upside styles + a periodic cliquet mode)
+3. **Pricing** — evaluate the note payoff across every simulated scenario through one payoff engine covering two families: the **Autocall** waterfall (Phoenix-style memory coupon, One-Star best-of overlay, uncapped **Zenith** upside on an in-the-money redemption) and the **Participation** note (composable downside × upside styles + a periodic cliquet mode)
 4. **Backtesting** — replay the note on every historical issue date using realized prices, through the same payoff engine
 5. **Web app** — interactive bilingual (EN/ES) React single-page app (FastAPI backend) that frames the note through six tabs — **Monte Carlo**, **Historical Backtest**, **Current Performance** (live), **Compare** (A/B two notes on shared paths), **Report** (branded one-click PDF), and **Batch** (many notes zipped) — with a setup page and live barrier tracking
 
@@ -24,11 +24,13 @@ The project covers the full quantitative workflow:
 
 ```
 .
-├── core/                      # Pure-quant library (no web / Plotly / file-I/O imports)
+├── core/                      # Pure-quant library: no Plotly, no web framework, no filesystem
+│                              # access at all (calibrator.py has one optional, lazily
+│                              # imported yfinance fetch the app never takes)
 │   ├── calibrator.py          #   Historical Heston calibration pipeline
 │   ├── simulator.py           #   Multi-asset Heston Monte Carlo engine (run(engine=...))
 │   ├── simulator_cpp.py       #   Thin wrapper over the optional compiled C++ engine
-│   ├── note.py                #   NoteTerms dataclass + vectorized payoff engine (Phoenix + Participation)
+│   ├── note.py                #   NoteTerms dataclass + vectorized payoff engine (Autocall + Participation)
 │   ├── note_description.py    #   Natural-language note summary generator
 │   ├── backtest.py            #   Historical backtest using realized prices
 │   └── __init__.py            #   Public API: HestonParams, NoteTerms, price_note, ...
@@ -63,10 +65,15 @@ The project covers the full quantitative workflow:
 │
 ├── note_configs/             # sample JSON term sheets (load in the app)
 │                             #   Blue Chip / Broad Market / New Tech / Old Tech,
-│                             #   Nota de Technológicas Chinas, Note de EV Chinas
-├── tests/                    # pytest quant-core suite (run by CI)
-│   ├── conftest.py
-│   └── test_note.py          #   payoff-engine coverage (Phoenix, One-Star, Zenith, Participation)
+│                             #   Nota de Technológicas Chinas, Note de EV Chinas,
+│                             #   SBUX_GE (guaranteed + memory), Secondary Position Demo
+├── tests/                    # pytest suite — 15 modules / ~420 cases, run by CI
+│   ├── test_note.py          #   payoff engine (Autocall, One-Star, Zenith, Participation)
+│   ├── test_simulator.py     #   both engines; Milstein vs exact CIR moments
+│   ├── test_compare.py       #   A/B paired statistics over hand-built payoff dicts
+│   ├── test_golden_pdf.py    #   per-page SHA-256 of the rendered report, every theme
+│   ├── test_pdf_layout.py    #   pagination + chapter numbering invariants
+│   └── ...                   #   calibrator, loader, position state, TS/Python mirror
 ├── branding/                 # Firm branding JSON + bundled ticker logos
 │   ├── branding_example.json #   documented template (all keys)
 │   └── ticker_logos/         #   optional local PNG logos
@@ -81,7 +88,8 @@ The project covers the full quantitative workflow:
 │   └── audit_tail.py         # Pretty-print the Cloud Run generation audit trail
 │
 ├── design_lang/              # Design-system reference (Mercator tokens + page snapshots)
-├── .github/workflows/        # CI gate (ci.yml: web build+lint, python syntax + pytest) + wheels.yml
+├── .github/workflows/        # ci.yml: web build+lint · python compile+pytest · golden-pdf
+│                             # + wheels.yml (builds the C++ wheel on Linux)
 ├── Dockerfile                # Single-image build: Vite bundle + C++ wheel + Chrome-for-Testing + FastAPI runtime
 ├── requirements.txt          # Quant / runtime Python deps
 └── README.md
@@ -107,11 +115,15 @@ Cross-asset dependence is captured through a full $2n \times 2n$ block correlati
 
 $$C = \begin{pmatrix} \Sigma_{SS} & \Sigma_{SV} \\ \Sigma_{SV}^\top & \Sigma_{VV} \end{pmatrix}$$
 
-- $\Sigma_{SS}$: return-return correlations (2-day overlapping to correct for timezone gaps between US and European closes)
+- $\Sigma_{SS}$: **target** return-return correlations (2-day overlapping to correct for timezone gaps between US and European closes)
 - $\Sigma_{VV}$: variance-variance correlations
 - $\Sigma_{SV}$: diagonal matrix of per-asset leverage effects $\rho_i$
 
 If the assembled matrix is not PSD, a nearest-PSD projection (Higham 2002) is applied automatically.
+
+**$\Sigma_{SS}$ is a target for the RETURNS, and the simulator compensates for dilution.** A return is $\sqrt{V_i}\,dW_i$ and the variance processes are independent, so the random scaling dilutes the driver correlation by $k_i k_j$, where $k = \mathbb{E}[\sqrt{V}]/\sqrt{\mathbb{E}[V]} \le 1$ by Jensen. Feeding $\Sigma_{SS}$ to the simulator as a *driver* correlation therefore delivered only 72–78% of it — the calibrator measured 0.85 and the app priced 0.61, losing a quarter of the co-movement between calibration and pricing. On a worst-of that means more dispersion and a knock-in probability higher than the underlyings imply.
+
+`HestonMultiSimulator` now inflates the drivers by $1/(k_i k_j)$, with $k$ measured off the variance process itself (`variance_scale_factors` — a cheap variance-only pilot, so it measures the *discretised* scheme rather than the CIR ideal). Targets up to $\approx 0.6$ land within 0.01. Very high targets are unreachable — the driver would exceed 1 and the $2n \times 2n$ block cannot stay PSD with leverage on the diagonal — so those keep the closest achievable value and set `corr_uplift_capped`, surfaced in the run summary as `corr_capped`. The C++ engine inherits all of it (it receives the Cholesky factor, not the blocks). `match_return_corr=False` restores the old verbatim-driver behaviour.
 
 ---
 
@@ -121,7 +133,9 @@ If the assembled matrix is not PSD, a nearest-PSD projection (Higham 2002) is ap
 
 The variance process uses Milstein rather than Euler-Maruyama, reducing discretisation bias near $V = 0$:
 
-$$V_{t+dt} = V_t + \kappa(\theta - V_t)\,dt + \xi\sqrt{V_t}\,dW_V + \tfrac{1}{2}\xi^2\left(dW_V^2 - dt\right)$$
+$$V_{t+dt} = V_t + \kappa(\theta - V_t)\,dt + \xi\sqrt{V_t}\,dW_V + \tfrac{1}{4}\xi^2\left(dW_V^2 - dt\right)$$
+
+The correction is $\tfrac{1}{4}\xi^2$, **not** $\tfrac{1}{2}\xi^2$: the Milstein term is $\tfrac{1}{2}b\,b'$ with $b(V)=\xi\sqrt{V}$, so $b' = \xi/(2\sqrt{V})$ and the $\sqrt{V}$ cancels to leave $\xi^2/4$. It shipped doubled in both engines until it was measured against the exact CIR conditional variance — at the regime this app calibrates to, the doubled term put $\text{Var}[V_T]$ 9.2% above exact versus 4.7% for the correct one. Because the term is zero-mean it never moved a headline average; it inflated the variance of the variance, where nothing was looking. `tests/test_simulator.py` now pins it against the exact moments.
 
 Full truncation ($V$ floored at 0) after each step. Price step uses log-Euler:
 
@@ -164,13 +178,15 @@ All parameters are estimated from historical daily **adjusted** close prices (to
 | 4 | $V_0$ | Most recent 21-day rolling realised variance |
 | 5 | $\kappa$ | AR(1) of RV series: $\kappa = -\log(\hat\phi)/dt$ |
 | 6 | $\xi$ | Std of RV increments normalised by $\sqrt{\theta \cdot dt}$ |
-| 7 | $\rho$ | $\text{Corr}(r_t, \Delta\text{RV}_t)$ |
+| 7 | $\rho$ | **Prior** (`LEVERAGE_PRIOR = -0.6`). $\text{Corr}(r_t, \Delta\text{RV}_t)$ is computed but kept only as a diagnostic — see the note below |
 | 8 | $\mu$ | Sample mean log-return, annualised |
 | 9 | $\nu$ | MLE $t$-fit per asset, median across assets |
 | 10 | $\Sigma_{SS}, \Sigma_{VV}$ | Pearson correlation of 2-day returns / RV series |
 | 11 | Feller condition | Enforced by nudging $\kappa$ if $2\kappa\theta < \xi^2$ |
 
-**Note on $\rho$:** The 2021–2026 calibration window is dominated by a sustained bull market. Calibrated $\rho$ values are near zero rather than the textbook $-0.65$ for SPX — this is what the data shows under the physical measure. A risk-neutral calibration from the options surface would recover the expected negative $\rho$.
+**Note on $\rho$ — the simulated value comes from a prior, not from your data.** The daily return-vs-realised-variance estimator in step 7 is *uninformative at this sample size*, not merely noisy: run against series generated at a known $\rho$, it returns $\approx -0.04$ whether the truth is $-0.90$, $-0.40$ or $+0.40$. The signal lives in the 21-day aggregated skew, which moves 0.595 per unit $\rho$ — but a single 5-year series pins that skew only to $\pm 0.6$, an implied $\rho$ uncertainty of $\pm 1.05$, wider than $\rho$'s entire range. What would identify $\rho$ is the option surface, which this app does not read.
+
+Shipping $\approx -0.04$ asserted "no leverage effect", the one value we can be confident is wrong. So `core/calibrator.py:LEVERAGE_PRIOR = -0.6` — the middle of the equity leverage range — is what gets simulated, and the raw estimate is retained as a diagnostic (`rho_est`). On a representative 2-year worst-of, $-0.04 \to -0.6$ moves P(knock-in) from **3.78% to 5.75%**. Pass `rho_prior=None` to opt out and simulate the raw estimate.
 
 **Note on $\nu$:** MLE gives $\nu \approx 4$ for this dataset (SPX: 3.9, SX5E: 4.1, SMI: 4.7), indicating heavy tails consistent with the volatility events in the sample period.
 
@@ -182,9 +198,11 @@ All parameters are estimated from historical daily **adjusted** close prices (to
 
 The `NoteTerms` dataclass captures the full specification of a note. A single engine (`price_note()`) covers every variant below — the differences are entirely in the configured fields. All parameters are configurable and JSON-serialisable.
 
-`note_type` (`phoenix` / `reverse_conv` / `growth_autocall` / `participation` / `custom`) is an **explicit stored field** that drives the setup menu, the payoff branch, the structure diagram and the prose. **Only two families are currently selectable in the UI: `phoenix` and `participation`.** `reverse_conv`, `growth_autocall` and `custom` are **parked** — kept in the `NoteType` union and still priced (so existing configs load), but removed from the picker until each is redesigned with its own menus. `from_dict` **infers** `note_type` for configs that predate the field, so legacy JSON still loads.
+`note_type` (`autocall` / `reverse_conv` / `growth_autocall` / `participation` / `custom`) is an **explicit stored field** that drives the setup menu, the payoff branch, the structure diagram and the prose. **Only two families are currently selectable in the UI: `autocall` and `participation`.** `reverse_conv`, `growth_autocall` and `custom` are **parked** — kept in the `NoteType` union and still priced (so existing configs load), but removed from the picker until each is redesigned with its own menus. `from_dict` **infers** `note_type` for configs that predate the field, so legacy JSON still loads.
 
-**Phoenix family** — all three ride the one Phoenix waterfall in `price_note()`; the type is a menu/label distinction, the behaviour is set by fields:
+> **Naming.** This family's stored value used to be `phoenix`, after the market term for a memory-coupon autocallable. It was renamed to the plainer `autocall`; `from_dict` accepts `"phoenix"` **permanently**, so every config written before the rename still loads. "Phoenix" below refers to the market structure, not to a value you can store.
+
+**Autocall family** — all three ride the one Autocall waterfall in `price_note()`; the type is a menu/label distinction, the behaviour is set by fields:
 
 - **Phoenix Memory** — periodic coupon paid when the basket clears `coupon_barrier`; missed coupons accumulate (`memory=True`).
 - **Reverse Convertible** *(parked in UI)* — guaranteed coupon: `coupon_barrier=0.0`, no memory, so it pays every period regardless of level.
@@ -192,18 +210,20 @@ The `NoteTerms` dataclass captures the full specification of a note. A single en
 
 **Participation note** (`note_type="participation"`, or legacy `capital_guarantee>0`) — a standalone **maturity-only** payoff that skips the entire coupon/autocall/knock-in waterfall (`_participation_payoff` → `_participation_redemption`). It composes **one downside style** with **one upside style** around `participation_strike`:
 
-- downside (`participation_downside`): `full` (flat floor at `protection_level`, par when ≥1) · `buffer` (par down to `protection_level`, then 1:1 loss below) · `airbag` (par down to the barrier, then geared `B/protection_level` below) · `bear` (participate as the basket falls below the strike, floored above it — the upside style is ignored).
-- upside (`participation_upside`): `linear` (`participation_rate·(B−strike)`, optional `upside_cap`) · `shark_fin` (participate up to `knockout_level`, else the flat `knockout_payout`; European/at-maturity KO) · `digital` (fixed `digital_payout` if `B ≥ strike`).
+- downside (`participation_downside`): `full` (a **FLOOR** under the basket, `max(B, protection_level)`, capped at par — "protected at 90%" means never less than 90%, but a basket at 95% still redeems 95%; flat par when the level is ≥1) · `buffer` (par down to `protection_level`, then 1:1 loss below) · `airbag` (par down to the barrier, then geared `B/protection_level` below) · `bear` (participate as the basket falls below the strike, floored above it — the upside style is ignored).
+- upside (`participation_upside`): `linear` (`participation_rate·min(B−strike, upside_cap)`) · `shark_fin` (participate up to `knockout_level`, else the flat `knockout_payout`; European/at-maturity KO) · `digital` (fixed `digital_payout` if `B ≥ strike`).
+
+`upside_cap` caps the **underlying move** that participates, not the redemption — participation is applied after the cap, so the participating gain tops out at the same underlying level (`strike + upside_cap`) whatever the rate, and the maximum redemption is `1 + rate·upside_cap`. A digital ignores the move magnitude, so the cap does not enter. `web/src/lib/participation.ts` mirrors this in TypeScript to draw the payoff diagram; `tests/test_participation_mirror.py` runs both implementations over 9,072 points and asserts they agree, so the picture a client is shown cannot drift from the payoff they are sold.
 
 `participation_periodic=True` switches to a **cliquet / ratchet** mode: each observation is a self-contained one-period participation note (strike reset to par, `period_cap` as the cap), and the per-period P&L is summed with capital rolling at par.
 
-**Zenith** (`zenith=True`) — an overlay on the Phoenix waterfall giving **worst-of upside participation on an in-the-money redemption**. Any redemption at or above the initial level (an autocall, or a non-loss maturity with worst-of ≥ 100%) pays `principal_protection + participation_rate·max(0, WoF−1)` on top of par + coupon, capped by `upside_cap` (`None` = uncapped, the "no CAP" case). The capital-loss branch and coupons/memory are unchanged.
+**Zenith** (`zenith=True`) — an overlay on the Autocall waterfall giving **worst-of upside participation on an in-the-money redemption**. Any redemption at or above the initial level (an autocall, or a non-loss maturity with worst-of ≥ 100%) pays `principal_protection + participation_rate·max(0, WoF−1)` on top of par + coupon, capped by `upside_cap` (`None` = uncapped, the "no CAP" case). The capital-loss branch and coupons/memory are unchanged.
 
 **One Star overlay** (`one_star_level`) — a best-of OR-overlay orthogonal to the above. When set, its **final-redemption rescue is always active**: a single underlying ≥ `one_star_level` at maturity redeems capital at par even if the worst-of breached the knock-in (BBVA "Barrier and Knock-in"). The `one_star_coupon` / `one_star_autocall` flags (both default `False`) extend the same best-of overlay to the periodic coupon / autocall checks (BNP-style One Star). `null` = off, plain worst-of throughout.
 
 | Parameter | Description | Default |
 |-----------|-------------|---------|
-| `note_type` | Structure family (`phoenix` / `participation` selectable; `reverse_conv` / `growth_autocall` / `custom` parked) | `phoenix` |
+| `note_type` | Structure family (`autocall` / `participation` selectable; `reverse_conv` / `growth_autocall` / `custom` parked) | `autocall` |
 | `maturity` | Note tenor in years | 1.0 |
 | `payment_freq` | Observation frequency (`monthly`/`quarterly`/`semi-annual`/`annual`) | `quarterly` |
 | `coupon_pa` | Annualised coupon rate (e.g. `0.10` = 10% p.a.) | 0.10 |
@@ -231,11 +251,14 @@ The `NoteTerms` dataclass captures the full specification of a note. A single en
 | `settlement_date` | `"YYYY-MM-DD"` the position was bought (secondary market); `null` = held from issue | `None` |
 | `purchase_price` | Clean price paid, as a fraction of nominal (`0.95` = 95%) | 1.0 |
 | `accrued_at_purchase` | Accrued coupon settled on top of the clean price | 0.0 |
-| `seasoned` | Price the remaining life from today instead of a full tenor from scratch (needs a past `issue_date`) | False |
 
 **Secondary-market position.** `settlement_date`, `purchase_price` and `accrued_at_purchase` describe *your* position rather than the note. `purchase_price + accrued_at_purchase` is the **cost basis**, and every return the app reports — Monte Carlo, backtest and Current Performance — is measured against it instead of par, so a note bought at 95 shows the buyer's economics (par redemption alone is a +5.26% gain). Alongside the usual metrics you get `prob_loss`, the probability of ending below what you paid — which is *not* the knock-in rate once the price is away from par. `settlement_date` additionally tells the Current Performance tab where your holding period starts: coupons fixed before it went to the previous holder and are excluded from your income and IRR. The defaults are a primary subscription at par, so existing configs are unaffected.
 
-**Seasoning.** By default the Monte Carlo prices a hypothetical note *issued today* for the full tenor. Turn on `seasoned` and it instead prices what is left of the note you actually hold: the simulation runs from today to the **original** maturity, performance is measured against the **original fixings** (so a 60% knock-in still means 60% of where the note struck), only the observations still to come are evaluated, and any memory-coupon arrears are carried in. Coupons already paid are realised and sit outside the projection. Period labels keep the term sheet's numbering — a note six quarters in reports P7 onward, not P1. If the note has already matured or autocalled on realised prices, the run says so and falls back to pricing from issue. The historical backtest is unaffected: each of its issue windows is a full life by construction.
+**Remaining-life pricing — `settlement_date` is the only switch.** There is no separate `seasoned` flag; it was removed because it was a second, independently-settable source of truth for a question the position already answers, and a config could disagree with itself. A legacy `seasoned: true` is migrated on load to `settlement_date = issue_date` (held since issue, at par), which prices identically.
+
+By default the Monte Carlo prices a hypothetical note *issued today* for the full tenor. Set a `settlement_date` (with a past `issue_date`) and it instead prices what is left of the note you actually hold: the simulation runs from today to the **original** maturity, performance is measured against the **original fixings** (so a 60% knock-in still means 60% of where the note struck), only the observations still to come are evaluated, and any memory-coupon arrears are carried in. Coupons already paid are realised and sit outside the projection. Period labels keep the term sheet's numbering — a note six quarters in reports P7 onward, not P1. If the note has already matured or autocalled on realised prices, the run says so and falls back to pricing from issue.
+
+**The historical backtest replicates the purchase gap too** (`core/backtest.py:hold_gap`). Each historical issue window is measured from the same point in the note's life at which the position was bought — earlier coupons belonged to the seller, and returns annualise over the holding period rather than the full tenor. Windows that had **already autocalled by the purchase date** drop out of the sample (you could not have bought the note), which is a real selection effect biasing the survivors toward windows that did not call early; `skipped_called` reports the count and the PDF states it.
 
 **Participation-specific fields** (used only when `note_type="participation"`):
 
@@ -253,7 +276,9 @@ The `NoteTerms` dataclass captures the full specification of a note. A single en
 | `participation_periodic` | Cliquet mode — reset strike each period, sum per-period P&L | False |
 | `period_cap` | Per-period cap in cliquet mode (`None` = uncapped) | `None` |
 
-> **Derived fields** (never stored, always computed): `n_obs = maturity × periods_per_year`, `coupon_rate = coupon_pa / periods_per_year`.
+> **Derived fields** (never stored, always computed): `n_obs = round(maturity × periods_per_year)`, `coupon_rate = coupon_pa / periods_per_year`.
+>
+> **One schedule, not three.** `maturity` is what the user typed and need not be a whole number of periods — `Broad Market Note.json` stores 3.0833 years at semi-annual, which is 6 periods, i.e. 3.0 years. `n_obs` rounds, so the note's *real* length is `maturity_months = n_obs × (12 / periods_per_year)` and `effective_maturity = maturity_months / 12`. Observation times divide by `effective_maturity`, so the grid, the coupon schedule and the final observation all agree; previously the same note produced up to three different answers for its own length. `schedule_drift_years` reports `|effective_maturity − maturity|` and the run summary surfaces it when it is non-zero, so a term sheet whose tenor isn't a whole number of periods says so rather than silently resolving one way.
 >
 > **Legacy fields** `final_basket` + `final_redemption_barrier` are auto-migrated to `one_star_level` by `NoteTerms.from_dict` (best-of → the barrier level; otherwise off); a positive `capital_guarantee` is migrated to `note_type="participation"` + `protection_level`.
 
@@ -284,14 +309,23 @@ A few sample term sheets are included as ready-to-use JSON configs (load any of 
 
 | File | Type | Underlyings | Tenor | Coupon | KI |
 |------|------|-------------|-------|--------|-----|
-| `Blue Chip Autocall.json` | Phoenix | JPM / MSFT / PG | 2.5Y quarterly | 10% p.a. | 55% European |
-| `Broad Market Note.json` | Phoenix | SPY / IWM / FEZ | ~3Y semi-annual | 8% p.a. | 55% European |
-| `New Tech Note.json` | Phoenix | META / GOOGL | 12M quarterly | 14% p.a. | 60% European |
-| `Old Tech Note.json` | Phoenix | CSCO / DELL / NOK | 2Y quarterly | 40% p.a. | 50% European |
-| `Nota de Technologicas Chinas.json` | Phoenix | JD / BABA / BIDU | 18M quarterly | 14% p.a. | 50% European |
-| `Note de EV Chinas.json` | Phoenix | 1211.HK / XPEV | 18M monthly | 14.5% p.a. | 50% European |
+| `Blue Chip Autocall.json` | Autocall | JPM / MSFT / PG | 2.5Y quarterly | 10% p.a. | 55% European |
+| `Broad Market Note.json` | Autocall | SPY / IWM / FEZ | ~3Y semi-annual | 8% p.a. | 55% European |
+| `New Tech Note.json` | Autocall | META / GOOGL | 12M quarterly | 14% p.a. | 60% European |
+| `Old Tech Note.json` | Autocall | CSCO / DELL / NOK | 2Y quarterly | 40% p.a. | 50% European |
+| `Nota de Technologicas Chinas.json` | Autocall | JD / BABA / BIDU | 18M quarterly | 14% p.a. | 50% European |
+| `Note de EV Chinas.json` | Autocall | 1211.HK / XPEV | 18M monthly | 14.5% p.a. | 50% European |
+| `SBUX_GE GUARANTEED COUPONS.json` | Autocall | SBUX / GE | 18M monthly | 10% p.a. | 58% European |
+| `SBUX_GE MEMORY COUPON.json` | Autocall | GE / SBUX | 2Y monthly | 10.1% p.a. | 50% European |
+| `Secondary Position Demo - Target Mosaic.json` | Autocall | TGT / MOS | 3Y quarterly | 11% p.a. | 60% European |
 
-The Citi note demonstrates the step-down barrier (100% declining 3%/period from obs 3, floored at 88%) with a 12% p.a. premium paid only at autocall. The Barclays note pays a guaranteed coupon every month (`coupon_barrier = 0.0`). The BNP One Star note lifts coupon, autocall **and** final redemption when any single underlying ≥ 100% (`one_star_coupon` / `one_star_autocall` both on), whereas the BBVA and Silex One Star notes apply the overlay to the final-redemption rescue only. The four `silex_*` notes are thematic indicative baskets — defensive consumer (WMT/MO/PM), utilities & telecom (NEE/VZ/ETR), big-tech with a One Star overlay (NFLX/GOOGL/META), and a **Zenith** consumer note (WMT/TGT/DG) where an in-the-money worst-of adds uncapped upside participation on redemption. The two `participation_*` notes exercise the maturity-only Participation family: capital-protected growth (par floor × 130% linear upside capped at +60%) and an annual cliquet (100% floor, 8% per-period cap).
+Three of these exercise mechanics the others don't:
+
+- **`SBUX_GE GUARANTEED COUPONS`** sets `coupon_barrier = 0.0`, so the coupon pays every month regardless of level — the reverse-convertible shape, expressed purely through fields.
+- **`Blue Chip Autocall`** and **`Note de EV Chinas`** carry a **step-down** autocall barrier (`autocall_step_down = 0.05`), so the call level falls 5 points each period.
+- **`Secondary Position Demo - Target Mosaic`** is the **held-position** fixture: settled 2026-01-20 at a clean price of 0.86, so it drives the remaining-life path — the projection starts from today's level against the original fixings, returns are measured on cost basis rather than par, and the backtest replicates the purchase gap.
+
+No shipped config sets `one_star_level`, `zenith` or `note_type = "participation"`. Those features are exercised by `tests/test_note.py` and by the PDF fixtures in `api/preview_fixture.py`, not by a config you can open in the app.
 
 ---
 
@@ -415,7 +449,7 @@ metadata, per-underlying details, simulation engine). Every control carries an
 inline tooltip explaining what it does.
 
 - **Note-type family** — a segmented toggle switches structure family and swaps the
-  relevant fields. Two families are currently selectable: **Phoenix**
+  relevant fields. Two families are currently selectable: **Autocall**
   (coupon/autocall/knock-in) and **Participation** (a maturity-level payoff that
   composes one downside style × one upside style, with an optional cliquet/periodic
   reset). Other families still load and price but aren't offered in the picker.
@@ -601,8 +635,17 @@ rather than at Cloud Build (which would block the auto-deploy):
   type-check + `vite build`), mirroring the Dockerfile's front-end build.
 - **python** — `py_compile` on every module (catches the syntax / f-string-version
   breaks that would fail the image build without installing the heavy stack), then
-  the golden-value **quant-core `pytest` suite** (`tests/`, no network; `scipy` is
-  installed because importing `core.note` pulls in the calibrator).
+  the **`pytest` suite** (`tests/`, no network; `scipy` is installed because
+  importing `core.note` pulls in the calibrator).
+- **golden-pdf** — renders the full report under every theme fixture with figures
+  stubbed (no network, no Chrome) and diffs per-page SHA-256 digests against
+  `tests/golden/hashes.json`, so a drawing change that moves pixels it did not
+  intend to fails here.
+
+`scripts/extraction_gate.sh` — the heavier gate that also fingerprints all 40
+theme × kind × language documents — is **local only** and not part of CI; its
+baseline lives in `~/.cache/snsim/`, so it compares against what *your* machine
+last rendered.
 
 ---
 
@@ -695,7 +738,8 @@ Batch tab's multi-report ZIP download (see `web/package.json`).
 
 | Limitation | Impact | Note |
 |-----------|--------|------|
-| Physical-measure (P) calibration — *by design* | Calibrated $\rho \approx 0$ on the recent bull-market sample (not the textbook $-0.65$); paths reflect likely *real-world* outcomes, not arbitrage-free prices | Intentional for scenario analysis; a longer / regime-mixed calibration window shifts $\rho$ |
+| Physical-measure (P) calibration — *by design* | Paths reflect likely *real-world* outcomes, not arbitrage-free prices | Intentional for scenario analysis |
+| $\rho$ is **not identifiable** from price history | The simulated leverage is a prior (`-0.6`), not a measurement — see [the note on $\rho$](#calibration-pipeline) | Not fixable with a longer window: the estimator is uninformative at any realistic sample size. Only an option surface would identify it |
 | In-sample backtest | The calibration window overlaps the backtest window | Expanding-window / walk-forward calibration would remove the overlap |
 | Log-Euler price step | Minor discretisation bias under stochastic vol | Full Milstein for the price process |
 | Single $\nu$ across assets | Ignores per-asset tail structure | Per-asset or vine copula |
