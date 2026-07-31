@@ -435,3 +435,45 @@ def test_buffer_and_airbag_are_untouched_by_the_floor_fix():
     air = _participation_redemption(B, _prot_note(0.90, downside="airbag"))
     assert list(np.round(buf, 6)) == [1.0, 0.95]          # par in the buffer, then 1:1
     assert list(np.round(air, 6)) == [1.0, round(0.85 / 0.90, 6)]   # geared below
+
+
+def test_the_floor_does_not_become_an_uncapped_upside_above_a_high_strike():
+    """A strike ABOVE par puts the band [par, strike) in the DOWNSIDE branch. The
+    floor `max(B, prot)` paid that gain 1:1 there — ignoring participation_rate and
+    upside_cap entirely — and then dropped back to par AT the strike, a cliff
+    exactly where the note is supposed to start participating.
+
+    Mutation-verified: drop the `min(..., 1.0)` and the 1.09 assertion goes to
+    1.0899… and the continuity assertion to a 9-point step."""
+    import numpy as np
+    from core.note import _participation_redemption
+    t = _prot_note(0.90, strike=1.10, rate=2.0)
+    # Below the strike but above par: par, not the basket's gain.
+    assert _participation_redemption(np.array([1.05, 1.09]), t).tolist() == [1.0, 1.0]
+    # ...and no step at the strike itself.
+    under, at = _participation_redemption(np.array([1.0999, 1.10]), t)
+    assert abs(at - under) < 1e-3, f"cliff at the strike: {under:.4f} -> {at:.4f}"
+    # The floor still floors, and the rate still applies above the strike.
+    assert _participation_redemption(np.array([0.70]), t).tolist() == [0.90]
+    assert _participation_redemption(np.array([1.20]), t)[0] == pytest.approx(1.20)
+
+
+def test_breakeven_reports_the_lower_loss_region_not_the_grid_bound():
+    """A shark fin whose knock-out rebate sits BELOW par loses money in two
+    disjoint regions — deep down, and again above the knock-out. Taking the last
+    losing grid point reported the top of the scan (300%) as "redeems below par
+    below X", on a note that is back at par by 80%."""
+    from core.note import NoteTerms, _participation_breakeven
+    t = NoteTerms.from_dict({
+        "name": "SF", "maturity": 2.0, "payment_freq": "annual", "coupon_pa": 0.0,
+        "coupon_barrier": 0.0, "autocall_barrier": 0.0, "autocall_start_period": 1,
+        "knock_in_barrier": 0.0, "memory": False, "coupon_basket": "worst_of",
+        "autocall_basket": "worst_of", "note_type": "participation",
+        "participation_downside": "buffer", "participation_upside": "shark_fin",
+        "participation_rate": 1.0, "participation_strike": 1.0,
+        "protection_level": 0.80, "knockout_level": 1.40, "knockout_payout": 0.95,
+        "tickers": {"A": "A"},
+    })
+    be = _participation_breakeven(t)
+    assert be is not None and 0.79 <= be <= 0.81, (
+        f"breakeven {be} — the loss region above the knock-out leaked into it")

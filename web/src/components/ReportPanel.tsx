@@ -7,10 +7,11 @@ import Icon from './Icon'
 import { useTour, reportTour } from './Tour'
 import ReportImages from './ReportImages'
 import BrandConfigBar from './BrandConfigBar'
+import SectionTree, { Check } from './SectionTree'
 import type { Branding, NoteTerms } from '../api/types'
 import type { BrandingStudio } from '../lib/useBrandingStudio'
 import type { RunOpts } from './SetupRail'
-import { TREE, PRESET_ORDER, presetKeys, savePresetOverride, resetPresetOverride,
+import { groupsFor, sectionCtx, PRESET_ORDER, presetKeys, savePresetOverride, resetPresetOverride,
          isPresetCustomised, saveActiveSections, COMPARE_KEY,
          type Preset, type Group } from '../lib/reportSections'
 
@@ -27,16 +28,6 @@ function filenameFrom(res: Response, fallback: string): string {
   return m ? m[1] : fallback
 }
 
-function Check({ on, indeterminate }: { on: boolean; indeterminate?: boolean }) {
-  return (
-    <span style={{
-      width: 18, height: 18, borderRadius: 6, flexShrink: 0,
-      border: `1.5px solid ${on || indeterminate ? 'var(--accent)' : 'var(--border-strong)'}`,
-      background: on || indeterminate ? 'var(--accent)' : 'transparent',
-      display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff',
-    }}>{on ? <Icon name="check" size={12} /> : indeterminate ? <span style={{ width: 8, height: 2, background: '#fff', borderRadius: 1 }} /> : null}</span>
-  )
-}
 
 export default function ReportPanel({ terms, opts, variantB, pathImages, brand, studio, onOpenDesigner }: {
   terms: NoteTerms; opts: RunOpts; variantB?: NoteTerms | null
@@ -52,8 +43,12 @@ export default function ReportPanel({ terms, opts, variantB, pathImages, brand, 
   // in the Compare tab). Default on when B exists, so building the report after a
   // comparison carries it through.
   const [compareOn, setCompareOn] = useState(true)
-  const hasLive = !!terms.issue_date
-  const groups = useMemo(() => TREE.filter((g) => g.key !== 'live' || hasLive), [hasLive])
+  // Offer only what THIS note can produce. Ticking "Per-period payoffs (cliquet)"
+  // on an autocall note, or the whole A/B chapter with no Note B, changed nothing
+  // in the PDF and gave no clue why — the toggle simply had no figure behind it.
+  const groups = useMemo(
+    () => groupsFor(sectionCtx(terms, { compare: !!variantB })),
+    [terms, variantB])
   const allKeys = useMemo(() => groups.flatMap((g) => g.items.map((i) => i[0])), [groups])
 
   // A saved custom selection (persisted) is restored on load, so the user's own
@@ -68,7 +63,6 @@ export default function ReportPanel({ terms, opts, variantB, pathImages, brand, 
   const [status, setStatus] = useState<Status>('idle')
   const [error, setError] = useState('')
 
-  const lab = (en: string, es: string) => (lang === 'es' ? es : en)
   // Editing sections under an audience preset REDEFINES that preset (once saved)
   // rather than silently dropping to "custom" — the preset is the user's own
   // template. `full` has nothing to redefine, so editing it means going custom.
@@ -228,28 +222,10 @@ export default function ReportPanel({ terms, opts, variantB, pathImages, brand, 
             </div>
           </div>
         )}
-        <div data-tour="rep-sections" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(230px, 1fr))', gap: '4px 28px' }}>
-          {groups.map((g) => {
-            const ks = g.items.map((i) => i[0])
-            const onCount = ks.filter((k) => sel.has(k)).length
-            return (
-              <div key={g.key} style={{ marginBottom: 14 }}>
-                <button onClick={() => toggleGroup(g)}
-                  style={{ display: 'flex', alignItems: 'center', gap: 10, background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit', padding: '6px 0', width: '100%' }}>
-                  <Check on={onCount === ks.length} indeterminate={onCount > 0 && onCount < ks.length} />
-                  <span style={{ fontSize: 13.5, fontWeight: 700 }}>{lab(g.en, g.es)}</span>
-                </button>
-                {g.items.map(([k, en, es]) => (
-                  <button key={k} onClick={() => toggle(k)}
-                    style={{ display: 'flex', alignItems: 'center', gap: 10, background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit', padding: '5px 0 5px 26px', width: '100%' }}>
-                    <Check on={sel.has(k)} />
-                    <span style={{ fontSize: 13, color: 'var(--text)' }}>{lab(en, es)}</span>
-                  </button>
-                ))}
-              </div>
-            )
-          })}
-        </div>
+        {/* One picker, shared with the Batch panel — this used to be a second,
+            hand-copied tree that drifted from SectionTree's. */}
+        <SectionTree groups={groups} sel={sel} lang={lang} tourId="rep-sections"
+                     onToggle={toggle} onToggleGroup={toggleGroup} />
         <div style={{ fontSize: 11.5, color: 'var(--text-faint)', marginTop: 6, lineHeight: 1.5 }}>{t('report_note')}</div>
       </Panel>
 

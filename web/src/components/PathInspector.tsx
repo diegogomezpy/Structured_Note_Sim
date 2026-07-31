@@ -139,7 +139,9 @@ function buildPathFig(path: PathData, labels: PathLabels, renorm = false) {
   // A held note's realised stretch sits at NEGATIVE x, so the axis starts before the
   // simulation does and the barriers have to reach back across it.
   const hist = path.realised
-  const x0 = hist?.x.length ? hist.x[0] : 0
+  // The reference levels span the drawn range. In the per-period view the realised
+  // prefix is not drawn (see below), so they must not reach back across empty axis.
+  const x0 = (hist?.x.length && !on) ? hist.x[0] : 0
   const x1 = path.x_max
   const level = (y: number, name: string, color: string, dash: string) => ({
     x: [x0, x1], y: [y, y], mode: 'lines', type: 'scatter', name, hoverinfo: 'skip',
@@ -193,7 +195,14 @@ function buildPathFig(path: PathData, labels: PathLabels, renorm = false) {
   // point IS the simulated path's first, so the two meet without a step. Hex literals
   // from plotlyTheme's remap table — Plotly does not resolve var(--…) and falls back
   // silently. #2c3e50 maps to the ink token, #64748b to mid grey.
-  if (hist) {
+  //
+  // NOT in the per-period view. There every reset restarts at 100%, and `resetXs`
+  // comes from the SIMULATED markers only — the realised half's own reset dates are
+  // not in the payload, so there is no basis to renormalise it against. Drawn raw it
+  // stayed on the cumulative scale beside renormalised arcs and the join the
+  // cumulative view makes exact became a visible step. Nothing is lost: the
+  // cumulative view (the default) shows the realised stretch in full.
+  if (hist && !on) {
     traces.push({
       x: hist.x, y: hist.line, mode: 'lines', type: 'scatter',
       name: labels.realised, line: { color: '#2c3e50', width: 2.4 },
@@ -215,7 +224,10 @@ function buildPathFig(path: PathData, labels: PathLabels, renorm = false) {
   // of it was the seller's.
   const marks: any[] = []
   const notes: any[] = []
-  if (hist) {
+  // Same guard as the realised line above: with the prefix hidden there is nothing
+  // left of x=0 to divide, so a "today" split and a "bought" marker off the plot
+  // would annotate empty axis.
+  if (hist && !on) {
     marks.push(vline(0, 'solid'))
     notes.push(noteAt(0, labels.today))
     if (hist.settle_x != null && hist.settle_x < 0) {

@@ -679,7 +679,9 @@ def _participation_redemption(B: np.ndarray, terms: "NoteTerms") -> np.ndarray:
           digital    R = 1 + digital_payout   (fixed, if B >= strike)
 
         Downside (B < strike), with prot = protection_level:
-          full       R = min(prot, 1)          (flat floor; prot=1 → par)
+          full       R = max(B, min(prot, 1))  (a FLOOR under the basket, capped
+                     at par: "protected at 90%" means never less than 90%, but a
+                     basket at 95% still redeems 95%. prot >= 1 → flat par.)
           buffer     R = 1 down to prot, then 1:1 loss below prot
           airbag     R = 1 down to prot, then geared  R = B / prot below it
 
@@ -735,7 +737,15 @@ def _participation_redemption(B: np.ndarray, terms: "NoteTerms") -> np.ndarray:
         # discontinuity at B = 100%, which is a cliff no term sheet describes.
         # Identical for prot >= 1 (full capital protection), so a 100%-protected
         # note prices exactly as before.
-        R_dn = np.maximum(B, min(prot, 1.0))
+        #
+        # Capped at par, because a floor must not double as an UNCAPPED upside.
+        # With a strike above par (say 110%) the region B in [100%, 110%) is
+        # "downside" by this branch's definition, and max(B, prot) paid the
+        # basket's gain there 1:1 — ignoring participation_rate and upside_cap
+        # entirely — then fell back to par AT the strike: a drop of (strike - 1)
+        # exactly where the note is supposed to START participating. min(..., 1.0)
+        # is a no-op for the usual strike <= 1, where B < strike already caps it.
+        R_dn = np.minimum(np.maximum(B, min(prot, 1.0)), 1.0)
 
     R = np.where(B >= strike, R_up, R_dn)
     return np.maximum(R, 0.0)
@@ -787,11 +797,20 @@ def _participation_breakeven(terms: "NoteTerms") -> float | None:
     grid = np.linspace(0.0, 3.0, 3001)                     # 0.001 resolution
     R = _participation_redemption(grid, terms)
     idx = np.where(R < 1.0 - 1e-9)[0]
-    if not idx.size:
+    if not idx.size or int(idx[0]) != 0:
+        # No loss anywhere, or the loss region does not start at the bottom of the
+        # grid — either way "redeems below par BELOW level X" is not a true
+        # description of this profile, so say nothing rather than something wrong.
         return None
-    # The loss region is a lower interval; report its upper edge (the boundary at
-    # which redemption returns to par), so "loss below X" lands on the true level.
-    return float(grid[min(int(idx.max()) + 1, len(grid) - 1)])
+    # Take the FIRST CONTIGUOUS run only. A shark fin whose knock-out rebate sits
+    # below par loses money in TWO disjoint regions (deep down, and again above the
+    # knock-out); `idx.max()` then jumped to the far end and reported the grid bound
+    # (3.0) as the breakeven — "loss below 300%" on a note that redeems par at 100%.
+    gaps = np.where(np.diff(idx) > 1)[0]
+    end = int(idx[int(gaps[0])]) if gaps.size else int(idx[-1])
+    # Report the upper edge of that run — the boundary at which redemption returns
+    # to par — so "loss below X" lands on the true level.
+    return float(grid[min(end + 1, len(grid) - 1)])
 
 
 def _participation_stats(R: np.ndarray, terms: "NoteTerms", B: np.ndarray | None = None) -> dict:
@@ -801,8 +820,16 @@ def _participation_stats(R: np.ndarray, terms: "NoteTerms", B: np.ndarray | None
     R = np.asarray(R, dtype=float)
     # Max redemption = 1 + rate·upside_cap (the cap is on the underlying move, so
     # the redemption ceiling scales with the participation rate).
+    #
+    # A CLIQUET has no such ceiling to speak of: it caps each RESET at `period_cap`
+    # and `upside_cap` never enters `participation_period_income`, so measuring
+    # "probability at cap" against 1 + rate·upside_cap reported the odds of hitting
+    # a level this payoff does not have. Its true ceiling — every period capped —
+    # is a number no path realistically reaches, so the honest answer is None and
+    # the tile/row is omitted rather than filled with a meaningless zero.
     cap_lv = (1.0 + float(terms.participation_rate) * terms.upside_cap) \
-        if terms.upside_cap is not None else None
+        if (terms.upside_cap is not None
+            and not getattr(terms, "participation_periodic", False)) else None
     ko = None
     if (B is not None and terms.participation_upside == "shark_fin"
             and terms.knockout_level is not None):
@@ -1172,8 +1199,13 @@ def price_note(
     knock_in_cond   = registry.get("knock_in")    # BarrierCondition, kind="protection"
     protection_cond = registry.get("protection")  # BarrierCondition, kind="protection" (rescue)
 
-    # Draw autocall decisions: (n_paths, n_obs)
-    call_draws = rng.random((n_paths, n_obs))
+    # Draw autocall decisions: (n_paths, n_obs). Only a SOFT trigger consults them —
+    # with call_steepness=None (the default) autocall_prob() returns exactly 0.0 or
+    # 1.0, so `call_draws < probs` is deterministic and the matrix is pure
+    # allocation: 20 000 antithetic paths x 12 observations is 3.8 MB of float64
+    # touched once per run to no effect. `rng` has no other consumer in this
+    # function, so skipping the draw shifts no stream and changes no result.
+    call_draws = rng.random((n_paths, n_obs)) if terms.call_steepness else None
 
     # ------------------------------------------------------------------
     # Per-observation basket values
@@ -1234,7 +1266,10 @@ def price_note(
     autocall_probs = np.maximum(autocall_probs, one_star_autocall_met.astype(float))
     autocall_probs[:, ~autocall_eligible] = 0.0
 
-    autocall_triggered = call_draws < autocall_probs             # (n_paths, n_obs)
+    # Hard trigger: probs are exactly 0.0/1.0, and `uniform[0,1) < p` is False at
+    # p=0 and True at p=1 — identical to the threshold test, without the draw.
+    autocall_triggered = (call_draws < autocall_probs if call_draws is not None
+                          else autocall_probs > 0.5)          # (n_paths, n_obs)
 
     # First autocall period per path (0 = none)
     any_autocalled   = autocall_triggered.any(axis=1)            # (n_paths,)

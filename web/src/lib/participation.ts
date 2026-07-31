@@ -31,7 +31,10 @@ export function participationRedemption(B: number, t: NoteTerms): number {
   // "Protected at 90%" means never less than 90%, not always exactly 90% — at
   // B = 95% the holder keeps 95%. A flat floor jumped to par AT the strike, a
   // discontinuity the diagram drew as a step. Identical when prot >= 1.
-  else Rdn = Math.max(B, Math.min(prot, 1))
+  // Capped at par: with a strike above par the band [1, strike) falls in this
+  // branch, and an uncapped floor paid that gain 1:1 (ignoring rate and cap)
+  // before dropping back to par at the strike. No-op for the usual strike <= 1.
+  else Rdn = Math.min(Math.max(B, Math.min(prot, 1)), 1)
 
   return Math.max(B >= strike ? Rup : Rdn, 0)
 }

@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { useI18n } from '../i18n/I18nProvider'
 import Icon from './Icon'
 import ProofCanvas from './studio/ProofCanvas'
@@ -8,7 +8,7 @@ import ReportImages from './ReportImages'
 import BrandConfigBar from './BrandConfigBar'
 import { Card, ColorWell, Field, NumberInput, TextInput, UploadTile, grid, inputStyle } from './designerFields'
 import { resolveSpec, buildTokens, writeSpec, specBase, diffSpec } from '../lib/reportTheme'
-import { COVER_METRIC_KEYS, COVER_METRIC_MAX, MASTHEAD_METRIC_KEYS,
+import { COVER_METRIC_MAX, coverKeysFor, mastheadKeysFor,
          type BrandingStudio } from '../lib/useBrandingStudio'
 import type { Branding, NoteTerms } from '../api/types'
 
@@ -95,6 +95,9 @@ export default function PdfDesigner({ studio, terms }: {
   // at the stub pass (~0.5s) for quick layout/colour work. This used to switch
   // to a hand-drawn DOM mock that constantly drifted from the PDF — deleted.
   const [realCharts, setRealCharts] = useState(true)
+  // Six of the nine masthead KPIs are note-type specific — see mastheadKeysFor.
+  const mastheadKeys = useMemo(() => mastheadKeysFor(terms.note_type), [terms.note_type])
+  const coverKeys = useMemo(() => coverKeysFor(terms.note_type), [terms.note_type])
   // The report's default multi-series colourway (charts.py `_SERIES_COLORS`).
 
   return (
@@ -145,7 +148,7 @@ export default function PdfDesigner({ studio, terms }: {
             <div style={{ fontSize: 11.5, color: 'var(--text-muted)', marginBottom: 2 }}>{t('cover_metrics')}</div>
             <div style={{ fontSize: 11, color: 'var(--text-faint)', marginBottom: 8, lineHeight: 1.5 }}>{t('cover_metrics_hint')}</div>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7 }}>
-              {COVER_METRIC_KEYS.map((k) => {
+              {coverKeys.map((k) => {
                 const on = studio.coverMetricsSel.includes(k)
                 const over = on && studio.coverMetricsSel.indexOf(k) >= COVER_METRIC_MAX
                 return (
@@ -177,7 +180,10 @@ export default function PdfDesigner({ studio, terms }: {
               {studio.mastheadShown.length === 0 ? t('masthead_metrics_off') : t('masthead_metrics_hint')}
             </div>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7 }}>
-              {MASTHEAD_METRIC_KEYS.map((k) => (
+              {/* Only the KPIs this note type can produce. The renderer picks
+                  whichever the report has, so offering the other six meant a pill
+                  you could tick that never appeared in the strip. */}
+              {mastheadKeys.map((k) => (
                 <button key={k} type="button" className="preset-pill"
                         data-on={studio.mastheadShown.includes(k)}
                         onClick={() => studio.toggleMastheadMetric(k)}>{studio.metricLabel(k)}</button>

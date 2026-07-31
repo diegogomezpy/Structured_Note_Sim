@@ -46,6 +46,10 @@ const SERIES_REMAP: Record<Mode, Record<string, string>> = {
     // greys / borders / gridlines → Mercator lines
     '#e5e7eb': '#e6e1d5', '#f1f5f9': '#ece8dd', '#6b7280': '#8c9189', '#64748b': '#8c9189',
     '#94a3b8': '#8c9189', '#cccccc': '#d4cdbd', '#dddddd': '#e6e1d5',
+    // The CAP reference line, one step lighter than the par line above it. Without
+    // an entry it stayed the raw #9ca3af while par became #8c9189 — near enough to
+    // read as the same line, on a chart whose whole point is where they sit.
+    '#9ca3af': '#b0b5ab',
     // rgba fans / fills (worst-of bands, sample paths)
     'rgba(37,99,235,0.08)': 'rgba(21,105,78,0.08)',
     'rgba(37,99,235,0.04)': 'rgba(21,105,78,0.04)',
@@ -53,6 +57,15 @@ const SERIES_REMAP: Record<Mode, Record<string, string>> = {
     'rgba(37,99,235,0.40)': 'rgba(21,105,78,0.40)',
     'rgba(22,163,74,0.65)': 'rgba(21,105,78,0.65)',
     'rgba(220,38,38,0.80)': 'rgba(156,59,48,0.80)',
+    // Participation fan bands — the green-family triple in app/charts.py. Only the
+    // 0.65 line colour was mapped, so a participation note's fan kept the server's
+    // raw green inside a viridian app.
+    'rgba(22,163,74,0.05)': 'rgba(21,105,78,0.05)',
+    'rgba(22,163,74,0.09)': 'rgba(21,105,78,0.09)',
+    'rgba(22,163,74,0.20)': 'rgba(21,105,78,0.20)',
+    // The A/B compare fan's per-note band fills (unshared paths only).
+    'rgba(37,99,235,0.13)': 'rgba(21,105,78,0.13)',
+    'rgba(217,119,6,0.13)': 'rgba(154,107,26,0.13)',
   },
   dark: {
     '#2563eb': '#3fae86', '#1d4ed8': '#3fae86', '#3b82f6': '#3fae86', '#1e3a8a': '#2f8f6c',
@@ -66,6 +79,8 @@ const SERIES_REMAP: Record<Mode, Record<string, string>> = {
     '#1a2e4a': '#eef1ea', '#2c3e50': '#eef1ea',
     '#e5e7eb': '#2a332c', '#f1f5f9': '#232c24', '#6b7280': '#9aa49b', '#64748b': '#9aa49b',
     '#94a3b8': '#9aa49b', '#cccccc': '#3a453c', '#dddddd': '#2a332c',
+    // Cap line — dimmer than par (#9aa49b) so the two stay tellable apart.
+    '#9ca3af': '#6f7a71',
     // Mercator literals (e.g. PathExplorer outcome palette) → dark family
     '#15694e': '#3fae86', '#3f8a6f': '#5cc09c', '#9c3b30': '#d97a6e',
     'rgba(37,99,235,0.08)': 'rgba(63,174,134,0.10)',
@@ -74,6 +89,13 @@ const SERIES_REMAP: Record<Mode, Record<string, string>> = {
     'rgba(37,99,235,0.40)': 'rgba(63,174,134,0.44)',
     'rgba(22,163,74,0.65)': 'rgba(63,174,134,0.65)',
     'rgba(220,38,38,0.80)': 'rgba(217,122,110,0.80)',
+    // Participation fan bands (see the light table).
+    'rgba(22,163,74,0.05)': 'rgba(63,174,134,0.07)',
+    'rgba(22,163,74,0.09)': 'rgba(63,174,134,0.11)',
+    'rgba(22,163,74,0.20)': 'rgba(63,174,134,0.24)',
+    // A/B compare fan, per-note band fills (unshared paths only).
+    'rgba(37,99,235,0.13)': 'rgba(63,174,134,0.16)',
+    'rgba(217,119,6,0.13)': 'rgba(210,162,78,0.16)',
   },
 }
 

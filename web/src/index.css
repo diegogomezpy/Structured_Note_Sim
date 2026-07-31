@@ -808,3 +808,8 @@ input.slider-val-input:focus { background: var(--surface); border-color: var(--a
   position: absolute; right: -22px; bottom: 2px;
   font-size: 10px; color: var(--text-faint); font-variant-numeric: tabular-nums;
 }
+
+/* Report section picker — a row-wide hover target, so the whole line reads as
+   clickable rather than just the checkbox. */
+.sec-item { transition: background var(--dur-fast) var(--ease); }
+.sec-item:hover { background: color-mix(in srgb, var(--accent) 10%, transparent); }

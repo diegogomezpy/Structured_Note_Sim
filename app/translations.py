@@ -201,6 +201,10 @@ _STRINGS: dict[str, tuple[str, str]] = {
     "bt_subtab_outcomes":        ("Outcomes & Summary",             "Resultados y Resumen"),
     "bt_subtab_prices":          ("Price History",                  "Histórico de Precios"),
     "bt_subtab_explorer":        ("Path Explorer",                  "Explorador de Trayectorias"),
+    # The two historical windows the report draws — the worst issue date this note
+    # ever had, and the median one. Chosen, not sampled, so the report is stable.
+    "bt_panel_worst":            ("Worst historical issue",         "Peor emisión histórica"),
+    "bt_panel_median":           ("Median historical issue",        "Emisión histórica mediana"),
 
     # ── MC tab1 — IRR distribution ─────────────────────────────────────────
     "irr_dist_subheader":        ("IRR Distribution — All Simulated Paths",

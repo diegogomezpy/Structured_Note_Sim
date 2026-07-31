@@ -106,7 +106,14 @@ export function costBasis(t: NoteTerms): number {
 /** True when the note is held as a secondary-market position rather than a
     subscription at issue. Mirrors NoteTerms.is_secondary. */
 export function isSecondary(t: NoteTerms): boolean {
-  return Math.abs(costBasis(t) - 1) > 1e-9 || !!t.settlement_date
+  if (Math.abs(costBasis(t) - 1) > 1e-9) return true
+  // A settlement date ON the issue date is a plain subscription, not a secondary
+  // purchase — it must be strictly AFTER. `!!t.settlement_date` alone disagreed
+  // with the Python property for a note held since issue at par, so the web
+  // printed position rows the PDF's term sheet did not.
+  const s = t.settlement_date, i = t.issue_date
+  if (!s) return false
+  return !i || s > i
 }
 
 /** Term rows describing the POSITION (not the note) — only present once the note

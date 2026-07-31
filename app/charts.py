@@ -626,10 +626,15 @@ def build_cliquet_profiles(
     fig.update_xaxes(tickformat=".0%", tickvals=[0.6, 1.0, 1.4], tickfont=dict(size=9))
     fig.update_yaxes(tickformat=".0%", tickfont=dict(size=9))
     fig.update_annotations(font=dict(size=10))
+    # _apply_theme sets its OWN margin (and a white legend background), so anything
+    # this builder wants must be applied AFTER it — every other builder in this file
+    # follows that order. Setting the tight small-multiple margin first meant the
+    # theme's l=60/b=50 default silently replaced it and the minis lost their grid
+    # spacing. Same trap in build_position_fan below.
+    _apply_theme(fig)
     fig.update_layout(showlegend=False,
                       margin=dict(l=48, r=20, t=42, b=40),
                       height=190 * rows + 40)
-    _apply_theme(fig)
     return fig
 
 
@@ -699,6 +704,10 @@ def build_position_fan(
         fig.add_vline(x=t_val, line_dash="dot", line_color="#aaa",
                       annotation_text=label, annotation_position="top")
 
+    # Theme FIRST, then this chart's own layout — _apply_theme overwrites margin and
+    # the legend background, so the b=78 that keeps the legend off the x-axis title
+    # and the transparent legend box were both being thrown away.
+    _apply_theme(fig)
     fig.update_layout(
         xaxis=dict(title=tr("time_months"), tickformat=".0f"),
         yaxis=dict(title=tr("perf_vs_initial"), tickformat=".0%"),
@@ -707,7 +716,6 @@ def build_position_fan(
                     font=dict(size=10), bgcolor="rgba(0,0,0,0)", bordercolor="rgba(0,0,0,0)"),
         margin=dict(l=60, r=30, t=50, b=78),
     )
-    _apply_theme(fig)
     return fig
 
 
@@ -966,8 +974,17 @@ def build_redemption_distribution(nominal_payoffs, terms, tr: Translator) -> go.
     breakdown, which is meaningless for a note that never autocalls."""
     R = np.asarray(nominal_payoffs, dtype=float) * 100.0
     fig = go.Figure()
-    fig.add_trace(go.Histogram(
-        x=R, nbinsx=60, marker_color="#3f8a6f", marker_line_width=0,
+    # Binned SERVER-side, like every compare chart. `go.Histogram` ships each raw
+    # path value to the browser and bins there: at 20 000 antithetic paths that is
+    # 40 000 floats — hundreds of KB of JSON — for a picture made of 60 bars. The
+    # rendered result is the same; only the payload changes.
+    edges = _bin_edges(R, n_bins=60)
+    counts, _ = np.histogram(R, bins=edges)
+    centers = (edges[:-1] + edges[1:]) / 2.0
+    fig.add_trace(go.Bar(
+        x=np.round(centers, 4), y=counts,
+        width=float(edges[1] - edges[0]),
+        marker_color="#3f8a6f", marker_line_width=0,
         hovertemplate=tr("redemption_axis") + ": %{x:.0f}%<extra></extra>",
     ))
 
@@ -1284,7 +1301,8 @@ def build_transition_heatmap(matrix, labels: list[str], tr: Translator) -> go.Fi
 
 def build_wof_fan_compare(bands_a, bands_b, t_grid, knock_in, tr: Translator,
                           *, autocall_barrier=None, shared: bool = False,
-                          knock_in_b=None, autocall_barrier_b=None) -> go.Figure:
+                          knock_in_b=None, autocall_barrier_b=None,
+                          t_grid_b=None) -> go.Figure:
     """Worst-of envelopes with each note's barriers drawn across them.
 
     The envelope is a property of the SIMULATION, not of the note. When the paths
@@ -1296,28 +1314,34 @@ def build_wof_fan_compare(bands_a, bands_b, t_grid, knock_in, tr: Translator,
     ran different simulations, which is the case where they actually differ.
     """
     t = np.asarray(t_grid, dtype=float) * 12.0        # months
+    # B rides A's grid ONLY when the paths are shared — that is what shared means.
+    # Independently simulated notes have their own grid: a different maturity gives
+    # a different length (plotly then silently truncates the longer to the shorter,
+    # so a 3y B was drawn as if it ended at A's 1.5y) and even at equal length the
+    # step size differs, so band column i sits at a different DATE for each note.
+    t_b = t if (shared or t_grid_b is None) else np.asarray(t_grid_b, dtype=float) * 12.0
     fig = go.Figure()
     # The shared envelope's band uses the blue-family rgba literal (→ viridian
     # tint on the web, brand accent in the PDF): a literal grey rgba is in no
     # remap table, so it stayed a flat slab of grey on a dark page.
-    series = ([(bands_a, tr("cmp_market_envelope"), _GREY, "rgba(37,99,235,0.08)")] if shared else
-              [(bands_a, tr("cmp_note_a"), _CMP_A, None),
-               (bands_b, tr("cmp_note_b"), _CMP_B, None)])
-    for bands, name, color, fill_override in series:
+    series = ([(bands_a, t, tr("cmp_market_envelope"), _GREY, "rgba(37,99,235,0.08)")] if shared else
+              [(bands_a, t,   tr("cmp_note_a"), _CMP_A, "rgba(37,99,235,0.13)"),
+               (bands_b, t_b, tr("cmp_note_b"), _CMP_B, "rgba(217,119,6,0.13)")])
+    for bands, tx, name, color, fill in series:
         if bands is None:
             continue
         # 4 dp on a 0–3 performance scale is well under a plotted pixel; full
         # float64 repr would triple the serialised size for no visible gain.
         b = np.round(np.asarray(bands, dtype=float), 4)   # (7, N+1) → [1,5,25,50,75,95,99]
-        rgb = tuple(int(color[i:i + 2], 16) for i in (1, 3, 5))
-        fill = fill_override or f"rgba({rgb[0]},{rgb[1]},{rgb[2]},0.13)"
-        fig.add_trace(go.Scatter(x=t, y=b[4], mode="lines", line=dict(width=0),
+        # Each note's own x, truncated to its own band width — never the other's.
+        tt = np.asarray(tx, dtype=float)[:b.shape[1]]
+        fig.add_trace(go.Scatter(x=tt, y=b[4], mode="lines", line=dict(width=0),
                                  showlegend=False, hoverinfo="skip"))
-        fig.add_trace(go.Scatter(x=t, y=b[2], mode="lines", line=dict(width=0),
+        fig.add_trace(go.Scatter(x=tt, y=b[2], mode="lines", line=dict(width=0),
                                  fill="tonexty", fillcolor=fill,
                                  showlegend=False, hoverinfo="skip"))
         fig.add_trace(go.Scatter(
-            x=t, y=b[3], mode="lines", name=name, line=dict(color=color, width=2.2),
+            x=tt, y=b[3], mode="lines", name=name, line=dict(color=color, width=2.2),
             hovertemplate=f"{name} · %{{x:.0f}}mo: %{{y:.1%}}<extra></extra>"))
 
     # Barrier lines, tagged with the note they belong to whenever the two differ

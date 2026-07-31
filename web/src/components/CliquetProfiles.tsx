@@ -80,6 +80,11 @@ export default function CliquetProfiles({ terms, summary }: { terms: NoteTerms; 
   const p75 = summary.period_move_p75
   if (!moves || !incs) return null
   const n = moves.length
+  // The per-period arrays are aligned to the PRICED WINDOW, so on a held note the
+  // first mini is term-sheet period `period_offset + 1`, not 1. Labelling them
+  // 1..n renumbered the remaining resets from scratch — the same offset contract
+  // MCTables, HeroMetrics and PathInspector already follow.
+  const off = summary.period_offset ?? 0
 
   return (
     <div style={{ width: '100%' }}>
@@ -92,7 +97,7 @@ export default function CliquetProfiles({ terms, summary }: { terms: NoteTerms; 
       </div>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: 12 }}>
         {Array.from({ length: n }, (_, k) => (
-          <Mini key={k} terms={terms} k={k + 1} moveMean={moves[k]} incMean={incs[k]}
+          <Mini key={k} terms={terms} k={k + 1 + off} moveMean={moves[k]} incMean={incs[k]}
                 p25={p25?.[k] ?? moves[k]} p75={p75?.[k] ?? moves[k]} />
         ))}
       </div>

@@ -814,6 +814,9 @@ export const S: Dict = {
   // report tab
   report_intro:     { en: 'Generate a branded institutional PDF — pick the sections to include.', es: 'Genera un PDF institucional — elige las secciones a incluir.' },
   report_sections:  { en: 'Sections', es: 'Secciones' },
+  rep_sec_count:    { en: '{n} of {total} sections selected', es: '{n} de {total} secciones seleccionadas' },
+  rep_sec_all:      { en: 'Select all', es: 'Seleccionar todo' },
+  rep_sec_none:     { en: 'Clear', es: 'Ninguna' },
   rep_preset:       { en: 'Preset', es: 'Plantilla' },
   rep_preset_full:       { en: 'Full', es: 'Completo' },
   rep_preset_advisor:    { en: 'Advisor', es: 'Comercial' },

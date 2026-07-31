@@ -298,13 +298,22 @@ def sample_paths(run_id: str, *, sample: int = 400, seed: int = 7) -> dict | Non
 # ── single-path inspector (Monte Carlo & backtest share this) ───────────────────
 def _path_filter_matches(autocall_events, knock_in, total_returns, coupon_amounts,
                          *, outcome="any", ac_periods=None, ki_choice="any",
-                         ret_lo=None, ret_hi=None, coupon_periods=None):
+                         ret_lo=None, ret_hi=None, coupon_periods=None,
+                         nominal_payoffs=None):
     """Sorted indices of paths matching the explorer query (AND-combined). Pure —
     operates on the per-path arrays price_note returns, so it serves both the MC
     and backtest inspectors. Ported verbatim from app.py:_path_filter_matches."""
     ac   = np.asarray(autocall_events)
     ki   = np.asarray(knock_in, dtype=bool)
     ret  = np.asarray(total_returns, dtype=float)
+    # Redemption vs PAR, for the participation buckets. `total_returns` is the
+    # return on COST, so on a position bought at 85 it calls a 90% redemption a
+    # gain — while the chip the user clicked says "Above par". Par-relative
+    # questions read nominal_payoffs, exactly as core/compare.py:outcome_buckets
+    # does, so the explorer and the A/B transition matrix bucket a path the same
+    # way. Falls back to the old basis only if the caller has no redemptions.
+    par  = (np.asarray(nominal_payoffs, dtype=float) - 1.0
+            if nominal_payoffs is not None else ret)
     mask = np.ones(ac.shape[0], dtype=bool)
 
     if outcome == "autocalled":
@@ -315,14 +324,15 @@ def _path_filter_matches(autocall_events, knock_in, total_returns, coupon_amount
         mask &= ac == 0
     elif outcome == "loss":
         mask &= (ac == 0) & ki
-    # Participation outcomes (no autocall) — filter on the redemption sign, i.e. the
-    # per-path total return: gain above par, flat at par, loss below par.
+    # Participation outcomes (no autocall) — filter on where the REDEMPTION landed
+    # relative to par, which is what the three chips say: above par / at par /
+    # below par. Deliberately not the return on cost; see `par` above.
     elif outcome == "part_gain":
-        mask &= ret > 1e-9
+        mask &= par > 1e-9
     elif outcome == "part_par":
-        mask &= np.abs(ret) <= 1e-9
+        mask &= np.abs(par) <= 1e-9
     elif outcome == "part_loss":
-        mask &= ret < -1e-9
+        mask &= par < -1e-9
 
     if ki_choice == "yes":
         mask &= ki
@@ -408,7 +418,8 @@ def _build_path_marker_info(rows, autocall_q, n_obs, wof_levels, knock_in, terms
     return info
 
 
-def _participation_line_and_markers(asset_paths, obs_steps, terms, tr):
+def _participation_line_and_markers(asset_paths, obs_steps, terms, tr, *,
+                                    start_basket: float = 1.0, period_offset: int = 0):
     """For a Participation note the payoff references the participation BASKET (not
     the worst-of), and there are no coupons / autocall / knock-in events. Return
     ``(basket_line, marker_info)``:
@@ -420,24 +431,33 @@ def _participation_line_and_markers(asset_paths, obs_steps, terms, tr):
       the realised redemption vs the final basket.
     - cliquet: one marker per reset period showing that period's basket move and the
       locked-in participation P&L (which can be negative under buffer/airbag/bear).
+
+    `start_basket` / `period_offset` are the HELD case. The window this inspector
+    draws opens today, part-way through the note's life, so the first reset must be
+    measured from the last ELAPSED reset level — exactly what
+    `_participation_periodic_payoff` does with the same `start_basket`. Opening at a
+    hard-coded 1.0 made the inspector's first period contradict the price the run
+    reported: on a note whose last reset fixed at 0.82, a basket back at 0.90 read
+    as −10% (and a loss) here while the payoff booked it as +9.8% (and a gain).
     """
     basket_line = _basket(np.asarray(asset_paths, dtype=float), terms.participation_basket)  # (N+1,)
     B = np.asarray([float(basket_line[int(s)]) for s in obs_steps])                            # basket at each obs
     info: list[dict] = []
     if getattr(terms, "participation_periodic", False):
-        prev = 1.0
+        prev = float(start_basket)
         for j, b in enumerate(B):
             level = b / prev if prev else 1.0
             inc = float(participation_period_income([level], terms)[0])
             prev = b
             kind = "part_gain" if inc > 1e-9 else ("part_loss" if inc < -1e-9 else "part_flat")
-            info.append({"text": tr("leg_part_reset", k=j + 1,
+            info.append({"text": tr("leg_part_reset", k=j + 1 + period_offset,
                                     move=f"{level - 1:+.1%}", inc=f"{inc:+.2%}"),
                          "kind": kind, "n": 1})
     else:
         for j, b in enumerate(B):
             if j < len(B) - 1:
-                info.append({"text": tr("leg_part_hold", k=j + 1, b=f"{b:.0%}"),
+                info.append({"text": tr("leg_part_hold", k=j + 1 + period_offset,
+                                        b=f"{b:.0%}"),
                              "kind": "part_hold", "n": 1})
             else:
                 R = float(_participation_redemption(np.array([b]), terms)[0])
@@ -591,7 +611,8 @@ def inspect_run(run_id: str, *, lang: str = "en", filters: dict | None = None,
         outcome=f.get("outcome", "any"), ac_periods=_to_window(f.get("ac_periods")),
         ki_choice=f.get("ki_choice", "any"),
         ret_lo=f.get("ret_lo"), ret_hi=f.get("ret_hi"),
-        coupon_periods=_to_window(f.get("coupon_periods")))
+        coupon_periods=_to_window(f.get("coupon_periods")),
+        nominal_payoffs=note.get("nominal_payoffs"))
     M = int(len(matches))
 
     _note_type = getattr(terms, "note_type", "autocall")
@@ -615,7 +636,10 @@ def inspect_run(run_id: str, *, lang: str = "en", filters: dict | None = None,
     ki_pn       = bool(ki_arr[pn])
 
     if _is_part:
-        line_path, marker_info = _participation_line_and_markers(asset_paths, obs_steps, terms, tr)
+        line_path, marker_info = _participation_line_and_markers(
+            asset_paths, obs_steps, terms, tr,
+            start_basket=float(run.get("start_basket", 1.0) or 1.0),
+            period_offset=k_off)
         B_final = float(line_path[-1])
         R_final = float(_participation_redemption(np.array([B_final]), terms)[0])
         outcome = {"autocall_q": 0, "call_time": None,
@@ -1083,6 +1107,10 @@ def _store_mc_run(sf: dict, note: dict, terms: NoteTerms) -> str:
         # single-path inspector replay the same window the run priced.
         "period_offset":   int(note.get("periods_elapsed", 0)),
         "pending_coupons": int((sf.get("held") or {}).get("pending_coupons", 0)),
+        # A cliquet's last ELAPSED reset level. The inspector measures its first
+        # drawn period against this, as the payoff does; without it the window
+        # opened at par and disagreed with the price the run reported.
+        "start_basket":    float((sf.get("held") or {}).get("start_basket", 1.0) or 1.0),
         # Realised daily performance since issue, float32 (display only — nothing is
         # priced off it). One asset-line per day, so this is kilobytes, not the
         # megabytes perf_paths would be.
@@ -1188,7 +1216,7 @@ def run_compare(terms_a: NoteTerms, terms_b: NoteTerms, *, n_paths: int = 10000,
             sf_a["wof_bands"], sf_b["wof_bands"], sf_a["t_grid"],
             terms_a.knock_in_barrier, tr, autocall_barrier=terms_a.autocall_barrier,
             shared=shared, knock_in_b=terms_b.knock_in_barrier,
-            autocall_barrier_b=terms_b.autocall_barrier)),
+            autocall_barrier_b=terms_b.autocall_barrier, t_grid_b=sf_b["t_grid"])),
     }
     paired = None
     if shared:
@@ -1509,7 +1537,8 @@ def backtest_inspect(terms: NoteTerms, *, lang: str = "en", filters: dict | None
         outcome=f.get("outcome", "any"), ac_periods=f.get("ac_periods"),
         ki_choice=f.get("ki_choice", "any"),
         ret_lo=f.get("ret_lo"), ret_hi=f.get("ret_hi"),
-        coupon_periods=_to_window(f.get("coupon_periods")))
+        coupon_periods=_to_window(f.get("coupon_periods")),
+        nominal_payoffs=bt["Payout"].to_numpy())
     M = int(len(matches))
     base["n_matched"] = M
     if M == 0:
@@ -2184,8 +2213,75 @@ def _backtest_for_pdf(terms: NoteTerms, tr, history_years: float | None) -> tupl
         "prices":      charts.build_historical_prices(
             prices.resample("W-FRI").last().dropna(),
             bt["Issue Date"].min(), bt["Issue Date"].max(), tr),
+        # The historical path explorer. `panels` was read by the report but NEVER
+        # written here, so `bt_path` could not render outside the test fixture —
+        # a whole section of the PDF that only the golden ever saw. Two windows,
+        # the two a reader actually wants: the worst issue date this note ever had
+        # and the median one. Deterministic (no sampling), so a re-run of the same
+        # note produces the same report.
+        "panels":      _backtest_panels(prices, bt, terms, tr),
     }
     return bt_summary, bt_figures
+
+
+def _backtest_panels(prices, bt, terms: NoteTerms, tr) -> list[dict]:
+    """Worst-of path figures for the report's historical path explorer.
+
+    Same window construction and the same marker vocabulary as the interactive
+    inspector (`backtest_inspect`) — it just returns go.Figures instead of a JSON
+    payload, because the PDF embeds pictures. Anything that raises is dropped: a
+    missing panel costs a figure, and a report that fails to build costs the lot.
+    """
+    if bt.empty:
+        return []
+    order = bt["IRR"].to_numpy(dtype=float).argsort()
+    picks = [(int(order[0]), "bt_panel_worst"),
+             (int(order[len(order) // 2]), "bt_panel_median")]
+    seen, out = set(), []
+    for row_i, label_key in picks:
+        if row_i in seen:
+            continue
+        seen.add(row_i)
+        try:
+            out.append({"title": f"{tr(label_key)} · {bt.iloc[row_i]['Issue Date']:%Y-%m-%d}",
+                        "issue": f"{bt.iloc[row_i]['Issue Date']:%Y-%m-%d}",
+                        "path":  _backtest_path_figure(prices, bt, row_i, terms, tr)})
+        except Exception as e:                       # noqa: BLE001 - see docstring
+            print(f"[report] backtest panel {label_key} skipped: {e}")
+    return [p for p in out if p.get("path") is not None]
+
+
+def _backtest_path_figure(prices, bt, row_i: int, terms: NoteTerms, tr):
+    """One historical window as a worst-of path chart, markers and all."""
+    row = bt.iloc[row_i]
+    autocall_q = int(row["Call Quarter"])
+    ki_pn = bool(row["Knock-in"])
+    n_obs = terms.n_obs
+    asset_names = [terms.tickers[t] for t in terms.tickers]
+
+    anchor, obs_dates = snapped_obs_dates(prices, terms, row["Issue Date"])
+    a_loc = int(prices.index.searchsorted(anchor))
+    mat_loc = int(prices.index.searchsorted(obs_dates[-1]))
+    window = prices.iloc[a_loc:mat_loc + 1]
+    perf_daily = window.values.astype(float) / window.iloc[0].values.astype(float)
+    worst_path = perf_daily.min(axis=1)
+    obs_steps = [min(int(window.index.searchsorted(d)), len(window) - 1) for d in obs_dates]
+
+    if getattr(terms, "note_type", "") == "participation":
+        line_path, marker_info = _participation_line_and_markers(
+            perf_daily, obs_steps, terms, tr)
+    else:
+        line_path = worst_path
+        rows = replay_note(perf_daily[obs_steps, :], terms)["rows"]
+        wof_levels = [float(worst_path[s]) for s in obs_steps]
+        marker_info = _build_path_marker_info(rows, autocall_q, n_obs, wof_levels,
+                                              ki_pn, terms, tr)
+    return charts.build_path_wof_chart(
+        line_path, autocall_q, obs_steps, [f"P{i + 1}" for i in range(n_obs)],
+        terms.knock_in_barrier, row_i + 1, tr,
+        asset_paths=perf_daily, asset_names=asset_names,
+        autocall_barrier=terms.autocall_barrier,
+        marker_info=marker_info)
 
 
 def _decode_data_url(s: str | None) -> bytes | None:
@@ -2227,6 +2323,10 @@ def _compare_for_pdf(sf_a: dict, terms_a: NoteTerms, terms_b: NoteTerms, tr, *,
         "paired": _paired_stats(note_a, note_b, terms_a, terms_b) if shared else None,
         "name_a": terms_a.name, "name_b": terms_b.name,
         "terms_b": terms_b,   # NoteTerms object (in-process) for the side-by-side terms table
+        # How many paths the COMPARISON ran on. A compare-only report has no Monte
+        # Carlo chapter, so the shared "…, N paths" caption was built from an empty
+        # `results` and captioned every A/B chart "0 paths".
+        "n_paths": int(np.asarray(note_a["annualized_returns"]).shape[0]),
     }
     # The report used to carry two of the six charts the Compare panel shows, which
     # made the chapter a metrics table with a picture rather than the comparison the
@@ -2245,7 +2345,7 @@ def _compare_for_pdf(sf_a: dict, terms_a: NoteTerms, terms_b: NoteTerms, tr, *,
             terms_a.knock_in_barrier, tr,
             autocall_barrier=terms_a.autocall_barrier, shared=shared,
             knock_in_b=terms_b.knock_in_barrier,
-            autocall_barrier_b=terms_b.autocall_barrier),
+            autocall_barrier_b=terms_b.autocall_barrier, t_grid_b=sf_b["t_grid"]),
     }
     if shared:
         figs["delta"] = charts.build_paired_delta(note_a, note_b, tr)
@@ -2413,7 +2513,15 @@ def _build_report_pdf(terms: NoteTerms, *, sections: list[str] | None = None, la
         note, cal_result = sf["note"], sf["cal_result"]
         t_grid, obs_pairs = sf["t_grid"], sf["obs_pairs"]
         wof_bands, asset_bands = sf["wof_bands"], sf["asset_bands"]
-        results = {**note, "params": cal_result.params, "corr_SS": cal_result.corr_SS}
+        results = {**note, "params": cal_result.params, "corr_SS": cal_result.corr_SS,
+                   # Whether the RUN actually priced the remaining life, not merely
+                   # whether the terms carry a settlement date. `_position_state`
+                   # refuses for four reasons the terms cannot show (issue in the
+                   # future, history short of the fixing, matured, already called),
+                   # and the report's held band asserted remaining-life pricing off
+                   # `terms.is_held` alone — printing "0.0 mo held / 0.00% banked /
+                   # n of n observations left" over a from-issue run.
+                   **_held_summary(sf, terms)}
         _rep_part = getattr(terms, "note_type", "") == "participation"
         figures = {
             "outcome": (charts.build_redemption_distribution(note["nominal_payoffs"], terms, tr)

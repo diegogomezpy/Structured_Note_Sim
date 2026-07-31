@@ -18,6 +18,18 @@ export const COVER_METRIC_KEYS = [
 export const COVER_METRIC_DEFAULT = ['coupon_pa', 'maturity', 'knock_in_barrier']
 export const COVER_METRIC_MAX = 4
 
+/** The cover key-terms a note can actually show — same problem as the masthead
+    KPIs. On a participation note the coupon and barrier chips print "0.00%"
+    (there is no coupon and no knock-in), and the three terms that DO describe it
+    — protection level, participation rate, cap — were only ever reachable by
+    hand-editing the config, because this list never offered them.
+    Mirrors the `_fcat` vocabulary in app/pdf_report.py's cover footer band. */
+export function coverKeysFor(noteType?: string | null): string[] {
+  return noteType === 'participation'
+    ? ['maturity', 'protection_level', 'participation_rate', 'upside_cap', 'issue_date', 'issuer']
+    : [...COVER_METRIC_KEYS]
+}
+
 /** The masthead KPI strip on the summary page. Mirrors
     app/pdf_report.py:MASTHEAD_METRIC_KEYS — the renderer picks whichever of these
     the report at hand actually has, so a selection spanning note types is fine.
@@ -27,6 +39,24 @@ export const MASTHEAD_METRIC_KEYS = [
   'expected_irr', 'expected_total_return', 'prob_autocall', 'prob_knock_in',
   'mean_hist_irr', 'coupon_pa', 'expected_redemption', 'p_below_par', 'p_above_par',
 ] as const
+
+/** Which of those a note can actually show. The renderer picks whichever the
+    report at hand has, so an impossible key is silently dropped at render time —
+    which meant the Designer happily offered "P(autocall)" for a participation
+    note and "Expected redemption" for an autocall, and ticking either did
+    nothing. Six of the nine are note-type specific:
+
+      autocall family   P(autocall) · P(knock-in) · coupon p.a.
+      participation     expected redemption · P(below par) · P(above par)
+
+    IRR, total return and the historical mean apply to both. */
+export function mastheadKeysFor(noteType?: string | null): readonly string[] {
+  const part = noteType === 'participation'
+  const partOnly = ['expected_redemption', 'p_below_par', 'p_above_par']
+  const acOnly = ['prob_autocall', 'prob_knock_in', 'coupon_pa']
+  const drop = new Set(part ? acOnly : partOnly)
+  return MASTHEAD_METRIC_KEYS.filter((k) => !drop.has(k))
+}
 const MAX_PHOTOS = 12
 
 // Fonts the PDF can actually render, discovered by the API from fonts/ and

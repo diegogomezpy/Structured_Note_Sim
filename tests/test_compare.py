@@ -57,6 +57,17 @@ def test_reordered_underlyings_still_share_paths():
     assert share_blockers(a, b) == []
 
 
+def test_display_names_do_not_block_path_sharing():
+    """The ticker map carries a DISPLAY NAME as well as the symbol, and only the
+    symbol reaches the simulation. Comparing the whole dict meant relabelling one
+    side — "Apple" to "Apple Inc.", a change to nothing that is priced — dropped the
+    pairing and silently replaced a tight paired comparison with two independent
+    ones. Nothing in the UI would say why."""
+    a = _terms(tickers={"AAPL": "Apple"})
+    b = _terms(tickers={"AAPL": "Apple Inc."})
+    assert share_blockers(a, b) == []
+
+
 def test_held_notes_need_the_same_issue_date():
     a = _terms(settlement_date="2024-01-15", issue_date="2024-01-15")
     b = _terms(settlement_date="2024-06-15", issue_date="2024-06-15")

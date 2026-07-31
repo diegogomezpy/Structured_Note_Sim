@@ -1979,11 +1979,13 @@ def _cover_page(
             kpis = [_by_key[k] for k in _sel if k in _by_key]
 
         strip_y = y_m + MH - 24
-        if not kpis:                       # an explicit empty selection
-            pass
-        else:
+        # An explicit empty selection means NO strip — including its hairline rule.
+        # The rect used to sit outside the else, so "turn the KPIs off" still drew a
+        # 0.3mm bar in whatever fill colour happened to be current, which reads as a
+        # rendering artefact rather than as a setting the user chose.
+        if kpis:
             pdf.set_fill_color(*_blend(pdf.ink, _WHITE, 0.18))
-        pdf.rect(x0 + _kpi_pad, strip_y, W - 2 * _kpi_pad, 0.3, style="F")
+            pdf.rect(x0 + _kpi_pad, strip_y, W - 2 * _kpi_pad, 0.3, style="F")
         kw = (W - 2 * _kpi_pad) / max(1, len(kpis))
         for i, (lbl, val) in enumerate(kpis):
             cx = x0 + _kpi_pad + i * kw
@@ -3237,6 +3239,13 @@ def _build_pdf_report(
     _kw = dict(primary_color=primary_color, accent_color=accent_color,
                secondary_color=secondary_color)
     src_mc = f"{_t('src_mc', lang)}, {n_paths_val:,} {_t('paths_word', lang)}"
+    # The A/B charts come from their OWN simulation, which a compare-only report is
+    # the only source of: there is no Monte Carlo chapter, so `results` is empty and
+    # `n_paths_val` is 0 — every comparison chart was captioned "0 paths". Fall back
+    # to the shared caption when the comparison did not report a count.
+    _cmp_paths = int((compare_data or {}).get("n_paths", 0) or 0)
+    src_cmp = (f"{_t('src_mc', lang)}, {_cmp_paths:,} {_t('paths_word', lang)}"
+               if _cmp_paths else src_mc)
 
     # Heads that draw only if something follows them, so a fully-toggled-off
     # lens leaves neither a divider nor an empty section header behind.
@@ -3296,7 +3305,15 @@ def _build_pdf_report(
         # priced today, so say what the position is and what the figures cover.
         # `realised_income` / `elapsed_years` come from price_note itself (they are
         # inside the returns above), so this band cannot drift from what was priced.
-        if getattr(terms, "is_held", False):
+        # `results["is_held"]` is the ENGINE's answer (see api/engine.py:_held_summary),
+        # not the term sheet's: `_position_state` refuses for four reasons the terms
+        # cannot show, and the run then prices from issue. Reading `terms.is_held`
+        # here drew a band claiming "0.0 mo held · 0.00% banked · n of n observations
+        # remaining" and a callout asserting a treatment that had not been applied.
+        # Falls back to the terms only when the engine reported nothing (the fixture
+        # and any caller that builds `results` straight from a payoff dict).
+        _run_held = results.get("is_held")
+        if (getattr(terms, "is_held", False) if _run_held is None else bool(_run_held)):
             _elapsed = float(results.get("elapsed_years") or 0.0)
             _banked  = float(results.get("realised_income") or 0.0)
             _k       = int(results.get("periods_elapsed") or 0)
@@ -3493,43 +3510,49 @@ def _build_pdf_report(
                 (_t("bt_loss_given_ki",   lang), _bt_lgki_pdf),
                 (_t("bt_n_issues",        lang), str(bt_summary.get("n_issues", 0))),
             ])
-        # With a purchase gap the windows are NOT full lives — they replicate the
-        # real position. Two things a reader must be told rather than infer: the
-        # entry price is assumed, not modelled, and windows that had already called
-        # by the purchase date left the sample (which biases what remains).
-        _gap_p = int(bt_summary.get("purchase_gap_periods", 0) or 0)
-        if _gap_p:
-            _gap_m = float(bt_summary.get("purchase_gap_years", 0.0) or 0.0) * 12
-            _entry = float(bt_summary.get("entry_price", 1.0) or 1.0)
-            _skip  = int(bt_summary.get("skipped_called", 0) or 0)
-            _body = (
-                f"Each issue window is measured from the same point in the note's life at "
-                f"which this position was bought — {_gap_m:.0f} months in, after {_gap_p} "
-                f"observation(s) had already fixed. Coupons before that point went to the "
-                f"seller and are excluded, and every return is annualised over the holding "
-                f"period rather than the full tenor. Each window assumes the same "
-                f"{_entry:.2%} entry price actually paid; no valuation model is applied, so "
-                f"the windows are comparable with each other but that price was not "
-                f"necessarily fair in every one of them."
+    # With a purchase gap the windows are NOT full lives — they replicate the
+    # real position. Two things a reader must be told rather than infer: the
+    # entry price is assumed, not modelled, and windows that had already called
+    # by the purchase date left the sample (which biases what remains).
+    #
+    # Chapter level, NOT inside the metric-band block: the caveat describes how
+    # every figure in this chapter was measured, so turning off `bt_metrics` while
+    # keeping the outcome bar or the IRR scatter used to drop the selection-bias
+    # warning while still printing the numbers it warns about.
+    _gap_p = int((bt_summary or {}).get("purchase_gap_periods", 0) or 0)
+    if bt_summary and _gap_p:
+        _gap_m = float(bt_summary.get("purchase_gap_years", 0.0) or 0.0) * 12
+        _entry = float(bt_summary.get("entry_price", 1.0) or 1.0)
+        _skip  = int(bt_summary.get("skipped_called", 0) or 0)
+        _body = (
+            f"Each issue window is measured from the same point in the note's life at "
+            f"which this position was bought — {_gap_m:.0f} months in, after {_gap_p} "
+            f"observation(s) had already fixed. Coupons before that point went to the "
+            f"seller and are excluded, and every return is annualised over the holding "
+            f"period rather than the full tenor. Each window assumes the same "
+            f"{_entry:.2%} entry price actually paid; no valuation model is applied, so "
+            f"the windows are comparable with each other but that price was not "
+            f"necessarily fair in every one of them."
+            if lang != "es" else
+            f"Cada ventana de emision se mide desde el mismo punto de la vida de la nota "
+            f"en que se compro esta posicion — {_gap_m:.0f} meses despues, con {_gap_p} "
+            f"observacion(es) ya fijadas. Los cupones anteriores fueron del vendedor y se "
+            f"excluyen, y toda rentabilidad se anualiza sobre el periodo de tenencia y no "
+            f"sobre el plazo completo. Cada ventana asume el mismo precio de entrada del "
+            f"{_entry:.2%} realmente pagado; no se aplica ningun modelo de valoracion."
+        )
+        if _skip:
+            _body += (
+                f" {_skip} window(s) were excluded because the note had already autocalled "
+                f"by the purchase date — it could not have been bought. That is a real "
+                f"selection effect: it removes the windows that redeemed early."
                 if lang != "es" else
-                f"Cada ventana de emision se mide desde el mismo punto de la vida de la nota "
-                f"en que se compro esta posicion — {_gap_m:.0f} meses despues, con {_gap_p} "
-                f"observacion(es) ya fijadas. Los cupones anteriores fueron del vendedor y se "
-                f"excluyen, y toda rentabilidad se anualiza sobre el periodo de tenencia y no "
-                f"sobre el plazo completo. Cada ventana asume el mismo precio de entrada del "
-                f"{_entry:.2%} realmente pagado; no se aplica ningun modelo de valoracion."
+                f" Se excluyeron {_skip} ventana(s) porque la nota ya se habia autocancelado "
+                f"en la fecha de compra — no se habria podido comprar. Es un sesgo de "
+                f"seleccion real: elimina las ventanas que se amortizaron pronto."
             )
-            if _skip:
-                _body += (
-                    f" {_skip} window(s) were excluded because the note had already autocalled "
-                    f"by the purchase date — it could not have been bought. That is a real "
-                    f"selection effect: it removes the windows that redeemed early."
-                    if lang != "es" else
-                    f" Se excluyeron {_skip} ventana(s) porque la nota ya se habia autocancelado "
-                    f"en la fecha de compra — no se habria podido comprar. Es un sesgo de "
-                    f"seleccion real: elimina las ventanas que se amortizaron pronto."
-                )
-            pdf.callout(_t("bt_gap_note", lang), _body)
+        _sec()
+        pdf.callout(_t("bt_gap_note", lang), _body)
     if bt_summary and _inc("bt_outcome") and bt_figures.get("outcome") is not None:
         _sec()
         _bt_out_cap = "fig_redemption" if _is_participation(terms) else "fig_bt_outcome"
@@ -3661,10 +3684,10 @@ def _build_pdf_report(
         # 6b-iii. Overlaid distributions.
         if _cmp_figs.get("irr") is not None:
             _cmp_div()
-            pdf.figure(_fig_to_png(_cmp_figs["irr"], **_kw), _t("cmp_fig_irr", lang), src_mc)
+            pdf.figure(_fig_to_png(_cmp_figs["irr"], **_kw), _t("cmp_fig_irr", lang), src_cmp)
         if _cmp_figs.get("outcome") is not None:
             _cmp_div()
-            pdf.figure(_fig_to_png(_cmp_figs["outcome"], **_kw), _t("cmp_fig_outcome", lang), src_mc)
+            pdf.figure(_fig_to_png(_cmp_figs["outcome"], **_kw), _t("cmp_fig_outcome", lang), src_cmp)
 
         # 6b-iv. The four the app shows that a metrics table cannot say. `wof` is
         # always available; the paired three exist only when A and B were priced on
@@ -3677,7 +3700,7 @@ def _build_pdf_report(
                            ("transition", "cmp_fig_transition")):
             if _cmp_figs.get(_key) is not None and _inc(f"cmp_{_key}"):
                 _cmp_div()
-                pdf.figure(_fig_to_png(_cmp_figs[_key], **_kw), _t(_lbl, lang), src_mc)
+                pdf.figure(_fig_to_png(_cmp_figs[_key], **_kw), _t(_lbl, lang), src_cmp)
 
     # ── 7. Glossary ────────────────────────────────────────────────────────
     # Reference list of the financial terms used throughout the report. Always

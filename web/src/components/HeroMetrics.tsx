@@ -78,7 +78,13 @@ export default function HeroMetrics({ summary }: { summary: SimSummary }) {
     // period_income_mean is only present for cliquets, so it's the periodic signal
     // (the MC summary doesn't carry the participation_periodic flag itself).
     const periodic = (summary.participation_periodic ?? false) || (summary.period_income_mean?.length ?? 0) > 0
-    const perPeriodRedemption = 1 + (summary.expected_coupon ?? 0) / Math.max(1, summary.n_obs ?? 1)
+    // Divide by the periods actually PRICED, not the term sheet's total.
+    // `expected_coupon` covers the priced window; on a held note that is the
+    // remaining resets only, while `n_obs` stays the full tenor — so the mean was
+    // scaled down by exactly the fraction of the note already elapsed (a note half
+    // way through reported half the per-period redemption it earns).
+    const pricedPeriods = Math.max(1, (summary.n_obs ?? 1) - (summary.period_offset ?? 0))
+    const perPeriodRedemption = 1 + (summary.expected_coupon ?? 0) / pricedPeriods
     const redemptionCard: Card = periodic
       ? { label: t('expected_redemption_period'), value: perPeriodRedemption, format: pctNum(2), unit: '%', tip: t('tip_expected_redemption_period'), tone: 'accent' }
       : { label: t('expected_redemption'), value: summary.expected_redemption ?? summary.expected_nominal_payout ?? 1, format: pctNum(1), unit: '%', tip: t('tip_expected_redemption'), tone: 'accent' }

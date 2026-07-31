@@ -497,3 +497,27 @@ def test_masthead_metrics_selection_reaches_the_strip(sel, expected):
         assert len(shown) >= 3, f"expected the default strip, got {shown}"
     else:
         assert shown == expected
+
+
+def test_every_section_gate_the_report_reads_is_reachable_from_the_designer():
+    """`_inc("<key>")` decides whether a block is drawn; `web/src/lib/reportSections.ts`
+    is the ONLY place a user can turn one on. A key read by the renderer but absent
+    from that tree is a section that exists in code and can never be selected —
+    which is exactly what happened to `bt_path`: the report had a full historical
+    path-explorer block, and no toggle anywhere reached it, so it rendered only
+    inside the test fixture. Same failure shape as the Brand.extras allowlist
+    above: nothing raises, the feature is simply invisible."""
+    import app.pdf_report as pr
+
+    src = pathlib.Path(pr.__file__).read_text()
+    read = set(re.findall(r"_inc\(\s*[\"']([a-z_0-9]+)[\"']", src))
+    assert read, "no _inc(...) call sites found — has the pattern changed?"
+
+    tree = (pathlib.Path(pr.__file__).parents[1] / "web/src/lib/reportSections.ts").read_text()
+    # Both the group keys (`key: 'bt'`) and the leaf keys (`['bt_prices', …]`).
+    offered = set(re.findall(r"key:\s*'([a-z_0-9]+)'", tree))
+    offered |= set(re.findall(r"\[\s*'([a-z_0-9]+)'\s*,", tree))
+    missing = sorted(read - offered)
+    assert not missing, (
+        f"read via _inc() but not offered in reportSections.ts: {missing}. "
+        "The block can never be switched on from the PDF Designer.")

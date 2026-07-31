@@ -40,7 +40,13 @@ def share_blockers(terms_a: NoteTerms, terms_b: NoteTerms) -> list[str]:
     Empty list = shareable. Otherwise the reasons, so the UI can say what to change
     rather than just reporting that the comparison is noisier."""
     out = []
-    if dict(terms_a.tickers) != dict(terms_b.tickers):
+    # Compare the SYMBOLS as a set — not the whole {ticker: display-name} mapping.
+    # A basket is a set (worst-of / best-of / average all reduce across assets, so
+    # order cannot matter), and the display name is pure presentation: comparing
+    # dicts meant renaming "Apple" to "Apple Inc." in one config silently dropped
+    # the pairing and turned a tight paired comparison into two independent ones,
+    # with no term of the note actually changed.
+    if set(terms_a.tickers) != set(terms_b.tickers):
         out.append("underlyings")
     if abs(float(terms_a.maturity) - float(terms_b.maturity)) >= 1e-9:
         out.append("maturity")
@@ -137,11 +143,16 @@ def paired_stats(note_a: dict, note_b: dict, terms_a: NoteTerms, terms_b: NoteTe
 
 
 
-def metric_samples(note: dict, key: str) -> np.ndarray | None:
+def metric_samples(note: dict, key: str, terms: NoteTerms | None = None) -> np.ndarray | None:
     """The per-path sample behind a summary metric, where one exists — so the
     table can report how precise each figure actually is. Quantiles and
     conditional means (p5_redemption, avg_time_to_autocall) have no clean
-    closed-form standard error, so they return None and the row shows no ±."""
+    closed-form standard error, so they return None and the row shows no ±.
+
+    `terms` is needed only by the two participation probabilities whose threshold
+    lives on the term sheet rather than in the payoff dict (the redemption cap and
+    the knock-out level). Without it they fall through to None, which is what a
+    caller that has no terms should get — not a missing row."""
     if key == "expected_irr":
         return np.asarray(note["annualized_returns"], dtype=float)
     if key == "expected_total_return":
@@ -160,6 +171,24 @@ def metric_samples(note: dict, key: str) -> np.ndarray | None:
         return (np.asarray(note["total_returns"], dtype=float) < 0).astype(float)
     if key == "prob_above_par":
         return (np.asarray(note["nominal_payoffs"], dtype=float) > 1.0 + 1e-9).astype(float)
+    # Both of these are plain binomials over the same paths as every other row, so
+    # there is no reason for them to be the only two participation metrics printed
+    # without a ± — they were simply never given a case here. Thresholds must match
+    # core/note.py:_participation_stats exactly, or the error bar would describe a
+    # different event from the estimate it hangs off.
+    if key == "prob_at_cap" and terms is not None:
+        if (terms.upside_cap is None
+                or getattr(terms, "participation_periodic", False)):
+            return None                       # no redemption ceiling — see _participation_stats
+        cap_lv = 1.0 + float(terms.participation_rate) * float(terms.upside_cap)
+        R = np.asarray(note["nominal_payoffs"], dtype=float)
+        return (R >= cap_lv - 1e-6).astype(float)
+    if key == "prob_knocked_out" and terms is not None:
+        B = note.get("final_basket")
+        if (B is None or terms.knockout_level is None
+                or terms.participation_upside != "shark_fin"):
+            return None
+        return (np.asarray(B, dtype=float) >= float(terms.knockout_level)).astype(float)
     return None
 
 
@@ -190,7 +219,8 @@ def compare_diff(sum_a: dict, sum_b: dict, terms_a: NoteTerms, terms_b: NoteTerm
     def _se(key: str) -> float | None:
         if note_a is None or note_b is None:
             return None
-        xa, xb = metric_samples(note_a, key), metric_samples(note_b, key)
+        xa = metric_samples(note_a, key, terms_a)
+        xb = metric_samples(note_b, key, terms_b)
         if xa is None or xb is None or xa.size < 2 or xb.size < 2:
             return None
         if shared and xa.size == xb.size:

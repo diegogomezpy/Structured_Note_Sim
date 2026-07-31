@@ -10,7 +10,7 @@ import FolderConnect from './FolderConnect'
 import CoverPhotoPicker from './CoverPhotoPicker'
 import SectionTree from './SectionTree'
 import { useLocalFolder, safeName } from '../lib/localFolder'
-import { groupsFor, keysOf, keysForPreset, PRESET_ORDER, type Preset } from '../lib/reportSections'
+import { groupsFor, sectionCtx, keysOf, keysForPreset, PRESET_ORDER, type Preset } from '../lib/reportSections'
 import { autoIndustryPhotos, resolveSector, photoCapacity, type PhotoMode } from '../lib/batchReport'
 import type { Branding, ConfigMeta, NoteTerms } from '../api/types'
 import type { RunOpts } from './SetupRail'
@@ -88,7 +88,7 @@ export default function BatchReportPanel({ terms, opts, configs }: {
   }, [terms, configs, folder.files, lang])
 
   const makeRow = (nt: NoteTerms): Row => {
-    const keys = keysOf(groupsFor(!!nt.issue_date))
+    const keys = keysOf(groupsFor(sectionCtx(nt)))
     const p: Preset = defPreset
     return {
       id: ++_rid, terms: nt, sel: new Set(keysForPreset(p, keys)), preset: p,
@@ -140,12 +140,13 @@ export default function BatchReportPanel({ terms, opts, configs }: {
   const toggleSelectAll = () => setRows((r) => { const all = r.every((x) => x.selected); return r.map((x) => ({ ...x, selected: !all })) })
 
   const applyDefaultsToAll = () => setRows((r) => r.map((x) => {
-    const keys = keysOf(groupsFor(!!x.terms.issue_date))
+    const keys = keysOf(groupsFor(sectionCtx(x.terms)))
     return { ...x, preset: defPreset, sel: new Set(keysForPreset(defPreset, keys)), lang: defLang, photoMode: defPhotos }
   }))
 
   // Per-row section editing.
-  const rowGroups = (r: Row) => groupsFor(!!r.terms.issue_date)
+  // Per row, because a batch can mix an autocall, a cliquet and a held position.
+  const rowGroups = (r: Row) => groupsFor(sectionCtx(r.terms))
   const toggleKey = (r: Row, key: string) => patch(r.id, {
     sel: (() => { const n = new Set(r.sel); n.has(key) ? n.delete(key) : n.add(key); return n })(), preset: 'custom',
   })
@@ -404,7 +405,7 @@ export default function BatchReportPanel({ terms, opts, configs }: {
                     </div>
 
                     {/* section tree */}
-                    <SectionTree groups={rowGroups(row)} sel={row.sel} lang={lang}
+                    <SectionTree groups={rowGroups(row)} sel={row.sel} lang={lang} compact
                                  onToggle={(k) => toggleKey(row, k)} onToggleGroup={(g) => toggleGroup(row, g.items.map((it) => it[0]))} />
 
                     {/* images */}

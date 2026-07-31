@@ -37,6 +37,10 @@ export const TREE: Group[] = [
     ['bt_pie', 'Worst-asset pie', 'Peor activo'],
     ['bt_irr', 'IRR scatter', 'Dispersión de TIR'],
     ['bt_prices', 'Price history', 'Histórico de precios'],
+    // The PDF has always been able to draw this; there was simply no key here, so
+    // `_inc("bt_path")` was never true and the block could not render outside the
+    // test fixture.
+    ['bt_path', 'Path explorer', 'Explorador de trayectorias'],
   ] },
   { key: 'live', en: 'Current performance', es: 'Rendimiento actual', items: [
     ['live_metrics', 'Live metrics', 'Métricas en vivo'],
@@ -141,9 +145,55 @@ export function loadActiveSections(): string[] | null {
   catch { return null }
 }
 
-/** Groups available for a note — the live group only when it has an issue date. */
-export function groupsFor(hasLive: boolean): Group[] {
-  return TREE.filter((g) => g.key !== 'live' || hasLive)
+/** What THIS note can actually produce. Everything the picker offers has to be
+    reachable for the note in front of the user — a toggle that renders nothing is
+    worse than a missing one, because ticking it looks like it worked. */
+export type SectionCtx = {
+  live?: boolean           // has an issue date, so there is a current-performance lens
+  participation?: boolean  // participation payoff: no coupons, no autocall
+  cliquet?: boolean        // periodic participation: the per-period payoff minis exist
+  held?: boolean           // a position: realised history to join to the projection
+  compare?: boolean        // a Note B is set up, so there is an A/B chapter
+}
+
+/** Items that only produce output under a particular note shape. Anything not
+    listed is always available. Each predicate must match the condition the PDF
+    itself gates the block on, or the picker and the document disagree again. */
+const REQUIRES: Record<string, (c: SectionCtx) => boolean> = {
+  // figures["position_fan"] is built only for a run that priced the remaining life.
+  mc_position_fan: (c) => !!c.held,
+  // figures["cliquet"] comes from the per-period arrays a cliquet alone returns.
+  mc_cliquet: (c) => !!c.cliquet,
+  // _participation_payoff never autocalls, so the table is structurally all-zero
+  // and the PDF skips it regardless of the toggle.
+  mc_autocall: (c) => !c.participation,
+}
+
+/** Groups available for a note. Accepts a bare boolean for the old
+    "does it have live data" call shape. */
+export function groupsFor(ctx: SectionCtx | boolean): Group[] {
+  const c: SectionCtx = typeof ctx === 'boolean' ? { live: ctx } : ctx
+  return TREE
+    .filter((g) => (g.key !== 'live' || !!c.live) && (g.key !== 'cmp' || !!c.compare))
+    .map((g) => ({ ...g, items: g.items.filter((i) => REQUIRES[i[0]]?.(c) ?? true) }))
+    .filter((g) => g.items.length > 0)
+}
+
+/** The note-shape context for a set of terms — one derivation, so the Report
+    panel, the Batch panel and anything later all offer the same sections. */
+export function sectionCtx(t: {
+  issue_date?: string | null
+  settlement_date?: string | null
+  note_type?: string | null
+  participation_periodic?: boolean | null
+} | null | undefined, opts?: { compare?: boolean }): SectionCtx {
+  return {
+    live: !!t?.issue_date,
+    participation: t?.note_type === 'participation',
+    cliquet: !!t?.participation_periodic,
+    held: !!(t?.settlement_date && t?.issue_date),
+    compare: !!opts?.compare,
+  }
 }
 
 /** Flat list of every item key across the given groups (render order). */
