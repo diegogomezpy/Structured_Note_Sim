@@ -546,3 +546,28 @@ def test_one_star_level_none_disables_the_overlay_whatever_the_flags():
     assert int(r["autocall_period"][0]) == 0
     assert r["coupon_payoffs"][0] == pytest.approx(0.0)
     assert r["principal_payoffs"][0] < 1.0, "no rescue: capital follows the worst-of"
+
+
+# ── schedule consistency ──────────────────────────────────────────────────────
+@pytest.mark.parametrize("maturity,freq,drift", [
+    (1.5, "quarterly", 0.00),   # 6 whole quarters — fits
+    (2.0, "quarterly", 0.00),
+    (1.0, "annual",    0.00),
+    (1.3, "quarterly", 0.05),   # n_obs rounds to 5 => 15 months, not 15.6
+    (0.9, "quarterly", 0.10),   # n_obs rounds to 4 => 12 months, not 10.8
+])
+def test_schedule_drift_reports_a_tenor_that_does_not_fit_whole_periods(maturity, freq, drift):
+    """`n_obs` ROUNDS maturity x periods-per-year while the calendar steps in whole
+    months, so a tenor that is not a whole number of periods gives two different
+    schedules — and the app prices on BOTH: the Monte Carlo on `obs_times` (evenly
+    spaced over the stated maturity), the backtest and live tab on the calendar.
+
+    A 0.9-year quarterly note is priced to 0.900y in one and 1.000y in the other.
+    That is a different note, and nothing said so. The property makes it visible;
+    the run summary carries it as a warning."""
+    from core.note import NoteTerms
+    t = NoteTerms.from_dict({
+        "name": "S", "maturity": maturity, "payment_freq": freq, "coupon_pa": 0.10,
+        "coupon_barrier": 0.70, "autocall_barrier": 1.0, "autocall_start_period": 1,
+        "knock_in_barrier": 0.50, "tickers": {"A": "A"}})
+    assert t.schedule_drift_years == pytest.approx(drift, abs=5e-3)

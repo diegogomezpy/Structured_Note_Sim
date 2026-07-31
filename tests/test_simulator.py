@@ -218,3 +218,49 @@ def test_cpp_standardises_the_t_copula_like_numpy():
     assert ratio_cp == pytest.approx(ratio_np, rel=0.10), (
         f"t-copula dispersion ratio numpy={ratio_np:.3f} vs cpp={ratio_cp:.3f}")
     assert ratio_cp < 1.30, f"cpp t(4) shocks look unstandardised ({ratio_cp:.3f}x)"
+
+
+# ── the correlation a worst-of actually gets ─────────────────────────────────
+def test_simulated_return_correlation_is_below_the_driver_correlation():
+    """PINS A KNOWN MIS-SPECIFICATION — read before trusting a worst-of number.
+
+    `corr_SS` is the correlation of the BROWNIAN DRIVERS. The correlation of the
+    RETURNS those drivers produce is lower, because each asset's return is
+    sqrt(V_i)·dW_i and the variance processes are independent (corr_VV = I): the
+    random scaling decorrelates what the drivers correlated. Measured here, the
+    simulator delivers roughly 72-78% of what it is given, stable across the whole
+    calibrated regime (xi 0.5 -> 2.0 with kappa nudged to the Feller margin).
+
+    That would be a harmless model property except for the HANDOFF:
+    `core/calibrator.py` estimates `corr_SS` from realised RETURN correlation and
+    `core/simulator.py` consumes it as DRIVER correlation. Two different
+    quantities, so the round trip loses about a quarter of the co-movement — two
+    underlyings that move together at 0.85 are simulated at ~0.61.
+
+    Direction: less correlation means more dispersion, a worse worst-of, and so a
+    HIGHER knock-in and LOWER coupon rate than the basket really implies. The note
+    reads riskier than it is — the conservative direction, unlike the `mu` and
+    dividend defects, but wrong by the same mechanism (estimate one quantity,
+    apply it as another).
+
+    Pre-compensating the driver correlation would fix it and is verifiable
+    end-to-end, but it moves every probability the app reports, so it is a
+    decision rather than a patch. If you make it, this test SHOULD fail.
+    """
+    driver = 0.85
+    p = [HestonParams(name=f"A{i}", S0=100.0, kappa=3.2, theta=0.04, xi=0.5,
+                      rho=-0.5, V0=0.04, mu=0.05) for i in range(2)]
+    ss = np.full((2, 2), driver)
+    np.fill_diagonal(ss, 1.0)
+    sim = HestonMultiSimulator(params=p, corr_SS=ss, corr_VV=np.eye(2),
+                               corr_SV=np.eye(2) * -0.5, n_paths=1, seed=4,
+                               dt_grid=np.full(4000, 1 / 252))
+    res = sim.run(engine="numpy")
+    lr = np.diff(np.log(np.column_stack([res["S_paths"][i][0] for i in range(2)])), axis=0)
+    got = float(np.corrcoef(lr.T)[0, 1])
+    assert got < driver - 0.10, (
+        f"returns correlate at {got:+.3f} against a {driver} driver — if the "
+        "handoff now pre-compensates, this test is obsolete: assert a match")
+    assert 0.60 <= got / driver <= 0.90, (
+        f"retention {got / driver:.0%} is outside the measured 72-78% band; the "
+        "attenuation has changed and the documented figure needs remeasuring")

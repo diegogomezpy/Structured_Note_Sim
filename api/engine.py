@@ -1093,6 +1093,12 @@ def _mc_summary(sf: dict, note: dict, terms: NoteTerms) -> dict:
     # the reader has to be told rather than left to trust it.
     if sf.get("div_failed"):
         summary["div_failed"] = list(sf["div_failed"])
+    # Same shape of warning: the note's tenor does not fit whole payment periods,
+    # so the Monte Carlo's evenly-spaced schedule and the calendar schedule the
+    # backtest and live tab use end on different dates. Absent when it fits.
+    _drift = float(getattr(terms, "schedule_drift_years", 0.0) or 0.0)
+    if _drift > 1e-6:
+        summary["schedule_drift_years"] = round(_drift, 4)
     # For a Participation run, send a downsample of the final-basket levels so the
     # client can redraw the payoff-profile distribution overlay and recompute the
     # what-if table (rate/cap/protection) instantly via the TS redemption mirror —

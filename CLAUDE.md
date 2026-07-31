@@ -65,6 +65,29 @@ By default `call_steepness=None` → hard trigger: `autocall_prob()` returns exa
 
 ### Calibration → simulation parameter handoff
 
+**The simulated basket is LESS correlated than the calibrated one.** `corr_SS`
+is the correlation of the Brownian DRIVERS; the correlation of the returns they
+produce is lower, because each return is `sqrt(V_i)·dW_i` and the variance
+processes are independent (`corr_VV` off-diagonals are zero), so the random
+scaling decorrelates what the drivers correlated. Measured: the simulator
+delivers **72–78%** of what it is given, stable across the calibrated regime
+(xi 0.5 → 2.0 with kappa nudged to the Feller margin; the high kappa that comes
+with a pinned xi is what keeps it from being far worse).
+
+The handoff is what makes that an error rather than a model property: the
+calibrator estimates `corr_SS` from realised RETURN correlation and the simulator
+consumes it as DRIVER correlation. Two underlyings that co-move at 0.85 are
+simulated at ~0.61. Less correlation ⇒ more dispersion ⇒ a worse worst-of, so
+knock-in reads HIGH and coupons read LOW — the conservative direction, unlike the
+`mu` and dividend defects, but wrong by the same mechanism (estimate one
+quantity, apply it as another). Pre-compensating the driver correlation fixes it
+and is verifiable end to end, but it moves every probability the app reports.
+Pinned by `tests/test_simulator.py`, written to FAIL once compensated.
+
+Worth separating from the item below: the cross-asset ESTIMATOR is not the
+problem. Against series generated at a known correlation it is exact to ±0.003 —
+all of the loss is in the simulator.
+
 **The calibrated `rho` is not a measurement — treat it as a sign, not a size.**
 Against series this repo's own simulator generated at a known rho, the daily
 return-vs-realised-variance estimator recovers ≈ −0.04 whether the truth is

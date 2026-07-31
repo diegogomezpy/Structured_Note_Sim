@@ -220,8 +220,25 @@ class HestonMultiSimulator:
     Parameters
     ----------
     params   : list[HestonParams]   – One HestonParams per asset (length n).
-    corr_SS  : np.ndarray (n x n)   – Return-return correlations.
-    corr_VV  : np.ndarray (n x n)   – Variance-variance correlations.
+    corr_SS  : np.ndarray (n x n)   – Correlation of the price BROWNIAN DRIVERS.
+                                       NOT the correlation of the returns those
+                                       drivers produce, which is lower: a return
+                                       is sqrt(V_i)·dW_i and the variance
+                                       processes are independent, so the random
+                                       scaling decorrelates what the drivers
+                                       correlated. Measured, this delivers 72-78%
+                                       of the value passed in, across the whole
+                                       calibrated regime. The calibrator estimates
+                                       this FROM realised return correlation, so
+                                       the round trip loses about a quarter of the
+                                       co-movement — see the "simulated basket is
+                                       LESS correlated" note in CLAUDE.md and
+                                       tests/test_simulator.py. This docstring
+                                       said "Return-return correlations", which is
+                                       where the conflation started.
+    corr_VV  : np.ndarray (n x n)   – Variance-variance correlations. Correlating
+                                       these recovers only a little of the above
+                                       (0.66 -> 0.75 at corr_VV = 0.95).
     corr_SV  : np.ndarray (n x n)   – Cross correlations.
                                        corr_SV[i,i] = rho_i (own leverage).
                                        corr_SV[i,j] = cross term (i≠j).

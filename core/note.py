@@ -376,6 +376,26 @@ class NoteTerms:
         return round(self.maturity * self.periods_per_year)
 
     @property
+    def schedule_drift_years(self) -> float:
+        """How far the CALENDAR schedule's final date lands from `maturity`, in
+        years. 0.0 when the note fits whole periods, which is the normal case.
+
+        `n_obs` ROUNDS `maturity * periods_per_year`, while `obs_calendar_dates`
+        steps in whole months. When the product is not near-integral the two
+        schedules describe different notes and nothing said so: a 0.9-year
+        quarterly note prices to 0.900y in the Monte Carlo (`obs_times`, evenly
+        spaced over the stated maturity) and to 1.000y in the backtest and the
+        live tab (four 3-month steps). 1.3 years quarterly diverges the other way,
+        1.247y against 1.300y.
+
+        Reported rather than corrected: rounding `maturity` would silently change
+        a term the user typed, and reading it off the calendar would change every
+        Monte Carlo number for these notes. The API surfaces it as a warning.
+        """
+        step_months = 12.0 / self.periods_per_year
+        return abs(self.n_obs * step_months / 12.0 - float(self.maturity))
+
+    @property
     def coupon_rate(self) -> float:
         """Per-period coupon rate = coupon_pa / periods_per_year."""
         return self.coupon_pa / self.periods_per_year
