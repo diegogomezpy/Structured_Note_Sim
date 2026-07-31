@@ -550,7 +550,16 @@ class HestonCalibrator:
         # path entirely. Adding theta/2 back recovers the arithmetic drift, and
         # the simulator's -V/2 cancels it so simulated log-growth matches the
         # realized geometric growth over the calibration window.
-        mu = float(np.mean(lr1) / dt) + 0.5 * theta
+        #
+        # Deferred until AFTER the clamps below, because that cancellation only
+        # holds if the theta added back here is the theta the simulator will
+        # actually mean-revert to. `theta` is clamped to PARAM_BOUNDS max 0.50
+        # (~71% vol), so for any underlying above that this used to add back the
+        # RAW theta while the simulation ran on the clamped one, leaving
+        # 0.5*(theta_raw - 0.50) of pure spurious drift. Measured on a 92%-vol
+        # series: +15.4% per year of upward drift that is not in the data — which
+        # on a knock-in product understates the barrier risk.
+        mean_lr_ann = float(np.mean(lr1) / dt)
 
         # V0: current variance (last window value)
         V0 = float(rv_clean[-1])
@@ -587,6 +596,9 @@ class HestonCalibrator:
         xi    = _clamp(xi,    *PARAM_BOUNDS["xi"])
         rho   = _clamp(rho,   *PARAM_BOUNDS["rho"])
         V0    = _clamp(V0,    PARAM_BOUNDS["theta"][0], PARAM_BOUNDS["theta"][1])
+
+        # Now that theta is final, recover the arithmetic drift against it.
+        mu = mean_lr_ann + 0.5 * theta
 
         # Enforce Feller by nudging kappa up if needed
         feller_margin = 2.0 * kappa * theta - xi ** 2

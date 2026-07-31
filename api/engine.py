@@ -1119,11 +1119,25 @@ def _reprice_on_paths(sf: dict, terms: NoteTerms, *, seed: int) -> dict:
     the shared trading-day grid, then returns a fresh `sf`-shaped dict whose `note`
     and obs metadata are for `terms` but whose paths/bands/calibration are shared."""
     grid, anchor, N = sf["grid"], sf["anchor"], sf["N"]
-    # B gets its OWN position state — same fixings and grid (guaranteed by the
-    # shared-paths guard in run_compare), but its own observation calendar, elapsed
-    # count and arrears, since those follow from its own frequency and barriers.
+    # B gets its OWN position state — same fixings and grid, but its own observation
+    # calendar, elapsed count and arrears, since those follow from its own frequency
+    # and barriers.
     pstate = _position_state(terms, anchor)
     held   = pstate if (pstate and pstate.get("ok")) else None
+
+    # ...but it must RESOLVE the same way A did, and `share_blockers` cannot promise
+    # that: it compares `is_held` on the TERMS, while `_position_state` can refuse at
+    # RUN time for reasons that are not in the terms at all — B already autocalled on
+    # realised prices, or its issue fixing missing from the loaded history.
+    #
+    # When A resolved held and B refused, B would be priced from issue on paths that
+    # open at A's current level (e.g. 0.82) and stop at A's REMAINING maturity: a
+    # full-life note evaluated on a stub of someone else's window. Every metric in
+    # the comparison would be wrong, and silently — the run succeeds. Signal it so
+    # the caller simulates B on its own paths instead.
+    if bool(held) != bool(sf.get("held")):
+        return None
+
     obs_steps, obs_times = _snap_obs(grid, N, _obs_dates(terms, anchor, held))
     note = price_note(sf["perf_paths"], terms, seed=seed + 1,
                       obs_steps=obs_steps, obs_times=obs_times,
@@ -1147,10 +1161,15 @@ def run_compare(terms_a: NoteTerms, terms_b: NoteTerms, *, n_paths: int = 10000,
     sf_a = _simulate_full(terms_a, n_paths=n_paths, seed=seed, calib_years=calib_years,
                           history_years=history_years, engine=engine)
     blockers = _share_blockers(terms_a, terms_b)
-    shared = not blockers
-    if shared:
+    sf_b = None
+    if not blockers:
+        # May still come back None: the terms permit sharing but B's position state
+        # resolved differently from A's at run time (see _reprice_on_paths).
         sf_b = _reprice_on_paths(sf_a, terms_b, seed=seed)
-    else:
+        if sf_b is None:
+            blockers = ["held"]
+    shared = sf_b is not None
+    if not shared:
         sf_b = _simulate_full(terms_b, n_paths=n_paths, seed=seed, calib_years=calib_years,
                               history_years=history_years, engine=engine)
     note_a, note_b = sf_a["note"], sf_b["note"]
@@ -2186,10 +2205,16 @@ def _compare_for_pdf(sf_a: dict, terms_a: NoteTerms, terms_b: NoteTerms, tr, *,
     """Compute the A/B comparison payload for the PDF: metrics diff + raw go.Figure
     overlays (kaleido renders these to PNG downstream). Reuses A's simulation `sf`
     and reprices B on the same paths when they share underlyings + maturity."""
-    shared = _can_share_paths(terms_a, terms_b)
-    sf_b = (_reprice_on_paths(sf_a, terms_b, seed=seed) if shared else
-            _simulate_full(terms_b, n_paths=n_paths, seed=seed, calib_years=calib_years,
-                           history_years=history_years, engine=engine))
+    # Same two-stage decision as run_compare: the terms may permit sharing while B's
+    # position state still resolves differently at run time, in which case
+    # _reprice_on_paths returns None and B must get its own simulation. Without this
+    # the report would carry a comparison built on a mispriced B.
+    sf_b = (_reprice_on_paths(sf_a, terms_b, seed=seed)
+            if _can_share_paths(terms_a, terms_b) else None)
+    shared = sf_b is not None
+    if not shared:
+        sf_b = _simulate_full(terms_b, n_paths=n_paths, seed=seed, calib_years=calib_years,
+                              history_years=history_years, engine=engine)
     note_a, note_b = sf_a["note"], sf_b["note"]
     summary_a = _mc_summary(sf_a, note_a, terms_a)
     summary_b = _mc_summary(sf_b, note_b, terms_b)

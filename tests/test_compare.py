@@ -168,3 +168,48 @@ def test_diff_adds_a_cost_basis_row_only_when_the_sides_differ():
     assert "cost_basis" in keys(bought)
     row = next(r for r in bought["rows"] if r["key"] == "cost_basis")
     assert (row["a"], row["b"]) == (1.0, pytest.approx(0.95))
+
+
+# ── shared paths need agreement at RUN time, not just in the terms ────────────
+def test_reprice_refuses_when_b_resolves_a_different_position_state():
+    """`share_blockers` compares `is_held` on the TERMS, but `_position_state`
+    refuses at RUN time for reasons that are not in the terms — B already
+    autocalled on realised prices, or its issue fixing missing from history.
+
+    If A resolved held and B did not, repricing B on A's paths evaluates a
+    full-life note on paths that open at A's CURRENT level and stop at A's
+    remaining maturity. Every metric would be wrong and nothing would raise. The
+    repricer must return None so the caller simulates B independently.
+    """
+    from api import engine
+
+    # A resolved held; B refuses. Only the `held` flags matter to the guard.
+    sf_a = {"held": {"periods_elapsed": 4}, "grid": None, "anchor": None, "N": 1}
+    calls = {"n": 0}
+
+    def _fake_state(terms, anchor):
+        calls["n"] += 1
+        return {"ok": False, "reason": "called"}      # B already called away
+
+    orig = engine._position_state
+    engine._position_state = _fake_state
+    try:
+        assert engine._reprice_on_paths(sf_a, object(), seed=1) is None, (
+            "a B that cannot be modelled as held must not ride A's held paths")
+    finally:
+        engine._position_state = orig
+    assert calls["n"] == 1
+
+
+def test_reprice_refuses_when_only_b_is_held():
+    """The mirror case: A priced from issue, B resolves held. B's window would be
+    measured against A's from-issue paths, which open at par."""
+    from api import engine
+
+    sf_a = {"held": None, "grid": None, "anchor": None, "N": 1}
+    orig = engine._position_state
+    engine._position_state = lambda t, a: {"ok": True, "periods_elapsed": 2}
+    try:
+        assert engine._reprice_on_paths(sf_a, object(), seed=1) is None
+    finally:
+        engine._position_state = orig
