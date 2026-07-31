@@ -162,10 +162,19 @@ def test_cliquet_report_is_pixel_identical(theme):
 
 
 @pytest.mark.parametrize("theme", THEMES)
-def test_participation_report_renders(theme):
-    """The participation payoff branch draws a different summary and profile."""
-    pages = _rasterise(_render(theme, kind="participation"))
-    assert len(pages) >= 3
+def test_participation_report_is_pixel_identical(theme):
+    """A participation note is the only fixture that draws the maturity-payoff
+    profile and the participation summary — the coupon/autocall/knock-in waterfall
+    never runs, so every block keyed off it is replaced rather than filled.
+
+    This was a smoke test (`len(pages) >= 3`) for a long time, which guarded the
+    branch against *crashing* but not against *moving*: the profile diagram could
+    have been redrawn wrongly and stayed green. `_participation_redemption` has a
+    TS mirror that feeds the same picture in the app, so a silent drift here is a
+    drift between what a client is shown and what they are sold.
+    """
+    _assert_pixel_identical(f"{theme}:participation",
+                            _rasterise(_render(theme, kind="participation")))
 
 
 def test_stub_figures_preserve_pagination():
