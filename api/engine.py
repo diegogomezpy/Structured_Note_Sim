@@ -772,7 +772,16 @@ def _position_state(terms: NoteTerms, anchor) -> dict | None:
     # same cached pull the live tab uses) rather than the run's price slice.
     full = _prices(dict(terms.tickers), years=None, field="close")
     i0 = int(full.index.searchsorted(issue_ts))
-    if i0 >= len(full) or full.index[i0] > anchor:
+    # The resolved date has to actually BE the fixing — the first trading day on
+    # or after the issue date. `> anchor` alone only caught a history that starts
+    # after TODAY; a history starting anywhere between the issue date and today
+    # passed, and whatever its first row happened to be became "the fixing". A
+    # note issued in July whose history began the following January then had
+    # every barrier measured against a January level, six months of drift away
+    # from the term sheet's, with nothing said. Two weeks of slack absorbs a
+    # holiday run or an exchange closure; past that the data does not reach it.
+    if i0 >= len(full) or full.index[i0] > anchor \
+            or (full.index[i0] - issue_ts) > pd.Timedelta(days=14):
         return {"ok": False, "reason": "no_fixing"}
     issue_anchor = full.index[i0]
     S0_fix = full.iloc[i0].to_numpy(dtype=float)
@@ -883,13 +892,23 @@ def _simulate_full(terms: NoteTerms, *, n_paths: int, seed: int, calib_years: fl
     N        = len(grid) - 1
     obs_steps, obs_times = _snap_obs(grid, N, _obs_dates(terms, anchor, held))
 
-    # Pre-programmed dividend jumps (graceful if the pull fails).
+    # Pre-programmed dividend jumps. A FAILED fetch is not "pays nothing": the
+    # calibration ran on adjusted closes, so the drops are what puts the paths
+    # back into the price space the barriers are measured in. Losing them leaves
+    # every path growing at total return against a price-space knock-in — an
+    # error that only ever flatters the downside. `load_dividends` returns None
+    # per asset for a failure (an empty Series still means "genuinely none"), and
+    # a whole-call exception is treated as every asset failing.
     try:
         divs = load_dividends(tickers)
-    except Exception:
-        divs = {}
+    except Exception as e:
+        print(f"[engine] WARNING: dividend load failed outright: {e}")
+        divs = {p.name: None for p in cal_result.params}
+    div_failed = sorted(n for n in (p.name for p in cal_result.params)
+                        if divs.get(n, None) is None)
     div_sched = build_dividend_schedule(
-        [divs.get(p.name, pd.Series(dtype=float)) for p in cal_result.params],
+        [divs.get(p.name) if divs.get(p.name) is not None else pd.Series(dtype=float)
+         for p in cal_result.params],
         [p.S0 for p in cal_result.params], grid)
 
     sim = HestonMultiSimulator(
@@ -913,7 +932,15 @@ def _simulate_full(terms: NoteTerms, *, n_paths: int, seed: int, calib_years: fl
     S0_vec     = np.array([(held["fixings"][p.name] if held else p.S0)
                            for p in cal_result.params]).reshape(1, 1, n_assets)
     perf_paths = sim_prices / S0_vec
-    wof_paths  = perf_paths.min(axis=2)
+    # The line the note's payoff actually references — worst-of for everything
+    # except a participation note with a best-of / average basket. `.min(axis=2)`
+    # was hard-coded here while the realised prefix and the single-path inspector
+    # both went through `_reduce_to_line`, so on an average-basket participation
+    # note the fan drew the WORST-OF envelope with the AVERAGE realised line
+    # joined onto it: two different quantities in one picture, and the "no step at
+    # the join" this chart is built around was simply not true.
+    wof_paths  = _reduce_to_line(perf_paths, getattr(terms, "note_type", ""),
+                                 getattr(terms, "participation_basket", None))
 
     note = price_note(perf_paths, terms, seed=seed + 1,
                       obs_steps=obs_steps, obs_times=obs_times,
@@ -960,6 +987,10 @@ def _simulate_full(terms: NoteTerms, *, n_paths: int, seed: int, calib_years: fl
         # Grid internals so a second note (A/B compare) can be RE-PRICED on the very
         # same simulated paths — recomputing only its own observation schedule.
         "grid": grid, "anchor": anchor, "N": N, "seed": seed,
+        # Assets whose dividend fetch FAILED (not "pays none"). Surfaced in the
+        # run summary so a reader is told the paths are running hot rather than
+        # left to trust a number the log alone flagged.
+        "div_failed": div_failed,
     }
 
 
@@ -1056,6 +1087,12 @@ def _mc_summary(sf: dict, note: dict, terms: NoteTerms) -> dict:
         "expected_gain", "expected_redemption", "p5_redemption", "p95_redemption",
         "cvar5_redemption", "breakeven_level", "up_capture", "dn_capture")}
     summary["note_type"] = getattr(terms, "note_type", "autocall")
+    # Data-quality warning, not a metric. Empty on every healthy run; when it is
+    # not empty the paths for those assets grew at TOTAL return while the barriers
+    # are measured on price, so the run reads optimistically on the downside and
+    # the reader has to be told rather than left to trust it.
+    if sf.get("div_failed"):
+        summary["div_failed"] = list(sf["div_failed"])
     # For a Participation run, send a downsample of the final-basket levels so the
     # client can redraw the payoff-profile distribution overlay and recompute the
     # what-if table (rate/cap/protection) instantly via the TS redemption mirror —
@@ -1225,7 +1262,8 @@ def run_compare(terms_a: NoteTerms, terms_b: NoteTerms, *, n_paths: int = 10000,
         figures["scatter"] = _fig(charts.build_paired_scatter(
             note_a["annualized_returns"], note_b["annualized_returns"], tr))
         figures["transition"] = _fig(charts.build_transition_heatmap(
-            paired["transition"], [tr(k) for k in paired["labels"]], tr))
+            paired["transition"], [tr(k) for k in paired["labels"]], tr,
+            labels_b=[tr(k) for k in (paired.get("labels_b") or paired["labels"])]))
 
     compare = {
         "shared_paths": shared,
@@ -2358,7 +2396,8 @@ def _compare_for_pdf(sf_a: dict, terms_a: NoteTerms, terms_b: NoteTerms, tr, *,
             # and build_transition_heatmap uses its `labels` verbatim as tick text —
             # so passing them through printed the keys on the axes of a client report.
             figs["transition"] = charts.build_transition_heatmap(
-                _pd["transition"], [tr(k) for k in (_pd.get("labels") or [])], tr)
+                _pd["transition"], [tr(k) for k in (_pd.get("labels") or [])], tr,
+                labels_b=[tr(k) for k in (_pd.get("labels_b") or _pd.get("labels") or [])])
     return data, figs
 
 

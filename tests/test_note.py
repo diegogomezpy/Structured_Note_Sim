@@ -477,3 +477,72 @@ def test_breakeven_reports_the_lower_loss_region_not_the_grid_bound():
     be = _participation_breakeven(t)
     assert be is not None and 0.79 <= be <= 0.81, (
         f"breakeven {be} — the loss region above the knock-out leaked into it")
+
+
+# ── One Star overlays ─────────────────────────────────────────────────────────
+def _one_star(level=1.0, coupon=False, autocall=False):
+    """Two underlyings, a 100% One Star level, and barriers the WORST-OF cannot
+    clear on its own — so anything that pays here came from the overlay."""
+    from core.note import NoteTerms
+    return NoteTerms.from_dict({
+        "name": "OS", "maturity": 1.0, "payment_freq": "annual", "coupon_pa": 0.10,
+        "coupon_barrier": 0.90, "autocall_barrier": 0.95, "autocall_start_period": 1,
+        "knock_in_barrier": 0.80, "memory": False, "coupon_basket": "worst_of",
+        "autocall_basket": "worst_of", "note_type": "autocall",
+        "one_star_level": level, "one_star_coupon": coupon, "one_star_autocall": autocall,
+        "tickers": {"A": "A", "B": "B"},
+    })
+
+
+def _split_path():
+    """One asset at 130%, the other at 60%: the worst-of misses every barrier and
+    breaches the knock-in, while the best-of clears the One Star level."""
+    import numpy as np
+    return np.array([[[1.0, 1.0], [1.30, 0.60]]])       # (1 path, 2 steps, 2 assets)
+
+
+def test_one_star_rescues_final_redemption_by_default():
+    """The safe default (both flags off): the overlay applies to the FINAL
+    REDEMPTION only. A worst-of at 60% is through a knock-in at 80%, and capital
+    still comes back at par because one underlying finished at/above 100%."""
+    from core.note import price_note
+    r = price_note(_split_path(), _one_star(), seed=1, obs_steps=[1], obs_times=[1.0])
+    # `knock_in_triggered` means "breached AND NOT rescued", so a working rescue
+    # makes it FALSE. The breach itself is `prob_barrier_event`; the two together
+    # are what says the overlay fired rather than the barrier never being hit.
+    assert r["prob_barrier_event"] == pytest.approx(1.0), "the worst-of must have breached"
+    assert r["prob_rescued"] == pytest.approx(1.0), "One Star must have rescued it"
+    assert not bool(r["knock_in_triggered"][0]), "a rescued path is not a knock-in"
+    assert r["principal_payoffs"][0] == pytest.approx(1.0), "capital back at par"
+    # ...and it did NOT reach into the periodic checks.
+    assert r["coupon_payoffs"][0] == pytest.approx(0.0), "coupon overlay is off by default"
+    assert int(r["autocall_period"][0]) == 0, "autocall overlay is off by default"
+
+
+def test_one_star_coupon_flag_pays_a_coupon_the_worst_of_missed():
+    """`one_star_coupon` extends the same best-of overlay to the coupon check."""
+    from core.note import price_note
+    r = price_note(_split_path(), _one_star(coupon=True), seed=1,
+                   obs_steps=[1], obs_times=[1.0])
+    assert r["coupon_payoffs"][0] > 0.0, "a single underlying at 130% must pay"
+    assert int(r["autocall_period"][0]) == 0, "the autocall flag was NOT set"
+
+
+def test_one_star_autocall_flag_calls_a_note_the_worst_of_could_not():
+    """`one_star_autocall` forces the call deterministically, regardless of the
+    worst-of and of the RNG (the trigger is hard by default)."""
+    from core.note import price_note
+    r = price_note(_split_path(), _one_star(autocall=True), seed=1,
+                   obs_steps=[1], obs_times=[1.0])
+    assert int(r["autocall_period"][0]) == 1, "one underlying >= 100% must call it"
+
+
+def test_one_star_level_none_disables_the_overlay_whatever_the_flags():
+    """`one_star_level = None` is a plain worst-of note. The flags must not be
+    able to resurrect an overlay that has no level to test against."""
+    from core.note import price_note
+    r = price_note(_split_path(), _one_star(level=None, coupon=True, autocall=True),
+                   seed=1, obs_steps=[1], obs_times=[1.0])
+    assert int(r["autocall_period"][0]) == 0
+    assert r["coupon_payoffs"][0] == pytest.approx(0.0)
+    assert r["principal_payoffs"][0] < 1.0, "no rescue: capital follows the worst-of"

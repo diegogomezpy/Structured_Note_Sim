@@ -42,6 +42,17 @@
 #include <algorithm>
 #include <thread>
 #include <utility>
+#include <fstream>
+#include <string>
+#ifdef __linux__
+// CPU_COUNT is a GNU extension; g++ defines _GNU_SOURCE for libstdc++ anyway,
+// but clang-on-Linux does not, and a missing macro here is a build break rather
+// than a warning.
+#ifndef _GNU_SOURCE
+#define _GNU_SOURCE 1
+#endif
+#include <sched.h>          // sched_getaffinity / CPU_COUNT — see cpu_budget()
+#endif
 
 namespace py = pybind11;
 
@@ -83,8 +94,62 @@ struct Xoshiro256pp {
     double uniform() { return ((operator()() >> 11) + 0.5) * (1.0 / 9007199254740992.0); }
 };
 
+// How many CPUs this process may actually use, as opposed to how many the
+// machine has. In a container these are different numbers and only the first one
+// is useful: `hardware_concurrency()` reports the HOST's logical cores, so a
+// 2-vCPU Cloud Run instance on a 64-core host span 64 worker threads to share
+// two of them — pure context-switch thrash, slower than running single-threaded,
+// and nothing in the deploy set HESTON_NUM_THREADS to prevent it.
+//
+// Two sources, both cheap and both read once:
+//   * the CPU affinity mask (a cpuset limit, and the honest count when there is
+//     no quota), and
+//   * the cgroup CPU quota — v2 `cpu.max` ("<quota> <period>" or "max ..."),
+//     v1 `cpu.cfs_quota_us` / `cpu.cfs_period_us` (quota -1 = unlimited).
+// Non-Linux hosts have neither and fall through to hardware_concurrency.
+static int cpu_budget() {
+    int n = 0;
+#ifdef __linux__
+    cpu_set_t set;
+    if (sched_getaffinity(0, sizeof(set), &set) == 0) n = CPU_COUNT(&set);
+
+    auto quota_from = [](const char* path, const char* period_path) -> int {
+        std::ifstream f(path);
+        if (!f) return 0;
+        double quota = 0, period = 0;
+        if (period_path) {                       // cgroup v1: two files
+            std::string q; f >> q;
+            if (q == "max" || q == "-1") return 0;
+            quota = std::atof(q.c_str());
+            std::ifstream p(period_path);
+            if (!p) return 0;
+            p >> period;
+        } else {                                 // cgroup v2: "<quota> <period>"
+            std::string q; f >> q;
+            if (q == "max") return 0;
+            quota = std::atof(q.c_str());
+            f >> period;
+        }
+        if (quota <= 0 || period <= 0) return 0;
+        // Round up: 1.5 vCPU should use 2 threads, not 1.
+        const int c = static_cast<int>(std::ceil(quota / period));
+        return c > 0 ? c : 1;
+    };
+    int q = quota_from("/sys/fs/cgroup/cpu.max", nullptr);
+    if (q == 0) q = quota_from("/sys/fs/cgroup/cpu/cpu.cfs_quota_us",
+                               "/sys/fs/cgroup/cpu/cpu.cfs_period_us");
+    if (q > 0) n = (n > 0) ? std::min(n, q) : q;
+#endif
+    if (n <= 0) {
+        const unsigned h = std::thread::hardware_concurrency();
+        n = h ? static_cast<int>(h) : 1;
+    }
+    return n;
+}
+
 // Worker thread count: explicit request wins; else HESTON_NUM_THREADS /
-// OMP_NUM_THREADS env vars; else all logical cores. Capped to n_blocks by caller.
+// OMP_NUM_THREADS env vars; else the process's real CPU budget (see cpu_budget).
+// Capped to n_blocks by caller.
 static int resolve_threads(int requested) {
     if (requested > 0) return requested;
     for (const char* var : {"HESTON_NUM_THREADS", "OMP_NUM_THREADS"}) {
@@ -93,8 +158,10 @@ static int resolve_threads(int requested) {
             if (t > 0) return t;
         }
     }
-    const unsigned h = std::thread::hardware_concurrency();
-    return h ? static_cast<int>(h) : 1;
+    // Computed once — the limit cannot change under a running process, and the
+    // simulate() entry point is called per request.
+    static const int budget = cpu_budget();
+    return budget;
 }
 
 py::tuple simulate(

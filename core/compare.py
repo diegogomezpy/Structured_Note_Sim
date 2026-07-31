@@ -136,7 +136,13 @@ def paired_stats(note_a: dict, note_b: dict, terms_a: NoteTerms, terms_b: NoteTe
         "se_edge":      float(d_tot.std(ddof=1) / np.sqrt(n)) if n > 1 else None,
         "se_edge_irr":  float(d_irr.std(ddof=1) / np.sqrt(n)) if n > 1 else None,
         "transition":   [[float(v) for v in row] for row in matrix],
-        "labels":       labels_a if labels_a == labels_b else labels_a,
+        # A's buckets and B's buckets. They differ when the two notes are of
+        # different TYPES — which `share_blockers` deliberately allows, because
+        # "autocall vs participation on the same underlying" is exactly the
+        # comparison someone wants. One label list for both axes then printed A's
+        # called/at-par/knocked-in vocabulary down B's side of the matrix.
+        "labels":       labels_a,
+        "labels_b":     labels_b,
         "mixed_types":  labels_a != labels_b,
         "conditional":  cond,
     }

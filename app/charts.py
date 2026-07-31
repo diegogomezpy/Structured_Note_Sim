@@ -15,7 +15,7 @@ from app.charts import (
     build_irr_distribution,
     build_fan_chart, build_wof_fan, build_corr_heatmap,
     build_backtest_irr_scatter, build_backtest_outcome_bar,
-    build_worst_asset_pie, build_historical_prices, build_historical_wof_path,
+    build_worst_asset_pie, build_historical_prices,
     build_live_performance_chart,
 )
 """
@@ -1266,10 +1266,16 @@ def build_paired_scatter(a_vals, b_vals, tr: Translator, *, max_points: int = 25
     return fig
 
 
-def build_transition_heatmap(matrix, labels: list[str], tr: Translator) -> go.Figure:
+def build_transition_heatmap(matrix, labels: list[str], tr: Translator,
+                             labels_b: list[str] | None = None) -> go.Figure:
     """How each path resolves under A (rows) vs under B (columns). The diagonal is
     'same outcome either way'; everything off it is a path the swap actually moved
-    — e.g. the cell that answers "of the paths where A knocked in, what did B do?"."""
+    — e.g. the cell that answers "of the paths where A knocked in, what did B do?".
+
+    `labels_b` is B's own bucket names, which differ from A's when the two notes
+    are of different types (autocall resolves called / at-par / knocked-in; a
+    participation note resolves below / at / above par). Defaults to A's, so the
+    same-type case is unchanged."""
     m = np.asarray(matrix, dtype=float)
     txt = [[f"{v:.1%}" if v >= 0.0005 else "" for v in row] for row in m]
     # A tint of the A-series colour rather than white→navy: the low end is
@@ -1278,7 +1284,7 @@ def build_transition_heatmap(matrix, labels: list[str], tr: Translator) -> go.Fi
     # which inherits the surface's text colour — reads on it either way. Both
     # literals are in the web's SERIES_REMAP, so the ramp follows the theme.
     fig = go.Figure(go.Heatmap(
-        z=m, x=labels, y=labels, text=txt, texttemplate="%{text}",
+        z=m, x=(labels_b or labels), y=labels, text=txt, texttemplate="%{text}",
         colorscale=[[0, "rgba(37,99,235,0.04)"], [1, "rgba(37,99,235,0.40)"]],
         zmin=0.0, showscale=False, xgap=3, ygap=3,
         # Explicit, or Plotly auto-contrasts each cell against a WHITE canvas and
@@ -1585,147 +1591,6 @@ def build_underlying_price_chart(
         fig.update_yaxes(range=[lo - pad, hi + pad])
     return _apply_theme(fig)
 
-
-# ---------------------------------------------------------------------------
-# Backtest — historical worst-of performance path for a specific issue date
-# ---------------------------------------------------------------------------
-
-def build_historical_wof_path(
-    hist_prices:      pd.DataFrame,
-    issue_date:       pd.Timestamp,
-    obs_dates:        list[pd.Timestamp],
-    knock_in_barrier: float,
-    autocall_barrier: float,
-    coupon_barrier:   float,
-    call_quarter:     int,
-    tr:               Translator,
-    autocall_schedule: list[tuple] | None = None,
-    coupon_at_autocall_only: bool = False,
-    coupon_flags:     list[bool] | None = None,
-    knock_in:         bool = False,
-    title:            str | None = None,
-) -> go.Figure:
-    """
-    Show per-asset performance + worst-of line for one historical issue date.
-
-    obs_dates are the SNAPPED trading-day observation dates (the same ones the
-    payoff engine evaluated). The price line AND the markers stop at the autocall
-    date — the note no longer exists afterwards. The coupon barrier colours the
-    markers and is drawn as its own line when it differs from the KI barrier
-    (never conflate the two). At maturity the final marker spells out the
-    knock-in / par outcome. For step-down notes pass
-    autocall_schedule = [(date, level),...]. ``title`` overrides the header."""
-    issue_idx = hist_prices.index.searchsorted(issue_date)
-    # End the displayed window at the autocall date when called early, else at
-    # the final observation — so the line doesn't run on past the note's life.
-    _last_obs = (obs_dates[call_quarter - 1] if (call_quarter > 0 and obs_dates
-                 and call_quarter <= len(obs_dates)) else (obs_dates[-1] if obs_dates else None))
-    if _last_obs is not None:
-        end_idx = min(int(hist_prices.index.searchsorted(_last_obs)) + 1, len(hist_prices))
-    else:
-        end_idx = len(hist_prices)
-    slice_    = hist_prices.iloc[issue_idx:end_idx]
-    dates     = slice_.index
-    S0        = hist_prices.iloc[issue_idx].values.astype(float)
-
-    # Normalise each asset to 1.0 at issue date
-    perf = slice_.values / S0[np.newaxis, :]    # (days, n_assets)
-    wof  = perf.min(axis=1)
-
-    asset_colors = [_BLUE, _BLUE_LIGHT, _NAVY, "#f39c12", "#9b59b6"]
-    asset_names  = list(hist_prices.columns)
-
-    fig = go.Figure()
-
-    # Per-asset lines (lighter, dashed)
-    for i, name in enumerate(asset_names):
-        fig.add_trace(go.Scatter(
-            x=dates, y=perf[:, i],
-            mode="lines", name=name,
-            line=dict(color=asset_colors[i % len(asset_colors)], width=1.2, dash="dot"),
-            opacity=0.65,
-        ))
-
-    # Worst-of line (solid, prominent)
-    fig.add_trace(go.Scatter(
-        x=dates, y=wof,
-        mode="lines", name=tr("chart_worst_of"),
-        line=dict(color=_NAVY, width=2.5),
-    ))
-
-    # Barriers — KI, coupon (when distinct), and autocall (flat or stepped)
-    fig.add_hline(y=knock_in_barrier, line_dash="dash", line_color=_RED,
-                  annotation_text=tr("chart_ki_barrier", lvl=f"{knock_in_barrier:.1%}"),
-                  annotation_position="bottom right")
-    _add_coupon_barrier(fig, coupon_barrier, knock_in_barrier, tr)
-    _add_autocall_barrier(fig, autocall_barrier, autocall_schedule, tr,
-                          x0=hist_prices.index[issue_idx])
-
-    # Observation markers — only while the note is alive. Each entry names the
-    # event (coupon, autocall, and the maturity knock-in / par outcome) so the
-    # legend reads on its own.
-    n_obs_bt = len(obs_dates)
-    for q, obs_date in enumerate(obs_dates):
-        loc = hist_prices.index.searchsorted(obs_date) - issue_idx
-        if loc < 0 or loc >= len(dates):
-            break
-        wof_val = float(wof[loc])
-        is_call          = (call_quarter == q + 1)
-        reached_maturity = (call_quarter == 0 and q + 1 == n_obs_bt)
-        symbol  = "star" if is_call else "circle"
-        size    = 14 if is_call else 9
-
-        # Coupon paid at this observation — prefer the engine-computed flags
-        # (replay_note: honours memory, the coupon basket, coupon_at_autocall_only).
-        if coupon_flags is not None:
-            paid = bool(coupon_flags[q]) if q < len(coupon_flags) else False
-        elif coupon_at_autocall_only:
-            paid = is_call
-        else:
-            paid = wof_val >= coupon_barrier
-
-        parts = [f"P{q+1}"]
-        if is_call:
-            parts.append(tr("leg_called"))
-        elif reached_maturity:
-            parts.append(tr("leg_maturity"))
-        parts.append(tr("coupon_paid_label") if paid else tr("coupon_missed_label"))
-        if reached_maturity:
-            parts.append(tr("leg_knock_in") if knock_in else tr("leg_no_knock_in"))
-        label = " · ".join(parts)
-
-        if reached_maturity and knock_in:
-            color, symbol, size = _RED, "x", 12
-        elif is_call:
-            color = _GREEN if paid else _BLUE
-        else:
-            color = _GREEN if paid else _GREY
-
-        fig.add_trace(go.Scatter(
-            # ISO string, not a raw Timestamp — kaleido (PDF) can't JSON-serialise
-            # a Timestamp x and the chart would silently drop from the report.
-            x=[pd.Timestamp(obs_date).isoformat()], y=[wof_val],
-            mode="markers",
-            marker=dict(size=size, color=color, symbol=symbol,
-                        line=dict(width=1.5, color="white")),
-            name=label, showlegend=True,
-        ))
-        fig.add_vline(x=pd.Timestamp(obs_date).isoformat(), line_dash="dot",
-                      line_color="#cccccc",
-                      annotation_text=f"P{q+1}", annotation_position="top")
-        if is_call:
-            break   # the note terminated here — later observations never happen
-
-    outcome = (tr("chart_outcome_autocalled_p", q=call_quarter)
-               if call_quarter > 0 else tr("outcome_maturity"))
-    fig.update_layout(
-        title=title or tr("chart_hist_wof_title", issue=issue_date.date(), outcome=outcome),
-        xaxis=dict(title=tr("date_axis")),
-        yaxis=dict(title=tr("chart_perf_vs_issue"), tickformat=".0%"),
-        hovermode="x unified",
-        legend=dict(x=1.01, y=1, xanchor="left"),
-    )
-    return _apply_theme(fig)
 
 # ---------------------------------------------------------------------------
 # Current Note Performance (live — from issue date to today)

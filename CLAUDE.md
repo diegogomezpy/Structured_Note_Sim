@@ -37,6 +37,14 @@ load_prices()       HestonCalibrator          HestonMultiSimulator     price_not
 
 ### Simulation engines (numpy default, optional C++)
 
+The C++ kernel sizes its thread pool from the process's REAL CPU budget
+(`cpu_budget()` — the affinity mask intersected with the cgroup v2 `cpu.max` /
+v1 `cfs_quota` limit), not `hardware_concurrency()`. In a container those differ:
+a 2-vCPU Cloud Run instance on a 64-core host reported 64 and span 64 workers to
+share two cores. `HESTON_NUM_THREADS` / `OMP_NUM_THREADS` still override, and the
+non-Linux path falls back to `hardware_concurrency` as before.
+
+
 `HestonMultiSimulator.run(engine="numpy"|"cpp")`. **numpy is the default and the reference**; the app calls `run()` with no argument. The optional C++ engine (`cpp/heston_kernel.cpp`, pybind11, wrapped by `core/simulator_cpp.py`) runs the same model — block-SIMD with a branch-free xoshiro256++/Box–Muller RNG, parallelised across path-blocks with `std::thread` (no OpenMP/libomp). It is **not** bit-identical to numpy (different RNG stream); it is validated by convergence of statistics, not bit-equality — `tests/test_simulator.py` runs four configurations through BOTH engines, including the one production always takes (Student-t copula + dividend schedule), which `scripts/compare_engines.py` never covered because it builds with `t_dof=None, div_schedule=None`. Those tests skip per-test when the wheel is absent; a module-level `importorskip` would take the numpy tests with it, and CI is exactly where the wheel is absent.
 
 **The Milstein variance correction is `xi²/4`, not `xi²/2`.** It is `½·b·b′` with `b(V)=xi·sqrt(V)`. It shipped doubled in both engines until measured against the exact CIR conditional variance: at the regime this app calibrates to (xi pinned at its 2.0 bound, Feller margin 0.01) the doubled term put `Var[V_T]` +9.2% above exact vs +4.7% correct. The term is zero-mean, so it never moved a headline average — it inflated the variance of the variance, where nothing was looking. `tests/test_simulator.py` guards it against the exact moments. `run()` returns the same results dict either way (`_finalize` is the shared tail), so everything downstream is unchanged. The Docker image builds + installs the `heston_cpp` wheel so `engine="cpp"` works in production; for local Python use build with `pip install ./cpp` **into the same interpreter that runs uvicorn** (common gotcha: building into `.venv` but launching the API from system Python). If `"cpp"` is selected but unbuilt, the simulator catches `ImportError` and falls back to numpy.
@@ -56,6 +64,20 @@ load_prices()       HestonCalibrator          HestonMultiSimulator     price_not
 By default `call_steepness=None` → hard trigger: `autocall_prob()` returns exactly 0.0 or 1.0. The `call_draws < prob` comparison is then fully deterministic regardless of RNG seed. Soft sigmoid triggers exist but require steepness ≥ ~2000 to approximate a hard trigger — at 100 the trigger is NOT effectively hard (see docstring).
 
 ### Calibration → simulation parameter handoff
+
+**The calibrated `rho` is not a measurement — treat it as a sign, not a size.**
+Against series this repo's own simulator generated at a known rho, the daily
+return-vs-realised-variance estimator recovers ≈ −0.04 whether the truth is
+−0.90, −0.70 or −0.40 (and ≈ +0.04 at +0.40). So every simulation runs with
+almost no leverage and the paths carry far less downside skew than a real equity
+underlying, which understates knock-in probability on exactly the worst-of notes
+this app prices. The signal exists but not at the daily horizon — 21-day
+aggregated skew on the same series spans −0.68 to +0.39 — so a replacement
+estimator should fit there. `tests/test_calibrator.py` pins the current behaviour
+and is written to FAIL once it is fixed. (The off-by-one-lag theory was checked
+and refuted: no lag recovers leverage on real SPY/AAPL/MSFT, and the proposed
+shift flips rho positive.)
+
 
 - `mu` is the **arithmetic** drift for `dS/S = mu*dt + ...`. The calibrator adds `0.5*theta` back to the mean log-return to avoid double-counting the volatility drag, because the log-Euler price step subtracts `V/2` again at each step.
 - Correlation block: `corr_SV` is a diagonal matrix; diagonal = each asset's own `rho`. Off-diagonals are zero. The full `2n×2n` block matrix is validated for PSD on construction; if not PSD, Higham (2002) nearest-PSD projection is applied.
@@ -99,6 +121,18 @@ A note can be held as a **position**: `settlement_date` (when this holder's posi
 **The backtest replicates the purchase gap** (`core/backtest.py:hold_gap`, which returns None — full-life windows — when the settlement is on/before issue OR at/after the final observation, because settling after the last observation is a matured note, not a position; it used to clamp `k` while leaving `gap_years` past maturity, which made the first remaining observation time NEGATIVE). Each historical issue window is measured from the same point in the note's life at which the position was bought — earlier coupons belong to the seller, and returns annualise over the holding period, not the full tenor. `price_note` therefore accepts **per-path** `pending_coupons` and `start_basket`: every window reaches the purchase date with its own arrears and its own last cliquet reset, and a scalar would apply one window's state to all of them. `Call Quarter` carries TERM-SHEET period numbers (`period_offset` added back). Windows that had **already autocalled by the purchase date** leave the sample — you could not have bought the note — which is a real selection effect that biases the survivors toward windows that did not call early, so `skipped_called` reports it and the PDF states it. Every window assumes the entry price actually paid; no valuation model is applied, and `entry_price` says so.
 
 **Not affected by the position:** the live tab's chart (it reads realised prices, not simulation).
+
+### A failed dividend fetch is not "pays no dividends"
+
+`load_dividends` returns **None** for an asset whose fetch failed and an empty
+Series for one that genuinely distributes nothing. They used to be the same
+value. The distinction is load-bearing: calibration runs on **adjusted** closes
+(total-return dynamics) and the dividend schedule is what converts those paths
+back into the price space the barriers live in. Lose the drops and every path
+grows at total return against a price-space knock-in — roughly +3%/yr of invented
+upside on a 3%-yielding underlying, in the one direction that flatters a downside
+barrier. `_simulate_full` collects the failures and the run summary carries them
+as `div_failed`, so the run says so instead of only the log.
 
 ## Note JSON config format
 

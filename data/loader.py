@@ -310,7 +310,7 @@ def _align(prices: pd.DataFrame, source_label: str) -> pd.DataFrame:
 def load_dividends(
     tickers:    dict[str, str],
     ssl_verify: bool = True,
-) -> dict[str, pd.Series]:
+) -> dict[str, pd.Series | None]:
     """
     Load cash dividend history (ex-date → cash amount) for each ticker.
 
@@ -318,13 +318,23 @@ def load_dividends(
     indices (^GSPC etc.) and non-distributing assets return an empty Series —
     they get no dividend jumps in the simulation (a price index already
     reflects constituent dividends in its drift).
+
+    A FAILED fetch returns None for that asset, NOT an empty Series. The two
+    used to be the same value, and they are not the same fact: the calibration
+    runs on ADJUSTED closes (total-return dynamics) and the dividend schedule is
+    what converts those paths back into the price space the barriers live in. Get
+    no dividends because there are none and that is correct; get none because
+    Yahoo timed out and every path grows at total return while the knock-in is
+    measured on price — roughly +3% a year of invented upside on a 3%-yielding
+    underlying, in the one direction that flatters a downside barrier. It printed
+    a warning to stderr and priced the note anyway.
     """
     try:
         import yfinance as yf
     except ImportError:
         raise ImportError("yfinance is not installed. Run: pip install yfinance")
 
-    def _one(item: tuple[str, str]) -> tuple[str, pd.Series]:
+    def _one(item: tuple[str, str]) -> tuple[str, pd.Series | None]:
         sym, name = item
         try:
             divs = yf.Ticker(sym).dividends
@@ -335,8 +345,10 @@ def load_dividends(
                 divs.index = divs.index.tz_localize(None)
             return name, divs.astype(float)
         except Exception as e:
-            print(f"[loader] WARNING: could not load dividends for {sym}: {e} — assuming none.")
-            return name, pd.Series(dtype=float)
+            # None, not an empty Series — the caller has to be able to tell a
+            # failure from a genuine "pays nothing". See the docstring.
+            print(f"[loader] WARNING: dividend fetch FAILED for {sym}: {e}")
+            return name, None
 
     items = list(tickers.items())
     if not items:
