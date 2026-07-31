@@ -65,50 +65,44 @@ By default `call_steepness=None` → hard trigger: `autocall_prob()` returns exa
 
 ### Calibration → simulation parameter handoff
 
-**The simulated basket is LESS correlated than the calibrated one.** `corr_SS`
-is the correlation of the Brownian DRIVERS; the correlation of the returns they
-produce is lower, because each return is `sqrt(V_i)·dW_i` and the variance
-processes are independent (`corr_VV` off-diagonals are zero), so the random
-scaling decorrelates what the drivers correlated. Measured: the simulator
-delivers **72–78%** of what it is given, stable across the calibrated regime
-(xi 0.5 → 2.0 with kappa nudged to the Feller margin; the high kappa that comes
-with a pinned xi is what keeps it from being far worse).
+**Cross-asset correlation is compensated, because the simulator dilutes it.**
+`corr_SS` is a TARGET RETURN correlation. A return is `sqrt(V_i)·dW_i` and the
+variance processes are independent, so the random scaling dilutes the driver
+correlation by `k_i·k_j` where `k = E[sqrt(V)]/sqrt(E[V]) <= 1` (Jensen). The
+simulator used to consume `corr_SS` verbatim as a driver correlation and so
+delivered 72–78% of it: the calibrator measured 0.85 from the data and the app
+priced 0.61, a quarter of the co-movement lost between calibration and pricing.
+On a worst-of that is more dispersion and a knock-in higher than the underlyings
+imply.
 
-The handoff is what makes that an error rather than a model property: the
-calibrator estimates `corr_SS` from realised RETURN correlation and the simulator
-consumes it as DRIVER correlation. Two underlyings that co-move at 0.85 are
-simulated at ~0.61. Less correlation ⇒ more dispersion ⇒ a worse worst-of, so
-knock-in reads HIGH and coupons read LOW — the conservative direction, unlike the
-`mu` and dividend defects, but wrong by the same mechanism (estimate one
-quantity, apply it as another). Pre-compensating the driver correlation fixes it
-and is verifiable end to end, but it moves every probability the app reports.
-Pinned by `tests/test_simulator.py`, written to FAIL once compensated.
+`HestonMultiSimulator` now inflates the drivers by `1/(k_i k_j)`, with `k`
+measured off the variance process itself (`variance_scale_factors` — a cheap
+variance-only pilot, so it measures the DISCRETISED scheme rather than the CIR
+ideal; the Gamma approximation agrees to ~0.001 when Feller holds but drifts 0.04
+when it is violated, which is the regime this app calibrates into). Targets up to
+~0.6 now land within 0.01. Very high targets cannot be reached — the driver would
+exceed 1 and the 2n×2n block cannot stay PSD with leverage on the diagonal — so
+they keep the closest achievable value and set `corr_uplift_capped`, surfaced as
+`corr_capped` in the run summary. Correlating the variance processes (which the
+calibrator does estimate from realised RV) recovers much of the residual. The
+C++ engine inherits all of it: it receives the Cholesky factor, not the blocks.
+`match_return_corr=False` restores the old verbatim-driver behaviour.
 
-Worth separating from the item below: the cross-asset ESTIMATOR is not the
-problem. Against series generated at a known correlation it is exact to ±0.003 —
-all of the loss is in the simulator.
+**`rho` comes from a documented prior — it is not identifiable here.** The daily
+return-vs-realised-variance estimator is flat: against series generated at a
+known rho it returns ≈ −0.04 whether the truth is −0.90, −0.40 or +0.40. That is
+not a fixable estimator at this sample size. The signal lives in the 21-day
+aggregated skew, which moves 0.595 per unit rho — but one 5-year series pins that
+skew to only ±0.6, an implied rho uncertainty of **±1.05**, wider than rho's whole
+range. (An earlier note here claimed the skew route "separates cleanly"; that was
+averaging 12 independent series, which a real underlying does not give you.) What
+would identify rho is the option surface, which this app does not read.
 
-**The calibrated `rho` is not a measurement — treat it as a sign, not a size.**
-Against series this repo's own simulator generated at a known rho, the daily
-return-vs-realised-variance estimator recovers ≈ −0.04 whether the truth is
-−0.90, −0.70 or −0.40 (and ≈ +0.04 at +0.40). So every simulation runs with
-almost no leverage and the paths carry far less downside skew than a real equity
-underlying, which understates knock-in probability on exactly the worst-of notes
-this app prices. The signal exists but not at the daily horizon — 21-day
-aggregated skew on the same series spans −0.68 to +0.39 — so a replacement
-estimator should fit there. `tests/test_calibrator.py` pins the current behaviour
-and is written to FAIL once it is fixed. (The off-by-one-lag theory was checked
-and refuted: no lag recovers leverage on real SPY/AAPL/MSFT, and the proposed
-shift flips rho positive.)
-
-
-- `mu` is the **arithmetic** drift for `dS/S = mu*dt + ...`. The calibrator adds `0.5*theta` back to the mean log-return to avoid double-counting the volatility drag, because the log-Euler price step subtracts `V/2` again at each step.
-- Correlation block: `corr_SV` is a diagonal matrix; diagonal = each asset's own `rho`. Off-diagonals are zero. The full `2n×2n` block matrix is validated for PSD on construction; if not PSD, Higham (2002) nearest-PSD projection is applied.
-- Antithetic variates double the output paths: `n_paths` passed in → `2*n_paths` in all result arrays.
-
-### IRR convention
-
-Simple annualisation: `total_return / t_held`. **Not** compound. This matches how structured note coupons are quoted as simple p.a. rates. Expected IRR ≠ ratio of expected total return to expected time held (it's the mean of per-path ratios).
+So `core/calibrator.py:LEVERAGE_PRIOR = -0.6` — the middle of the equity leverage
+range — is what gets simulated, and the raw estimate is kept as a diagnostic.
+Shipping ≈ −0.04 asserted "no leverage effect", the one value we are confident is
+wrong. Measured on a representative 2y worst-of, −0.04 → −0.6 moves P(knock-in)
+from **3.78% to 5.75%**. `rho_prior=None` opts out.
 
 ### The position — what you paid, and what gets modelled
 

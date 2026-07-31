@@ -17,7 +17,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from core.calibrator import PARAM_BOUNDS, HestonCalibrator
+from core.calibrator import LEVERAGE_PRIOR, PARAM_BOUNDS, HestonCalibrator
 from core.simulator import HestonMultiSimulator
 
 
@@ -99,35 +99,35 @@ def _heston_series(true_rho: float, *, n_days: int = 1300, seed: int = 0,
     return pd.DataFrame({"X": S}, index=pd.bdate_range("2019-01-01", periods=len(S)))
 
 
-def test_the_leverage_estimator_is_flat_and_this_is_a_known_limitation():
-    """PINS A KNOWN DEFECT — read this before trusting a calibrated rho.
+def test_rho_uses_the_documented_prior_because_it_is_not_identifiable():
+    """rho comes from a documented prior, not from the daily estimator.
 
-    `_estimate_leverage` correlates daily returns against changes in a rolling
-    realised variance. Run against series this repo GENERATED at a known rho, it
-    recovers essentially the same small number whatever the truth:
+    The estimator is flat: run against series generated at a known rho it returns
+    roughly the same small number regardless (-0.04 at a true -0.90, -0.03 at
+    -0.40, +0.04 at +0.40). Shipping that asserts "this underlying has no leverage
+    effect", the one value we can be confident is wrong for an equity.
 
-        true -0.90 -> -0.04      true  0.00 -> +0.00
-        true -0.70 -> -0.04      true +0.40 -> +0.04
-        true -0.40 -> -0.03
+    Nor is it a fixable estimator at this sample size. The signal lives in the
+    21-day aggregated skew, which moves 0.595 per unit rho — but a single 5-year
+    series pins that skew to only +-0.6, an implied rho uncertainty of +-1.05,
+    wider than rho's entire valid range. Averaging many independent series
+    separates cleanly; a real underlying gives you one. What would identify rho is
+    the option surface, which this app does not read.
 
-    The sign survives; the magnitude does not. Every calibration therefore
-    simulates with almost no leverage, so paths carry far less downside skew than
-    the underlying really has — which understates knock-in probability on exactly
-    the worst-of notes this app prices.
-
-    The signal is not absent from the data, it is absent at the DAILY horizon:
-    the same series' 21-day aggregated skew separates cleanly (-0.68 at rho=-0.9
-    through +0.39 at rho=+0.4), which is where a replacement estimator should
-    look. That is a real piece of quant work with its own validation needs, not a
-    patch — so this test pins the current behaviour rather than papering over it.
-    If you replace the estimator, this test SHOULD fail; make it assert recovery
-    and delete this docstring.
+    It matters: on a representative 2y worst-of, moving -0.04 -> -0.6 takes
+    P(knock-in) from 3.78% to 5.75%.
     """
-    got = {r: HestonCalibrator(prices_df=_heston_series(r), calib_years=99)
-                .calibrate().params[0].rho
-           for r in (-0.9, 0.0)}
-    # The whole point: a 0.9 spread in the truth collapses to under 0.2 recovered.
-    assert abs(got[-0.9] - got[0.0]) < 0.2, (
-        f"the estimator now discriminates ({got}) — if that is deliberate, this "
-        "test is obsolete: assert recovery instead")
-    assert got[-0.9] > -0.3, f"recovered {got[-0.9]:+.3f}: far weaker than the true -0.90"
+    df, _ = _series(0.35)
+    assert HestonCalibrator(prices_df=df, calib_years=5).calibrate().params[0].rho \
+        == pytest.approx(LEVERAGE_PRIOR)
+
+
+def test_the_raw_estimator_is_still_flat_which_is_why_the_prior_exists():
+    """Opting out returns the old near-zero estimate — so the test above proves
+    the prior is APPLIED rather than coinciding, and this one keeps the
+    justification honest. If the estimator is ever replaced with one that
+    genuinely identifies rho, this fails and the prior should be revisited."""
+    df, _ = _series(0.35)
+    raw = HestonCalibrator(prices_df=df, calib_years=5, rho_prior=None).calibrate()
+    assert abs(raw.params[0].rho) < 0.25, (
+        f"raw estimator now returns {raw.params[0].rho:+.3f} — revisit the prior")

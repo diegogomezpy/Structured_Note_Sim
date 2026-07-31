@@ -571,3 +571,26 @@ def test_schedule_drift_reports_a_tenor_that_does_not_fit_whole_periods(maturity
         "coupon_barrier": 0.70, "autocall_barrier": 1.0, "autocall_start_period": 1,
         "knock_in_barrier": 0.50, "tickers": {"A": "A"}})
     assert t.schedule_drift_years == pytest.approx(drift, abs=5e-3)
+
+
+def test_every_schedule_agrees_on_the_tenor():
+    """The three schedules used to give three answers for the same note. A 0.9-year
+    quarterly note was priced to 0.900y by the Monte Carlo (`obs_times`), 1.000y by
+    the backtest and live tab (`obs_calendar_dates`), over a grid that ran to
+    `round(0.9*12)` = 11 months. Now all three derive from `maturity_months`.
+
+    Mutation-verified: reverting obs_times to divide by the typed `maturity` puts
+    the 0.9 case back to 0.900y against a 12-month calendar."""
+    import pandas as pd
+    from core.note import NoteTerms
+    for m in (1.5, 2.0, 1.3, 0.9, 0.5):
+        t = NoteTerms.from_dict({
+            "name": "S", "maturity": m, "payment_freq": "quarterly", "coupon_pa": 0.10,
+            "coupon_barrier": 0.70, "autocall_barrier": 1.0, "autocall_start_period": 1,
+            "knock_in_barrier": 0.50, "tickers": {"A": "A"}})
+        cal = t.obs_calendar_dates("2025-01-01")
+        cal_months = (pd.Timestamp(cal[-1]).year - 2025) * 12 + pd.Timestamp(cal[-1]).month - 1
+        assert cal_months == t.maturity_months, f"{m}: calendar {cal_months}mo vs {t.maturity_months}mo"
+        assert t.obs_times()[-1] == pytest.approx(t.effective_maturity), f"{m}: obs_times end"
+        # ...and the observation steps land on the end of the grid, not past it.
+        assert t.obs_steps(252)[-1] == 252, f"{m}: last obs step off the grid"

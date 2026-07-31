@@ -835,7 +835,7 @@ def _position_state(terms: NoteTerms, anchor) -> dict | None:
         "fixings":         fixings,
         "issue_anchor":    issue_anchor,
         "settle_anchor":   settle_anchor,
-        "maturity_date":   issue_anchor + pd.DateOffset(months=round(terms.maturity * 12)),
+        "maturity_date":   issue_anchor + pd.DateOffset(months=terms.maturity_months),
         "obs_dates":       remaining,
         "periods_elapsed": k,
         "pending_coupons": pending,
@@ -886,7 +886,7 @@ def _simulate_full(terms: NoteTerms, *, n_paths: int, seed: int, calib_years: fl
     held     = pstate if (pstate and pstate.get("ok")) else None
     mat_date = pd.offsets.BDay().rollforward(
         held["maturity_date"] if held
-        else anchor + pd.DateOffset(months=round(terms.maturity * 12)))
+        else anchor + pd.DateOffset(months=terms.maturity_months))
     grid     = pd.bdate_range(anchor, mat_date)
     dt_grid  = np.diff(grid.values).astype("timedelta64[D]").astype(float) / 365.0
     N        = len(grid) - 1
@@ -916,6 +916,9 @@ def _simulate_full(terms: NoteTerms, *, n_paths: int, seed: int, calib_years: fl
         corr_VV=cal_result.corr_VV, corr_SV=cal_result.corr_SV,
         n_paths=n_paths, seed=seed, t_dof=cal_result.t_dof,
         dt_grid=dt_grid, div_schedule=div_sched)
+    # True when the target return correlation was too high to reach: the drivers
+    # would have to correlate above 1. Reported so the shortfall is visible.
+    corr_capped = bool(getattr(sim, "corr_uplift_capped", False))
     eng_used = engine
     try:
         sim_results = sim.run(engine=engine)
@@ -991,6 +994,7 @@ def _simulate_full(terms: NoteTerms, *, n_paths: int, seed: int, calib_years: fl
         # run summary so a reader is told the paths are running hot rather than
         # left to trust a number the log alone flagged.
         "div_failed": div_failed,
+        "corr_capped": corr_capped,
     }
 
 
@@ -1099,6 +1103,8 @@ def _mc_summary(sf: dict, note: dict, terms: NoteTerms) -> dict:
     _drift = float(getattr(terms, "schedule_drift_years", 0.0) or 0.0)
     if _drift > 1e-6:
         summary["schedule_drift_years"] = round(_drift, 4)
+    if sf.get("corr_capped"):
+        summary["corr_capped"] = True
     # For a Participation run, send a downsample of the final-basket levels so the
     # client can redraw the payoff-profile distribution overlay and recompute the
     # what-if table (rate/cap/protection) instantly via the TS redemption mirror —
@@ -1812,10 +1818,11 @@ def run_live_api(terms: NoteTerms, *, lang: str = "en", for_pdf: bool = False) -
     if issue_ts > today_ts:
         return {"available": False, "reason": "not_issued"}
 
-    mat_ts = issue_ts + pd.DateOffset(months=round(terms.maturity * 12))
+    mat_ts = issue_ts + pd.DateOffset(months=terms.maturity_months)
     elapsed_years   = (today_ts - issue_ts).days / 365.25
-    remaining_years = max(terms.maturity - elapsed_years, 0.0)
-    pct_elapsed     = min(elapsed_years / terms.maturity, 1.0) if terms.maturity else 1.0
+    remaining_years = max(terms.effective_maturity - elapsed_years, 0.0)
+    pct_elapsed     = (min(elapsed_years / terms.effective_maturity, 1.0)
+                       if terms.effective_maturity else 1.0)
 
     # Secondary-market position: the note may have been bought after issue, at a
     # price away from par. Everything the note DID (barriers, coupons paid, the

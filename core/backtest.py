@@ -81,7 +81,11 @@ def run_backtest(
         each issue date, so pass the full price history here.
     """
     n_obs      = terms.n_obs
-    mat_months = round(terms.maturity * 12)
+    # One source for the tenor — see NoteTerms.effective_maturity. This used to
+    # round the typed maturity independently of the observation calendar, so a
+    # tenor that is not a whole number of periods gave a window that ended on a
+    # different month from its own final observation.
+    mat_months = terms.maturity_months
     last_date  = prices.index[-1]
 
     # Need at least one issue date whose final observation (issue + maturity,

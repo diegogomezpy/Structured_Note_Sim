@@ -119,6 +119,71 @@ class HestonParams:
 # Correlation matrix utilities
 # ---------------------------------------------------------------------------
 
+def variance_scale_factors(params, dt_grid, seed: int = 0, n_paths: int = 512) -> np.ndarray:
+    """Per-asset `k = E[sqrt(V)] / sqrt(E[V])`, the factor by which stochastic
+    volatility DILUTES the correlation between two assets' returns.
+
+    A return is `sqrt(V_i)·dW_i`. With independent variance processes,
+
+        Corr(r_i, r_j) = rho_driver · E[sqrt(V_i)]·E[sqrt(V_j)]
+                                    / sqrt(E[V_i]·E[V_j])
+                       = rho_driver · k_i · k_j
+
+    and `k <= 1` by Jensen, so the returns always correlate LESS than the drivers
+    that produced them. Measured against the simulator this holds to about ±0.01.
+
+    Estimated by running the variance process ALONE — no prices, no correlation,
+    so it costs a fraction of the real simulation and it measures the DISCRETISED
+    scheme (Milstein + full truncation) rather than the CIR ideal. That matters:
+    the Gamma-stationary approximation agrees to ~0.001 when Feller holds but
+    drifts to 0.04 when it is badly violated, which is the regime this app
+    calibrates into.
+    """
+    rng = np.random.default_rng(seed)
+    dt_grid = np.asarray(dt_grid, dtype=float)
+    out = []
+    for p in params:
+        V = np.full(n_paths, float(p.V0))
+        tot_sqrt, tot_v, cnt = 0.0, 0.0, 0
+        xi2 = p.xi ** 2
+        for dt in dt_grid:
+            sdt = np.sqrt(dt)
+            dW = rng.standard_normal(n_paths) * sdt
+            Vp = np.maximum(V, 0.0)
+            sq = np.sqrt(Vp)
+            # Same step as run(): Milstein correction xi^2/4, full truncation.
+            V = np.maximum(V + p.kappa * (p.theta - Vp) * dt + p.xi * sq * dW
+                           + 0.25 * xi2 * (dW ** 2 - dt), 0.0)
+            tot_sqrt += float(np.sqrt(V).sum()); tot_v += float(V.sum()); cnt += n_paths
+        mean_v = tot_v / cnt
+        out.append((tot_sqrt / cnt) / np.sqrt(mean_v) if mean_v > 0 else 1.0)
+    return np.asarray(out, dtype=float)
+
+
+def compensate_return_corr(corr_SS: np.ndarray, k: np.ndarray) -> np.ndarray:
+    """Inflate a target RETURN correlation into the DRIVER correlation that
+    produces it: `driver[i,j] = target[i,j] / (k_i k_j)`, since the simulation
+    attenuates by exactly that factor (see `variance_scale_factors`).
+
+    The calibrator measures `corr_SS` from realised RETURN correlation and the
+    simulator consumed it as a DRIVER correlation — two different quantities, so
+    the round trip lost a quarter of the co-movement: two underlyings moving
+    together at 0.85 simulated at ~0.61. On a worst-of that means more dispersion,
+    a worse basket, and a knock-in reported higher than the underlyings imply.
+
+    Clipped to +-0.999: a high target with a low k can ask for more than 1, which
+    no correlation matrix can deliver. Those cases keep the highest achievable
+    co-movement and remain under-correlated — reported by `corr_uplift_capped`.
+    """
+    k = np.asarray(k, dtype=float)
+    denom = np.outer(k, k)
+    with np.errstate(divide="ignore", invalid="ignore"):
+        out = np.where(denom > 1e-9, np.asarray(corr_SS, dtype=float) / denom, corr_SS)
+    out = np.clip(out, -0.999, 0.999)
+    np.fill_diagonal(out, 1.0)
+    return out
+
+
 def build_block_corr(
     corr_SS: np.ndarray,
     corr_VV: np.ndarray,
@@ -220,25 +285,19 @@ class HestonMultiSimulator:
     Parameters
     ----------
     params   : list[HestonParams]   – One HestonParams per asset (length n).
-    corr_SS  : np.ndarray (n x n)   – Correlation of the price BROWNIAN DRIVERS.
-                                       NOT the correlation of the returns those
-                                       drivers produce, which is lower: a return
-                                       is sqrt(V_i)·dW_i and the variance
-                                       processes are independent, so the random
-                                       scaling decorrelates what the drivers
-                                       correlated. Measured, this delivers 72-78%
-                                       of the value passed in, across the whole
-                                       calibrated regime. The calibrator estimates
-                                       this FROM realised return correlation, so
-                                       the round trip loses about a quarter of the
-                                       co-movement — see the "simulated basket is
-                                       LESS correlated" note in CLAUDE.md and
-                                       tests/test_simulator.py. This docstring
-                                       said "Return-return correlations", which is
-                                       where the conflation started.
-    corr_VV  : np.ndarray (n x n)   – Variance-variance correlations. Correlating
-                                       these recovers only a little of the above
-                                       (0.66 -> 0.75 at corr_VV = 0.95).
+    corr_SS  : np.ndarray (n x n)   – TARGET correlation of the simulated
+                                       RETURNS (what the calibrator measures).
+                                       Not used directly as the Brownian driver
+                                       correlation: a return is sqrt(V_i)·dW_i
+                                       and the variance processes are
+                                       independent, so the random scaling
+                                       dilutes it by k_i·k_j (see
+                                       `variance_scale_factors`). The driver
+                                       correlation is inflated to compensate, so
+                                       what comes out matches what was asked for.
+                                       Pass match_return_corr=False to use the
+                                       matrix verbatim as a driver correlation.
+    corr_VV  : np.ndarray (n x n)   – Variance-variance correlations.
     corr_SV  : np.ndarray (n x n)   – Cross correlations.
                                        corr_SV[i,i] = rho_i (own leverage).
                                        corr_SV[i,j] = cross term (i≠j).
@@ -277,6 +336,7 @@ class HestonMultiSimulator:
         t_dof:    Optional[int]= None,
         dt_grid:  Optional[np.ndarray] = None,
         div_schedule: Optional[np.ndarray] = None,
+        match_return_corr: bool = True,
     ):
         self.params   = params
         self.n_assets = len(params)
@@ -323,8 +383,28 @@ class HestonMultiSimulator:
         self.corr_VV = corr_VV
         self.corr_SV = corr_SV
 
+        # `corr_SS` is a TARGET RETURN correlation; stochastic vol dilutes it by
+        # k_i*k_j on the way to the returns, so the Brownian drivers have to be
+        # correlated MORE than the target to land on it. Without this the app
+        # measured 0.85 from the data and simulated 0.61 — a quarter of the
+        # co-movement lost between calibration and pricing, which on a worst-of
+        # shows up as a knock-in higher than the underlyings imply.
+        self.corr_scale = np.ones(self.n_assets)
+        self.corr_uplift_capped = False
+        corr_SS_driver = corr_SS
+        if match_return_corr and self.n_assets > 1:
+            self.corr_scale = variance_scale_factors(
+                params, self.dt_grid if self.dt_grid is not None
+                else np.full(self.N, self.T / self.N), seed=int(seed or 0))
+            corr_SS_driver = compensate_return_corr(corr_SS, self.corr_scale)
+            off = ~np.eye(self.n_assets, dtype=bool)
+            want = np.abs(np.asarray(corr_SS, dtype=float) /
+                          np.maximum(np.outer(self.corr_scale, self.corr_scale), 1e-9))
+            self.corr_uplift_capped = bool((want[off] > 0.999).any())
+            corr_SS_driver = validate_and_fix_corr(corr_SS_driver, "compensated corr_SS")
+
         # Build, validate, and Cholesky-decompose the full 2n x 2n matrix
-        self.C_full = build_block_corr(corr_SS, corr_VV, corr_SV)
+        self.C_full = build_block_corr(corr_SS_driver, corr_VV, corr_SV)
         self.C_full = validate_and_fix_corr(self.C_full, "full 2n×2n block matrix")
         self.L      = np.linalg.cholesky(self.C_full)   # (2n, 2n) lower triangular
 

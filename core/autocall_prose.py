@@ -90,7 +90,7 @@ class Ctx:
         self.joined = join_names(names, lang)
         self.n_obs = max(1, int(terms.n_obs))
         self.per = terms.coupon_rate
-        self.months = round(terms.maturity * 12)
+        self.months = terms.maturity_months     # one source — see effective_maturity
         self.freq = freq_word(terms.payment_freq, lang)
         self.ac = [float(x) for x in terms.autocall_barrier_schedule()]
         self.start = max(1, int(terms.autocall_start_period))

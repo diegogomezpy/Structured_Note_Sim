@@ -221,46 +221,67 @@ def test_cpp_standardises_the_t_copula_like_numpy():
 
 
 # ── the correlation a worst-of actually gets ─────────────────────────────────
-def test_simulated_return_correlation_is_below_the_driver_correlation():
-    """PINS A KNOWN MIS-SPECIFICATION — read before trusting a worst-of number.
+def _corr_roundtrip(target, *, xi=0.5, kappa=3.2, vv=0.0, seeds=3):
+    """Ask for a RETURN correlation; measure what the returns actually do."""
+    p = [HestonParams(name=f"A{i}", S0=100.0, kappa=kappa, theta=0.04, xi=xi,
+                      rho=-0.5, V0=0.04, mu=0.05) for i in range(2)]
+    ss = np.full((2, 2), target); np.fill_diagonal(ss, 1.0)
+    vvm = np.full((2, 2), vv);   np.fill_diagonal(vvm, 1.0)
+    out = []
+    for sd in range(seeds):
+        sim = HestonMultiSimulator(params=p, corr_SS=ss, corr_VV=vvm,
+                                   corr_SV=np.eye(2) * -0.5, n_paths=1, seed=sd,
+                                   dt_grid=np.full(3000, 1 / 252))
+        res = sim.run(engine="numpy")
+        lr = np.diff(np.log(np.column_stack([res["S_paths"][i][0] for i in range(2)])), axis=0)
+        out.append(float(np.corrcoef(lr.T)[0, 1]))
+    return float(np.mean(out)), sim
 
-    `corr_SS` is the correlation of the BROWNIAN DRIVERS. The correlation of the
-    RETURNS those drivers produce is lower, because each asset's return is
-    sqrt(V_i)·dW_i and the variance processes are independent (corr_VV = I): the
-    random scaling decorrelates what the drivers correlated. Measured here, the
-    simulator delivers roughly 72-78% of what it is given, stable across the whole
-    calibrated regime (xi 0.5 -> 2.0 with kappa nudged to the Feller margin).
 
-    That would be a harmless model property except for the HANDOFF:
-    `core/calibrator.py` estimates `corr_SS` from realised RETURN correlation and
-    `core/simulator.py` consumes it as DRIVER correlation. Two different
-    quantities, so the round trip loses about a quarter of the co-movement — two
-    underlyings that move together at 0.85 are simulated at ~0.61.
+@pytest.mark.parametrize("target", [0.30, 0.60])
+def test_simulated_returns_hit_the_requested_correlation(target):
+    """`corr_SS` is a TARGET RETURN correlation and the simulator must deliver it.
 
-    Direction: less correlation means more dispersion, a worse worst-of, and so a
-    HIGHER knock-in and LOWER coupon rate than the basket really implies. The note
-    reads riskier than it is — the conservative direction, unlike the `mu` and
-    dividend defects, but wrong by the same mechanism (estimate one quantity,
-    apply it as another).
+    It did not: a return is sqrt(V)·dW and the variance processes are independent,
+    so the random scaling diluted the driver correlation by k_i·k_j — the
+    simulator returned 72-78% of what it was given, right across the calibrated
+    regime. Since the calibrator MEASURES corr_SS from realised return
+    correlation, the round trip lost a quarter of the co-movement: underlyings
+    moving together at 0.85 were simulated at ~0.61. On a worst-of that is more
+    dispersion, a worse basket, and a knock-in reported higher than the
+    underlyings imply.
 
-    Pre-compensating the driver correlation would fix it and is verifiable
-    end-to-end, but it moves every probability the app reports, so it is a
-    decision rather than a patch. If you make it, this test SHOULD fail.
+    The drivers are now inflated by 1/(k_i k_j), with k measured off the variance
+    process itself (`variance_scale_factors`). Mutation-verified: passing
+    match_return_corr=False puts 0.60 back at ~0.47.
     """
-    driver = 0.85
+    got, _ = _corr_roundtrip(target)
+    assert abs(got - target) < 0.04, f"asked {target}, got {got:+.3f}"
+
+
+def test_a_correlation_too_high_to_reach_is_reported_not_hidden():
+    """Compensation has a ceiling: at a high target the driver would need to
+    exceed 1, and the 2n x 2n block cannot stay PSD with leverage on the diagonal.
+    Those runs keep the closest achievable co-movement and set the flag, so the
+    shortfall is visible instead of silent. Correlating the variance processes —
+    which the calibrator does estimate from realised RV — recovers much of it."""
+    got_lo, sim = _corr_roundtrip(0.85, vv=0.0)
+    assert sim.corr_uplift_capped, "0.85 needs more than the drivers can carry"
+    got_hi, _ = _corr_roundtrip(0.85, vv=0.85)
+    assert got_hi > got_lo, "correlated variance must recover some of the shortfall"
+    # Still better than the uncompensated 0.63 this replaced.
+    assert got_lo > 0.65, f"capped case {got_lo:+.3f} is no better than before"
+
+
+def test_opting_out_gives_the_raw_driver_behaviour():
+    """`match_return_corr=False` keeps corr_SS as a literal driver correlation —
+    the old contract, for a caller that wants it."""
     p = [HestonParams(name=f"A{i}", S0=100.0, kappa=3.2, theta=0.04, xi=0.5,
                       rho=-0.5, V0=0.04, mu=0.05) for i in range(2)]
-    ss = np.full((2, 2), driver)
-    np.fill_diagonal(ss, 1.0)
+    ss = np.full((2, 2), 0.60); np.fill_diagonal(ss, 1.0)
     sim = HestonMultiSimulator(params=p, corr_SS=ss, corr_VV=np.eye(2),
-                               corr_SV=np.eye(2) * -0.5, n_paths=1, seed=4,
-                               dt_grid=np.full(4000, 1 / 252))
+                               corr_SV=np.eye(2) * -0.5, n_paths=1, seed=0,
+                               dt_grid=np.full(3000, 1 / 252), match_return_corr=False)
     res = sim.run(engine="numpy")
     lr = np.diff(np.log(np.column_stack([res["S_paths"][i][0] for i in range(2)])), axis=0)
-    got = float(np.corrcoef(lr.T)[0, 1])
-    assert got < driver - 0.10, (
-        f"returns correlate at {got:+.3f} against a {driver} driver — if the "
-        "handoff now pre-compensates, this test is obsolete: assert a match")
-    assert 0.60 <= got / driver <= 0.90, (
-        f"retention {got / driver:.0%} is outside the measured 72-78% band; the "
-        "attenuation has changed and the documented figure needs remeasuring")
+    assert float(np.corrcoef(lr.T)[0, 1]) < 0.55, "opting out must NOT compensate"

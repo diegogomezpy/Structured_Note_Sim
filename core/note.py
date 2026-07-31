@@ -376,24 +376,43 @@ class NoteTerms:
         return round(self.maturity * self.periods_per_year)
 
     @property
-    def schedule_drift_years(self) -> float:
-        """How far the CALENDAR schedule's final date lands from `maturity`, in
-        years. 0.0 when the note fits whole periods, which is the normal case.
+    def maturity_months(self) -> int:
+        """Tenor in WHOLE months — `n_obs` payment periods. The single source of
+        the note's length, so every schedule agrees (see `effective_maturity`)."""
+        return int(self.n_obs * (12 // self.periods_per_year))
 
-        `n_obs` ROUNDS `maturity * periods_per_year`, while `obs_calendar_dates`
-        steps in whole months. When the product is not near-integral the two
-        schedules describe different notes and nothing said so: a 0.9-year
-        quarterly note prices to 0.900y in the Monte Carlo (`obs_times`, evenly
-        spaced over the stated maturity) and to 1.000y in the backtest and the
-        live tab (four 3-month steps). 1.3 years quarterly diverges the other way,
-        1.247y against 1.300y.
+    @property
+    def effective_maturity(self) -> float:
+        """The tenor the note actually has: `n_obs` whole payment periods.
 
-        Reported rather than corrected: rounding `maturity` would silently change
-        a term the user typed, and reading it off the calendar would change every
-        Monte Carlo number for these notes. The API surfaces it as a warning.
+        `maturity` is what the user typed and may not be a whole number of
+        periods. It used to produce THREE different answers for the same note —
+        for 0.9 years quarterly:
+
+            obs_times()           0.900y   (maturity x i / n_obs, evenly spaced)
+            obs_calendar_dates()  1.000y   (4 x 3 whole months)
+            the simulation grid   0.917y   (round(0.9 x 12) = 11 months)
+
+        and the Monte Carlo priced on the first, the backtest and live tab on the
+        second, over a grid that matched neither. Those are three different notes.
+
+        The calendar is authoritative — a term sheet specifies observation DATES,
+        and `payment_freq` is what the user asked for — so the tenor is n_obs
+        whole periods and everything derives from that. A note whose maturity IS a
+        whole number of periods (every real config, and every golden fixture) is
+        unaffected: 1.5y quarterly is 6 quarters either way.
+
+        `maturity` itself is left exactly as typed, so configs round-trip
+        unchanged and `schedule_drift_years` can still report the gap.
         """
-        step_months = 12.0 / self.periods_per_year
-        return abs(self.n_obs * step_months / 12.0 - float(self.maturity))
+        return self.maturity_months / 12.0
+
+    @property
+    def schedule_drift_years(self) -> float:
+        """How far `effective_maturity` sits from the `maturity` the user typed.
+        0.0 when the note fits whole periods, which is the normal case; non-zero
+        means the tenor was snapped to whole periods and the app should say so."""
+        return abs(self.effective_maturity - float(self.maturity))
 
     @property
     def coupon_rate(self) -> float:
@@ -447,12 +466,17 @@ class NoteTerms:
     # ------------------------------------------------------------------
 
     def obs_times(self) -> list[float]:
-        """Observation times in years, evenly spaced."""
-        return [self.maturity * i / self.n_obs for i in range(1, self.n_obs + 1)]
+        """Observation times in years — one per whole payment period.
+
+        Measured against `effective_maturity`, NOT the typed `maturity`, so these
+        land on the same dates `obs_calendar_dates` produces. Identical for any
+        note whose tenor is a whole number of periods."""
+        return [self.effective_maturity * i / self.n_obs for i in range(1, self.n_obs + 1)]
 
     def obs_steps(self, N: int) -> list[int]:
-        """Map observation times to simulation step indices."""
-        return [round(t / self.maturity * N) for t in self.obs_times()]
+        """Map observation times to simulation step indices. The grid runs to
+        `effective_maturity`, so the divisor must be the same quantity."""
+        return [round(t / self.effective_maturity * N) for t in self.obs_times()]
 
     def obs_calendar_dates(self, anchor) -> list:
         """
