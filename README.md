@@ -4,8 +4,6 @@ A Python framework for calibrating, simulating, and pricing a **multi-asset Hest
 
 Built as an internal tool and deployed as a single-page **React** web app backed by a **FastAPI** service, with a branded, bilingual PDF report.
 
-**▶️ Live app: [structured-note-sim-doemm2affa-tl.a.run.app](https://structured-note-sim-doemm2affa-tl.a.run.app/)**
-
 ---
 
 ## Overview
@@ -524,11 +522,14 @@ Report styling (shared by the Report and Batch tabs):
 
 ## Deployment
 
-The app ships as a **single Docker image** to **Google Cloud Run** at
-[structured-note-sim-doemm2affa-tl.a.run.app](https://structured-note-sim-doemm2affa-tl.a.run.app/),
-auto-deploying from `main` on every push (gated by CI — see
-[API & runtime](#api--runtime)). The [`Dockerfile`](Dockerfile) is a
-three-stage build:
+The app ships as a **single Docker image**, built for **Google Cloud Run**.
+
+> **There is no live deployment.** The Cloud Run service, its auto-deploy trigger
+> and the built images were retired; pushing to `main` no longer deploys anything.
+> Everything below still describes how to build and run the image — restoring a
+> deployment means re-creating the service and reconnecting the build trigger.
+
+The [`Dockerfile`](Dockerfile) is a three-stage build:
 
 1. **web-build** (`node`) — builds the React/Vite front-end (`web/` → `web/dist`)
 2. **cpp-build** (`python` + Clang) — compiles the optional C++ Heston engine
@@ -648,8 +649,8 @@ server session cookie or shared client state. Server-side state lives only in
 ### Continuous integration
 
 A GitHub Actions workflow ([`.github/workflows/ci.yml`](.github/workflows/ci.yml))
-gates every push and PR on the same checks the deploy runs, catching a break here
-rather than at Cloud Build (which would block the auto-deploy):
+gates every push and PR. It still runs — it is independent of the retired Cloud
+Run deployment — and catches a break here rather than at image-build time:
 
 - **web** — `npm ci` → `npm run lint` (oxlint) → `npm run build` (`tsc -b`
   type-check + `vite build`), mirroring the Dockerfile's front-end build.
